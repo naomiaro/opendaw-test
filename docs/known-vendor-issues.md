@@ -14,6 +14,13 @@ upstream issue read from the tracker that would reach this repo but has not been
 its "Where it bites here" says what a matching symptom would look like. An entry without the mark
 was measured here.
 
+Grouped by vendor: Chromium (Chrome, Edge, Brave), Firefox, WebKit (Safari, iOS, WKWebView), then the gaps that
+span them, then the hosting and tooling entries. The three browser sections were swept from their trackers on
+2026-10-22 (`node .claude/skills/sdk-upgrade/scripts/bugzilla.cjs <host> search|read …` for the two Bugzillas; the
+Chromium tracker through the browser).
+
+# Chromium
+
 ## Chromium [442866743](https://issues.chromium.org/issues/442866743) — a worklet's clock stands still while the main thread changes the audio graph
 
 - **Tracker:** [issues.chromium.org/issues/442866743](https://issues.chromium.org/issues/442866743),
@@ -238,18 +245,6 @@ was measured here.
   not an exception. Neither observed here.
 - **Last checked:** 2026-10-22 (titles read only).
 
-## Safari — `decodeAudioData` does not decode Ogg Opus, and iOS re-suspends the AudioContext
-
-- **Tracker:** none filed from here; long-standing WebKit behaviour.
-- **Symptom:** `canPlayType("audio/ogg; codecs=opus")` answers "maybe", the decode fails. On iOS the
-  context can go back to `suspended` after backgrounding or locking, and is not `running` right after
-  `resume()` resolves.
-- **Where it bites here:** every demo that loads the bundled tracks; playback after a lock.
-- **Workaround:** `getAudioExtension()` in `src/lib/audioUtils.ts` picks m4a (AAC) on Apple devices by
-  user-agent, not by feature detection; before `play()` check `audioContext.state` and wait for the
-  `statechange` event (root CLAUDE.md, "AudioContext Suspension").
-- **Last checked:** never re-measured; the Opus fallback is exercised on every Apple load.
-
 ## Chromium [516995393](https://issues.chromium.org/issues/516995393) — no input-latency figure in the Web Audio API (a spec gap)
 
 - **Tracker:** [issues.chromium.org/issues/516995393](https://issues.chromium.org/issues/516995393),
@@ -279,17 +274,16 @@ was measured here.
   device in any sweep); on a Bluetooth recording session, read `audioContext.outputLatency` first.
 - **Last checked:** 2026-10-22 (tracker read).
 
-## Chrome and Edge only — `AudioContext.setSinkId`
-
-- **Tracker:** none; a feature gap in Firefox and Safari.
-- **Symptom:** output-device routing is unavailable; `AudioDevices` handles inputs only.
-- **Workaround:** gate on `"setSinkId" in AudioContext.prototype`; enumerate outputs through
-  `navigator.mediaDevices.enumerateDevices()` filtering `kind === "audiooutput"` (root CLAUDE.md,
-  "Output Device Enumeration"; `src/lib/audioUtils.ts`).
+# Firefox
 
 ## Firefox — graph calls queue on the render thread, which renders late under churn
 
-- **Tracker:** none filed; measured on Firefox 157.
+- **Trackers:** the cost is known upstream as a family of quadratic graph operations: [1945316](https://bugzilla.mozilla.org/show_bug.cgi?id=1945316)
+  "N sine waves spends infinite time in GraphRunner" (reopened, P3; the 2026-10-16 analysis: `AudioNode::Connect`
+  scans every input of the destination, so one context with many nodes into one destination is quadratic),
+  [2044891](https://bugzilla.mozilla.org/show_bug.cgi?id=2044891) "disconnecting the graph 24× slower than Chrome", [2044952](https://bugzilla.mozilla.org/show_bug.cgi?id=2044952) "suspending N nodes is quadratic",
+  [2044896](https://bugzilla.mozilla.org/show_bug.cgi?id=2044896) "1 node and N automation events 1800× slower, quadratic in events" — all open, with work-in-progress
+  patches moved under [1945316](https://bugzilla.mozilla.org/show_bug.cgi?id=1945316) (2026-10-04). The late rendering under churn measured here is not reported as such.
 - **Symptom:** a stretch of about 21 000 connect / disconnect pairs in 8 ms left the context rendering
   2.98 s of audio in 5.01 s; creating about 12 000 gain nodes in a stretch rendered 0.48 s in 5 s, then
   nothing, and contexts made afterwards in the same browser did not resume until it was restarted. At
@@ -298,7 +292,151 @@ was measured here.
 - **Workaround:** the probe caps its dose (`MAX_CONNECTS_PER_STRETCH`) and runs bulk node creation only
   on request (`?conditions=create`); a Firefox that stops rendering under it needs a restart.
 - **Evidence:** `debug/2026-10-01-worklet-clock-stale/note.md`, "Firefox, and the probe's dose".
-- **Last checked:** 2026-10-01.
+- **Last checked:** 2026-10-22 (trackers read; the churn figures measured 2026-10-01).
+
+## Firefox [1629478](https://bugzilla.mozilla.org/show_bug.cgi?id=1629478) — `inputs[0]` is empty for the first process() calls until the source is actively processing (by spec)
+
+- **Tracker:** [bugzilla 1629478](https://bugzilla.mozilla.org/show_bug.cgi?id=1629478), unconfirmed, P5, 2020; the answer on it is the spec: `inputs[n]` is an
+  empty array while no actively-processing node feeds input n, and a media or stream source is not actively
+  processing until it delivers. Up to about 70 empty calls were seen before a `MediaStreamAudioSourceNode` delivered.
+- **Where it bites here:** the recording worklet: a stamp taken on the first `process()` call would predate the input.
+- **Workaround:** in place in the SDK — `RecordingProcessor` records its first-quantum call only once `inputs[0]`
+  carries the expected channel count, and stamps from there. A worklet of ours that reads input must do the same.
+- **Last checked:** 2026-10-22 (tracker read; the SDK's guard verified on the 0.0.177 tag).
+
+## Firefox [2070740](https://bugzilla.mozilla.org/show_bug.cgi?id=2070740) — suspend / resume / close promise settlement can get out of order (watched, low)
+
+- **Tracker:** [bugzilla 2070740](https://bugzilla.mozilla.org/show_bug.cgi?id=2070740), new, S3, 2026-09: a main-thread short circuit added for "closed before
+  resume completed" rejections can settle out of order with the graph thread's suspend and close; the spec does not say
+  whether a pending resume promise resolves or rejects when a later suspend or close overrides it.
+- **Where it bites here:** `initializeOpenDAW` awaits `resume()` before the first `play()`; nothing here suspends or
+  closes a context after that, so the race needs a close during a pending resume to show.
+- **Last checked:** 2026-10-22 (tracker read).
+
+## Firefox OPFS — [2076609](https://bugzilla.mozilla.org/show_bug.cgi?id=2076609), [2072928](https://bugzilla.mozilla.org/show_bug.cgi?id=2072928), [2072923](https://bugzilla.mozilla.org/show_bug.cgi?id=2072923), [2060133](https://bugzilla.mozilla.org/show_bug.cgi?id=2060133) (watched)
+
+- **Trackers:** [2076609](https://bugzilla.mozilla.org/show_bug.cgi?id=2076609) every `createSyncAccessHandle()` in an origin fails with `UnknownError` after an
+  unclean shutdown while a handle was open (Firefox 156, a syntactically invalid SQL statement in the usage tracking;
+  only clearing site data recovers); [2072928](https://bugzilla.mozilla.org/show_bug.cgi?id=2072928) creating, opening, closing and deleting a file costs about
+  21 fsyncs, about 75 ms per file on Linux against 0.6 ms in Chromium, and [2072923](https://bugzilla.mozilla.org/show_bug.cgi?id=2072923) `write()` costs
+  30–37 µs per call regardless of size; [2060133](https://bugzilla.mozilla.org/show_bug.cgi?id=2060133) `write()` past the quota does not throw
+  `QuotaExceededError` (the same shape as Chromium's sentinel return).
+- **Where they would bite here:** the SDK's OPFS worker writes every fetched sample and every finished recording
+  through sync access handles, one file per sample, and the page sweep deletes the folder on load: a Firefox profile
+  that crashed mid-recording would refuse every sample write until its site data is cleared, and a sample library of
+  many files loads and sweeps slowly. None measured here (the sweeps run in Chrome).
+- **Last checked:** 2026-10-22 (titles and descriptions read).
+
+## Firefox [2034508](https://bugzilla.mozilla.org/show_bug.cgi?id=2034508) — `renderQuantumSize` not implemented (watched, low)
+
+- **Tracker:** [bugzilla 2034508](https://bugzilla.mozilla.org/show_bug.cgi?id=2034508), new, 2026-04. The engine assumes the 128-frame quantum everywhere;
+  a context constructed with another `renderSizeHint` is not something this repo does, so the gap is harmless here.
+- **Last checked:** 2026-10-22.
+
+# WebKit
+
+## Safari — `decodeAudioData` does not decode Ogg Opus, and iOS re-suspends the AudioContext
+
+- **Trackers:** Opus: [327697](https://bugs.webkit.org/show_bug.cgi?id=327697) "decodeAudioData refuses Opus WebM in every mapping family but 0" (new, 2026-10,
+  Safari 27; the Ogg Opus case this repo hit is older and unfiled). The iOS suspension family: [281566](https://bugs.webkit.org/show_bug.cgi?id=281566)
+  "`AudioContext.resume()` never resolves if the browser is suspended to background" (2024, open; the workaround on it
+  is a `suspend()` then `resume()` from a user gesture), with [202846](https://bugs.webkit.org/show_bug.cgi?id=202846) (stops on `visibilitychange`), [263627](https://bugs.webkit.org/show_bug.cgi?id=263627)
+  (not consistently resumed on foreground), [274954](https://bugs.webkit.org/show_bug.cgi?id=274954), [276016](https://bugs.webkit.org/show_bug.cgi?id=276016), [240646](https://bugs.webkit.org/show_bug.cgi?id=240646) (WKWebView), [206695](https://bugs.webkit.org/show_bug.cgi?id=206695) (the
+  `interrupted` state is not a valid `AudioContextState`), [232640](https://bugs.webkit.org/show_bug.cgi?id=232640) (stops when wired headphones are unplugged);
+  [291892](https://bugs.webkit.org/show_bug.cgi?id=291892) "silent after a PWA returns from background even after resume" (a reporter saw it fixed on iOS 26.2 beta
+  3, the bug stays open).
+- **Symptom:** `canPlayType("audio/ogg; codecs=opus")` answers "maybe", the decode fails. On iOS the
+  context can go back to `suspended` after backgrounding or locking, and is not `running` right after
+  `resume()` resolves.
+- **Where it bites here:** every demo that loads the bundled tracks; playback after a lock.
+- **Workaround:** `getAudioExtension()` in `src/lib/audioUtils.ts` picks m4a (AAC) on Apple devices by
+  user-agent, not by feature detection; before `play()` check `audioContext.state` and wait for the
+  `statechange` event (root CLAUDE.md, "AudioContext Suspension").
+- **Last checked:** 2026-10-22 (trackers read); never re-measured here, the Opus fallback is exercised on every Apple load.
+
+## WebKit [256023](https://bugs.webkit.org/show_bug.cgi?id=256023) — a worklet's thread and heap outlive the page, so reloads leak until `WebAssembly.Memory` fails (watched)
+
+- **Tracker:** [bugs.webkit.org 256023](https://bugs.webkit.org/show_bug.cgi?id=256023), new, P2, 2023; re-confirmed 2026-10-20 on the iOS 27 simulator
+  with an analysis that it is not Wasm-specific: an AudioWorklet's thread and heap outlive the page, so whatever the
+  processor references (a `WebAssembly.Memory`, a `SharedArrayBuffer`) stays resident after each reload, and even an
+  empty processor leaks its thread; the eighth load of a page with a 256 MB memory in its processor fails with
+  "Out of memory". Pull request 77672 open (2026-10-20). See also [272813](https://bugs.webkit.org/show_bug.cgi?id=272813).
+- **Where it bites here:** the engine runs in a worklet with its Wasm memory; a demo reloaded many times in one Safari
+  tab would eventually fail to boot. Not measured here (the reload cases measured so far are Chrome's).
+- **Workaround:** none in the SDK; open the page in a new tab instead of reloading, until the fix ships.
+- **Last checked:** 2026-10-22 (tracker read).
+
+## WebKit [327552](https://bugs.webkit.org/show_bug.cgi?id=327552) — previously played audio is heard when resuming a context that has a worklet (watched)
+
+- **Tracker:** [bugs.webkit.org 327552](https://bugs.webkit.org/show_bug.cgi?id=327552), new, 2026-10-14, macOS 26 nightly: after `suspend()` then
+  `resume()` a stretch of the pre-suspend audio plays, the worklet's `process()` is then called rapidly as the clock
+  catches up, and the audio clock has a discontinuity; Chromium resumes smoothly. Pull request 77683 open.
+- **Where it bites here:** nothing here suspends a context; the browser's own iOS suspension and resume would.
+- **Last checked:** 2026-10-22 (tracker read).
+
+## WebKit [327275](https://bugs.webkit.org/show_bug.cgi?id=327275) — a background tab holding a Web Audio context glitches audio system-wide (macOS 27, watched)
+
+- **Tracker:** [bugs.webkit.org 327275](https://bugs.webkit.org/show_bug.cgi?id=327275), new, 2026-10-12, Safari 27 on macOS 27: the GPU process serves
+  CoreAudio a 128-frame IO cycle (2.7 ms); once Safari is not frontmost, RunningBoard demotes that process to
+  background priority, the HAL thread misses its deadline under moderate load, and every app on the machine clicks.
+- **Where it bites here:** any demo left open in a background Safari tab; the hidden-page cases measured here are
+  Chrome's. Related: [328063](https://bugs.webkit.org/show_bug.cgi?id=328063) "fade in RemoteAudioDestination output after a ring buffer underrun" (pull request
+  77508: WebKit fades to silence on an underrun and currently comes back with a step), [319504](https://bugs.webkit.org/show_bug.cgi?id=319504) "click or pop on
+  AudioContext initialization after a page reload" (Safari 26, not in Chrome), [325501](https://bugs.webkit.org/show_bug.cgi?id=325501) "[iOS] output permanently
+  distorted after switching the route to AirPlay" (iOS 26.7, only a new context recovers).
+- **Last checked:** 2026-10-22 (trackers read).
+
+## WebKit [326286](https://bugs.webkit.org/show_bug.cgi?id=326286) — iOS 26.2 to 27: output crackles while an echo-cancelled microphone capture is open (watched)
+
+- **Tracker:** [bugs.webkit.org 326286](https://bugs.webkit.org/show_bug.cgi?id=326286), new, P2 Major, 2026-10-04, re-confirmed on iPhone 16 Pro / iOS
+  27.0.1 in Safari and a WKWebView app: any audio the page plays while a `getUserMedia` stream with
+  `echoCancellation: true` is open crackles; with echo cancellation off the output is clean but moves to the receiver
+  at low volume; `applyConstraints` to false reads back false and changes nothing.
+- **Where it bites here:** recording on an iPhone with monitoring: the capture's stream opens with the browser's
+  default constraints. Not measured here (no iOS device in any sweep). With it: [211959](https://bugs.webkit.org/show_bug.cgi?id=211959) "all Web Audio output
+  mono after capturing the microphone" (iOS, 2020, open), [210231](https://bugs.webkit.org/show_bug.cgi?id=210231) "no stereo `getUserMedia`, no `channelCount`
+  constraint" (open; a request for two channels gets the left channel only — the demos' stereo capture is Chrome-only
+  in practice), [283037](https://bugs.webkit.org/show_bug.cgi?id=283037) "Web Audio while recording does not use Bluetooth headphones" (iOS 17).
+- **Last checked:** 2026-10-22 (trackers read).
+
+## WebKit OPFS and workers — [326901](https://bugs.webkit.org/show_bug.cgi?id=326901) / [326345](https://bugs.webkit.org/show_bug.cgi?id=326345), [293955](https://bugs.webkit.org/show_bug.cgi?id=293955), [279739](https://bugs.webkit.org/show_bug.cgi?id=279739) (watched)
+
+- **Trackers:** [326901](https://bugs.webkit.org/show_bug.cgi?id=326901) "worker storage and network operations complete only when the main thread of the
+  page runs" and [326345](https://bugs.webkit.org/show_bug.cgi?id=326345) "dedicated-worker fetch and OPFS operations wait for the page main thread to
+  become idle" (Safari 27, 2026-10; Chromium and Firefox complete them during a main-thread block); [293955](https://bugs.webkit.org/show_bug.cgi?id=293955)
+  "increase the `FileSystemSyncAccessHandle` per-origin limit beyond 256" (open handles fail past about 252; Chromium
+  and Firefox allow thousands); [279739](https://bugs.webkit.org/show_bug.cgi?id=279739) "OPFS can deadlock the browser and inspector" (P2 Critical, 2024,
+  Emscripten users reproduce it); plus [327929](https://bugs.webkit.org/show_bug.cgi?id=327929), [326347](https://bugs.webkit.org/show_bug.cgi?id=326347), [326135](https://bugs.webkit.org/show_bug.cgi?id=326135) (`InvalidStateError` where a disk-full,
+  lock or no-such-file error is meant).
+- **Where they would bite here:** the SDK's OPFS worker is a dedicated worker; on Safari its sample writes and the
+  page sweep wait on the page's main thread, which is exactly what a long synchronous task or a blocked frame driver
+  stalls — the "[OPFS] … runs for <n>s" warnings would fire for the browser's reason, not the SDK's. A sample library
+  with more than about 250 handles open at once cannot exist on Safari. None measured here.
+- **Last checked:** 2026-10-22 (descriptions read).
+
+## WebKit [328462](https://bugs.webkit.org/show_bug.cgi?id=328462) — "Enhanced Security" disables `SharedArrayBuffer` (watched)
+
+- **Tracker:** [bugs.webkit.org 328462](https://bugs.webkit.org/show_bug.cgi?id=328462), new, 2026-10-22, pull request 77899 open: Safari's Enhanced
+  Security setting switches `SharedArrayBuffer` off. The SDK needs it for the engine's sync stream, the recording ring
+  buffer and the engine state (the pages are cross-origin isolated for that reason). With it [327924](https://bugs.webkit.org/show_bug.cgi?id=327924) "[iPadOS]
+  cross-origin isolation parity with macOS" (COEP credentialless, reporting why isolation failed).
+- **Where it bites here:** every demo on a Safari with the setting on would fail at `Workers.install`; not measured.
+- **Last checked:** 2026-10-22 (tracker read).
+
+# Across vendors
+
+- **`AudioContext.setSinkId` is Chrome and Edge only.** Firefox: [1942786](https://bugzilla.mozilla.org/show_bug.cgi?id=1942786) (unconfirmed, 2025); WebKit: [280303](https://bugs.webkit.org/show_bug.cgi?id=280303)
+  (open, 2026-09). Gate on `"setSinkId" in AudioContext.prototype`; enumerate outputs through
+  `navigator.mediaDevices.enumerateDevices()` filtering `kind === "audiooutput"` (root CLAUDE.md, "Output Device
+  Enumeration"; `src/lib/audioUtils.ts`); `AudioDevices` handles inputs only.
+- **No `performance.now()` in `AudioWorkletGlobalScope`** — agreed at TPAC 2025
+  ([web-audio-api#2413](https://github.com/WebAudio/web-audio-api/issues/2413)), filed with every engine: Chromium
+  [392542574](https://issues.chromium.org/issues/392542574) (P1, in progress), Firefox [2001624](https://bugzilla.mozilla.org/show_bug.cgi?id=2001624) (patch in progress), WebKit [326586](https://bugs.webkit.org/show_bug.cgi?id=326586). The
+  SDK's DSP-load meter exists in its spinning-worker form because of this gap
+  (`documentation/internals/03-cross-thread-protocols.md`); once the API lands everywhere the worker can go.
+- **No input-latency figure** — Chromium [516995393](https://issues.chromium.org/issues/516995393) above; the other engines have none either.
+
+# Hosting and tooling
 
 ## Cloudflare Pages — `NODE_VERSION=<major>` resolves to the build image's default, not the newest release
 

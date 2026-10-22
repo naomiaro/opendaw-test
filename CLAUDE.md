@@ -665,9 +665,11 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
 
 ## Build & Verification
 - **Known vendor issues live in `docs/known-vendor-issues.md`** — browser, platform and hosting
-  behaviours outside the SDK that this repo has measured and works around (the Chromium worklet
-  clock that stands still under graph work, frames stopping on a hidden page, per-node stream
-  delays, Safari's Opus decode, Cloudflare's `NODE_VERSION` resolution, …). Before debugging a
+  behaviours outside the SDK that this repo has measured and works around, grouped by vendor
+  (Chromium, Firefox, WebKit, hosting and tooling: the Chromium worklet clock that stands still
+  under graph work, frames stopping on a hidden page, per-node stream delays, Safari's Opus decode
+  and iOS suspensions, WebKit's worklet heap outliving the page, Cloudflare's `NODE_VERSION`
+  resolution, …), with open upstream issues read from the trackers marked "watched". Before debugging a
   symptom that matches one, read its entry: a listed behaviour is not a new finding and its
   workaround is already in place where the entry says. A sweep cell explained by an entry is read
   against it, not filed. Add an entry when a vendor behaviour costs a session; mark one fixed only
