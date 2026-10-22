@@ -231,18 +231,29 @@ the demos never clip a seconds region against a musical one; the rule documented
   bump; nothing in `src/` or `scripts/` calls `instantiateWasmEngine`, constructs
   `ScriptBridges`, implements `Engine`, or reads `HRClockWorker`.
 - **Take numbering**: `src/demos/recording/takeLeadIn.ts` — `isLeadInTake(positionPpqn,
-  leadInBars)` (the lead-in take starts before the loop area) and the shared `BAR_PPQN`;
-  `useTakeDiscovery` carries each region's `positionPpqn` and judges the lead-in by it, so a
-  second recording on the same tape shows as new rows with the SDK's numbers (it used to merge
-  into the first recording's rows, every recording being "Take 1" again); the three demos
-  that defined their own `BAR_PPQN` import the shared one. Tests in `takeLeadIn.test.ts`.
+  leadInBars)` (the lead-in take starts before the loop area), `takeNumberOf`,
+  `trackedTakeBaselines`, `takeIterationNumber` and the shared `BAR_PPQN`;
+  `useTakeDiscovery` carries each region's `positionPpqn` and judges the lead-in by it, and
+  groups the rows by RECORDING PASS instead of by the raw label: each unit numbers its own
+  takes on from what it holds, so two tapes recorded together can carry different numbers for
+  one pass of the loop (a tape recorded alone first reads Take 4–6 beside a new tape's Take
+  1–3) — a take's row is its ordinal past its tape's baseline (the highest take the demo
+  already lists for that tape; read off the rows, because the SDK creates a recording's first
+  take before the recording flag reaches React), placed after the rows that existed. A second
+  recording on the same tape shows as new rows (it used to merge into the first recording's
+  rows, every recording being "Take 1" again); the three demos that defined their own
+  `BAR_PPQN` import the shared one. Tests in `takeLeadIn.test.ts`.
   Browser check on the release, the built-in microphone, a real click per recording: in the
   loop-recording demo (1-bar lead-in, 2-bar loop, count-in) a first recording gave Take 1 to
   Take 4, the second on the same tape Take 5 to Take 8 — Take 1 and Take 5 drawn full-width as
   the lead-in takes, the six loop takes at the loop's width, the mute button of Take 5
   toggling that row alone; in the swipe-comping demo (4-bar loop) "Record More Takes" after
   two takes gave four lanes, the SDK's regions labelled Take 1 to Take 4 (every recording used
-  to start at "Take 1" again and the second's rows merged into the first's).
+  to start at "Take 1" again and the second's rows merged into the first's). The two-tape
+  case the review raised, same demo: Tape 1 recorded alone (rows Take 1–4, unit labels
+  Take 1–4), a second tape added, both recorded — rows Take 5–8 with two lanes each, unit 1
+  labelled Take 5–8 and unit 2 Take 1–4 behind them, and row 5's mute button flipping unit
+  1's Take 5 and unit 2's Take 1 together.
 - **Constructor pointer order**: `src/lib/constructorPointerOrder.test.ts` creates an audio
   unit through `AudioUnitFactory` (output routed to the primary bus in the constructor) and
   re-routes it to an aux bus in the SAME transaction — target, edges, undo, redo and an

@@ -31,7 +31,7 @@ dist diff, the wasm hashes and a flip-proof (below) run against.
 ## 2. Read the release
 
 ```bash
-cd /Users/naomiaro/Code/openDAWOriginal && git fetch --tags && git checkout "@opendaw/studio-sdk@<new>"
+cd <openDAW checkout, path in .claude/local.md> && git fetch --tags && git checkout "@opendaw/studio-sdk@<new>"
 git log --oneline "@opendaw/studio-sdk@<old>..@opendaw/studio-sdk@<new>"          # merges bring main's commits into the range
 git diff --stat "@opendaw/studio-sdk@<old>..@opendaw/studio-sdk@<new>" -- packages/lib packages/studio crates | grep -v 'package.json\|CHANGELOG'
 ```
@@ -84,7 +84,7 @@ cp $S/new-<file>.js node_modules/@opendaw/<pkg>/dist/<file>.js && diff -q $S/new
 ## 4. XERJ corpus (only if `~/.claude/skills/xerj` exists)
 
 ```bash
-SHA=$(git -C ~/Code/openDAWOriginal rev-parse HEAD)
+SHA=$(git -C <openDAW checkout> rev-parse HEAD)
 cd ~/.xerj-code/corpora/webdaw/openDAW && git fetch --depth=1 origin $SHA && git checkout -q FETCH_HEAD
 cd .. && grep -n -A3 '"repo": "openDAW"' corpus.json                        # the previous sha is in the openDAW entry
 sed -i '' "s/\"sha\": \"<previous openDAW sha>\"/\"sha\": \"$SHA\"/" corpus.json   # that entry only
