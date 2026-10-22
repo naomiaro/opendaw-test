@@ -51,7 +51,7 @@ stand), the single-window bfcache runs, and the OPFS stored-readings load before
 | `bfcache` | [575891839](https://issues.chromium.org/issues/575891839) — half-speed worklet clock after a back/forward-cache restore | Measures the context clock against `performance.now()` with a worklet tone and an oscillator control playing, navigates away and back; on `pageshow.persisted` re-measures in three one-second windows and judges on the last two, otherwise records the `notRestoredReasons` | `HALF SPEED`, `NORMAL`, `NOT CHECKED` | **reproduced**: `HALF SPEED` on Chrome 155, 2026-10-22, all three restore windows; a playing demo also restores at half speed (the user's Chrome; Playwright's cannot enter the cache) |
 | `suspend-resume` | [560233271](https://issues.chromium.org/issues/560233271) — distortion after suspend / resume cycles | A worklet-rendered 440 Hz tone into an analyser; a two-second baseline, then 20 `suspend()` / `resume()` cycles with a purity window after each, judged on harmonic purity against the baseline and on dropouts | `DISTORTED`, `CLEAN`, `NOT CHECKED` | **not reproduced**: `CLEAN` twice on Chrome 155, 2026-10-22 (purity 66.51 dB every cycle, 0 clicks, 0 dropouts); both positive controls read `DISTORTED` |
 | `capture-gaps` | [40103985](https://issues.chromium.org/issues/40103985) — zero-filled gaps and duplicated blocks in `getUserMedia` input | Records 60 s of a `MediaStreamAudioSourceNode` (`&source=loopback` or `mic`, `&rate=48000` or `44100`) through a worklet; counts zero runs of 100 frames or more after the head and 128-frame blocks identical to the one before, the first 0.1 s after the head reported apart | `GAPS`, `START GAPS`, `CLEAN`, `NOT CHECKED` | **start gaps only**: one zero run in the first 55 ms of a capture (loopback 44 100: 441 frames; mic 48 000: 128 frames; every run of those cells), none after it, no duplicate, Chrome 155, 2026-10-22 |
-| `opfs-usage` | [436552046](https://issues.chromium.org/issues/436552046) / [401692415](https://issues.chromium.org/issues/401692415) — OPFS usage not counted for sync-handle writes, negative after a delete | Writes through a sync access handle in a worker, reads `estimate()` before, after the write and after the delete; the user quits and reopens Chrome and the page judges the restart reading on load (`&truncateFirst=1` for the reporter's workaround) | `NOT COUNTED`, `COUNTED`, `NEGATIVE USAGE`, `NOT CHECKED` | **reproduced**: `NEGATIVE USAGE` after a restart of the user's Chrome 155, 2026-10-22 (saved figure +50.6 MB before a plain run's delete, −16.5 MB after, read back as 4.28 GB); the saved figure read off disk drops by the deleted size on a plain delete, by 0 after a truncate; a truncate-first run and a second restart moved it by the hand-deleted samples' size only (−238 137 857 against −238 135 417 predicted) |
+| `opfs-usage` | [436552046](https://issues.chromium.org/issues/436552046) / [401692415](https://issues.chromium.org/issues/401692415) — OPFS usage not counted for sync-handle writes, negative after a delete | Writes through a sync access handle in a worker, reads `estimate()` before, after the write and after the delete; the user quits and reopens Chrome and the page judges the restart reading on load (`&truncateFirst=1` for the reporter's workaround) | `NOT COUNTED`, `COUNTED`, `NEGATIVE USAGE`, `NOT CHECKED` | **reproduced**: `NEGATIVE USAGE` after a restart of the user's Chrome 155, 2026-10-22 (saved figure −16.5 MB after a plain run's delete, read back as 4.28 GB; about +50.6 MB before it if the delete took the full 64 MiB, as the off-disk reading and round 2 show); the saved figure read off disk drops by the deleted size on a plain delete, by 0 after a truncate; a truncate-first run and a second restart moved it by the hand-deleted samples' size only (−238 137 857 against −238 135 417 predicted) |
 | `opfs-flush` | [40909520](https://issues.chromium.org/issues/40909520) — slow `flush()` on Mac | Times 20 writes of 1 MiB and 20 of 16 MiB, each followed by `flush()`, in a worker; median, p95 and max per size | `MEASURED` (figures only: the tracker's claim is a comparison with other browsers this repo does not make) | **measured**: flush median 0.53–0.57 ms (1 MiB), 1.44–1.46 ms (16 MiB), Chrome 155, macOS 15.6.1, 2026-10-22 |
 | — | [541725401](https://issues.chromium.org/issues/541725401) / [40068799](https://issues.chromium.org/issues/40068799) — a quota overrun returns a sentinel | No probe: needs the origin's quota exhausted or an incognito profile | — | out of scope, stays watched |
 | `output-latency` | [388871416](https://issues.chromium.org/issues/388871416) — `outputLatency` with a Bluetooth headset | Resumes a context and reads `baseLatency`, `outputLatency`, `sinkId` and the output device's label from `enumerateDevices()` every second for 30 s; no classifier, the rows are the finding | `MEASURED` (figures only), `NOT CHECKED context-<state>` | **built-in speaker only**: base 5.8 ms / output 28 ms, Chrome 155, 2026-10-22; the Bluetooth half needs hardware, not run |
@@ -427,15 +427,16 @@ fully and the URL reopened by hand, 194 s after the run
 |---|---|
 | `estimate()` after the restart | 4 278 445 047 |
 | that reading as the saved figure, signed | −16 522 249 |
-| the saved figure before the run's delete (−16 522 249 + 67 108 864) | +50 586 615 |
+| the saved figure before the run's delete, derived: −16 522 249 + 67 108 864, assuming the delete took the full size | +50 586 615 |
 | files in the origin's OPFS at the restart (none under `test/`) | 238 135 417 |
 | quota at the run / at the restart | 12 487 904 828 / 15 015 863 287 |
 
-- **The run reproduced the tracker's symptom.** The saved figure was +50.6 MB before the run. The
-  run's 64 MiB write never reached it, and its delete subtracted the full 64 MiB. That left −16.5 MB,
-  which the next start read as 2³² − 16 522 249 = 4 278 445 047 bytes (3.98 GiB).
+- **The run reproduced the tracker's symptom.** The next start read 4 278 445 047 bytes (3.98 GiB),
+  which is 2³² − 16 522 249: a saved figure of −16 522 249 after the delete. This restart measured only
+  that figure. It was about +50.6 MB before the delete if the delete took the full 64 MiB and the write
+  added nothing, which the off-disk reading in Playwright's Chrome (below) and round 2 show.
 - **The saved figure was already wrong before the run.** The origin held 238 MB of files, presumably
-  the demos' samples written through sync handles, and the saved figure counted 50.6 MB. The session's
+  the demos' samples written through sync handles, and the saved figure counted about 50.6 MB (derived as above). The session's
   tally at the run, 1.75 GB, matched neither.
 - **The envelope as uploaded reads `NOT CHECKED phantom-before-run`.** The judge then measured the drift
   from the session's `estimate()` baseline, which is not the saved figure. The judge now decodes the
@@ -548,8 +549,9 @@ Every run's stored readings were cleared from the Playwright profile's `localSto
 were taken, so a later load there judges nothing.
 
 What it means for the register:
-- **The symptom is reproduced in the user's Chrome.** A plain delete drove a +50.6 MB saved figure to
-  −16.5 MB, and the next start read the origin as 4.28 GB.
+- **The symptom is reproduced in the user's Chrome.** After a plain delete the next start read the origin
+  as 4.28 GB, a saved figure of −16.5 MB (about +50.6 MB before the delete, derived on the full-size
+  subtraction the off-disk reading and round 2 show).
 - **The entry's cause is now measured here, not only read.** A sync-handle write leaves the saved usage
   alone, a `removeEntry()` subtracts the full size, and truncating first through the handle leaves it
   alone. The demos' page-load sweep deletes `samples/v2` without truncating. So every swept sample

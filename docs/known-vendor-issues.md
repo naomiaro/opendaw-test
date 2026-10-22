@@ -120,10 +120,10 @@ Chromium tracker through the browser).
   value drifts.
 - **Symptom here:** `navigator.storage.estimate()` reported 40 MB against 8.7 GB of sample files under
   `samples/v2` — the SDK's OPFS worker writes samples through sync access handles, so they were never
-  counted. The inverse is measured too, in the user's Chrome across a full quit and reopen: a 64 MiB file
-  written through a sync handle never reached the saved figure, its plain `removeEntry()` took the full
-  64 MiB off it (+50 586 615 to −16 522 249 bytes), and the next start read the origin as 4 278 445 047
-  bytes, 2³² + the saved value. A truncate-first run and a second restart moved the saved figure by
+  counted. The inverse is measured too, in the user's Chrome across a full quit and reopen: after a
+  64 MiB file written through a sync handle was deleted with a plain `removeEntry()`, the next start read
+  the origin as 4 278 445 047 bytes, 2³² + a saved figure of −16 522 249. That is about +50.6 MB before
+  the delete if the delete took the full 64 MiB, as the off-disk reading below and round 2 show. A truncate-first run and a second restart moved the saved figure by
   −238 137 857 against −238 135 417 predicted for the 238 MB of demo samples deleted by hand in between,
   so the truncated delete subtracted nothing. In-session `estimate()` follows the write and the delete
   (`COUNTED`, +67 109 044 for 67 108 864 bytes). The saved per-origin file read off disk in Playwright's
