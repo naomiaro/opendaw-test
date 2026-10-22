@@ -1,6 +1,7 @@
 // Bugzilla REST sweep for the vendor register: `node bugzilla.cjs <host> search "<query>"…` lists open bugs
 // (quicksearch), `node bugzilla.cjs <host> read <id>…` prints each bug's header, description and last two comments.
-// Hosts: bugzilla.mozilla.org (Firefox, product Core, component "Web Audio"), bugs.webkit.org (WebKit).
+// Hosts: bugzilla.mozilla.org (Firefox; the Web Audio component is product Core / "Web Audio"), bugs.webkit.org (WebKit).
+// `search` is a plain quicksearch across every product; narrow with the component name in the query if needed.
 const https = require('https');
 const get = (url) => new Promise((res, rej) => https.get(url, { headers: { 'User-Agent': 'opendaw-test register sweep' } }, (r) => { let d = ''; r.on('data', c => d += c); r.on('end', () => { try { res(JSON.parse(d)); } catch (e) { rej(new Error(url + ': ' + d.slice(0, 120))); } }); }).on('error', rej));
 const [host, mode, ...args] = process.argv.slice(2);
@@ -15,7 +16,7 @@ const [host, mode, ...args] = process.argv.slice(2);
   } else {
     for (const id of args) {
       const [bug, com] = await Promise.all([get(`https://${host}/rest/bug/${id}?include_fields=id,summary,status,priority,severity,creation_time,last_change_time,platform,op_sys,version,depends_on,see_also,assigned_to`), get(`https://${host}/rest/bug/${id}/comment`)]);
-      const b = bug.bugs[0]; const cs = com.bugs[id].comments;
+      const b = (bug.bugs || [])[0]; if (!b) { console.log(`\n==== ${host} ${id}: no such bug`); continue; } const cs = com.bugs[id].comments;
       const clean = (t) => t.replace(/\s+/g, ' ').slice(0, 900);
       console.log(`\n==== ${host} ${id} | ${b.status} ${b.priority}/${b.severity || ''} | created ${b.creation_time.slice(0, 10)} changed ${b.last_change_time.slice(0, 10)} | ${b.platform} ${b.op_sys} | v${b.version} | see_also ${(b.see_also || []).join(' ')}\n${b.summary}\n-- description: ${clean(cs[0].text)}`);
       for (const c of cs.slice(1).slice(-2)) console.log(`-- comment ${c.count} (${c.creation_time.slice(0, 10)}): ${clean(c.text).slice(0, 500)}`);
