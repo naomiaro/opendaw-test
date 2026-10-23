@@ -19,6 +19,7 @@ import type { SoundfontService } from "@opendaw/studio-core";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { createHiddenSafeFrameDriver } from "./hiddenSafeFrameDriver";
 import { resolveFrameDriver, resolveFrameEvery, type FrameDriverKind } from "./frameDriverParams";
+import { installBfcacheReloadGuard } from "./bfcacheReloadGuard";
 import { createThrottledFrames } from "./frameScheduler";
 import { testFeatures } from "../features";
 import { installWasmEngine, ensureWasmReady } from "./wasmEngine";
@@ -117,6 +118,11 @@ export interface ProjectSetupResult {
 export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Promise<ProjectSetupResult> {
   const { localAudioBuffers, bpm = 120, onStatusUpdate, audioContextSampleRate, engineTap } = options;
   const frameDriver = resolveFrameDriver(options.frameDriver, window.location.search);
+
+  // A page restored from the back/forward cache runs its worklet clock at half speed
+  // (Chromium 575891839); it reloads itself instead. Installed before the first await so
+  // a restore during boot is caught too.
+  installBfcacheReloadGuard(window, () => window.location.reload());
 
   console.log("========================================");
   console.log("openDAW -> headless -> initializing");

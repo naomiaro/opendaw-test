@@ -224,12 +224,15 @@ Chromium tracker through the browser).
   `notRestoredReasons` and still "Playing", and its position advanced 1.50 s in 3.00 s of wall clock
   (0.4996); a fresh load of it ran at 0.993. One run, through an injected `pageshow` listener, not swept.
   The dev server's HMR socket and COOP / COEP did not keep the probe page out of the cache either.
-- **Workaround:** none applied. The option is to handle `pageshow` with `persisted` by tearing the engine
-  down or asking for a reload; the measurement now backs that decision. (A `pagehide` listener does not
-  keep a page out of the cache; an `unload` listener did, and Chrome is deprecating that;
-  `Cache-Control: no-store` is no longer an absolute block in Chrome either.) Run the probe in a Chrome
-  the user launched: Playwright's Chrome runs with `--disable-back-forward-cache` and reads
-  `NOT CHECKED not-cached`.
+- **Workaround:** in place. Every demo that boots through `initializeOpenDAW` installs
+  `installBfcacheReloadGuard` (`src/lib/bfcacheReloadGuard.ts`) before its first await: on `pageshow`
+  with `persisted` the page reloads itself, so a visitor who comes back with Back lands on the demo as
+  on a first visit. A reload is the one repair the tracker and the measurement agree on. The SDK-free
+  probe page does not boot through init and still measures the raw behaviour. (Keeping the page out of
+  the cache was not an option: a `pagehide` listener does not do it, an `unload` listener did and Chrome
+  is deprecating that, and `Cache-Control: no-store` is no longer an absolute block in Chrome either.)
+  Run the probe in a Chrome the user launched: Playwright's Chrome runs with
+  `--disable-back-forward-cache` and reads `NOT CHECKED not-cached`.
 - **Evidence:** `debug/2026-10-22-chromium-watched-issues/note.md`, "bfcache"; probe
   `chromium-watched-issues-debug-demo.html?issue=bfcache`, envelopes `chromium-bfcache-mvk1sddg-wilz.json`
   and `chromium-bfcache-mvk1suit-b7ru.json`.

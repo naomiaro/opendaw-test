@@ -923,6 +923,13 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   `src/lib/frameScheduler.ts`; the tick worker warns in the console if it fails to start). A
   hidden page with the transport idle stays idle on it. `?frameDriver=throttled&frameEvery=N`
   delivers every Nth real frame, for a slower engine sync than the display gives.
+  A page RESTORED from the back/forward cache (Back after leaving a playing demo) runs its
+  worklet clock at half speed on Chrome (Chromium 575891839, vendor register); `initializeOpenDAW`
+  installs `installBfcacheReloadGuard` (`src/lib/bfcacheReloadGuard.ts`), which reloads the page
+  on `pageshow` with `persisted`. A demo coming back from Back is therefore a FRESH load, never
+  a resumed one — nothing in a demo may expect state to survive it. The SDK-free probe
+  `chromium-watched-issues-debug-demo.html?issue=bfcache` does not boot through init and keeps
+  measuring the raw behaviour.
   `resize_window` does NOT reliably unhide a fully occluded window
   (verified: visibility stayed hidden after resize + screenshot). Audio and
   setInterval keep running while hidden — analyser RMS taps still measure fine;

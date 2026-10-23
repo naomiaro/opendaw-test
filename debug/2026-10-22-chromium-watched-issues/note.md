@@ -296,7 +296,8 @@ second. The route makes no difference; the switch does. Run this probe in a Chro
 context and a worklet node comes back from the cache with its clock at half speed in every window
 measured, and its context still reads `running`. A demo is such a page. The looping demo entered the cache
 while playing, despite its Web Lock, and came back with its transport at half speed. The demos have no
-`pageshow` handling. The workaround the entry names, tearing the engine down or asking for a reload on
+`pageshow` handling. (Update 2026-10-23: they do now — `installBfcacheReloadGuard` in
+`src/lib/bfcacheReloadGuard.ts`, installed by `initializeOpenDAW`, reloads a restored page.) The workaround the entry names, tearing the engine down or asking for a reload on
 `pageshow` with `persisted`, is now a decision backed by measurement. This probe checks that decision and
 any upstream fix. The demo reading was taken once, on one demo; it was not swept.
 
