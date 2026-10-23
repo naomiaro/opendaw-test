@@ -637,10 +637,13 @@ The probe takes two parameters for this:
 
 New figures are `runLengthsIn480s`, every run's length in units of 480 frames, and `captureRms`, the RMS
 after the head: room noise plus the page's own tone from the speaker at −20 dB. The microphone here was
-the user's "Amazon USB Streaming Mic (0d8c:0220)": stereo, 48 000, on its own USB clock, while the output
-was the built-in speaker. That is the different-clocks setup the tracker ties the duplicates to. The rows
-ran unattended in a room with its normal noise, in Playwright's Chrome 155.0.8059.85 on macOS 15.6.1,
-2026-10-22, with a real click and 60 s each.
+the user's "Amazon USB Streaming Mic (0d8c:0220)", a C-Media USB device. It is not the system default
+input (the built-in microphone is), so every row selects it explicitly with `&input=USB`; `&input=Amazon`
+picks the same device. Every row's envelope records the label, and `getSettings()` read 2 channels,
+48 000, echo cancellation off, the same device id (`8a72a83e…`) in all six. It runs on its own USB clock
+while the output was the built-in speaker. That is the different-clocks setup the tracker ties the
+duplicates to. The user was present and the room had its normal noise. The runs were in Playwright's
+Chrome 155.0.8059.85 on macOS 15.6.1, 2026-10-22, with a real click and 60 s each.
 
 | envelope | source | rate | `latencyHint` → `baseLatency` | stalls | runs after the start window (at stall times) | lengths | duplicates | RMS | verdict |
 |---|---|---|---|---|---|---|---|---|---|
