@@ -11,6 +11,7 @@ import { useTimelineLoop } from "@/hooks/useTimelineLoop";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
+import { MidiSupportNotice } from "@/components/MidiSupportNotice";
 import { BpmControl } from "@/components/BpmControl";
 import { RecordingPreferences } from "@/components/RecordingPreferences";
 import { PianoKeyboard, PIANO_STYLES, noteName } from "./PianoKeyboard";
@@ -85,7 +86,7 @@ const App: React.FC = () => {
 
   // MIDI state
   const [midiAvailable, setMidiAvailable] = useState(false);
-  const [midiError, setMidiError] = useState<string | null>(null);
+  const [midiDenied, setMidiDenied] = useState(false);
   const [midiDevices, setMidiDevices] = useState<MIDIInput[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>("");
   const [filterChannel, setFilterChannel] = useState(-1); // -1 = all
@@ -193,15 +194,12 @@ const App: React.FC = () => {
 
   // Request MIDI permission
   const handleRequestMidi = useCallback(async () => {
-    setMidiError(null);
+    setMidiDenied(false);
     try {
       await MidiDevices.requestPermission();
     } catch (error) {
       console.error("MIDI permission error: " + String(error));
-      setMidiError(
-        "MIDI access was denied, so external MIDI controllers are unavailable. " +
-        "The on-screen Software Keyboard still works for note input and recording."
-      );
+      setMidiDenied(true);
     }
     // inputDevices() always includes the Software Keyboard, even without permission
     const devices = MidiDevices.inputDevices();
@@ -339,6 +337,8 @@ const App: React.FC = () => {
             </p>
           </div>
 
+          <MidiSupportNotice canRequestMidi={midiAvailable} userAgent={navigator.userAgent} denied={midiDenied} />
+
           {initError ? (
             <Callout.Root color="red" role="alert">
               <Callout.Text>
@@ -354,19 +354,8 @@ const App: React.FC = () => {
                 <Flex direction="column" gap="4">
                   <Text size="2" weight="bold" color="gray">MIDI Devices</Text>
 
-                  {midiError && (
-                    <Callout.Root color="red" role="alert">
-                      <Callout.Text>{midiError}</Callout.Text>
-                    </Callout.Root>
-                  )}
-
                   {!midiAvailable ? (
-                    <Callout.Root color="red" role="alert">
-                      <Callout.Text>
-                        WebMIDI is not available in this browser. The on-screen Software Keyboard
-                        will still work for note input.
-                      </Callout.Text>
-                    </Callout.Root>
+                    <Text size="2" color="gray">On-screen Software Keyboard only.</Text>
                   ) : midiDevices.length === 0 ? (
                     <Flex direction="column" gap="3" align="center">
                       <Text size="2" color="gray">
