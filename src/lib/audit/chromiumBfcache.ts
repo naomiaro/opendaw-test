@@ -92,31 +92,39 @@ export function judgeBfcache(
   return { verdict, ratioBefore, ratioAfter, windowRatios, reason: null };
 }
 
-/** The reason Blink reports for `kRequestedMIDIPermission` is "requested midi permission"; the match is kept loose to its one distinctive word. */
+/** The API reports the feature as `midi` (measured 2026-10-23, Chrome 155, beside `masked`); "requested midi permission" is the tracker's and Blink's prose for `kRequestedMIDIPermission`. The match takes the one word both share. */
 const MIDI_REASON = /midi/i;
 
 /**
  * The MIDI arm's verdict. Restored from the cache with a `MIDIAccess` held: `CACHED WITH MIDI`,
- * which would be the half-speed defect reaching the MIDI pages. Kept out of the cache: the
- * reasons name MIDI, or the arm does not know why the page was not cached (the cache may be
- * off, as in Playwright's Chrome). Only the `reasons` entries are searched, never the page URL,
- * which carries `&midi=1` itself.
+ * which would put the MIDI pages within 575891839's reach (whether the clock halved is the
+ * `clockVerdict` figure). Kept out: `MIDI BLOCKS CACHE` when a reason names MIDI; `NOT CHECKED`
+ * when no reasons were reported (the cache may be off, as in Playwright's Chrome), when the text
+ * yielded no reason strings at all (not JSON, or a shape this walker does not know), or when the
+ * reported reasons do not name MIDI, which is the outcome that would mean Chromium changed. Only
+ * the `reasons` entries are searched, never the page URL, which carries `&midi=1` itself.
  */
 export function judgeMidiArm(persisted: boolean, notRestoredReasons: string | null): Verdict {
   if (persisted) return "CACHED WITH MIDI";
   if (notRestoredReasons === null) return notChecked("not-cached-no-reasons-reported");
-  return reasonEntries(notRestoredReasons).some((reason) => MIDI_REASON.test(reason))
+  const reasons = reasonEntries(notRestoredReasons);
+  if (reasons === null) return notChecked("not-cached-reasons-unrecognised");
+  return reasons.some((reason) => MIDI_REASON.test(reason))
     ? "MIDI BLOCKS CACHE"
     : notChecked("not-cached-without-a-midi-reason");
 }
 
-/** Every `reason` string in a serialized `NotRestoredReasons`, the frames' children included; the whole text when it does not parse. */
-function reasonEntries(serialized: string): string[] {
+/**
+ * Every `reason` string in a serialized `NotRestoredReasons`, the frames' children included
+ * (a cross-origin child carries `reasons: null`); null when the text is not JSON or holds no
+ * reason string anywhere, so that nothing read from text the walker did not understand.
+ */
+function reasonEntries(serialized: string): string[] | null {
   let value: unknown;
   try {
     value = JSON.parse(serialized);
   } catch {
-    return [serialized];
+    return null;
   }
   const found: string[] = [];
   const walk = (node: unknown): void => {
@@ -130,7 +138,7 @@ function reasonEntries(serialized: string): string[] {
     if (Array.isArray(node.children)) node.children.forEach(walk);
   };
   walk(value);
-  return found;
+  return found.length === 0 ? null : found;
 }
 
 /** Both tones' pitch as the analysers read them, in Hz. */

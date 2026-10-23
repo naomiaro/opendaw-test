@@ -29,7 +29,8 @@ import { InfoCircledIcon, PlayIcon } from "@radix-ui/react-icons";
 //
 // Parameters beyond `?issue=`, each read by its probe:
 //   bfcache         &midi=1 (Chromium 40635109: request Web MIDI access first, and judge whether the page is
-//                   cached at all — `MIDI BLOCKS CACHE` when the not-restored reasons name MIDI)
+//                   cached at all — `MIDI BLOCKS CACHE` when the not-restored reasons name MIDI;
+//                   `bfcacheOptionsFrom` in `chromiumBfcache.ts`, `1` only, anything else is refused)
 //   suspend-resume  &control=crackle|harmonic &witness=mic &pace=<ms> &cycles=<n> &stallMs=<ms> &gapMs=<ms>
 //                   &rate=44100|48000 &firstCycle=1 &module=file|blob &manual=1 &tracker=1
 //                   (`chromiumSuspendResumeOptions.ts`)
@@ -93,7 +94,13 @@ const BFCACHE_MIDI_INFO: IssueInfo = {
 };
 
 function infoFor(issue: WatchedIssue): IssueInfo {
-  if (issue === "bfcache" && new URLSearchParams(window.location.search).get("midi") === "1") return BFCACHE_MIDI_INFO;
+  if (issue === "bfcache") {
+    try {
+      if (bfcacheOptionsFrom(new URLSearchParams(window.location.search)).midi) return BFCACHE_MIDI_INFO;
+    } catch {
+      // A refused `&midi=` value: the plain heading, and the run reports the refusal.
+    }
+  }
   return ISSUE_INFO[issue];
 }
 

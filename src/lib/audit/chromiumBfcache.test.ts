@@ -164,25 +164,34 @@ describe("bfcacheOptionsFrom", () => {
     expect(bfcacheOptionsFrom(new URLSearchParams("issue=bfcache"))).toEqual({ midi: false });
   });
 
-  it("refuses any other value of &midi=", () => {
-    expect(() => bfcacheOptionsFrom(new URLSearchParams("midi=yes"))).toThrow(/midi/);
-    expect(() => bfcacheOptionsFrom(new URLSearchParams("midi=0"))).toThrow(/midi/);
+  it("refuses any other value of &midi=, the empty one included, naming it", () => {
+    expect(() => bfcacheOptionsFrom(new URLSearchParams("midi=yes"))).toThrow(/&midi=yes/);
+    expect(() => bfcacheOptionsFrom(new URLSearchParams("midi=0"))).toThrow(/&midi=0/);
+    expect(() => bfcacheOptionsFrom(new URLSearchParams("midi="))).toThrow(/&midi=/);
   });
 });
 
 describe("judgeMidiArm", () => {
-  // The shape `NotRestoredReasons.toJSON()` serializes to, with the reason Blink names for
-  // `WebSchedulerTrackedFeature::kRequestedMIDIPermission`.
-  const reasonsWith = (...reasons: string[]): string =>
-    JSON.stringify({ src: "", id: "", name: "", url: "https://localhost:5173/x", reasons: reasons.map((reason) => ({ reason })), children: [] });
+  // The shape `NotRestoredReasons.toJSON()` serializes to. Chrome 155 reported the feature as `midi`,
+  // beside `masked` (measured 2026-10-23); "requested midi permission" is Blink's prose for it.
+  const frame = (reasons: unknown, children: unknown[] = [], url = "https://localhost:5173/x"): Record<string, unknown> =>
+    ({ src: "", id: "", name: "", url, reasons, children });
+  const reasonsWith = (...reasons: string[]): string => JSON.stringify(frame(reasons.map((reason) => ({ reason }))));
 
   it("reads a page restored from the cache as cached with MIDI", () => {
     expect(judgeMidiArm(true, null)).toBe("CACHED WITH MIDI");
   });
 
   it("reads a page kept out of the cache for the MIDI reason as MIDI blocking the cache", () => {
+    expect(judgeMidiArm(false, reasonsWith("masked", "midi"))).toBe("MIDI BLOCKS CACHE");
     expect(judgeMidiArm(false, reasonsWith("requested midi permission"))).toBe("MIDI BLOCKS CACHE");
     expect(judgeMidiArm(false, reasonsWith("unload-listener", "MIDI"))).toBe("MIDI BLOCKS CACHE");
+  });
+
+  it("reads a MIDI reason reported on a child frame, and one reported as a bare string", () => {
+    const onChild = JSON.stringify(frame([], [frame([], [frame([{ reason: "midi" }])])]));
+    expect(judgeMidiArm(false, onChild)).toBe("MIDI BLOCKS CACHE");
+    expect(judgeMidiArm(false, JSON.stringify(frame(["midi"])))).toBe("MIDI BLOCKS CACHE");
   });
 
   it("does not judge a page kept out of the cache for other reasons, or for none reported", () => {
@@ -190,8 +199,21 @@ describe("judgeMidiArm", () => {
     expect(judgeMidiArm(false, null)).toBe("NOT CHECKED not-cached-no-reasons-reported");
   });
 
-  it("does not read the page's own URL as a MIDI reason", () => {
-    const reasons = JSON.stringify({ src: "", id: "", name: "", url: "https://localhost:5173/page.html?issue=bfcache&midi=1", reasons: [{ reason: "unload-listener" }], children: [] });
-    expect(judgeMidiArm(false, reasons)).toBe("NOT CHECKED not-cached-without-a-midi-reason");
+  it("survives a cross-origin child, whose fields are null", () => {
+    const crossOrigin = { src: "https://other.example/x", id: "", name: "", url: null, reasons: null, children: null };
+    expect(judgeMidiArm(false, JSON.stringify(frame([{ reason: "unload-listener" }], [crossOrigin])))).toBe("NOT CHECKED not-cached-without-a-midi-reason");
+  });
+
+  it("does not read text it did not understand as a reason, in either direction", () => {
+    expect(judgeMidiArm(false, "requested midi permission")).toBe("NOT CHECKED not-cached-reasons-unrecognised");
+    expect(judgeMidiArm(false, JSON.stringify({ blocking: ["midi"] }))).toBe("NOT CHECKED not-cached-reasons-unrecognised");
+    expect(judgeMidiArm(false, JSON.stringify(frame([{}])))).toBe("NOT CHECKED not-cached-reasons-unrecognised");
+    expect(judgeMidiArm(false, JSON.stringify(frame([])))).toBe("NOT CHECKED not-cached-reasons-unrecognised");
+  });
+
+  it("does not read the page's own URL, or another string field, as a MIDI reason", () => {
+    const url = "https://localhost:5173/page.html?issue=bfcache&midi=1";
+    expect(judgeMidiArm(false, JSON.stringify(frame([{ reason: "unload-listener" }], [], url)))).toBe("NOT CHECKED not-cached-without-a-midi-reason");
+    expect(judgeMidiArm(false, JSON.stringify({ ...frame([{ reason: "unload-listener" }]), name: "midi" }))).toBe("NOT CHECKED not-cached-without-a-midi-reason");
   });
 });
