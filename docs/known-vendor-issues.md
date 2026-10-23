@@ -336,9 +336,13 @@ Chromium tracker through the browser).
   (Windows, Chrome 77) were not seen here: every hole is whole render quanta. A later comment's lever,
   more than 30 s of complete silence on the output, reproduces too. With nothing but zeros reaching the
   destination, a 90 s built-in microphone capture has one zero run just after the 30 s mark of context
-  time: 128 frames 21 ms after it in two rows, and 256 frames 373 ms after it at `latencyHint` 0.1. With
-  the commenter's dither, `(n & 1) / 10000` written to the output, none in three rows. The context clock
-  never dipped under 0.92 in any second.
+  time: 128 frames 21 to 32 ms after it in three rows, and 256 frames 373 ms after it at `latencyHint`
+  0.1. With the commenter's dither, `(n & 1) / 10000` written to the output, there was none in four rows.
+  A later comment on the tracker says Chrome moves a silent output to a fake software device after
+  30 s. The context's `baseLatency`, `outputLatency` and `sinkId`, read each second, did not change at
+  the switch, and the clock never dipped under 0.92 in any second. Shipped Chrome fills an underrun with
+  zeros. "Duplicated blocks" describe a tracker engineer's unshipped prototype that repeats the prior
+  frame, so zero duplicates is the expected reading here.
 - **Where it bites here:** any recording through a `MediaStreamAudioSourceNode`. An 80 ms render-thread
   stall cost about 32 ms of input. The sink's buffer of about 48 ms is inferred from where the zeros
   start, not measured, since only 80 ms stalls were run. A long WASM compile, a large message handled on
@@ -352,8 +356,10 @@ Chromium tracker through the browser).
   regression would look the same.
 - **Workaround:** keep the worklet thread free of long tasks during a take; keep the audio graph small.
   Never let the output go completely silent for more than 30 s during a take: a dither of
-  `(n & 1) / 10000` on an output removed the post-30 s hole in every row here. Whether the engine's
-  output is exactly zero during a take with playback and the metronome off is not measured.
+  `(n & 1) / 10000` on an output removed the post-30 s hole in every row here. An engine that renders
+  exact zeros while recording (nothing playing, metronome off, monitoring off) would be moved to the
+  fake device after 30 s. Whether the engine's output is exactly zero then is not measured. A dither in
+  the engine output while recording is an upstream suggestion candidate, not drafted.
   A `MediaRecorder` capture of the same stream was clean in the reports (not what the SDK does).
   Check a stall-prone change on a real input, not the loopback.
 - **Evidence:** `debug/2026-10-22-chromium-watched-issues/note.md`, "capture-gaps" and its "Render-thread
@@ -367,7 +373,8 @@ Chromium tracker through the browser).
   unstalled envelopes `…-mvk38gho-fzko.json`, `…-mvk35pnx-czdb.json`, `…-mvk39txh-gxhd.json`,
   `…-mvk37334-0nth.json`; silent output against dither over 90 s (`&seconds=90&speakerTone=0`, `&dither=1`)
   `…-mvk9nuuo-s3x1.json`, `…-mvk9wabz-l4w8.json`, `…-mvk9s0lh-u9sp.json` (silent),
-  `…-mvk9pzn2-83bx.json`, `…-mvk9ybig-f9be.json`, `…-mvk9u1pc-xmca.json` (dither), loopback
+  `…-mvka3ha2-0d3j.json` (silent, with the latency and sink witness), `…-mvk9pzn2-83bx.json`,
+  `…-mvk9ybig-f9be.json`, `…-mvk9u1pc-xmca.json`, `…-mvka5n99-y698.json` (dither), loopback
   `…-mvk9lpjr-ddsz.json`.
 - **Last checked:** Chrome 155.0.8059.85, macOS 15.6.1, 2026-10-22: `GAPS`, with the zero runs at stall
   times, on the built-in and a USB microphone at both rates; one zero run just after 30 s of silent

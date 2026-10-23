@@ -15,6 +15,7 @@ import {
   clockRatios,
   captureDetail,
   secondsFrom,
+  firstChangedSecond,
   latencyHintFrom,
   lengthsIn480s,
   rmsAfterHead,
@@ -387,5 +388,13 @@ describe("secondsFrom", () => {
     expect(secondsFrom("90")).toBe(90);
     expect(() => secondsFrom("29")).toThrow(/seconds/);
     expect(() => secondsFrom("1.5")).toThrow(/seconds/);
+  });
+});
+
+describe("firstChangedSecond", () => {
+  it("gives the first reading (from 0) that differs from reading 0, null when none does", () => {
+    expect(firstChangedSecond(["0.005|0.028", "0.005|0.028", "0.005|0.04", "0.005|0.028"])).toBe(2);
+    expect(firstChangedSecond(["a", "a", "a"])).toBeNull();
+    expect(firstChangedSecond([])).toBeNull();
   });
 });

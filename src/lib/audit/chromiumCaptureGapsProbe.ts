@@ -32,7 +32,9 @@
  * output: the tracker reports Chrome dropping an output device after 30 s of complete silence) or,
  * with `&dither=1`, `(n & 1) / 10000` on every frame, the tracker commenter's fix. `&speakerTone=0`
  * turns the microphone rows' speaker tone off, so nothing else reaches the destination.
- * `&seconds=<n>` (30 to 600, default 60) sets the capture length. A clock witness reads the
+ * `&seconds=<n>` (30 to 600, default 60) sets the capture length. A witness reads, once a second,
+ * the context's `baseLatency`, `outputLatency` and `sinkId` (a switch to Chrome's fake output device
+ * may show there) and the
  * context's `currentTime` against `performance.now()` once a second during the capture.
  */
 
@@ -52,6 +54,7 @@ import {
   runsNearMark,
   clockRatios,
   clockDipSeconds,
+  firstChangedSecond,
   captureDetail,
   secondsFrom,
   type ClockReading,
@@ -257,6 +260,53 @@ function record(context: AudioContext, source: Source, frames: number, dither: b
   });
 }
 
+/** One witness reading of a context: its clock against the wall clock, its latencies and its sink. */
+interface WitnessReading extends ClockReading {
+  baseLatency: number;
+  outputLatency: number;
+  sinkId: string;
+}
+
+function sinkIdOf(context: AudioContext): string {
+  const sinkId = (context as unknown as { sinkId?: unknown }).sinkId;
+  if (sinkId === undefined) return "(unsupported)";
+  if (typeof sinkId === "string") return sinkId === "" ? "(default)" : sinkId;
+  return JSON.stringify(sinkId);
+}
+
+function readWitness(context: AudioContext): WitnessReading {
+  return {
+    contextSec: context.currentTime,
+    wallSec: performance.now() / 1000,
+    baseLatency: context.baseLatency,
+    outputLatency: context.outputLatency,
+    sinkId: sinkIdOf(context),
+  };
+}
+
+/** `base` under `prefix`: "clockRatioMin" stays itself without one, "generatorClockRatioMin" with "generator". */
+function named(prefix: string, base: string): string {
+  return prefix === "" ? base : prefix + base[0].toUpperCase() + base.slice(1);
+}
+
+/** The witness's figures: per-second clock ratios and latencies, the dips, the first latency change, a sink change. */
+function witnessFigures(prefix: string, readings: readonly WitnessReading[]): Figures {
+  const ratios = clockRatios(readings);
+  const minRatio = ratios.length === 0 ? null : Math.min(...ratios);
+  const ms = (seconds: number) => (seconds * 1000).toFixed(1);
+  return {
+    [named(prefix, "clockRatioPerSecond")]: ratios.map((ratio) => ratio.toFixed(3)).join(" "),
+    [named(prefix, "clockRatioMin")]: minRatio === null ? null : Number(minRatio.toFixed(4)),
+    [named(prefix, "clockRatioMinSecond")]: minRatio === null ? null : ratios.indexOf(minRatio) + 1,
+    [named(prefix, "clockDipSeconds")]: clockDipSeconds(ratios).join(" "),
+    [named(prefix, "baseLatencyPerSecond")]: readings.map((r) => ms(r.baseLatency)).join(" "),
+    [named(prefix, "outputLatencyPerSecond")]: readings.map((r) => ms(r.outputLatency)).join(" "),
+    [named(prefix, "latencyChangedAtSecond")]: firstChangedSecond(readings.map((r) => `${r.baseLatency}|${r.outputLatency}`)),
+    [named(prefix, "sinkIdChanged")]: String(firstChangedSecond(readings.map((r) => r.sinkId)) !== null),
+    [named(prefix, "sinkId")]: readings.length === 0 ? null : readings[0].sinkId,
+  };
+}
+
 function joinFirst(values: readonly (number | null)[], count: number = LISTED): string {
   return values.slice(0, count).map((value) => (value === null ? "-" : String(value))).join(" ");
 }
@@ -342,7 +392,7 @@ export async function runCaptureGapsProbe(_signal: AbortSignal, report: (step: s
     }
     let captured: Captured = { samples: new Float32Array(0), emptyQuanta: 0, firstFrame: 0 };
     let stalls: Stalls = { frames: [], roundTripMs: [], failed: null };
-    const clockReadings: ClockReading[] = [];
+    const clockReadings: WitnessReading[] = [];
     const events = { ended: 0, mute: 0 };
     let mutedAtStart = false;
     if (source !== null) {
@@ -354,7 +404,7 @@ export async function runCaptureGapsProbe(_signal: AbortSignal, report: (step: s
       const frames = captureSecondsWanted * context.sampleRate;
       let capturing = true;
       const stalling = stallNode === null ? null : stallUntil(stallNode, stallMs, stallEveryMs, () => !capturing);
-      const readClock = () => clockReadings.push({ contextSec: context.currentTime, wallSec: performance.now() / 1000 });
+      const readClock = () => clockReadings.push(readWitness(context));
       readClock();
       const witness = setInterval(readClock, 1000);
       try {
@@ -393,7 +443,6 @@ export async function runCaptureGapsProbe(_signal: AbortSignal, report: (step: s
     const dips = clockDipSeconds(ratios);
     const markFrame = SILENCE_MARK_SEC * context.sampleRate - captured.firstFrame;
     const nearMark = runsNearMark([...judged.startZeroRuns, ...judged.zeroRuns], markFrame, MARK_WINDOW_SEC * context.sampleRate);
-    const minRatio = ratios.length === 0 ? null : Math.min(...ratios);
     const settings: MediaTrackSettings = source === null ? {} : source.track.getSettings();
     const starts = (runs: readonly ZeroRun[]) => joinFirst(runs.map((run) => run.start));
     const lengths = (runs: readonly ZeroRun[]) => joinFirst(runs.map((run) => run.length));
@@ -435,10 +484,7 @@ export async function runCaptureGapsProbe(_signal: AbortSignal, report: (step: s
       runsNear30s: nearMark.length,
       runsNear30sStarts: joinFirst(nearMark.map((run) => run.start)),
       runsNear30sLengths: joinFirst(nearMark.map((run) => run.length)),
-      clockRatioPerSecond: ratios.map((ratio) => ratio.toFixed(3)).join(" "),
-      clockRatioMin: minRatio === null ? null : Number(minRatio.toFixed(4)),
-      clockRatioMinSecond: minRatio === null ? null : ratios.indexOf(minRatio) + 1,
-      clockDipSeconds: dips.join(" "),
+      ...witnessFigures("", clockReadings),
       stallZeroRunCount: judged.stallZeroRuns.length,
       stallZeroRunStarts: starts(judged.stallZeroRuns),
       stallZeroRunLengths: lengths(judged.stallZeroRuns),

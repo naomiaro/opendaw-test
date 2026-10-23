@@ -290,3 +290,9 @@ export function secondsFrom(value: string | null): number {
   if (!Number.isInteger(seconds) || seconds < 30 || seconds > 600) throw new Error(`&seconds=${value}: expected whole seconds from 30 to 600`);
   return seconds;
 }
+
+/** The first reading (counted from 0, one a second) whose value differs from reading 0's; null when none does. */
+export function firstChangedSecond(values: readonly string[]): number | null {
+  for (let i = 1; i < values.length; i++) if (values[i] !== values[0]) return i;
+  return null;
+}
