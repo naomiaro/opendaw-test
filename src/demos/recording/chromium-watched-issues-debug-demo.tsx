@@ -40,8 +40,8 @@ import { InfoCircledIcon, PlayIcon } from "@radix-ui/react-icons";
 //   output-latency  &roundtrip=1 (an acoustic round trip through the built-in microphone), and with it
 //                   &isolate=1 (the capture in a context of its own with no output), &sink=<output label text>,
 //                   &gain=<click amplitude, above 0 and at most 1>
-//   clock-drift     &rate=44100|48000 &seconds=<5-120, per phase> &hidden=1|0 (a candidate issue, no tracker yet:
-//                   the getOutputTimestamp relation stepping by render quanta; `clockDriftOptionsFrom`)
+//   clock-drift     &rate=44100|48000 &seconds=<5-120, per phase> &hidden=1|0 (Chromium 40726491, 40693959 merged in:
+//                   the getOutputTimestamp relation wandering; `clockDriftOptionsFrom`)
 //
 // No SDK engine is loaded: a probe says what Chrome does, not what the SDK repairs (the
 // suspend-resume and output-latency round-trip probes import lib-dsp's WAV encoder for their microphone
@@ -89,8 +89,8 @@ const ISSUE_INFO: Record<WatchedIssue, IssueInfo> = {
     title: "outputLatency with a Bluetooth headset",
   },
   "clock-drift": {
-    tracker: "candidate",
-    title: "getOutputTimestamp's context ↔ performance relation steps by render quanta while outputLatency stays put",
+    tracker: "40726491",
+    title: "getOutputTimestamp's context ↔ performance relation wanders (a 278-frame sawtooth on a resampled context) while outputLatency stays put",
   },
 };
 

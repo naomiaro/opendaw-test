@@ -1,9 +1,10 @@
 /**
- * Candidate Chromium issue (no tracker yet): the context ↔ performance relation that
- * `AudioContext.getOutputTimestamp()` reports moves in steps of whole render quanta during a
- * session while `outputLatency` stays put. Seen first on the MIDI output timing audit (up to two
- * quanta peak to peak within a 10 s repeat, 44.1 kHz, Chrome 155). This file holds the judgement,
- * pure and Node-testable; the browser half is `chromiumClockDriftProbe.ts`.
+ * Chromium 40726491 (40693959 merged in: the position behind `getOutputTimestamp` is updated per
+ * render quantum, not from the device): the context ↔ performance relation the pair reports wanders
+ * while `outputLatency` stays put. Measured here as a 278-frame sawtooth every 4.49 s on a 48 kHz
+ * context over a 44.1 kHz device and a quantum-sized step at the native rate; seen first on the MIDI
+ * output timing audit. This file holds the judgement, pure and Node-testable; the browser half is
+ * `chromiumClockDriftProbe.ts`.
  */
 
 /** `await` is the span between the hide prompt and the window going hidden, `returned` the ten seconds after it came back: both the operator's hand, neither a condition. */
