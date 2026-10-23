@@ -13,6 +13,9 @@
  *   1 MiB then of 16 MiB, each followed by a `flush()`; the write and the flush timed apart.
  * - `{ kind: "scan" }`: `estimate()`, the files left under `test/`, the bytes of every file.
  * A failure answers `{ ok: false, error }`; no sync access handle answers `{ ok: false, unavailable }`.
+ * A usage or flush request always closes its handle and removes its file, each step tried on its
+ * own, and a failure reports the first error (the write's before a cleanup's): a file left behind
+ * would count in every later scan. `estimate()` without a usage or quota reads null, not NaN.
  */
 
 export interface UsageRequest { kind: "usage"; runToken: string; mib: number; truncateFirst: boolean }
@@ -22,14 +25,14 @@ export type OpfsWorkerRequest = UsageRequest | FlushRequest | ScanRequest;
 
 export interface UsageResult {
   ok: true; kind: "usage"; writtenBytes: number; sizeReadBack: number; truncated: boolean; opfsBytesAtRun: number;
-  beforeWrite: number; afterWrite: number; afterDelete: number; quota: number; removed: boolean;
+  beforeWrite: number | null; afterWrite: number | null; afterDelete: number | null; quota: number | null; removed: boolean;
 }
 export interface FlushResult {
   ok: true; kind: "flush";
   writeMs1: number[]; flushMs1: number[]; writeMs16: number[]; flushMs16: number[];
-  finalSize: number; removed: boolean; quota: number;
+  finalSize: number; removed: boolean; quota: number | null;
 }
-export interface ScanResult { ok: true; kind: "scan"; usage: number; quota: number; testFiles: number; opfsBytes: number }
+export interface ScanResult { ok: true; kind: "scan"; usage: number | null; quota: number | null; testFiles: number; opfsBytes: number }
 export type OpfsWorkerAnswer =
   | UsageResult | FlushResult | ScanResult
   | { ok: false; unavailable: string } | { ok: false; error: string };
@@ -38,7 +41,18 @@ export const OPFS_WORKER_SOURCE = `
 const MIB = 1024 * 1024;
 const estimate = async () => {
   const e = await navigator.storage.estimate();
-  return { usage: e.usage ?? NaN, quota: e.quota ?? NaN };
+  return { usage: typeof e.usage === "number" ? e.usage : null, quota: typeof e.quota === "number" ? e.quota : null };
+};
+// Runs \`body\`, then each cleanup step on its own; rethrows the body's error first, else the first cleanup's.
+const withCleanup = async (body, steps) => {
+  let failure = null;
+  let result;
+  try { result = await body(); } catch (e) { failure = { error: e }; }
+  for (const step of steps) {
+    try { await step(); } catch (e) { if (failure === null) failure = { error: e }; }
+  }
+  if (failure !== null) throw failure.error;
+  return result;
 };
 const testDir = async () => (await navigator.storage.getDirectory()).getDirectoryHandle("test", { create: true });
 const exists = async (dir, name) => {
@@ -57,22 +71,22 @@ const usage = async (req) => {
   const file = await dir.getFileHandle(name, { create: true });
   let handle = null;
   let written = 0, afterWrite, sizeReadBack;
-  try {
+  await withCleanup(async () => {
     handle = await file.createSyncAccessHandle();
     const data = chunk(MIB);
     for (let i = 0; i < req.mib; i++) written += handle.write(data, { at: i * MIB });
     handle.flush();
-    handle.close();
+    const closing = handle;
     handle = null;
+    closing.close();
     afterWrite = await estimate();
     handle = await file.createSyncAccessHandle();
     sizeReadBack = handle.getSize();
     if (req.truncateFirst) { handle.truncate(0); handle.flush(); }
-  } finally {
-    // A throw mid-write must not leave the file behind for a later scan to count.
-    if (handle !== null) handle.close();
-    await dir.removeEntry(name);
-  }
+  }, [
+    () => { if (handle !== null) { const open = handle; handle = null; open.close(); } },
+    () => dir.removeEntry(name),
+  ]);
   const afterDelete = await estimate();
   return { ok: true, kind: "usage", writtenBytes: written, sizeReadBack, truncated: req.truncateFirst, opfsBytesAtRun: atRun.bytes,
     beforeWrite: before.usage, afterWrite: afterWrite.usage, afterDelete: afterDelete.usage,
@@ -97,14 +111,11 @@ const flush = async (req) => {
     return { writeMs, flushMs };
   };
   let one, sixteen, finalSize;
-  try {
+  await withCleanup(async () => {
     one = timed(MIB);
     sixteen = timed(16 * MIB);
     finalSize = handle.getSize();
-  } finally {
-    handle.close();
-    await dir.removeEntry(name);
-  }
+  }, [() => handle.close(), () => dir.removeEntry(name)]);
   const { quota } = await estimate();
   return { ok: true, kind: "flush", writeMs1: one.writeMs, flushMs1: one.flushMs, writeMs16: sixteen.writeMs,
     flushMs16: sixteen.flushMs, finalSize, removed: !(await exists(dir, name)), quota };

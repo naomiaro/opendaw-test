@@ -6,7 +6,11 @@ import {
   countDropouts,
   judgeHalfRate,
   judgeSuspendResume,
+  MIN_CYCLES,
+  PURITY_DROP_DB,
+  SIGNAL_FLOOR_RMS,
   purityOf,
+  readingWord,
   tonePurityFromSpectrum,
   type TonePurity,
 } from "./chromiumSuspendResume";
@@ -18,6 +22,11 @@ const tone = (purityDb: number, dropouts = 0, clicks = 0): TonePurity => ({
   clicks,
 });
 const baseline = tone(60);
+/** A baseline window's RMS well above the signal floor: the tone at 0.2. */
+const BASE_RMS = 0.2 / Math.SQRT2;
+const judge = (base: TonePurity, after: TonePurity[], n: number) => judgeSuspendResume(base, after, n, BASE_RMS);
+/** A window the analyser read as silence: every bin −Infinity. */
+const silent = (dropouts = 0): TonePurity => ({ fundamentalDb: -Infinity, harmonicsDb: -Infinity, dropouts, clicks: 0 });
 const cycles = (n: number, at: (cycle: number) => TonePurity = () => tone(59)): TonePurity[] =>
   Array.from({ length: n }, (_, i) => at(i));
 
@@ -36,7 +45,7 @@ describe("purityOf", () => {
 
 describe("judgeSuspendResume", () => {
   it("reads a run whose purity falls 20 dB after cycle 7 as distorted, naming the cycle", () => {
-    const judged = judgeSuspendResume(baseline, cycles(20, (i) => (i >= 7 ? tone(40) : tone(59))), 20);
+    const judged = judge(baseline, cycles(20, (i) => (i >= 7 ? tone(40) : tone(59))), 20);
     expect(judged.verdict).toBe("DISTORTED");
     expect(judged.worstPurityDb).toBeCloseTo(40, 6);
     expect(judged.worstCycle).toBe(7);
@@ -44,42 +53,91 @@ describe("judgeSuspendResume", () => {
   });
 
   it("reads a run whose every cycle stays within 3 dB of the baseline as clean", () => {
-    const judged = judgeSuspendResume(baseline, cycles(20, (i) => tone(i % 2 === 0 ? 57 : 61)), 20);
+    const judged = judge(baseline, cycles(20, (i) => tone(i % 2 === 0 ? 57 : 61)), 20);
     expect(judged.verdict).toBe("CLEAN");
     expect(judged.worstPurityDb).toBeCloseTo(57, 6);
     expect(judged.worstCycle).toBe(0);
   });
 
-  it("does not judge fewer than ten cycles", () => {
-    const judged = judgeSuspendResume(baseline, cycles(5, () => tone(40)), 5);
+  it("needs ten cycles", () => {
+    expect(MIN_CYCLES).toBe(10);
+  });
+
+  it("does not judge fewer than MIN_CYCLES cycles", () => {
+    const judged = judge(baseline, cycles(MIN_CYCLES - 1, () => tone(40)), MIN_CYCLES - 1);
     expect(judged.verdict).toBe("NOT CHECKED");
+    expect(judged.notCheckedReason).toBe("too-few-cycles");
     expect(judged.worstPurityDb).toBeCloseTo(40, 6);
   });
 
-  it("judges a run cut short between ten and nineteen cycles on the cycles it has", () => {
-    expect(judgeSuspendResume(baseline, cycles(12), 12).verdict).toBe("CLEAN");
+  it("judges a run of exactly MIN_CYCLES cycles", () => {
+    expect(judge(baseline, cycles(MIN_CYCLES), MIN_CYCLES).verdict).toBe("CLEAN");
   });
 
-  it("reads a 12 dB fall as clean and anything past it as distorted", () => {
-    expect(judgeSuspendResume(baseline, cycles(20, () => tone(48)), 20).verdict).toBe("CLEAN");
-    expect(judgeSuspendResume(baseline, cycles(20, () => tone(47.9)), 20).verdict).toBe("DISTORTED");
+  it("judges a run cut short between ten and nineteen cycles on the cycles it has", () => {
+    expect(judge(baseline, cycles(12), 12).verdict).toBe("CLEAN");
+  });
+
+  it("does not judge a run that names twenty cycles but holds no window", () => {
+    const judged = judge(baseline, [], 20);
+    expect(judged.verdict).toBe("NOT CHECKED");
+    expect(judged.notCheckedReason).toBe("too-few-cycles");
+  });
+
+  it("reads a fall of exactly PURITY_DROP_DB as clean and anything past it as distorted", () => {
+    const at = purityOf(baseline) - PURITY_DROP_DB;
+    expect(judge(baseline, cycles(20, () => tone(at)), 20).verdict).toBe("CLEAN");
+    expect(judge(baseline, cycles(20, () => tone(at - 0.1)), 20).verdict).toBe("DISTORTED");
+  });
+
+  it("does not judge against a silent baseline: every bin −Infinity reads NOT CHECKED no-signal", () => {
+    const judged = judge(silent(), cycles(20), 20);
+    expect(judged.verdict).toBe("NOT CHECKED");
+    expect(judged.notCheckedReason).toBe("no-signal");
+  });
+
+  it("does not judge against a baseline whose RMS is under the signal floor", () => {
+    const judged = judgeSuspendResume(baseline, cycles(20), 20, SIGNAL_FLOOR_RMS / 2);
+    expect(judged.verdict).toBe("NOT CHECKED");
+    expect(judged.notCheckedReason).toBe("no-signal");
+    expect(judgeSuspendResume(baseline, cycles(20), 20, SIGNAL_FLOOR_RMS).verdict).toBe("CLEAN");
+  });
+
+  it("does not judge against a baseline whose purity is not a number", () => {
+    const judged = judge({ fundamentalDb: -10, harmonicsDb: -Infinity, dropouts: 0, clicks: 0 }, cycles(20), 20);
+    expect(judged.verdict).toBe("NOT CHECKED");
+    expect(judged.notCheckedReason).toBe("no-baseline-purity");
+  });
+
+  it("never reads silent windows after a sounding baseline as clean", () => {
+    const judged = judge(baseline, cycles(20, (i) => (i >= 15 ? silent() : tone(59))), 20);
+    expect(judged.verdict).toBe("DISTORTED");
+    expect(judged.silentWindows).toBe(5);
+    expect(judged.worstCycle).toBe(15);
+  });
+
+  it("does not let a silent first window hide a later fall: NaN then a fall reads distorted", () => {
+    const judged = judge(baseline, cycles(20, (i) => (i === 0 ? silent() : i === 10 ? tone(30) : tone(59))), 20);
+    expect(judged.verdict).toBe("DISTORTED");
+    expect(judged.worstCycle).toBe(0);
+    expect(judged.worstPurityDb).toBe(-Infinity);
   });
 
   it("reads dropouts in two consecutive windows as distorted, and in two apart as clean", () => {
-    const together = judgeSuspendResume(baseline, cycles(20, (i) => tone(59, i === 4 || i === 5 ? 3 : 0)), 20);
+    const together = judge(baseline, cycles(20, (i) => tone(59, i === 4 || i === 5 ? 3 : 0)), 20);
     expect(together.verdict).toBe("DISTORTED");
     expect(together.dropoutsAfter).toBe(6);
-    const apart = judgeSuspendResume(baseline, cycles(20, (i) => tone(59, i === 4 || i === 6 ? 3 : 0)), 20);
+    const apart = judge(baseline, cycles(20, (i) => tone(59, i === 4 || i === 6 ? 3 : 0)), 20);
     expect(apart.verdict).toBe("CLEAN");
     expect(apart.dropoutsAfter).toBe(6);
   });
 
   it("reads one window with more clicks than the baseline's plus the margin as distorted", () => {
-    const clicky = judgeSuspendResume(baseline, cycles(20, (i) => tone(59, 0, i === 9 ? CLICK_MARGIN + 1 : 0)), 20);
+    const clicky = judge(baseline, cycles(20, (i) => tone(59, 0, i === 9 ? CLICK_MARGIN + 1 : 0)), 20);
     expect(clicky.verdict).toBe("DISTORTED");
     expect(clicky.worstClicks).toBe(CLICK_MARGIN + 1);
     expect(clicky.worstClicksCycle).toBe(9);
-    const withinMargin = judgeSuspendResume(baseline, cycles(20, () => tone(59, 0, CLICK_MARGIN)), 20);
+    const withinMargin = judge(baseline, cycles(20, () => tone(59, 0, CLICK_MARGIN)), 20);
     expect(withinMargin.verdict).toBe("CLEAN");
   });
 });
@@ -131,6 +189,40 @@ describe("countDropouts", () => {
     samples.fill(0.001, 384, 512); // one nearly silent
     expect(countDropouts(samples, 128, 0.5 / Math.SQRT2)).toBe(2);
   });
+
+  it("counts every all-zero window as a dropout, even against a baseline RMS of 0", () => {
+    expect(countDropouts(new Float32Array(512), 128, 0)).toBe(4);
+    const samples = sine(512);
+    samples.fill(0, 256, 384);
+    expect(countDropouts(samples, 128, 0)).toBe(1);
+  });
+});
+
+describe("tonePurityFromSpectrum on silence", () => {
+  it("reads an all −Infinity spectrum as a −Infinity fundamental and a purity that is not a number", () => {
+    const purity = tonePurityFromSpectrum(new Float32Array(512).fill(-Infinity), 48000, 1024, 0, 0);
+    expect(purity.fundamentalDb).toBe(-Infinity);
+    expect(purity.harmonicsDb).toBe(-Infinity);
+    expect(Number.isNaN(purityOf(purity))).toBe(true);
+  });
+});
+
+describe("readingWord", () => {
+  const clean = judge(baseline, cycles(20), 20);
+  const distorted = judge(baseline, cycles(20, () => tone(30)), 20);
+
+  it("reads a failed step as NOT CHECKED <step> however many cycles were banked", () => {
+    expect(readingWord(clean, 20, "resume-14")).toBe("NOT CHECKED resume-14");
+    expect(readingWord(distorted, 20, "resume-14")).toBe("NOT CHECKED resume-14");
+    expect(readingWord(clean, 3, "suspend-4")).toBe("NOT CHECKED suspend-4");
+  });
+
+  it("names the cycle count and the silent baseline, else the judgement's word", () => {
+    expect(readingWord(judge(baseline, cycles(5), 5), 5, null)).toBe("NOT CHECKED 5-cycles");
+    expect(readingWord(judge(silent(), cycles(20), 20), 20, null)).toBe("NOT CHECKED no-signal");
+    expect(readingWord(clean, 20, null)).toBe("CLEAN");
+    expect(readingWord(distorted, 20, null)).toBe("DISTORTED");
+  });
 });
 
 describe("clicks", () => {
@@ -145,7 +237,7 @@ describe("clicks", () => {
     for (const at of [5000, 15000, 25000]) samples[at] = -samples[at] + (samples[at] >= 0 ? -0.3 : 0.3);
     const clicks = countClicks(samples, threshold);
     expect(clicks).toBeGreaterThanOrEqual(3);
-    const judged = judgeSuspendResume(tone(60), cycles(20, (i) => tone(60, 0, i === 3 ? clicks : 0)), 20);
+    const judged = judge(tone(60), cycles(20, (i) => tone(60, 0, i === 3 ? clicks : 0)), 20);
     expect(judged.verdict).toBe("DISTORTED");
   });
 });

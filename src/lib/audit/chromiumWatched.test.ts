@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { WATCHED_ISSUES, browserOf, envelopeName, issueFrom, newRunToken, platformOf, runDate } from "./chromiumWatched";
+import { WATCHED_ISSUES, browserOf, envelopeName, isNotChecked, issueFrom, makeEnvelope, newRunToken, notChecked, platformOf, runDate } from "./chromiumWatched";
 
 describe("issueFrom", () => {
   it("reads a known issue from the query", () => {
@@ -95,5 +95,36 @@ describe("platformOf", () => {
   it("gives nulls when the high-entropy read rejects", async () => {
     const nav = { userAgent: "UA", userAgentData: { getHighEntropyValues: () => Promise.reject(new Error("denied")) } };
     expect(await platformOf(nav)).toEqual({ userAgent: "UA", uaFullVersion: null, platformVersion: null });
+  });
+});
+
+describe("makeEnvelope", () => {
+  it("writes the verdict as the first figure, over any verdict the figures carry", () => {
+    const envelope = makeEnvelope(
+      { issue: "output-latency", chrome: "Chrome 1", date: "2026-10-22", runToken: "a-b" },
+      "MEASURED",
+      { rows: "x", verdict: "stale" },
+    );
+    expect(envelope.verdict).toBe("MEASURED");
+    expect(Object.keys(envelope.figures)[0]).toBe("verdict");
+    expect(envelope.figures.verdict).toBe("MEASURED");
+    expect(envelope.figures.rows).toBe("x");
+  });
+
+  it("writes the verdict even when there are no other figures", () => {
+    const envelope = makeEnvelope({ issue: "output-latency", chrome: "c", date: "d", runToken: "r" }, notChecked("context-suspended"), {});
+    expect(envelope.figures).toEqual({ verdict: "NOT CHECKED context-suspended" });
+  });
+});
+
+describe("notChecked / isNotChecked", () => {
+  it("prefixes the reason and tells a NOT CHECKED word from a closed one", () => {
+    expect(notChecked("no-signal")).toBe("NOT CHECKED no-signal");
+    expect(isNotChecked(notChecked("x"))).toBe(true);
+    expect(isNotChecked("CLEAN")).toBe(false);
+  });
+
+  it("refuses an empty reason: every NOT CHECKED names why", () => {
+    expect(() => notChecked("")).toThrow();
   });
 });

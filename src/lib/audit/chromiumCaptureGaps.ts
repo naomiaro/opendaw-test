@@ -5,7 +5,11 @@
 // frame are the stream starting, counted apart as the head, not a gap. Events in the first
 // `START_WINDOW_SEC` after the head are the source warming up: reported apart, and they read
 // `START GAPS`, not the tracker's steady-state `GAPS`. A head longer than `MAX_HEAD_SEC` is no
-// signal at all (a muted microphone delivers exact zeros) and reads `NOT CHECKED no-signal`.
+// signal in the first 5 s (a muted microphone delivers exact zeros) and reads `NOT CHECKED no-signal`.
+// A source that ended, was muted or fed the recorder an empty input during the capture leaves zeros
+// that are not the browser's: the run reads `NOT CHECKED source-<ended|muted|empty-input>`.
+
+import { notChecked, type Verdict } from "./chromiumWatched";
 
 /** The shortest run of exact zeros counted as a gap: a tone never holds zero this long. */
 export const MIN_ZERO_RUN = 100;
@@ -15,7 +19,7 @@ export const DUPLICATE_BLOCK = 128;
 export const MIN_CAPTURE_SECONDS = 30;
 /** Events starting this soon after the first non-zero frame are the source starting up. */
 export const START_WINDOW_SEC = 0.1;
-/** A head of zeros longer than this is no signal, not a stream starting. */
+/** A head of zeros longer than this is no signal in the first 5 s, not a stream starting. */
 export const MAX_HEAD_SEC = 5;
 /** One render quantum. */
 export const QUANTUM_FRAMES = 128;
@@ -131,4 +135,39 @@ export function judgeCaptureGaps(
     startZeroRuns,
     startDuplicates,
   };
+}
+
+/** What became of the capture's source while it ran. */
+export interface SourceHealth {
+  /** The track fired `ended`, or read `readyState === "ended"` at the end. */
+  ended: boolean;
+  /** The track fired `mute`, or read `muted` at the start or the end. */
+  muted: boolean;
+  /** Render quanta whose input had no channel: the recorder wrote zeros for them. */
+  emptyQuanta: number;
+}
+
+/** Why the source's zeros are not the browser's, the worst first; null for a healthy source. */
+export function sourceProblem(health: SourceHealth): "source-ended" | "source-muted" | "source-empty-input" | null {
+  if (health.ended) return "source-ended";
+  if (health.muted) return "source-muted";
+  if (health.emptyQuanta > 0) return "source-empty-input";
+  return null;
+}
+
+/**
+ * The run's verdict, by precedence: a failed step (`NOT CHECKED <step>`), then a source problem,
+ * then the judgement (its bare `NOT CHECKED` names the seconds captured).
+ */
+export function captureVerdict(
+  judged: CaptureGapsJudgement,
+  failedStep: string | null,
+  health: SourceHealth,
+  captureSeconds: number,
+): Verdict {
+  if (failedStep !== null) return notChecked(failedStep);
+  const problem = sourceProblem(health);
+  if (problem !== null) return notChecked(problem);
+  if (judged.verdict === "NOT CHECKED") return notChecked(`${captureSeconds.toFixed(1)}-s`);
+  return judged.verdict;
 }

@@ -1,5 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { clockOffsetMs, contextTimeToPerformanceMs, expectedCaptureFrame, findClickOffsets, median, percentile, performanceMsToContextTime, type ClockPair } from "./chromiumRoundTrip";
+import {
+  CLOCK_PAIR_MAX_SPREAD_MS,
+  MIN_CLICKS_FOUND,
+  clickGainFrom,
+  clockOffsetMs,
+  clockPairSpreadMs,
+  contextTimeToPerformanceMs,
+  expectedCaptureFrame,
+  findClickOffsets,
+  judgeRoundTrip,
+  median,
+  percentile,
+  performanceMsToContextTime,
+  type ClockPair,
+} from "./chromiumRoundTrip";
 
 const RATE = 48000;
 
@@ -91,5 +105,73 @@ describe("clock pairs", () => {
 
   it("throws without any pair", () => {
     expect(() => clockOffsetMs([], 1)).toThrow();
+  });
+});
+
+describe("a click before the first clock pair", () => {
+  it("takes the offset from the nearest pair, the first one", () => {
+    const late = pairsAt(5000, 0.7).filter((p) => p.contextTime >= 5);
+    expect(clockOffsetMs(late, 1)).toBeCloseTo(late[0].performanceMs - late[0].contextTime * 1000, 6);
+    expect(contextTimeToPerformanceMs(late, 1)).toBeCloseTo(1000 + late[0].performanceMs - 5000, 6);
+  });
+});
+
+describe("clockPairSpreadMs", () => {
+  it("is 0 for pairs that agree, and small for a drifting clock or a pair read late now and then", () => {
+    expect(clockPairSpreadMs(pairsAt(5000), [2, 8])).toBeCloseTo(0, 6);
+    expect(clockPairSpreadMs(pairsAt(5000, 0.7), [2, 8])).toBeLessThan(2);
+    expect(clockPairSpreadMs(pairsAt(5000, 0, 3), [2, 8])).toBeLessThanOrEqual(4);
+  });
+
+  it("is the widest spread around any of the times asked about", () => {
+    const pairs = pairsAt(5000).map((p, i) => (p.contextTime > 10 ? { ...p, performanceMs: p.performanceMs + (i % 2 === 0 ? 30 : 0) } : p));
+    expect(clockPairSpreadMs(pairs, [2])).toBeCloseTo(0, 6);
+    expect(clockPairSpreadMs(pairs, [2, 12])).toBeGreaterThan(CLOCK_PAIR_MAX_SPREAD_MS);
+  });
+
+  it("is null without pairs", () => {
+    expect(clockPairSpreadMs([], [1])).toBeNull();
+  });
+});
+
+describe("judgeRoundTrip", () => {
+  const ten = (ms: number) => Array.from({ length: 10 }, () => ms);
+  const base = { clicks: 10, outputLabel: "MacBook Pro Speakers", pairSpreadMs: null };
+
+  it("measures ten found clicks, and exactly MIN_CLICKS_FOUND of them", () => {
+    expect(judgeRoundTrip({ ...base, roundTripsMs: ten(68) })).toBe("MEASURED");
+    const some = [...ten(68).slice(0, MIN_CLICKS_FOUND), ...Array.from({ length: 10 - MIN_CLICKS_FOUND }, () => null)];
+    expect(judgeRoundTrip({ ...base, roundTripsMs: some })).toBe("MEASURED");
+  });
+
+  it("does not measure fewer than MIN_CLICKS_FOUND, naming the missed clicks and the output", () => {
+    const none = Array.from({ length: 10 }, () => null);
+    expect(judgeRoundTrip({ ...base, roundTripsMs: none })).toBe(
+      "NOT CHECKED 0-of-10-clicks-found-missed-1-2-3-4-5-6-7-8-9-10-check-the-system-output-device-which-was-MacBook-Pro-Speakers",
+    );
+  });
+
+  it("does not measure a round trip at or before its click: NOT CHECKED non-positive-round-trip", () => {
+    expect(judgeRoundTrip({ ...base, roundTripsMs: [...ten(68).slice(0, 9), -2] })).toBe("NOT CHECKED non-positive-round-trip");
+    expect(judgeRoundTrip({ ...base, roundTripsMs: [...ten(68).slice(0, 9), 0] })).toBe("NOT CHECKED non-positive-round-trip");
+  });
+
+  it("does not measure through clock pairs that disagree: NOT CHECKED clock-pair-unstable", () => {
+    expect(judgeRoundTrip({ ...base, roundTripsMs: ten(68), pairSpreadMs: CLOCK_PAIR_MAX_SPREAD_MS })).toBe("MEASURED");
+    expect(judgeRoundTrip({ ...base, roundTripsMs: ten(68), pairSpreadMs: CLOCK_PAIR_MAX_SPREAD_MS + 0.1 })).toBe("NOT CHECKED clock-pair-unstable");
+  });
+});
+
+describe("clickGainFrom", () => {
+  it("reads &gain= as an amplitude above 0 and at most 1, the fallback without one", () => {
+    expect(clickGainFrom(new URLSearchParams(""), 0.5)).toBe(0.5);
+    expect(clickGainFrom(new URLSearchParams("gain=0.05"), 0.5)).toBe(0.05);
+    expect(clickGainFrom(new URLSearchParams("gain=1"), 0.5)).toBe(1);
+  });
+
+  it("refuses anything else: a silent or clipped click would read as a missed one", () => {
+    for (const bad of ["abc", "0", "-1", "1.5", "Infinity", ""]) {
+      expect(() => clickGainFrom(new URLSearchParams(`gain=${bad}`), 0.5)).toThrow("&gain=");
+    }
   });
 });

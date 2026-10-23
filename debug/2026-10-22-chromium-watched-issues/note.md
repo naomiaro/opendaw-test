@@ -1,11 +1,12 @@
 # Chromium watched issues, measured on this repo's own probes
 
-**Started:** 2026-10-23. **Plan:** `docs/superpowers/plans/2026-10-22-chromium-watched-issues-measurement.md`,
+**Started:** 2026-10-22. **Plan:** `docs/superpowers/plans/2026-10-22-chromium-watched-issues-measurement.md`,
 deleted in the PR that completed it (git history keeps it); this note and the register carry its decisions.
 **Spec:** `docs/known-vendor-issues.md`, "# Chromium / ## Watched — read from the tracker, not reproduced
 here", plus the unmeasured half of the measured OPFS entry (436552046: the persisted usage going negative
 after a delete and a restart).
-**SDK:** none. The probes load no SDK: they say what Chrome does, not what the SDK repairs. Where an SDK
+**SDK:** none. The probes load no SDK engine (the suspend-resume and round-trip probes import lib-dsp's
+WAV encoder for their captures, nothing else): they say what Chrome does, not what the SDK repairs. Where an SDK
 path is the witness (the first-read issue), the finding names the installed release.
 **Page:** [`chromium-watched-issues-debug-demo.html?issue=<name>`](../../chromium-watched-issues-debug-demo.html)
 (`src/demos/recording/chromium-watched-issues-debug-demo.tsx`; shared shape `src/lib/audit/chromiumWatched.ts`).
@@ -59,14 +60,14 @@ stand), the single-window bfcache runs, and the OPFS stored-readings load before
 
 | `?issue=` | Chromium issue | What the probe does | Verdict words | Status |
 |---|---|---|---|---|
-| `first-read` | [571344687](https://issues.chromium.org/issues/571344687) — stale first clock read after a slow module load | Builds a worklet node right after `addModule()` resolves (a slow module, a large module, none), five runs each in a running context; the processor reports `currentFrame` from its constructor and first three `process()` calls, judged against the main thread's frame read just before the node was made | `STALE FIRST READ`, `FIRST READ TRUE`, `NOT CHECKED` | **reproduced**: `STALE FIRST READ` on Chrome 155, 2026-10-22 |
-| `bfcache` | [575891839](https://issues.chromium.org/issues/575891839) — half-speed worklet clock after a back/forward-cache restore | Measures the context clock against `performance.now()` with a worklet tone and an oscillator control playing, navigates away and back; on `pageshow.persisted` re-measures in three one-second windows and judges on the last two, otherwise records the `notRestoredReasons` | `HALF SPEED`, `NORMAL`, `NOT CHECKED` | **reproduced**: `HALF SPEED` on Chrome 155, 2026-10-22, all three restore windows; a playing demo also restores at half speed (the user's Chrome; Playwright's cannot enter the cache) |
-| `suspend-resume` | [560233271](https://issues.chromium.org/issues/560233271) — distortion after suspend / resume cycles | The tracker's tone (a stateless 440 Hz sine from `currentFrame`, from a module file) into an analyser; a two-second baseline, then `suspend()` / `resume()` cycles, with the tracker's preconditions under `&tracker=1` (44.1 kHz, one restart, an 80 ms worklet-thread stall before each cycle). Each one-second window is judged three ways: the clock witness (context clock against wall clock, `process()` calls per second), the graph's purity, click and dropout rules, and with `&witness=mic` the microphone in a context of its own | `HALF RATE`, `DISTORTED`, `DISTORTED (mic only)`, `CLEAN`, `NOT CHECKED` | **reproduced**: `HALF RATE` with `&tracker=1` (an 80 ms worklet-thread stall before each cycle) on Chrome 155, 2026-10-22; the render rate halves at cycle 2, 3 or 10 and stays halved (344.5 → 172.3 `process()` calls per second, clock 0.50); without the stall, 20 cycles stay true |
-| `capture-gaps` | [40103985](https://issues.chromium.org/issues/40103985) — zero-filled gaps and duplicated blocks in `getUserMedia` input | Records 60 s of a `MediaStreamAudioSourceNode` (`&source=loopback` or `mic`, `&rate=48000` or `44100`) through a worklet; counts zero runs of 100 frames or more after the head and 128-frame blocks identical to the one before, the first 0.1 s after the head reported apart | `GAPS`, `START GAPS`, `CLEAN`, `NOT CHECKED` | **start gaps only**: one zero run in the first 55 ms of a capture (loopback 44 100: 441 frames; mic 48 000: 128 frames; every run of those cells), none after it, no duplicate, Chrome 155, 2026-10-22 |
-| `opfs-usage` | [436552046](https://issues.chromium.org/issues/436552046) / [401692415](https://issues.chromium.org/issues/401692415) — OPFS usage not counted for sync-handle writes, negative after a delete | Writes through a sync access handle in a worker, reads `estimate()` before, after the write and after the delete; the user quits and reopens Chrome and the page judges the restart reading on load (`&truncateFirst=1` for the reporter's workaround) | `NOT COUNTED`, `COUNTED`, `NEGATIVE USAGE`, `NOT CHECKED` | **reproduced**: `NEGATIVE USAGE` after a restart of the user's Chrome 155, 2026-10-22 (saved figure −16.5 MB after a plain run's delete, read back as 4.28 GB; about +50.6 MB before it if the delete took the full 64 MiB, as the off-disk reading and round 2 show); the saved figure read off disk drops by the deleted size on a plain delete, by 0 after a truncate; a truncate-first run and a second restart moved it by the hand-deleted samples' size only (−238 137 857 against −238 135 417 predicted) |
-| `opfs-flush` | [40909520](https://issues.chromium.org/issues/40909520) — slow `flush()` on Mac | Times 20 writes of 1 MiB and 20 of 16 MiB, each followed by `flush()`, in a worker; median, p95 and max per size | `MEASURED` (figures only: the tracker's claim is a comparison with other browsers this repo does not make) | **measured**: flush median 0.53–0.57 ms (1 MiB), 1.44–1.46 ms (16 MiB), Chrome 155, macOS 15.6.1, 2026-10-22 |
+| `first-read` | [571344687](https://issues.chromium.org/issues/571344687) — stale first clock read after a slow module load | Builds a worklet node right after `addModule()` resolves (a slow module, a large module, none), five runs each in a running context; the processor reports `currentFrame` from its constructor and first three `process()` calls, judged against the main thread's frame read just before the node was made | `STALE FIRST READ`, `FIRST READ TRUE`, `NOT CHECKED context-not-running`, `NOT CHECKED too-few-runs` | **reproduced**: `STALE FIRST READ` on Chrome 155, 2026-10-22 |
+| `bfcache` | [575891839](https://issues.chromium.org/issues/575891839) — half-speed worklet clock after a back/forward-cache restore | Measures the context clock against `performance.now()` with a worklet tone and an oscillator control playing, navigates away and back; on `pageshow.persisted` re-measures in three one-second windows and judges on the last two, otherwise records the `notRestoredReasons` | `HALF SPEED`, `NORMAL`, `NOT CHECKED` with `not-cached`, `not-back-forward-<type>`, `context-<state>`, `too-few-windows`, `baseline-slow` | **reproduced**: `HALF SPEED` on Chrome 155, 2026-10-22, all three restore windows; a playing demo also restores at half speed (the user's Chrome; Playwright's cannot enter the cache) |
+| `suspend-resume` | [560233271](https://issues.chromium.org/issues/560233271) — distortion after suspend / resume cycles | The tracker's tone (a stateless 440 Hz sine from `currentFrame`, from a module file) into an analyser; a two-second baseline, then `suspend()` / `resume()` cycles, with the tracker's preconditions under `&tracker=1` (44.1 kHz, one restart, an 80 ms worklet-thread stall before each cycle). Each one-second window is judged three ways: the clock witness (context clock against wall clock, `process()` calls per second), the graph's purity, click and dropout rules, and with `&witness=mic` the microphone in a context of its own | `HALF RATE`, `DISTORTED`, `DISTORTED (mic only)`, `CLEAN`, `NOT CHECKED` with `<n>-cycles`, `no-signal`, `no-baseline-purity`, `processor-error-tone`, `processor-error-recorder`, `mic-<error>` or the step that failed | **reproduced**: `HALF RATE` with `&tracker=1` (an 80 ms worklet-thread stall before each cycle) on Chrome 155, 2026-10-22; the render rate halves at cycle 2, 3 or 10 and stays halved (344.5 → 172.3 `process()` calls per second, clock 0.50); without the stall, 20 cycles stay true |
+| `capture-gaps` | [40103985](https://issues.chromium.org/issues/40103985) — zero-filled gaps and duplicated blocks in `getUserMedia` input | Records 60 s of a `MediaStreamAudioSourceNode` (`&source=loopback` or `mic`, `&rate=48000` or `44100`) through a worklet; counts zero runs of 100 frames or more after the head and 128-frame blocks identical to the one before, the first 0.1 s after the head reported apart | `GAPS`, `START GAPS`, `CLEAN`, `NOT CHECKED` with `<s>-s`, `no-signal`, `source-ended`, `source-muted`, `source-empty-input`, `mic-<error>` or the step that failed | **start gaps only**: one zero run in the first 55 ms of a capture (loopback 44 100: 441 frames; mic 48 000: 128 frames; every run of those cells), none after it, no duplicate, Chrome 155, 2026-10-22 |
+| `opfs-usage` | [436552046](https://issues.chromium.org/issues/436552046) / [401692415](https://issues.chromium.org/issues/401692415) — OPFS usage not counted for sync-handle writes, negative after a delete | Writes through a sync access handle in a worker, reads `estimate()` before, after the write and after the delete; the user quits and reopens Chrome and the page judges the restart reading on load (`&truncateFirst=1` for the reporter's workaround) | `NOT COUNTED`, `COUNTED`, `NEGATIVE USAGE`, `NOT CHECKED` with `readings-missing`, `write-none`, `write-short`, `write-size-mismatch`, `not-restarted`, `restart-no-estimate`, `opfs-<missing>` | **reproduced**: `NEGATIVE USAGE` after a restart of the user's Chrome 155, 2026-10-22 (saved figure −16.5 MB after a plain run's delete, read back as 4.28 GB; about +50.6 MB before it if the delete took the full 64 MiB, as the off-disk reading and round 2 show); the saved figure read off disk drops by the deleted size on a plain delete, by 0 after a truncate; a truncate-first run and a second restart moved it by the hand-deleted samples' size only (−238 137 857 against −238 135 417 predicted) |
+| `opfs-flush` | [40909520](https://issues.chromium.org/issues/40909520) — slow `flush()` on Mac | Times 20 writes of 1 MiB and 20 of 16 MiB, each followed by `flush()`, in a worker; median, p95 and max per size | `MEASURED` (figures only: the tracker's claim is a comparison with other browsers this repo does not make), `NOT CHECKED opfs-<missing>` | **measured**: flush median 0.53–0.57 ms (1 MiB), 1.44–1.46 ms (16 MiB), Chrome 155, macOS 15.6.1, 2026-10-22 |
 | — | [541725401](https://issues.chromium.org/issues/541725401) / [40068799](https://issues.chromium.org/issues/40068799) — a quota overrun returns a sentinel | No probe: needs the origin's quota exhausted or an incognito profile | — | out of scope, stays watched |
-| `output-latency` | [388871416](https://issues.chromium.org/issues/388871416) — `outputLatency` with a Bluetooth headset | Readout: resumes a context and reads `baseLatency`, `outputLatency`, `sinkId` and the output device's label from `enumerateDevices()` every second for 30 s; no classifier, the rows are the finding. `&roundtrip=1`: plays 10 clicks through the output and finds them in a built-in-mic capture (`&sink=<label>`, `&gain=`) | `MEASURED` (figures only), `NOT CHECKED context-<state>` | **measured, understated by about 70 ms (about 148 ms on the first stream after connecting)**: reported 28 / 161 ms; isolated round trips 68.9 ms (speaker) and 349.5 / 272.3 / 270.9 ms (headset); Chrome 155, 2026-10-22 |
+| `output-latency` | [388871416](https://issues.chromium.org/issues/388871416) — `outputLatency` with a Bluetooth headset | Readout: resumes a context and reads `baseLatency`, `outputLatency`, `sinkId` and the output device's label from `enumerateDevices()` every second for 30 s; no classifier, the rows are the finding. `&roundtrip=1`: plays 10 clicks through the output and finds them in a built-in-mic capture (`&sink=<label>`, `&gain=`) | `MEASURED` (figures only), `NOT CHECKED context-<state>`; with `&roundtrip=1` also `NOT CHECKED` with `<n>-of-10-clicks-found-…`, `clock-pair-unstable`, `non-positive-round-trip`, `mic-<error>`, `capture-context-<error>`, `sink-none-unsupported` or the step that failed | **measured, understated by about 70 ms (about 148 ms on the first stream after connecting)**: reported 28 / 161 ms; isolated round trips 68.9 ms (speaker) and 349.5 / 272.3 / 270.9 ms (headset); Chrome 155, 2026-10-22 |
 
 ## Run recipe
 
@@ -409,6 +410,20 @@ The last row is the manual mode's smoke test: two real clicks, two rows, Finish,
 - **Earlier runs stay as data.** The graph-only `CLEAN` runs, `mvk2auh7-7vhg` and `mvk2bm5g-d5aw`, had no
   stall; the in-graph analyser cannot see the output path. The positive controls, `mvk2ce9z-vsxm` for
   crackle and `mvk2d80b-fihu` for harmonic, show that the in-graph detectors fire.
+- **Silent and failed runs never read `CLEAN` (rules added after every run above).** A baseline with no
+  tone in it (fundamental −Infinity, or an RMS under `SIGNAL_FLOOR_RMS`, 10⁻⁵) reads `NOT CHECKED
+  no-signal`, and a baseline whose purity is not a number `NOT CHECKED no-baseline-purity`. A window the
+  analyser read as silence counts as the worst purity, −Infinity, so it reads `DISTORTED` and cannot lock
+  a later fall out (its count is `silentWindows`). A processor that throws reads `NOT CHECKED
+  processor-error-tone` (or `-recorder`, the microphone's). Any failed step reads `NOT CHECKED <step>`
+  however many cycles completed before it; the judgement on those cycles stays as
+  `completedCyclesVerdict`, and a `HALF RATE` still wins, since the clock is judged on completed cycles
+  only and so fired before the failure. None of the runs quoted above had a failed step, a silent
+  baseline or a silent window, and each graph baseline's RMS is 0.14 or 0.35 (`baselineRms`), so every
+  verdict above stands under the new rules. The microphone's baseline RMS was not recorded before the
+  rule (`micBaselineRms` is new); its fundamentals, −47.6 to −55.5 dB, sit far above the floor. The
+  earliest graph-only run, `mvk21dt6-catu` (an early detector, not quoted above), read `CLEAN` on a
+  purity of +Infinity in every window; it would now read `NOT CHECKED no-baseline-purity`.
 
 **What the probe offers.** All options are in `src/lib/audit/chromiumSuspendResumeOptions.ts`:
 - `&tracker=1` is the repro's setup. An explicit `&stallMs`, `&rate`, `&firstCycle` or `&pace` overrides
@@ -461,8 +476,14 @@ main thread joins the minute and judges it:
   reported apart (`startZeroRun*`, `startDuplicate*`).
 
 A run reads `GAPS` on any zero run or duplicate after the start window, `START GAPS` when the only ones
-are inside it, `CLEAN` on neither, and `NOT CHECKED` under 30 s of capture. A head longer than 5 s is
-no signal (a muted microphone delivers exact zeros) and reads `NOT CHECKED no-signal`, not `CLEAN`.
+are inside it, `CLEAN` on neither, and `NOT CHECKED <s>-s` under 30 s of capture. A head longer than
+5 s is no signal in the first 5 s (a muted microphone delivers exact zeros) and reads `NOT CHECKED
+no-signal`, not `CLEAN`. A source that died during the minute leaves zeros that are not the browser's:
+a track that fired `ended` or `mute` (or read muted at the start or the end), or any quantum whose input
+had no channel (`emptyInputQuanta`), reads `NOT CHECKED source-ended`, `source-muted` or
+`source-empty-input`, the counts kept as figures. That rule came after the runs below: every one of them
+records 0 empty-input quanta, and none recorded the track's events, so their verdicts stand on the
+empty-input count alone.
 
 | envelope | source | rate (track) | head | start-window runs: start, length | runs after it | duplicates | verdict |
 |---|---|---|---|---|---|---|---|
@@ -650,6 +671,18 @@ entry. The earliest plain run, `chromium-opfs-usage-mvk3igq7-p9j9.json`, predate
 Every run's stored readings were cleared from the Playwright profile's `localStorage` once its figures
 were taken, so a later load there judges nothing.
 
+**Rules added after every run above.** The stored readings carry a schema `version` (2) and the run's
+`requestedBytes`; an entry without them, an older page's, is cleared with a console warning instead of
+judged, so a run stored before the change needs its in-session half run again before a restart. The
+browser fields are checked as strings. A write that cannot be judged reads `NOT CHECKED write-none`
+(nothing written), `write-short` (fewer bytes than asked for) or `write-size-mismatch` (`getSize()` is
+not the bytes written), and is not stored for a restart. `estimate()` without a usage reads null, not
+NaN: in the session `NOT CHECKED readings-missing`, on the restart load `NOT CHECKED
+restart-no-estimate`, which is never kept as the last restart reading. The worker closes the handle
+and removes the file as separate steps, so a close that throws no longer skips the delete or hides the
+write's own error. Every envelope above wrote and read back 67 108 864 bytes with every reading present,
+so every verdict above stands.
+
 What it means for the register:
 - **The symptom is reproduced in the user's Chrome.** After a plain delete the next start read the origin
   as 4.28 GB, a saved figure of −16.5 MB (about +50.6 MB before the delete, derived on the full-size
@@ -667,9 +700,11 @@ What it means for the register:
   Chrome, and across a real restart in the user's Chrome (round 2). The sweep deletes a folder through
   the SDK's `Workers.Opfs.delete`, so taking it up would mean truncating each file first. The SDK's OPFS
   worker writes through sync access handles and deletes without truncating
-  (`node_modules/@opendaw/lib-fusion/dist/opfs/OpfsWorker.js`: `createSyncAccessHandle` at line 158,
-  `truncate(data.length)` on write at line 19, `removeEntry` with no `truncate(0)` at lines 81, 108 and
-  111). That makes an upstream suggestion a candidate; it is not drafted.
+  (`node_modules/@opendaw/lib-fusion/dist/opfs/OpfsWorker.js` as installed at SDK 0.0.177:
+  `createSyncAccessHandle` at line 158, `truncate(data.length)` on write at line 19, `removeEntry` with
+  no `truncate(0)` at lines 81, 108 and 111; the register names the methods, these lines are the
+  pointer). The upstream issue is drafted for review in
+  `drafts/TO-REVIEW-opendaw-opfs-delete-usage.md`.
 
 ### opfs-flush (40909520)
 
@@ -790,6 +825,17 @@ is open), so a run does not depend on the system's default; `&gain=` sets the cl
   into the figure. Its offsets are recorded beside (`outputStampOffsetMs`, `captureStampOffsetMs`) so
   the two can be compared. A browser without the `none` sink reads `NOT CHECKED
   sink-none-unsupported`. It ran first time: `sinkId` read back as `none`, 10 of 10 clicks in every run.
+- **What reads `MEASURED` (rules added after every run above, `judgeRoundTrip`).** Fewer than 5 of the 10
+  clicks found reads `NOT CHECKED <n>-of-10-clicks-found-missed-…`, naming the output device. On an
+  isolated run, clock pairs whose interquartile range around any click is wider than
+  `CLOCK_PAIR_MAX_SPREAD_MS` (10 ms) read `NOT CHECKED clock-pair-unstable`; the spreads are figures
+  (`outputPairSpreadMs`, `capturePairSpreadMs`). A click found at or before its scheduled time reads
+  `NOT CHECKED non-positive-round-trip`. A microphone or capture-context error reads `NOT CHECKED
+  mic-<error>` or `capture-context-<error>` with the error's name; `&gain=` outside (0, 1] stops the run.
+  The envelopes above carry no pair spread, so the clock-pair rule was not applied to them; their
+  verdicts stand on the other two rules (10 of 10 clicks, every round trip positive), and an envelope's
+  `verdict` figure is now written first on every output-latency run (the readout's and the round trip's
+  envelopes above have none among their figures).
 - **How the headset run is done:** quiet room, the headset connected as the output. Hold one earbud against the
   built-in mic (top-left of the keyboard area on a MacBook Pro), then run
   `...&roundtrip=1&isolate=1&sink=Defunc&gain=1` (the headset's label, a substring is enough). The

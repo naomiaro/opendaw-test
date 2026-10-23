@@ -73,3 +73,44 @@ export function judgeBfcache(
   const verdict: BfcacheVerdict = ratioAfter < HALF_SPEED_MAX_RATIO ? "HALF SPEED" : "NORMAL";
   return { verdict, ratioBefore, ratioAfter, windowRatios, reason: null };
 }
+
+/** Both tones' pitch as the analysers read them, in Hz. */
+export interface Pitches {
+  control: number;
+  worklet: number;
+}
+
+/** The schema of the stored run: an entry with no version, or another one, is an older page's and is not judged. */
+export const STORED_BFCACHE_RUN_VERSION = 2;
+
+/** What the first document keeps in `sessionStorage` for a later load to judge. */
+export interface StoredBfcacheRun {
+  version: typeof STORED_BFCACHE_RUN_VERSION;
+  runToken: string;
+  chrome: string;
+  date: string;
+  before: ClockRatioSample;
+  pitchBefore: Pitches;
+  sampleRate: number;
+  /** `Date.now()` when the baseline was stored: the time away is measured from here. */
+  startedAt: number;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
+const numbers = (value: unknown, fields: readonly string[]): boolean =>
+  isRecord(value) && fields.every((field) => typeof value[field] === "number");
+
+/** The stored run, or null when the text is not one of this schema's. */
+export function parseStoredBfcacheRun(raw: string): StoredBfcacheRun | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!isRecord(value) || value.version !== STORED_BFCACHE_RUN_VERSION) return null;
+  if (typeof value.runToken !== "string" || typeof value.chrome !== "string" || typeof value.date !== "string") return null;
+  if (!numbers(value.before, ["contextAdvanceSec", "wallAdvanceSec"]) || !numbers(value.pitchBefore, ["control", "worklet"])) return null;
+  if (typeof value.sampleRate !== "number" || typeof value.startedAt !== "number") return null;
+  return value as unknown as StoredBfcacheRun;
+}

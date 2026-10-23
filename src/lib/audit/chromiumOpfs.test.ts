@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   GIB,
+  STORED_USAGE_RUN_VERSION,
   judgeOpfsUsage,
   parseStoredUsageRun,
   summarizeFlush,
@@ -13,6 +14,7 @@ const MIB = 1024 * 1024;
 const WRITTEN = 64 * MIB;
 
 const storedRun = (over: Partial<StoredUsageRun> = {}): StoredUsageRun => ({
+  version: STORED_USAGE_RUN_VERSION,
   runToken: "mvk9abcd-q1w2",
   chrome: "Google Chrome 155",
   userAgent: "Mozilla/5.0",
@@ -20,6 +22,7 @@ const storedRun = (over: Partial<StoredUsageRun> = {}): StoredUsageRun => ({
   osVersion: "15.6.1",
   date: "2026-10-22",
   truncateFirst: false,
+  requestedBytes: WRITTEN,
   writtenBytes: WRITTEN,
   sizeReadBack: WRITTEN,
   beforeWrite: 1000,
@@ -76,9 +79,10 @@ describe("judgeOpfsUsage", () => {
     expect(judged.verdict).toBe("COUNTED");
   });
 
-  it("reads NOT CHECKED when an in-session reading is missing", () => {
-    const judged = judgeOpfsUsage({ beforeWrite: Number.NaN, afterWrite: WRITTEN, afterDelete: 0, afterRestart: null }, WRITTEN);
-    expect(judged.verdict).toBe("NOT CHECKED");
+  it("reads NOT CHECKED readings-missing when an in-session reading is missing", () => {
+    const judged = judgeOpfsUsage({ beforeWrite: null, afterWrite: WRITTEN, afterDelete: 0, afterRestart: null }, WRITTEN);
+    expect(judged.verdict).toBe("NOT CHECKED readings-missing");
+    expect(judged.detail).not.toContain("NaN");
   });
 });
 
@@ -95,7 +99,7 @@ describe("summarizeFlush", () => {
 });
 
 /** A restart load's reading: no session marker, a newer Chrome than the run's, a later day. */
-const restartReading = (usage: number, over: Partial<RestartReading> = {}): RestartReading => ({
+const restartReading = (usage: number | null, over: Partial<RestartReading> = {}): RestartReading => ({
   usage,
   quota: 300 * GIB,
   testFiles: 0,
@@ -116,6 +120,49 @@ describe("the stored readings judged on a later load", () => {
     expect(parseStoredUsageRun(JSON.stringify(run))).toEqual(run);
     expect(parseStoredUsageRun("{not json")).toBeNull();
     expect(parseStoredUsageRun(JSON.stringify({ runToken: "x" }))).toBeNull();
+  });
+
+  it("refuses an entry an older page stored: no version, or another one", () => {
+    const { version: _version, ...unversioned } = storedRun();
+    expect(parseStoredUsageRun(JSON.stringify(unversioned))).toBeNull();
+    expect(parseStoredUsageRun(JSON.stringify({ ...storedRun(), version: 1 }))).toBeNull();
+  });
+
+  it("refuses an entry whose browser fields are not strings (or null where allowed)", () => {
+    expect(parseStoredUsageRun(JSON.stringify({ ...storedRun(), userAgent: 5 }))).toBeNull();
+    expect(parseStoredUsageRun(JSON.stringify({ ...storedRun(), chromeFullVersion: 5 }))).toBeNull();
+    expect(parseStoredUsageRun(JSON.stringify({ ...storedRun(), osVersion: undefined }))).toBeNull();
+    const nulls = storedRun({ chromeFullVersion: null, osVersion: null });
+    expect(parseStoredUsageRun(JSON.stringify(nulls))).toEqual(nulls);
+  });
+
+  it("keeps an entry whose in-session readings are null: estimate() gave no usage", () => {
+    const run = storedRun({ beforeWrite: null, afterWrite: null, afterDelete: null, quota: null });
+    expect(parseStoredUsageRun(JSON.stringify(run))).toEqual(run);
+    expect(usageEnvelope(run, null, "t", 0).verdict).toBe("NOT CHECKED readings-missing");
+  });
+
+  it("reads NOT CHECKED write-none when nothing was written", () => {
+    const envelope = usageEnvelope(storedRun({ writtenBytes: 0, sizeReadBack: 0, afterWrite: 1000 }), null, "t", 0);
+    expect(envelope.verdict).toBe("NOT CHECKED write-none");
+  });
+
+  it("reads NOT CHECKED write-short when fewer bytes were written than asked for", () => {
+    const envelope = usageEnvelope(storedRun({ writtenBytes: WRITTEN - MIB, sizeReadBack: WRITTEN - MIB }), null, "t", 0);
+    expect(envelope.verdict).toBe("NOT CHECKED write-short");
+  });
+
+  it("reads NOT CHECKED write-size-mismatch when the size read back is not the bytes written", () => {
+    const envelope = usageEnvelope(storedRun({ sizeReadBack: WRITTEN / 2 }), null, "t", 0);
+    expect(envelope.verdict).toBe("NOT CHECKED write-size-mismatch");
+  });
+
+  it("reads a restart load whose estimate() gave no usage as NOT CHECKED restart-no-estimate", () => {
+    const envelope = usageEnvelope(storedRun(), restartReading(null), "mvkzzzzz-r3st", 1_010_000);
+    expect(envelope.verdict).toBe("NOT CHECKED restart-no-estimate");
+    expect(String(envelope.figures.detail)).not.toContain("NaN");
+    expect(envelope.figures.afterRestart).toBeNull();
+    expect(envelope.figures.savedUsageSigned).toBeNull();
   });
 
   it("judges the in-session envelope with the restart half NOT CHECKED", () => {

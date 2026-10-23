@@ -26,19 +26,26 @@ import { InfoCircledIcon, PlayIcon } from "@radix-ui/react-icons";
 //
 //   chromium-watched-issues-debug-demo.html?issue=first-read|bfcache|suspend-resume|capture-gaps|opfs-usage|opfs-flush|output-latency
 //
-// output-latency also takes `&roundtrip=1` (an acoustic round trip through the built-in microphone),
-// `&sink=<output label text>` and `&gain=<click amplitude>`.
+// Parameters beyond `?issue=`, each read by its probe:
+//   suspend-resume  &control=crackle|harmonic &witness=mic &pace=<ms> &cycles=<n> &stallMs=<ms> &gapMs=<ms>
+//                   &rate=44100|48000 &firstCycle=1 &module=file|blob &manual=1 &tracker=1
+//                   (`chromiumSuspendResumeOptions.ts`)
+//   capture-gaps    &source=loopback|mic &rate=48000|44100
+//   opfs-usage      &truncateFirst=1
+//   output-latency  &roundtrip=1 (an acoustic round trip through the built-in microphone), and with it
+//                   &isolate=1 (the capture in a context of its own with no output), &sink=<output label text>,
+//                   &gain=<click amplitude, above 0 and at most 1>
 //
 // No SDK engine is loaded: a probe says what Chrome does, not what the SDK repairs (the
 // suspend-resume and output-latency round-trip probes import lib-dsp's WAV encoder for their microphone
-// captures, nothing else). Each probe
+// captures, nothing else; with `&roundtrip=1` nothing else plays in the output context but the clicks). Each probe
 // self-classifies into a verdict word (`#verdict`, `data-verdict`) with the figures it was
 // judged on; the run's progress is `#audit-state[data-audit-state]`: idle, running:<step>,
 // then done or error. On the dev server the envelope is also written to `.verify-output/`.
-// Note: `debug/2026-10-23-chromium-watched-issues/note.md`.
+// Note: `debug/2026-10-22-chromium-watched-issues/note.md`.
 
 const NOTE_URL =
-  "https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-10-23-chromium-watched-issues/note.md";
+  "https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-10-22-chromium-watched-issues/note.md";
 
 interface IssueInfo {
   tracker: string;
@@ -78,7 +85,7 @@ const ISSUE_INFO: Record<WatchedIssue, IssueInfo> = {
 
 type Probe = (signal: AbortSignal, report: (step: string) => void) => Promise<ProbeEnvelope>;
 
-/** The probe for an issue; each task of the measurement plan fills its case. */
+/** The probe for an issue: one per watched issue, the output-latency readout or its round trip by `&roundtrip=1`. */
 function probeFor(issue: WatchedIssue): Probe {
   switch (issue) {
     case "first-read":
@@ -228,7 +235,15 @@ const App: React.FC<{ issue: WatchedIssue }> = ({ issue }) => {
   }, []);
 
   useEffect(() => {
-    const stored = judgeStoredOnLoad(issue);
+    // A stored run that throws while it is read must not unmount the page: it becomes the error state.
+    let stored: Promise<ProbeEnvelope> | null;
+    try {
+      stored = judgeStoredOnLoad(issue);
+    } catch (error) {
+      console.error("[chromium-watched] threw reading the stored run: " + String(error));
+      setState({ kind: "error", step: "judge-stored", message: String(error) });
+      return;
+    }
     if (stored === null) return;
     setState({ kind: "running", step: "judge-stored" });
     stored.then(
@@ -274,7 +289,7 @@ const App: React.FC<{ issue: WatchedIssue }> = ({ issue }) => {
     <Flex direction="column" gap="4">
       <DebugLinkBar
         links={[
-          { label: "debug/2026-10-23-chromium-watched-issues/note.md", href: NOTE_URL, kind: "note" },
+          { label: "debug/2026-10-22-chromium-watched-issues/note.md", href: NOTE_URL, kind: "note" },
           {
             label: `Chromium issue ${info.tracker}`,
             href: `https://issues.chromium.org/issues/${info.tracker}`,

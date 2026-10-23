@@ -13,14 +13,18 @@
  * The judgement is `chromiumBfcache.ts`.
  */
 
-import { browserOf, newRunToken, runDate, type ProbeEnvelope } from "./chromiumWatched";
+import { browserOf, makeEnvelope, newRunToken, notChecked, runDate, type Figures, type ProbeEnvelope, type Verdict } from "./chromiumWatched";
 import {
   RESTORE_WINDOW_SECONDS,
   RESTORE_WINDOWS,
+  STORED_BFCACHE_RUN_VERSION,
   clockRatio,
   judgeBfcache,
+  parseStoredBfcacheRun,
   type BfcacheJudgement,
   type ClockRatioSample,
+  type Pitches,
+  type StoredBfcacheRun,
 } from "./chromiumBfcache";
 
 /** The step the page shows the "Navigate away" link on. */
@@ -59,24 +63,6 @@ class BfcacheTone extends AudioWorkletProcessor {
 }
 registerProcessor("${PROCESSOR_NAME}", BfcacheTone);
 `;
-
-/** Both tones' pitch as the analysers read them, in Hz. */
-interface Pitches {
-  control: number;
-  worklet: number;
-}
-
-/** What the first document keeps for a later load to judge. */
-interface StoredRun {
-  runToken: string;
-  chrome: string;
-  date: string;
-  before: ClockRatioSample;
-  pitchBefore: Pitches;
-  sampleRate: number;
-  /** `Date.now()` when the baseline was stored: the time away is measured from here. */
-  startedAt: number;
-}
 
 interface Live {
   context: AudioContext;
@@ -186,13 +172,12 @@ function round(value: number | null, digits: number): number | null {
 }
 
 function envelopeFrom(
-  run: StoredRun,
+  run: StoredBfcacheRun,
   judged: BfcacheJudgement,
-  verdict: string,
-  extra: Record<string, number | string | null>
+  verdict: Verdict,
+  extra: Figures
 ): ProbeEnvelope {
-  const figures: Record<string, number | string | null> = {
-    verdict,
+  const figures: Figures = {
     ratioBefore: round(judged.ratioBefore, 4),
     ratioAfter: round(judged.ratioAfter, 4),
     windowRatiosAfter: judged.windowRatios.length === 0 ? null : judged.windowRatios.map((r) => r.toFixed(4)).join(" "),
@@ -204,7 +189,7 @@ function envelopeFrom(
     reason: judged.reason,
     ...extra,
   };
-  return { issue: "bfcache", chrome: run.chrome, date: run.date, runToken: run.runToken, verdict, figures };
+  return makeEnvelope({ issue: "bfcache", chrome: run.chrome, date: run.date, runToken: run.runToken }, verdict, figures);
 }
 
 /** The click: baseline, store, wait for a restore from the cache, re-measure, judge. */
@@ -215,7 +200,8 @@ export async function runBfcacheProbe(signal: AbortSignal, report: (step: string
     if (live.context.state !== "running") throw new Error(`the context is ${live.context.state} after resume`);
     report("measure-before");
     const before = await measureClock(live.context, BEFORE_SECONDS, signal);
-    const run: StoredRun = {
+    const run: StoredBfcacheRun = {
+      version: STORED_BFCACHE_RUN_VERSION,
       runToken: newRunToken(),
       chrome: browserOf(navigator),
       date: runDate(),
@@ -238,7 +224,7 @@ export async function runBfcacheProbe(signal: AbortSignal, report: (step: string
     };
     if (stateAfterRestore !== "running") {
       const judged = judgeBfcache(before, null, true, null);
-      return envelopeFrom(run, judged, `NOT CHECKED context-${stateAfterRestore}`, extra);
+      return envelopeFrom(run, judged, notChecked(`context-${stateAfterRestore}`), extra);
     }
     const after: ClockRatioSample[] = [];
     for (let window = 0; window < RESTORE_WINDOWS; window++) {
@@ -246,7 +232,7 @@ export async function runBfcacheProbe(signal: AbortSignal, report: (step: string
     }
     const pitchAfter = pitchesOf(live);
     const judged = judgeBfcache(before, after, true, null);
-    const verdict = judged.verdict === "NOT CHECKED" ? `NOT CHECKED ${judged.reason}` : judged.verdict;
+    const verdict = judged.verdict === "NOT CHECKED" ? notChecked(judged.reason ?? "unjudged") : judged.verdict;
     return envelopeFrom(run, judged, verdict, {
       ...extra,
       // Each window's advance after the restore, context / wall in seconds, one window per `;`.
@@ -274,18 +260,24 @@ function notRestoredReasons(entry: PerformanceNavigationTiming | undefined): str
 
 /**
  * On a fresh load: a baseline stored by an earlier document means the page was not
- * restored from the cache. Judges it `NOT CHECKED` with the reasons, and clears it.
+ * restored from the cache. Judges it `NOT CHECKED` with the reasons, and clears it. An entry
+ * that does not parse as this schema's (corrupt, or an older page's) is cleared with a warning
+ * and judged as nothing stored.
  */
 export function judgeStoredBfcacheOnLoad(): ProbeEnvelope | null {
   const raw = sessionStorage.getItem(STORAGE_KEY);
   if (raw === null) return null;
   sessionStorage.removeItem(STORAGE_KEY);
-  const run = JSON.parse(raw) as StoredRun;
+  const run = parseStoredBfcacheRun(raw);
+  if (run === null) {
+    console.warn("[chromium-watched] bfcache: the stored baseline did not parse and was cleared");
+    return null;
+  }
   const entry = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
   const reasons = notRestoredReasons(entry);
   const navigationType = entry?.type ?? null;
   const judged = judgeBfcache(run.before, null, false, reasons);
-  const verdict = navigationType === "back_forward" ? "NOT CHECKED not-cached" : `NOT CHECKED not-back-forward-${navigationType}`;
+  const verdict = notChecked(navigationType === "back_forward" ? "not-cached" : `not-back-forward-${navigationType}`);
   return envelopeFrom(run, judged, verdict, {
     persisted: "false",
     navigationType,

@@ -17,14 +17,18 @@
  * as a WAV beside the envelope. With `&manual=1` each cycle waits for a click on the page's
  * "Suspend / resume" button (`chromiumSuspendResumeManual.ts`) instead of the pace timer.
  * The options are `chromiumSuspendResumeOptions.ts`; the judgement is `chromiumSuspendResume.ts`.
+ *
+ * A run never reads `CLEAN` without having heard the tone: a silent baseline reads `NOT CHECKED
+ * no-signal`, a processor that throws (`onprocessorerror`, on the tone and on the microphone's
+ * recorder) reads `NOT CHECKED processor-error-<node>`, and any failed step reads `NOT CHECKED
+ * <step>` whatever the cycles banked before it said.
  */
 
 import { WavFile } from "@opendaw/lib-dsp";
 import { withDeadline } from "@/lib/deadline";
-import { browserOf, newRunToken, platformOf, runDate, type PlatformNavigator, type ProbeEnvelope } from "./chromiumWatched";
+import { browserOf, makeEnvelope, newRunToken, notChecked, platformOf, runDate, type Figures, type PlatformNavigator, type ProbeEnvelope, type Verdict } from "./chromiumWatched";
 import { type ClockRatioSample } from "./chromiumBfcache";
 import {
-  MIN_CYCLES,
   TONE_HZ,
   clickThreshold,
   countClicks,
@@ -32,7 +36,9 @@ import {
   judgeHalfRate,
   judgeSuspendResume,
   purityOf,
+  readingWord,
   tonePurityFromSpectrum,
+  type ReadingVerdict,
   type TonePurity,
 } from "./chromiumSuspendResume";
 import {
@@ -174,6 +180,8 @@ interface Live {
   reports: CallsReport[];
   /** The worklet thread busy for `ms`; resolves when it answers. */
   stall: (ms: number) => Promise<void>;
+  /** Set when the tone's processor threw: it renders silence from then on. */
+  processorError: { value: string | null };
 }
 
 async function loadModule(context: AudioContext, options: SuspendResumeOptions): Promise<void> {
@@ -199,6 +207,11 @@ async function startLive(options: SuspendResumeOptions): Promise<Live> {
     const output = new GainNode(context, { gain: options.witness === "mic" ? SPEAKER_GAIN : GRAPH_GAIN });
     const tone = new AudioWorkletNode(context, PROCESSOR_NAME, { processorOptions: { control: options.control } });
     const reports: CallsReport[] = [];
+    const processorError: { value: string | null } = { value: null };
+    tone.onprocessorerror = () => {
+      processorError.value = "processor-error-tone";
+      console.error("[chromium-watched] suspend-resume: the tone's processor threw");
+    };
     let stalled: (() => void) | null = null;
     tone.port.onmessage = (event: MessageEvent<{ type: "calls"; calls: number; at: number } | { type: "stalled" }>) => {
       if (event.data.type === "calls") reports.push({ calls: event.data.calls, at: event.data.at });
@@ -218,7 +231,7 @@ async function startLive(options: SuspendResumeOptions): Promise<Live> {
         DEADLINE_MS,
         "stall",
       );
-    return { context, analyser, tone, reports, stall };
+    return { context, analyser, tone, reports, stall, processorError };
   } catch (error) {
     await context.close();
     throw error;
@@ -247,6 +260,8 @@ interface Witness {
   recordStart: number;
   /** Stops the recorder; resolves with everything it captured. */
   stop: () => Promise<Float32Array>;
+  /** Set when the recorder's processor threw. */
+  processorError: { value: string | null };
 }
 
 async function openWitness(): Promise<Witness> {
@@ -280,6 +295,11 @@ async function openWitness(): Promise<Witness> {
     });
     source.connect(analyser);
     source.connect(recorder);
+    const processorError: { value: string | null } = { value: null };
+    recorder.onprocessorerror = () => {
+      processorError.value = "processor-error-recorder";
+      console.error("[chromium-watched] suspend-resume: the microphone recorder's processor threw");
+    };
     const recordStart = context.currentTime;
     const chunks: Float32Array[] = [];
     let finished: ((samples: Float32Array) => void) | null = null;
@@ -303,7 +323,7 @@ async function openWitness(): Promise<Witness> {
         DEADLINE_MS,
         "witness-stop",
       );
-    return { context, analyser, stream, deviceLabel: listed?.label || track.label, settings, recordStart, stop };
+    return { context, analyser, stream, deviceLabel: listed?.label || track.label, settings, recordStart, stop, processorError };
   } catch (error) {
     for (const track of stream.getTracks()) track.stop();
     await context.close();
@@ -324,14 +344,19 @@ async function saveWav(samples: Float32Array, sampleRate: number, runToken: stri
   }
 }
 
-/** A verdict string from a judgement, with the cycle count when it could not judge. */
-function verdictOf(tones: TonePurity[], baseline: TonePurity, failedStep: string | null): { word: string; judged: ReturnType<typeof judgeSuspendResume> } {
-  const judged = judgeSuspendResume(baseline, tones, tones.length);
-  const word =
-    failedStep !== null && tones.length < MIN_CYCLES ? `NOT CHECKED ${failedStep}`
-    : judged.verdict === "NOT CHECKED" ? `NOT CHECKED ${tones.length}-cycles`
-    : judged.verdict;
-  return { word, judged };
+/**
+ * One reading's word and judgement. `failedStep` (a processor error, or the step that threw)
+ * makes the word `NOT CHECKED <step>` however many cycles completed; the judgement on the
+ * completed cycles stays as figures (`completedCyclesVerdict`).
+ */
+function verdictOf(
+  tones: TonePurity[],
+  baseline: TonePurity,
+  baselineRms: number,
+  failedStep: string | null,
+): { word: ReadingVerdict; judged: ReturnType<typeof judgeSuspendResume> } {
+  const judged = judgeSuspendResume(baseline, tones, tones.length, baselineRms);
+  return { word: readingWord(judged, tones.length, failedStep), judged };
 }
 
 /** One measurement window: the clock, the render rate and both readings at its end. */
@@ -403,14 +428,8 @@ export async function runSuspendResumeProbe(signal: AbortSignal, report: (step: 
   const options = suspendResumeOptionsFrom(new URLSearchParams(window.location.search));
   const platform = await platformOf(navigator as PlatformNavigator);
   const runToken = newRunToken();
-  const envelope = (verdict: string, figures: Record<string, number | string | null>): ProbeEnvelope => ({
-    issue: "suspend-resume",
-    chrome: browserOf(navigator),
-    date: runDate(),
-    runToken,
-    verdict,
-    figures: {
-      verdict,
+  const envelope = (verdict: Verdict, figures: Figures): ProbeEnvelope =>
+    makeEnvelope({ issue: "suspend-resume", chrome: browserOf(navigator), date: runDate(), runToken }, verdict, {
       tracker: options.tracker ? "yes" : null,
       manual: options.manual ? "yes" : null,
       control: options.control === null ? null : `${options.control} from cycle ${CONTROL_FROM_CYCLE}`,
@@ -429,8 +448,7 @@ export async function runSuspendResumeProbe(signal: AbortSignal, report: (step: 
       osVersion: platform.platformVersion,
       chromeFullVersion: platform.uaFullVersion,
       userAgent: platform.userAgent,
-    },
-  });
+    });
 
   let witness: Witness | null = null;
   if (options.witness === "mic") {
@@ -439,7 +457,7 @@ export async function runSuspendResumeProbe(signal: AbortSignal, report: (step: 
       witness = await openWitness();
     } catch (error) {
       console.error("[chromium-watched] suspend-resume could not open the microphone: " + String(error));
-      return envelope(`NOT CHECKED mic-${error instanceof Error ? error.name : "error"}-${stepOf(error)}`, {});
+      return envelope(notChecked(`mic-${error instanceof Error ? error.name : "error"}-${stepOf(error)}`), {});
     }
   }
   report("start-audio");
@@ -496,8 +514,11 @@ export async function runSuspendResumeProbe(signal: AbortSignal, report: (step: 
     report("judge");
     const graphTones = results.map((r) => r.graph);
     const micTones = results.flatMap((r) => (r.mic === null ? [] : [r.mic]));
-    const graph = verdictOf(graphTones, baseline.graph, failedStep);
-    const mic = baseline.mic === null ? null : verdictOf(micTones, baseline.mic, failedStep);
+    // A processor that threw renders silence: it comes before the step it may have made fail.
+    const processorError = live.processorError.value ?? witness?.processorError.value ?? null;
+    const failure = processorError ?? failedStep;
+    const graph = verdictOf(graphTones, baseline.graph, baseline.graphRef.rms, failure);
+    const mic = baseline.mic === null || baseline.micRef === null ? null : verdictOf(micTones, baseline.mic, baseline.micRef.rms, failure);
     const clock = judgeHalfRate(baseline.clock, results.map((r) => r.clock));
     const verdict = overallVerdict(graph.word, mic === null ? null : mic.word, clock.halfRate);
     let wav: { name: string | null; error: string | null } = { name: null, error: null };
@@ -513,6 +534,9 @@ export async function runSuspendResumeProbe(signal: AbortSignal, report: (step: 
       witness === null || baseline.mic === null || baseline.micRef === null || mic === null ? {}
       : {
           micVerdict: mic.word,
+          micCompletedCyclesVerdict: mic.judged.notCheckedReason ?? mic.judged.verdict,
+          micBaselineRms: round(baseline.micRef.rms, 6),
+          micSilentWindows: mic.judged.silentWindows,
           micPurityMinHz: MIC_MIN_HZ,
           micBaselinePurityDb: round(purityOf(baseline.mic), 2),
           micBaselineFundamentalDb: round(baseline.mic.fundamentalDb, 2),
@@ -546,9 +570,13 @@ export async function runSuspendResumeProbe(signal: AbortSignal, report: (step: 
           : null,
       clockVerdict: clock.halfRate ? "HALF RATE" : "TRUE",
       graphVerdict: graph.word,
+      // The judgement on the cycles that completed, before a failed step or a processor error overrides it.
+      completedCyclesVerdict: graph.judged.notCheckedReason ?? graph.judged.verdict,
       cycles: results.length,
       manualClicks: options.manual ? results.length : null,
       failedStep,
+      processorError,
+      silentWindows: graph.judged.silentWindows,
       // The context clock's advance over the wall clock's per window: 1 is true, the tracker's failure reads 0.5.
       ratioBefore: round(clock.ratioBefore, 4),
       clockRatioPerCycle: clock.ratios.map((ratio) => ratio.toFixed(3)).join(" "),

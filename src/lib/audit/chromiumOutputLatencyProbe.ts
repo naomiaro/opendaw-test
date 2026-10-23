@@ -7,7 +7,7 @@
  */
 
 import { withDeadline } from "@/lib/deadline";
-import { browserOf, newRunToken, platformOf, runDate, type PlatformNavigator, type ProbeEnvelope } from "./chromiumWatched";
+import { browserOf, makeEnvelope, newRunToken, notChecked, platformOf, runDate, type PlatformNavigator, type ProbeEnvelope } from "./chromiumWatched";
 
 export const READ_SECONDS = 30;
 const DEADLINE_MS = 5000;
@@ -48,17 +48,12 @@ export async function runOutputLatencyProbe(
 ): Promise<ProbeEnvelope> {
   const platform = await platformOf(navigator as unknown as PlatformNavigator);
   const context = new AudioContext();
-  const base = {
-    issue: "output-latency" as const,
-    chrome: browserOf(navigator),
-    date: runDate(),
-    runToken: newRunToken(),
-  };
+  const head = { issue: "output-latency" as const, chrome: browserOf(navigator), date: runDate(), runToken: newRunToken() };
   try {
     report("resume");
     await withDeadline(context.resume(), DEADLINE_MS, "context.resume()");
     if (context.state !== "running") {
-      return { ...base, verdict: "NOT CHECKED context-" + context.state, figures: { sampleRate: context.sampleRate } };
+      return makeEnvelope(head, notChecked("context-" + context.state), { sampleRate: context.sampleRate });
     }
     const rows: Row[] = [];
     for (let t = 0; t <= READ_SECONDS && !signal.aborted; t++) {
@@ -80,10 +75,7 @@ export async function runOutputLatencyProbe(
     const outputs = rows.map((r) => r.outputMs);
     const first = rows[0];
     const last = rows[rows.length - 1];
-    return {
-      ...base,
-      verdict: "MEASURED",
-      figures: {
+    return makeEnvelope(head, "MEASURED", {
         rows: rows.map((r) => `${r.t},${r.baseMs},${r.outputMs},${r.label}`).join(" | "),
         firstBaseMs: first.baseMs,
         firstOutputMs: first.outputMs,
@@ -101,8 +93,7 @@ export async function runOutputLatencyProbe(
         userAgent: platform.userAgent,
         uaFullVersion: platform.uaFullVersion,
         platformVersion: platform.platformVersion,
-      },
-    };
+      });
   } finally {
     void context.close();
   }

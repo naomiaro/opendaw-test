@@ -18,20 +18,37 @@
  * the sample at the speaker by the browser's own latency estimate and would book the reported
  * `outputLatency` into the figure; the `getOutputTimestamp()` offsets are recorded beside it.
  *
- * `&sink=<text>` routes the context to the audio output whose
- * label contains the text (the `sinkId` option of a context made after the microphone is open, when labels are readable), so a
- * run does not depend on the system's default output. The recorder reuses the capture-gaps probe's chunked pattern.
+ * `&sink=<text>` routes the context to the audio output whose label contains the text (the `sinkId`
+ * option of a context made after the microphone is open, when labels are readable), so a run does not
+ * depend on the system's default output; no output so labelled reads `NOT CHECKED
+ * no-output-labelled-…`. `&gain=<amplitude>` sets the clicks' amplitude (above 0, at most 1; the
+ * reference clicks' 0.5 without one). The recorder reuses the capture-gaps probe's chunked pattern.
+ *
+ * The verdict is `chromiumRoundTrip.ts`'s `judgeRoundTrip`: `MEASURED`, or `NOT CHECKED` with the
+ * clicks found and the output named, `clock-pair-unstable` (isolate only: the pairs a click is
+ * placed through spread wider than `CLOCK_PAIR_MAX_SPREAD_MS`; the spreads are figures) or
+ * `non-positive-round-trip`. A step that throws reads `NOT CHECKED <step>`; the microphone's and the
+ * capture context's errors carry the error's name.
  */
 
 import { WavFile } from "@opendaw/lib-dsp";
 import { withDeadline } from "@/lib/deadline";
 import { REF_CLICK_DURATION_SEC, REF_CLICK_GAIN, REF_CLICK_HZ } from "./loopbackInjection";
 import { recorderChunkFrames } from "./chromiumCaptureGaps";
-import { contextTimeToPerformanceMs, expectedCaptureFrame, findClickOffsets, median, percentile, type ClockPair } from "./chromiumRoundTrip";
-import { browserOf, newRunToken, platformOf, runDate, type PlatformNavigator, type ProbeEnvelope } from "./chromiumWatched";
-
-export const CLICKS = 10;
-export const MIN_CLICKS_FOUND = 5;
+import {
+  CLICKS,
+  clickGainFrom,
+  clockPairSpreadMs,
+  contextTimeToPerformanceMs,
+  expectedCaptureFrame,
+  findClickOffsets,
+  judgeRoundTrip,
+  median,
+  percentile,
+  performanceMsToContextTime,
+  type ClockPair,
+} from "./chromiumRoundTrip";
+import { browserOf, makeEnvelope, newRunToken, notChecked, platformOf, runDate, type PlatformNavigator, type ProbeEnvelope } from "./chromiumWatched";
 
 const PROCESSOR_NAME = "chromium-round-trip-recorder";
 const DEADLINE_MS = 5000;
@@ -80,6 +97,12 @@ function medianOffset(pairs: readonly ClockPair[]): number {
 }
 
 const stepOf = (error: unknown): string => String(error instanceof Error ? error.message : error).replace(/\s+/g, "-");
+/** The error's name and message as one step word: `NotAllowedError-Permission-denied`. */
+const namedStepOf = (error: unknown): string => `${error instanceof Error ? error.name : "error"}-${stepOf(error)}`;
+const closeQuietly = (context: AudioContext | null, what: string): void => {
+  if (context === null || context.state === "closed") return;
+  context.close().catch((error: unknown) => console.warn(`[chromium-watched] round trip: closing the ${what} context threw: ${String(error)}`));
+};
 const round = (value: number, digits = 2): number => Number(value.toFixed(digits));
 
 async function saveWav(samples: Float32Array, sampleRate: number, runToken: string): Promise<string> {
@@ -96,7 +119,8 @@ async function saveWav(samples: Float32Array, sampleRate: number, runToken: stri
 
 export async function runRoundTripProbe(_signal: AbortSignal, report: (step: string) => void): Promise<ProbeEnvelope> {
   const platform = await platformOf(navigator as unknown as PlatformNavigator);
-  const base = { issue: "output-latency" as const, chrome: browserOf(navigator), date: runDate(), runToken: newRunToken() };
+  const head = { issue: "output-latency" as const, chrome: browserOf(navigator), date: runDate(), runToken: newRunToken() };
+  const params = new URLSearchParams(window.location.search);
   let context: AudioContext | null = null;
   let capture: AudioContext | null = null;
   let pairTimer: ReturnType<typeof setInterval> | undefined;
@@ -110,11 +134,13 @@ export async function runRoundTripProbe(_signal: AbortSignal, report: (step: str
         "getUserMedia",
       );
     } catch (error) {
-      return { ...base, verdict: `NOT CHECKED mic-${stepOf(error)}`, figures: {} };
+      console.error("[chromium-watched] round trip could not open the microphone: " + String(error));
+      return makeEnvelope(head, notChecked(`mic-${namedStepOf(error)}`), {});
     }
     const track = stream.getAudioTracks()[0];
-    if (track === undefined) return { ...base, verdict: "NOT CHECKED mic-no-audio-track", figures: {} };
-    const sinkWanted = new URLSearchParams(window.location.search).get("sink");
+    if (track === undefined) return makeEnvelope(head, notChecked("mic-no-audio-track"), {});
+    const clickGain = clickGainFrom(params, REF_CLICK_GAIN);
+    const sinkWanted = params.get("sink");
     let sinkId: string | undefined;
     if (sinkWanted !== null) {
       const outputs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audiooutput");
@@ -125,16 +151,18 @@ export async function runRoundTripProbe(_signal: AbortSignal, report: (step: str
     context = new AudioContext({ latencyHint: "interactive", ...(sinkId === undefined ? {} : { sinkId }) } as AudioContextOptions);
     await withDeadline(context.resume(), DEADLINE_MS, "resume");
     if (context.state !== "running") throw new Error(`context-${context.state}`);
-    const isolate = new URLSearchParams(window.location.search).get("isolate") === "1";
+    const isolate = params.get("isolate") === "1";
     if (isolate) {
       try {
         capture = new AudioContext({ latencyHint: "interactive", sinkId: { type: "none" } } as unknown as AudioContextOptions);
-      } catch {
-        return { ...base, verdict: "NOT CHECKED sink-none-unsupported", figures: {} };
+      } catch (error) {
+        console.error("[chromium-watched] round trip could not make the capture context: " + String(error));
+        return makeEnvelope(head, notChecked(`capture-context-${namedStepOf(error)}`), {});
       }
+      // The option is read back: a browser that ignores it plays the capture context on the default output.
       const noneSink = (capture as AudioContext & { sinkId?: unknown }).sinkId;
       if (typeof noneSink !== "object" || noneSink === null || (noneSink as { type?: string }).type !== "none") {
-        return { ...base, verdict: "NOT CHECKED sink-none-unsupported", figures: {} };
+        return makeEnvelope(head, notChecked("sink-none-unsupported"), { captureSinkIdReadBack: JSON.stringify(noneSink ?? null) });
       }
       await withDeadline(capture.resume(), DEADLINE_MS, "resume-capture");
       if (capture.state !== "running") throw new Error(`capture-context-${capture.state}`);
@@ -192,7 +220,6 @@ export async function runRoundTripProbe(_signal: AbortSignal, report: (step: str
     const reportedOutputMs = context.outputLatency * 1000;
     const reportedBaseMs = context.baseLatency * 1000;
     report("clicks");
-    const clickGain = Number(new URLSearchParams(window.location.search).get("gain") ?? REF_CLICK_GAIN);
     const burst = context.createBuffer(1, Math.round(REF_CLICK_DURATION_SEC * outRate), outRate);
     const data = burst.getChannelData(0);
     for (let i = 0; i < data.length; i++) data[i] = clickGain * Math.sin((2 * Math.PI * REF_CLICK_HZ * i) / outRate);
@@ -217,21 +244,19 @@ export async function runRoundTripProbe(_signal: AbortSignal, report: (step: str
     const roundTripsMs = offsets.map((o) => (o === null ? null : (o / rate) * 1000));
     const found = roundTripsMs.filter((v): v is number => v !== null);
     const missed = roundTripsMs.flatMap((v, i) => (v === null ? [i + 1] : []));
-    const wav = await saveWav(samples, rate, base.runToken);
+    const wav = await saveWav(samples, rate, head.runToken);
     const settings = track.getSettings();
     const devices = await navigator.mediaDevices.enumerateDevices();
     const readBack = (context as AudioContext & { sinkId?: unknown }).sinkId;
     const usedSink = typeof readBack === "string" ? readBack : "";
     const usedOutput = devices.find((d) => d.kind === "audiooutput" && d.deviceId === (usedSink === "" ? "default" : usedSink));
     const outputLabel = usedOutput === undefined ? "(no matching output)" : usedOutput.label || "(label hidden)";
-    const verdict =
-      found.length < MIN_CLICKS_FOUND
-        ? `NOT CHECKED ${found.length}-of-${CLICKS}-clicks-found-missed-${missed.join("-")}-check-the-system-output-device-which-was-${outputLabel.replace(/\s+/g, "-")}`
-        : "MEASURED";
-    return {
-      ...base,
-      verdict,
-      figures: {
+    // The spread around each click, on both contexts' pairs: only an isolated run places clicks through them.
+    const outputPairSpreadMs = clockPairSpreadMs(outputPairs, scheduled);
+    const capturePairSpreadMs = clockPairSpreadMs(capturePairs, scheduled.map((at) => performanceMsToContextTime(capturePairs, contextTimeToPerformanceMs(outputPairs, at))));
+    const pairSpreadMs = isolate && outputPairSpreadMs !== null && capturePairSpreadMs !== null ? Math.max(outputPairSpreadMs, capturePairSpreadMs) : null;
+    const verdict = judgeRoundTrip({ roundTripsMs, clicks: CLICKS, outputLabel, pairSpreadMs });
+    return makeEnvelope(head, verdict, {
         roundTripsMs: roundTripsMs.map((v) => (v === null ? "miss" : round(v))).join(" "),
         medianMs: median(found) === null ? null : round(median(found) as number),
         p95Ms: percentile(found, 95) === null ? null : round(percentile(found, 95) as number),
@@ -259,19 +284,21 @@ export async function runRoundTripProbe(_signal: AbortSignal, report: (step: str
         captureStampOffsetMs: round(medianOffset(captureStamps)),
         outputPairOffsetMs: round(medianOffset(outputPairs)),
         capturePairOffsetMs: round(medianOffset(capturePairs)),
+        outputPairSpreadMs: outputPairSpreadMs === null ? null : round(outputPairSpreadMs),
+        capturePairSpreadMs: capturePairSpreadMs === null ? null : round(capturePairSpreadMs),
         clickPerformanceMs: scheduled.slice(0, 3).map((at) => round(contextTimeToPerformanceMs(outputPairs, at), 1)).join(" "),
         wav,
         userAgent: platform.userAgent,
         uaFullVersion: platform.uaFullVersion,
         platformVersion: platform.platformVersion,
-      },
-    };
+      });
   } catch (error) {
-    return { ...base, verdict: `NOT CHECKED ${stepOf(error)}`, figures: {} };
+    console.error("[chromium-watched] round trip threw: " + String(error));
+    return makeEnvelope(head, notChecked(stepOf(error)), {});
   } finally {
     for (const track of stream?.getTracks() ?? []) track.stop();
     clearInterval(pairTimer);
-    void context?.close();
-    if (capture !== context) void capture?.close();
+    closeQuietly(context, "output");
+    if (capture !== context) closeQuietly(capture, "capture");
   }
 }

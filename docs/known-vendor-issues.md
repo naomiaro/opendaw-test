@@ -135,17 +135,17 @@ Chromium tracker through the browser).
 - **Workaround:** sum the file sizes under `samples/v2` instead; never trust `estimate()` for OPFS. The
   reporter's: truncate a file to 0 through a sync access handle before `removeEntry()`, which keeps the
   saved usage from going negative, confirmed here on the saved figure across a restart. The SDK's OPFS
-  worker writes through sync access handles (`createSyncAccessHandle`,
-  `node_modules/@opendaw/lib-fusion/dist/opfs/OpfsWorker.js:158`) and deletes without truncating
-  (`removeEntry` at `:81`, `:108`, `:111`), so the demos' page-load sweep lowers the saved figure by
-  every sample it removes: a candidate upstream suggestion, not drafted. (`clearStoredSamples()` in `src/lib/storedSamples.ts` also checks
+  worker (lib-fusion's `OpfsWorker`) writes through sync access handles (`createSyncAccessHandle` on its
+  write path) and deletes through `removeEntry` on its delete paths with no `truncate(0)` before them,
+  so the demos' page-load sweep lowers the saved figure by every sample it removes (the dist lines are
+  in the note). An upstream issue is drafted for review. (`clearStoredSamples()` in `src/lib/storedSamples.ts` also checks
   with `Workers.Opfs.exists` after a delete because `Workers.Opfs.delete` reports nothing when it fails
   — an SDK quirk, not the browser's.)
 - **Evidence:** root CLAUDE.md, "Stored Samples Are Swept at Page Load" ([repo PR #132](https://github.com/naomiaro/opendaw-test/pull/132));
-  `debug/2026-10-23-chromium-watched-issues/note.md`, "opfs-usage"; probe
+  `debug/2026-10-22-chromium-watched-issues/note.md`, "opfs-usage"; probe
   `chromium-watched-issues-debug-demo.html?issue=opfs-usage` (`&truncateFirst=1`), restart envelopes
-  `chromium-opfs-usage-mvk4oyf2-4spf.json` (plain; uploaded before the decode, its figures re-judged
-  `NEGATIVE USAGE`, pinned by the Node test) and `chromium-opfs-usage-mvk4zzeo-oolp.json`
+  `chromium-opfs-usage-mvk4oyf2-4spf.json` (plain; uploaded before the two's-complement decode, the file
+  reads `NOT CHECKED phantom-before-run`; its figures re-judged `NEGATIVE USAGE`, pinned by the Node test) and `chromium-opfs-usage-mvk4zzeo-oolp.json`
   (truncate-first), in-session runs `mvk4ksbd-jmyd`, `mvk4yy1c-cddi`, `mvk3l4wh-mr7j`, `mvk3ldkp-0zna`.
 - **Last checked:** Chrome 155.0.8059.85, macOS 15.6.1, 2026-10-22: `NEGATIVE USAGE` after a restart of
   the user's Chrome, probe `?issue=opfs-usage`; the truncate-first workaround confirmed on the saved
@@ -196,7 +196,7 @@ Chromium tracker through the browser).
   seen, so a stale first read is corrected by the first true one; the recording worklet sends its
   first-quantum time 16 calls late for that reason. A worklet of ours must re-read the clock in
   `process()` and never seed one from its constructor; check any new worklet for that.
-- **Evidence:** `debug/2026-10-23-chromium-watched-issues/note.md`, "first-read"; probe
+- **Evidence:** `debug/2026-10-22-chromium-watched-issues/note.md`, "first-read"; probe
   `chromium-watched-issues-debug-demo.html?issue=first-read`, envelope
   `chromium-first-read-mvk1dr2x-2os8.json` (each run's raw frames).
 - **Last checked:** Chrome 155, macOS, Playwright's Chrome, 2026-10-22: `STALE FIRST READ`, 14 of 15
@@ -227,10 +227,7 @@ Chromium tracker through the browser).
   `Cache-Control: no-store` is no longer an absolute block in Chrome either.) Run the probe in a Chrome
   the user launched: Playwright's Chrome runs with `--disable-back-forward-cache` and reads
   `NOT CHECKED not-cached`.
-  Follow-up PR (not in this one): handle `pageshow` with `persisted` true in the demos — reload or
-  tear the engine down — so a visitor pressing Back on a playing demo does not hear the half-speed
-  clock; verify with the demo reading in the note (injected pageshow listener, transport ratio).
-- **Evidence:** `debug/2026-10-23-chromium-watched-issues/note.md`, "bfcache"; probe
+- **Evidence:** `debug/2026-10-22-chromium-watched-issues/note.md`, "bfcache"; probe
   `chromium-watched-issues-debug-demo.html?issue=bfcache`, envelopes `chromium-bfcache-mvk1sddg-wilz.json`
   and `chromium-bfcache-mvk1suit-b7ru.json`.
 - **Last checked:** Chrome 155.0.8059.85, macOS 15.6.1, the user's Chrome, 2026-10-22: `HALF SPEED`
@@ -272,7 +269,7 @@ Chromium tracker through the browser).
 - **Workaround:** keep it that way: never add a suspend / resume cycle to a demo. A reload or a new
   context recovers; another `suspend()` / `resume()` does not.
   `--disable-features=WebAudioBypassOutputBuffering` for a local check.
-- **Evidence:** `debug/2026-10-23-chromium-watched-issues/note.md`, "suspend-resume"; probe
+- **Evidence:** `debug/2026-10-22-chromium-watched-issues/note.md`, "suspend-resume"; probe
   `chromium-watched-issues-debug-demo.html?issue=suspend-resume&tracker=1` (`&witness=mic` adds the
   microphone and a WAV; `&manual=1` takes one click per cycle, as on the tracker's page); envelopes
   `chromium-suspend-resume-mvk64uts-dikg.json` (graph), `…-mvk65nh4-kjz3.json` (microphone, with its
@@ -305,7 +302,7 @@ Chromium tracker through the browser).
   device whose reported latency is wrong; read `audioContext.outputLatency` a second after `resume()`,
   never at the instant after. The per-stream variation means a figure measured once on a headset is
   not valid for the next stream.
-- **Evidence:** `debug/2026-10-23-chromium-watched-issues/note.md`, "output-latency"; probe
+- **Evidence:** `debug/2026-10-22-chromium-watched-issues/note.md`, "output-latency"; probe
   `chromium-watched-issues-debug-demo.html?issue=output-latency&roundtrip=1&isolate=1` (`&sink=<label text>&gain=1`);
   isolated envelopes `chromium-output-latency-mvk7n65m-w5yf.json` (speaker, 68.86 ms),
   `…-mvk7p08l-k8r6.json` (349.47 ms), `…-mvk7pwdv-1qu8.json` (272.30 ms), `…-mvk7qhlz-ty15.json`
@@ -348,7 +345,7 @@ Chromium tracker through the browser).
   of a real-device take before blaming placement.
 - **Evidence:** `debug/2026-09-02-recording-start-alignment/note.md` (the 441-frame step and the
   stream-start duplicate); `src/demos/recording/CLAUDE.md` (the step);
-  `debug/2026-10-23-chromium-watched-issues/note.md`, "capture-gaps" (envelopes
+  `debug/2026-10-22-chromium-watched-issues/note.md`, "capture-gaps" (envelopes
   `chromium-capture-gaps-mvk38gho-fzko.json`, `…-mvk35pnx-czdb.json`, `…-mvk39txh-gxhd.json`,
   `…-mvk37334-0nth.json`).
 - **Last checked:** steady-state gaps not reproduced on Chrome 155.0.8059.85 / macOS 15.6.1, 2026-10-22,
@@ -369,7 +366,7 @@ Chromium tracker through the browser).
   (`[OPFS] … runs for <n>s at 'write'`; truncate, write and flush share the step), a slower-than-usual
   flush under that stays silent, and a quota overrun on a long recording would come back as a short write count,
   not an exception. Neither observed here.
-- **Evidence:** `debug/2026-10-23-chromium-watched-issues/note.md`, "opfs-flush"; envelopes
+- **Evidence:** `debug/2026-10-22-chromium-watched-issues/note.md`, "opfs-flush"; envelopes
   `chromium-opfs-flush-mvk3i5ql-rcug.json`, `chromium-opfs-flush-mvk3ibtu-y9rp.json`.
 - **Last checked:** the flush: not slow on Chrome 155.0.8059.85 / macOS 15.6.1, 2026-10-22, probe
   `?issue=opfs-flush`, `MEASURED`: median 0.53–0.57 ms per 1 MiB flush, 1.44–1.46 ms per 16 MiB, in two

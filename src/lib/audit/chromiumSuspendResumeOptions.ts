@@ -24,6 +24,9 @@
  *   explicit parameter overrides its part of the preset.
  */
 
+import type { ReadingVerdict } from "./chromiumSuspendResume";
+import type { Verdict } from "./chromiumWatched";
+
 export type SuspendResumeControl = "crackle" | "harmonic";
 export type SuspendResumeWitness = "mic";
 export type SuspendResumeModule = "file" | "blob";
@@ -93,13 +96,15 @@ export const MIC_ONLY_VERDICT = "DISTORTED (mic only)";
  * The run's verdict, by precedence: `HALF RATE` when the clock rule fires; `DISTORTED` when the
  * graph's rules fire; `DISTORTED (mic only)` when only the microphone's do, a candidate and not a
  * reproduction, since a sound in the room reads the same; then a `NOT CHECKED` from either
- * reading; else `CLEAN`.
+ * reading; else `CLEAN`. The clock is judged on the cycles that completed, so a `HALF RATE` that
+ * stands beside a failed step fired before the failure; a failed step makes both readings
+ * `NOT CHECKED <step>`, never `CLEAN` or `DISTORTED`.
  */
-export function overallVerdict(graph: string, mic: string | null, halfRate: boolean): string {
+export function overallVerdict(graph: ReadingVerdict, mic: ReadingVerdict | null, halfRate: boolean): Verdict {
   if (halfRate) return "HALF RATE";
   if (graph === "DISTORTED") return "DISTORTED";
   if (mic === "DISTORTED") return MIC_ONLY_VERDICT;
-  if (graph.startsWith("NOT CHECKED")) return graph;
-  if (mic !== null && mic.startsWith("NOT CHECKED")) return mic;
+  if (graph !== "CLEAN") return graph;
+  if (mic !== null && mic !== "CLEAN") return mic;
   return "CLEAN";
 }

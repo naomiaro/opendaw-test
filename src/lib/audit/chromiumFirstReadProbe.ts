@@ -6,7 +6,7 @@
  * happens once per context. The judgement is `chromiumFirstRead.ts`.
  */
 
-import { browserOf, newRunToken, runDate, type ProbeEnvelope } from "./chromiumWatched";
+import { browserOf, makeEnvelope, newRunToken, runDate, type ProbeEnvelope } from "./chromiumWatched";
 import { FIRST_READ_QUANTUM, judgeFirstRead, type FirstReadSample, type FirstReadVerdict } from "./chromiumFirstRead";
 
 /** What is loaded before the probe module: nothing, a module that is slow to evaluate, one that is slow to parse. */
@@ -186,7 +186,6 @@ export async function runFirstReadProbe(signal: AbortSignal, report: (step: stri
     : verdicts.includes("NOT CHECKED") ? "NOT CHECKED too-few-runs"
     : "FIRST READ TRUE";
   if (notRunning !== null) figures.notRunning = notRunning;
-  figures.verdict = verdict;
 
-  return { issue: "first-read", chrome: browserOf(navigator), date: runDate(), runToken: newRunToken(), verdict, figures };
+  return makeEnvelope({ issue: "first-read", chrome: browserOf(navigator), date: runDate(), runToken: newRunToken() }, verdict, figures);
 }

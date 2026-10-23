@@ -10,18 +10,21 @@
  * restart (does the origin read gigabytes with nothing stored?).
  */
 
-import type { ProbeEnvelope } from "./chromiumWatched";
+import { makeEnvelope, notChecked, type Figures, type ProbeEnvelope, type Verdict } from "./chromiumWatched";
 
 export const GIB = 1024 * 1024 * 1024;
 
-export type OpfsUsageVerdict = "NEGATIVE USAGE" | "COUNTED" | "NOT COUNTED" | "NOT CHECKED";
+export type OpfsUsageVerdict = "NEGATIVE USAGE" | "COUNTED" | "NOT COUNTED" | "NOT CHECKED readings-missing";
 
-/** `navigator.storage.estimate()` usage at each stage of a run, in bytes; null where not read. */
+/**
+ * `navigator.storage.estimate()` usage at each stage of a run, in bytes; null where it was not
+ * read or `estimate()` gave no `usage`.
+ */
 export interface UsageReadings {
-  beforeWrite: number;
+  beforeWrite: number | null;
   /** After the write, the flush and the handle's close. */
-  afterWrite: number;
-  afterDelete: number;
+  afterWrite: number | null;
+  afterDelete: number | null;
   /** On a later page load, after the browser was quit and reopened. */
   afterRestart: number | null;
 }
@@ -39,8 +42,8 @@ export function savedUsageSigned(afterRestart: number): number {
  * `NEGATIVE USAGE` when the restart reading decodes to a negative saved figure (no baseline needed)
  * and the origin's files cannot account for the raw reading (they come within 1 GiB of it only on
  * an origin that really stores 2 GiB or more); otherwise the in-session verdict, `NOT COUNTED` when
- * the usage moved by under half the bytes written; `NOT CHECKED` when an in-session reading is
- * missing. The detail names both halves. `storedBytesAtRestart` is the size of every file in the
+ * the usage moved by under half the bytes written; `NOT CHECKED readings-missing` when an in-session
+ * reading is missing. The detail names both halves. `storedBytesAtRestart` is the size of every file in the
  * origin's OPFS at the restart reading (0 when it holds none).
  */
 export function judgeOpfsUsage(
@@ -52,12 +55,16 @@ export function judgeOpfsUsage(
   const saved = afterRestart === null ? null : savedUsageSigned(afterRestart);
   const restart =
     afterRestart === null ? "restart: NOT CHECKED" : `restart: ${afterRestart} bytes, saved figure ${saved}, ${storedBytesAtRestart} bytes of files`;
-  const inSessionMissing = ![beforeWrite, afterWrite, afterDelete, writtenBytes].every(Number.isFinite);
+  if (beforeWrite === null || afterWrite === null || afterDelete === null || ![beforeWrite, afterWrite, afterDelete, writtenBytes].every(Number.isFinite)) {
+    const sessionDetail = "in-session: readings missing";
+    if (afterRestart !== null && saved !== null && saved < 0 && storedBytesAtRestart + GIB < afterRestart) {
+      return { verdict: "NEGATIVE USAGE", detail: `${restart}; ${sessionDetail}`, savedUsageSigned: saved };
+    }
+    return { verdict: "NOT CHECKED readings-missing", detail: `${sessionDetail}; ${restart}`, savedUsageSigned: saved };
+  }
   const counted = afterWrite - beforeWrite;
-  const inSession: OpfsUsageVerdict = inSessionMissing ? "NOT CHECKED" : counted < writtenBytes / 2 ? "NOT COUNTED" : "COUNTED";
-  const sessionDetail = inSessionMissing
-    ? "in-session: readings missing"
-    : `in-session: ${inSession} (+${counted} of ${writtenBytes} bytes, ${afterDelete - beforeWrite} left after the delete)`;
+  const inSession: OpfsUsageVerdict = counted < writtenBytes / 2 ? "NOT COUNTED" : "COUNTED";
+  const sessionDetail = `in-session: ${inSession} (+${counted} of ${writtenBytes} bytes, ${afterDelete - beforeWrite} left after the delete)`;
   if (afterRestart !== null && saved !== null && saved < 0 && storedBytesAtRestart + GIB < afterRestart) {
     return { verdict: "NEGATIVE USAGE", detail: `${restart}; ${sessionDetail}`, savedUsageSigned: saved };
   }
@@ -74,8 +81,24 @@ export function summarizeFlush(ms: number[]): { median: number; p95: number; max
   return { median, p95, max: sorted[sorted.length - 1] };
 }
 
+/**
+ * Why the write cannot be judged, or null when it can: nothing written (`write-none`), fewer bytes
+ * than asked for (`write-short`), or a size read back through the handle that is not the bytes
+ * written (`write-size-mismatch`).
+ */
+export function writeProblem(writtenBytes: number, sizeReadBack: number, requestedBytes: number): string | null {
+  if (!(writtenBytes > 0)) return "write-none";
+  if (writtenBytes < requestedBytes) return "write-short";
+  if (sizeReadBack !== writtenBytes) return "write-size-mismatch";
+  return null;
+}
+
+/** The schema of the stored run: an entry with no version, or another one, is an older page's and is not judged. */
+export const STORED_USAGE_RUN_VERSION = 2;
+
 /** What the run's first page load keeps in `localStorage` for a later load to judge. */
 export interface StoredUsageRun {
+  version: typeof STORED_USAGE_RUN_VERSION;
   runToken: string;
   chrome: string;
   userAgent: string;
@@ -83,22 +106,28 @@ export interface StoredUsageRun {
   osVersion: string | null;
   date: string;
   truncateFirst: boolean;
+  /** The bytes the run asked the worker to write. */
+  requestedBytes: number;
   writtenBytes: number;
   /** The file's size read back through the handle (`getSize()`) before the delete. */
   sizeReadBack: number;
-  beforeWrite: number;
-  afterWrite: number;
-  afterDelete: number;
-  quota: number;
+  /** Null where `estimate()` gave no usage (or quota). */
+  beforeWrite: number | null;
+  afterWrite: number | null;
+  afterDelete: number | null;
+  quota: number | null;
   /** The size of every file in the origin's OPFS just before the write. */
   opfsBytesAtRun: number;
   /** `Date.now()` when the readings were stored. */
   storedAt: number;
 }
 
-const NUMBER_FIELDS = ["writtenBytes", "sizeReadBack", "beforeWrite", "afterWrite", "afterDelete", "quota", "opfsBytesAtRun", "storedAt"] as const;
+const NUMBER_FIELDS = ["requestedBytes", "writtenBytes", "sizeReadBack", "opfsBytesAtRun", "storedAt"] as const;
+const NULLABLE_NUMBER_FIELDS = ["beforeWrite", "afterWrite", "afterDelete", "quota"] as const;
+const STRING_FIELDS = ["runToken", "chrome", "userAgent", "date"] as const;
+const NULLABLE_STRING_FIELDS = ["chromeFullVersion", "osVersion"] as const;
 
-/** The stored run, or null when the text is not one. */
+/** The stored run, or null when the text is not one of this schema's (an older page's entry included). */
 export function parseStoredUsageRun(raw: string): StoredUsageRun | null {
   let value: unknown;
   try {
@@ -108,16 +137,20 @@ export function parseStoredUsageRun(raw: string): StoredUsageRun | null {
   }
   if (typeof value !== "object" || value === null) return null;
   const run = value as Record<string, unknown>;
-  if (typeof run.runToken !== "string" || typeof run.chrome !== "string" || typeof run.date !== "string") return null;
+  if (run.version !== STORED_USAGE_RUN_VERSION) return null;
+  if (!STRING_FIELDS.every((field) => typeof run[field] === "string")) return null;
+  if (!NULLABLE_STRING_FIELDS.every((field) => run[field] === null || typeof run[field] === "string")) return null;
   if (typeof run.truncateFirst !== "boolean") return null;
   if (!NUMBER_FIELDS.every((field) => typeof run[field] === "number")) return null;
+  if (!NULLABLE_NUMBER_FIELDS.every((field) => run[field] === null || typeof run[field] === "number")) return null;
   return value as StoredUsageRun;
 }
 
 /** What the later load reads: `estimate()` once, what the origin's OPFS holds, and its own browser. */
 export interface RestartReading {
-  usage: number;
-  quota: number;
+  /** Null when `estimate()` gave no usage: the restart cannot be judged, and is not kept for the next drift. */
+  usage: number | null;
+  quota: number | null;
   /** Files left under the probe's own `test/` folder. */
   testFiles: number;
   /** The size of every file anywhere in the origin's OPFS. */
@@ -148,27 +181,32 @@ function driftMatch(drift: number, writtenBytes: number): string {
 }
 
 /**
- * The restart half judged: `NOT CHECKED not-restarted` when the session marker survived, else
- * `judgeOpfsUsage` on the restart reading. The drift since the previous restart reading (saved
- * figures, signed) is a figure and a sentence in the detail, not a verdict.
+ * The restart half judged: `NOT CHECKED not-restarted` when the session marker survived,
+ * `NOT CHECKED restart-no-estimate` when `estimate()` gave no usage, else `judgeOpfsUsage` on the
+ * restart reading. The drift since the previous restart reading (saved figures, signed) is a
+ * figure and a sentence in the detail, not a verdict.
  */
-function judgeRestart(run: StoredUsageRun, restart: RestartReading): { verdict: string; detail: string; drift: number | null } {
+function judgeRestart(run: StoredUsageRun, restart: RestartReading): { verdict: Verdict; detail: string; drift: number | null } {
+  const usage = restart.usage;
   if (restart.sessionMarkerPresent) {
     return {
-      verdict: "NOT CHECKED not-restarted",
-      detail: `the run's session marker is still there: a reload, not a restart; restart: ${restart.usage} bytes; readings kept`,
+      verdict: notChecked("not-restarted"),
+      detail: `the run's session marker is still there: a reload, not a restart; restart: ${usage ?? "no"} bytes; readings kept`,
       drift: null,
     };
   }
+  if (usage === null) {
+    return { verdict: notChecked("restart-no-estimate"), detail: "restart: estimate() gave no usage; not kept as the last restart reading", drift: null };
+  }
   const judged = judgeOpfsUsage(
-    { beforeWrite: run.beforeWrite, afterWrite: run.afterWrite, afterDelete: run.afterDelete, afterRestart: restart.usage },
+    { beforeWrite: run.beforeWrite, afterWrite: run.afterWrite, afterDelete: run.afterDelete, afterRestart: usage },
     run.writtenBytes,
     restart.opfsBytes
   );
   if (restart.previousRestart === null) {
     return { ...judged, detail: `${judged.detail}; drift: no previous restart reading`, drift: null };
   }
-  const drift = savedUsageSigned(restart.usage) - savedUsageSigned(restart.previousRestart.usage);
+  const drift = savedUsageSigned(usage) - savedUsageSigned(restart.previousRestart.usage);
   const detail =
     `${judged.detail}; drift since the restart of ${restart.previousRestart.date}: ${drift} bytes ` +
     `(plain delete expected ≈ −${run.writtenBytes}, truncate-first expected ≈ 0; this ${run.truncateFirst ? "truncate-first" : "plain"} run matches ${driftMatch(drift, run.writtenBytes)})`;
@@ -176,7 +214,8 @@ function judgeRestart(run: StoredUsageRun, restart: RestartReading): { verdict: 
 }
 
 /**
- * The envelope of a usage run: in-session when `restart` is null, else the later load's.
+ * The envelope of a usage run: in-session when `restart` is null, else the later load's. A write
+ * that `writeProblem` refuses reads `NOT CHECKED write-<reason>` on either.
  * A restart envelope gets its own run token (so the in-session file is not overwritten), names
  * the stored run's, and carries the restart load's browser, OS and date at the top level, the
  * run's beside them. `unexplainedAtRunBytes` is usage the session's tally held beyond the origin's
@@ -185,31 +224,35 @@ function judgeRestart(run: StoredUsageRun, restart: RestartReading): { verdict: 
  * reported cause puts at minus the file's size for a plain delete and 0 after a truncate.
  */
 export function usageEnvelope(run: StoredUsageRun, restart: RestartReading | null, runToken: string, now: number): ProbeEnvelope {
-  const judged =
-    restart === null
-      ? {
-          ...judgeOpfsUsage({ beforeWrite: run.beforeWrite, afterWrite: run.afterWrite, afterDelete: run.afterDelete, afterRestart: null }, run.writtenBytes),
-          drift: null,
-        }
-      : judgeRestart(run, restart);
-  const figures: Record<string, number | string | null> = {
-    verdict: judged.verdict,
+  const write = writeProblem(run.writtenBytes, run.sizeReadBack, run.requestedBytes);
+  const judged: { verdict: Verdict; detail: string; drift: number | null } =
+    write !== null
+      ? { verdict: notChecked(write), detail: `the write is not judged: ${write} (${run.writtenBytes} of ${run.requestedBytes} bytes written, ${run.sizeReadBack} read back)`, drift: null }
+      : restart === null
+        ? {
+            ...judgeOpfsUsage({ beforeWrite: run.beforeWrite, afterWrite: run.afterWrite, afterDelete: run.afterDelete, afterRestart: null }, run.writtenBytes),
+            drift: null,
+          }
+        : judgeRestart(run, restart);
+  const savedAtRestart = restart === null || restart.usage === null ? null : savedUsageSigned(restart.usage);
+  const figures: Figures = {
     detail:
       restart === null
         ? judged.detail.replace("restart: NOT CHECKED", "restart: NOT CHECKED — quit Chrome fully and reopen this URL by hand")
         : judged.detail,
     storedRunToken: run.runToken,
     truncateFirst: run.truncateFirst ? "yes" : "no",
+    requestedBytes: run.requestedBytes,
     writtenBytes: run.writtenBytes,
     sizeReadBack: run.sizeReadBack,
     beforeWrite: run.beforeWrite,
     afterWrite: run.afterWrite,
     afterDelete: run.afterDelete,
-    countedBytes: run.afterWrite - run.beforeWrite,
-    residualAfterDeleteBytes: run.afterDelete - run.beforeWrite,
+    countedBytes: run.afterWrite === null || run.beforeWrite === null ? null : run.afterWrite - run.beforeWrite,
+    residualAfterDeleteBytes: run.afterDelete === null || run.beforeWrite === null ? null : run.afterDelete - run.beforeWrite,
     opfsBytesAtRun: run.opfsBytesAtRun,
-    unexplainedAtRunBytes: run.beforeWrite - run.opfsBytesAtRun,
-    savedUsageSigned: restart === null ? null : savedUsageSigned(restart.usage),
+    unexplainedAtRunBytes: run.beforeWrite === null ? null : run.beforeWrite - run.opfsBytesAtRun,
+    savedUsageSigned: savedAtRestart,
     restartDriftBytes: judged.drift,
     previousRestartUsage: restart?.previousRestart?.usage ?? null,
     previousRestartDate: restart?.previousRestart?.date ?? null,
@@ -231,12 +274,5 @@ export function usageEnvelope(run: StoredUsageRun, restart: RestartReading | nul
     opfsGetDirectory: "yes",
     syncAccessHandle: "yes",
   };
-  return {
-    issue: "opfs-usage",
-    chrome: restart?.chrome ?? run.chrome,
-    date: restart?.date ?? run.date,
-    runToken,
-    verdict: judged.verdict,
-    figures,
-  };
+  return makeEnvelope({ issue: "opfs-usage", chrome: restart?.chrome ?? run.chrome, date: restart?.date ?? run.date, runToken }, judged.verdict, figures);
 }

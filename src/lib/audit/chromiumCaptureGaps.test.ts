@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { findDuplicateBlocks, findZeroRuns, headZerosOf, judgeCaptureGaps, recorderChunkFrames } from "./chromiumCaptureGaps";
+import {
+  DUPLICATE_BLOCK,
+  MAX_HEAD_SEC,
+  MIN_ZERO_RUN,
+  START_WINDOW_SEC,
+  captureVerdict,
+  findDuplicateBlocks,
+  findZeroRuns,
+  headZerosOf,
+  judgeCaptureGaps,
+  recorderChunkFrames,
+  sourceProblem,
+} from "./chromiumCaptureGaps";
 
 const RATE = 48000;
 
@@ -121,6 +133,72 @@ describe("capture gaps", () => {
     expect(judged.verdict).toBe("START GAPS");
     expect(judged.startDuplicates).toEqual([at + 128]);
     expect(judged.duplicateCount).toBe(0);
+  });
+});
+
+describe("capture gaps at the boundaries", () => {
+  const windowEnd = START_WINDOW_SEC * RATE;
+
+  it("reads an insert starting exactly at the start window's end as GAPS, one frame before it as START GAPS", () => {
+    expect(judge(withInsert(tone(60), windowEnd, new Float32Array(480))).judged.verdict).toBe("GAPS");
+    expect(judge(withInsert(tone(60), windowEnd - 1, new Float32Array(480))).judged.verdict).toBe("START GAPS");
+  });
+
+  it("reads a head of exactly MAX_HEAD_SEC as a stream starting, not as no signal", () => {
+    const frames = withInsert(tone(55), 0, new Float32Array(MAX_HEAD_SEC * RATE));
+    expect(judge(frames).judged.verdict).toBe("CLEAN");
+  });
+
+  it("counts a run of exactly MIN_ZERO_RUN zeros and not one a frame shorter", () => {
+    expect(judge(withInsert(tone(60), 30 * RATE, new Float32Array(MIN_ZERO_RUN))).runs).toHaveLength(1);
+    expect(judge(withInsert(tone(60), 30 * RATE, new Float32Array(MIN_ZERO_RUN - 1))).runs).toEqual([]);
+  });
+
+  it("counts a zero run that runs to the end of the capture", () => {
+    const frames = tone(60);
+    frames.fill(0, frames.length - 480);
+    const { runs, judged } = judge(frames);
+    expect(runs).toEqual([{ start: frames.length - 480, length: 480 }]);
+    expect(judged.verdict).toBe("GAPS");
+  });
+
+  it("reads 10 s of zeros as NOT CHECKED for its length, before no-signal", () => {
+    expect(judge(new Float32Array(10 * RATE)).judged.verdict).toBe("NOT CHECKED");
+  });
+
+  it("reports a repeat longer than one block once, at its start", () => {
+    const frames = tone(60);
+    const at = 45 * RATE;
+    // Three blocks equal to the one before them: frames at..at+3·block repeat the block before `at`.
+    for (let i = 0; i < 3 * DUPLICATE_BLOCK; i++) frames[at + i] = frames[at - DUPLICATE_BLOCK + (i % DUPLICATE_BLOCK)];
+    expect(findDuplicateBlocks(frames)).toEqual([at]);
+  });
+});
+
+describe("sourceProblem / captureVerdict", () => {
+  const healthy = { ended: false, muted: false, emptyQuanta: 0 };
+
+  it("names a source that ended, was muted, or fed empty inputs; null for a healthy one", () => {
+    expect(sourceProblem(healthy)).toBeNull();
+    expect(sourceProblem({ ...healthy, ended: true })).toBe("source-ended");
+    expect(sourceProblem({ ...healthy, muted: true })).toBe("source-muted");
+    expect(sourceProblem({ ...healthy, emptyQuanta: 1 })).toBe("source-empty-input");
+    expect(sourceProblem({ ended: true, muted: true, emptyQuanta: 3 })).toBe("source-ended");
+  });
+
+  it("reads a source problem as NOT CHECKED even when the zeros it left read GAPS", () => {
+    const { judged } = judge(withInsert(tone(60), 30 * RATE, new Float32Array(48000)));
+    expect(judged.verdict).toBe("GAPS");
+    expect(captureVerdict(judged, null, { ...healthy, ended: true }, 60)).toBe("NOT CHECKED source-ended");
+    expect(captureVerdict(judged, null, { ...healthy, emptyQuanta: 375 }, 60)).toBe("NOT CHECKED source-empty-input");
+  });
+
+  it("puts a failed step first, then the source, then the judgement", () => {
+    const { judged } = judge(tone(60));
+    expect(captureVerdict(judged, "capture-threw", { ...healthy, muted: true }, 60)).toBe("NOT CHECKED capture-threw");
+    expect(captureVerdict(judged, null, healthy, 60)).toBe("CLEAN");
+    const short = judge(tone(12)).judged;
+    expect(captureVerdict(short, null, healthy, 12)).toBe("NOT CHECKED 12.0-s");
   });
 });
 

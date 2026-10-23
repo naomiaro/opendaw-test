@@ -6,6 +6,7 @@
  */
 
 import { BASELINE_MIN_RATIO, HALF_SPEED_MAX_RATIO, clockRatio, type ClockRatioSample } from "./chromiumBfcache";
+import { notChecked, type NotChecked } from "./chromiumWatched";
 
 /** One measurement window of the 440 Hz tone, read from an analyser. */
 export interface TonePurity {
@@ -21,9 +22,24 @@ export interface TonePurity {
 
 export type SuspendResumeVerdict = "DISTORTED" | "CLEAN" | "NOT CHECKED";
 
+/**
+ * Why a reading was not judged: too few windows, a baseline with no tone in it (silence, or a
+ * level under `SIGNAL_FLOOR_RMS`), or a baseline whose purity is not a number.
+ */
+export type SuspendResumeNotCheckedReason = "too-few-cycles" | "no-signal" | "no-baseline-purity";
+
+/** What one reading (the graph's, or the microphone's) reads as: a judged word, or why not. */
+export type ReadingVerdict = "DISTORTED" | "CLEAN" | NotChecked;
+
 export interface SuspendResumeJudgement {
   verdict: SuspendResumeVerdict;
-  /** The lowest purity over the cycles; NaN when there were none. */
+  /** Null when judged. */
+  notCheckedReason: SuspendResumeNotCheckedReason | null;
+  /**
+   * The lowest purity over the cycles; NaN when there were none. A silent window (every bin
+   * −Infinity, so its purity is not a number) counts as −Infinity: it is the worst window, never
+   * one left out.
+   */
   worstPurityDb: number;
   /** The cycle (from 0) the worst purity was read after; null when there were none. */
   worstCycle: number | null;
@@ -33,6 +49,8 @@ export interface SuspendResumeJudgement {
   worstClicks: number;
   /** The cycle (from 0) with the most clicks; null when no window held one. */
   worstClicksCycle: number | null;
+  /** Windows whose purity is not a number: the analyser read silence. */
+  silentWindows: number;
 }
 
 export const TONE_HZ = 440;
@@ -40,6 +58,12 @@ export const DROPOUT_RMS_RATIO = 0.1;
 /** A purity this far below the baseline's, or further, is distortion. */
 export const PURITY_DROP_DB = 12;
 export const MIN_CYCLES = 10;
+/**
+ * A baseline window quieter than this RMS holds no tone to judge (−100 dBFS; the graph's tone
+ * sits at 0.14, the microphone's measured windows tens of dB above the floor): a processor that
+ * threw renders silence, a muted microphone delivers zeros.
+ */
+export const SIGNAL_FLOOR_RMS = 1e-5;
 /**
  * Bins either side of the tone's own that belong to it: the analyser's Blackman window
  * spreads a pure sine over a main lobe three bins wide each side. Counting the lobe as
@@ -86,13 +110,17 @@ export function tonePurityFromSpectrum(
   return { fundamentalDb: bins[toneBin], harmonicsDb: 10 * Math.log10(power), dropouts, clicks };
 }
 
-/** Consecutive windows of `windowSize` samples whose RMS is below `DROPOUT_RMS_RATIO` × `baselineRms`. */
+/**
+ * Consecutive windows of `windowSize` samples whose RMS is below `DROPOUT_RMS_RATIO` × `baselineRms`;
+ * an all-zero window is always one, so a baseline RMS of 0 still counts silence.
+ */
 export function countDropouts(samples: Float32Array, windowSize: number, baselineRms: number): number {
   let count = 0;
   for (let start = 0; start + windowSize <= samples.length; start += windowSize) {
     let sum = 0;
     for (let i = start; i < start + windowSize; i++) sum += samples[i] * samples[i];
-    if (Math.sqrt(sum / windowSize) < DROPOUT_RMS_RATIO * baselineRms) count++;
+    const rms = Math.sqrt(sum / windowSize);
+    if (rms === 0 || rms < DROPOUT_RMS_RATIO * baselineRms) count++;
   }
   return count;
 }
@@ -117,13 +145,24 @@ export function countClicks(samples: Float32Array, threshold: number): number {
   return count;
 }
 
-export function judgeSuspendResume(baseline: TonePurity, afterCycles: TonePurity[], cycles: number): SuspendResumeJudgement {
+/**
+ * The rules: `NOT CHECKED` under `MIN_CYCLES` windows (the fewer of `cycles` and the windows
+ * given), against a silent baseline (fundamental −Infinity, or `baselineRms` under
+ * `SIGNAL_FLOOR_RMS`) and against a baseline whose purity is not a number; else `DISTORTED`
+ * when the worst purity falls more than `PURITY_DROP_DB` below the baseline's (a silent window
+ * counts as −Infinity), when two consecutive windows hold dropouts, or when one window holds
+ * more than `CLICK_MARGIN` clicks over the baseline's; else `CLEAN`.
+ */
+export function judgeSuspendResume(baseline: TonePurity, afterCycles: TonePurity[], cycles: number, baselineRms: number): SuspendResumeJudgement {
   let worstPurityDb = NaN;
   let worstCycle: number | null = null;
   let worstClicks = 0;
   let worstClicksCycle: number | null = null;
+  let silentWindows = 0;
   for (let cycle = 0; cycle < afterCycles.length; cycle++) {
-    const purity = purityOf(afterCycles[cycle]);
+    const raw = purityOf(afterCycles[cycle]);
+    if (Number.isNaN(raw)) silentWindows++;
+    const purity = Number.isNaN(raw) ? -Infinity : raw;
     if (worstCycle === null || purity < worstPurityDb) {
       worstPurityDb = purity;
       worstCycle = cycle;
@@ -134,12 +173,27 @@ export function judgeSuspendResume(baseline: TonePurity, afterCycles: TonePurity
     }
   }
   const dropoutsAfter = afterCycles.reduce((sum, tone) => sum + tone.dropouts, 0);
-  const judged = { worstPurityDb, worstCycle, dropoutsAfter, worstClicks, worstClicksCycle };
-  if (cycles < MIN_CYCLES) return { verdict: "NOT CHECKED", ...judged };
-  const purityFell = worstCycle !== null && worstPurityDb < purityOf(baseline) - PURITY_DROP_DB;
+  const judged = { worstPurityDb, worstCycle, dropoutsAfter, worstClicks, worstClicksCycle, silentWindows };
+  const notJudged = (reason: SuspendResumeNotCheckedReason): SuspendResumeJudgement => ({ verdict: "NOT CHECKED", notCheckedReason: reason, ...judged });
+  if (Math.min(cycles, afterCycles.length) < MIN_CYCLES) return notJudged("too-few-cycles");
+  if (baseline.fundamentalDb === -Infinity || !(baselineRms >= SIGNAL_FLOOR_RMS)) return notJudged("no-signal");
+  const baselinePurity = purityOf(baseline);
+  if (!Number.isFinite(baselinePurity)) return notJudged("no-baseline-purity");
+  const purityFell = worstCycle !== null && worstPurityDb < baselinePurity - PURITY_DROP_DB;
   const dropoutsTogether = afterCycles.some((tone, i) => i > 0 && tone.dropouts > 0 && afterCycles[i - 1].dropouts > 0);
   const clicked = worstClicks > baseline.clicks + CLICK_MARGIN;
-  return { verdict: purityFell || dropoutsTogether || clicked ? "DISTORTED" : "CLEAN", ...judged };
+  return { verdict: purityFell || dropoutsTogether || clicked ? "DISTORTED" : "CLEAN", notCheckedReason: null, ...judged };
+}
+
+/**
+ * One reading's word. A failed step reads `NOT CHECKED <step>` however many cycles were banked
+ * before it: a run that did not finish is not a clean one. Then the judgement's own reason
+ * (`<n>-cycles` for too few), else its word.
+ */
+export function readingWord(judged: SuspendResumeJudgement, completedCycles: number, failedStep: string | null): ReadingVerdict {
+  if (failedStep !== null) return notChecked(failedStep);
+  if (judged.verdict !== "NOT CHECKED") return judged.verdict;
+  return notChecked(judged.notCheckedReason === "too-few-cycles" ? `${completedCycles}-cycles` : (judged.notCheckedReason ?? "unjudged"));
 }
 
 export interface HalfRateJudgement {

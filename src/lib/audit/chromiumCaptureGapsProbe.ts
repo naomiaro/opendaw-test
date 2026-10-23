@@ -12,12 +12,24 @@
  *   the microphone.
  *
  * A worklet recorder copies channel 0 of the source node into one-second chunks and transfers
- * them; nothing else is in the graph. The judgement is `chromiumCaptureGaps.ts`.
+ * them; nothing else is in the graph. The track's `ended` and `mute` events are watched and the
+ * recorder counts the quanta whose input had no channel: any of them reads `NOT CHECKED
+ * source-<ended|muted|empty-input>`, the counts kept as figures. The judgement is
+ * `chromiumCaptureGaps.ts`.
  */
 
 import { withDeadline } from "@/lib/deadline";
-import { browserOf, newRunToken, platformOf, runDate, type PlatformNavigator, type ProbeEnvelope } from "./chromiumWatched";
-import { findDuplicateBlocks, findZeroRuns, headZerosOf, judgeCaptureGaps, recorderChunkFrames, type ZeroRun } from "./chromiumCaptureGaps";
+import { browserOf, makeEnvelope, newRunToken, platformOf, runDate, type Figures, type PlatformNavigator, type ProbeEnvelope } from "./chromiumWatched";
+import {
+  captureVerdict,
+  findDuplicateBlocks,
+  findZeroRuns,
+  headZerosOf,
+  judgeCaptureGaps,
+  recorderChunkFrames,
+  type SourceHealth,
+  type ZeroRun,
+} from "./chromiumCaptureGaps";
 
 export const CAPTURE_SECONDS = 60;
 
@@ -192,7 +204,13 @@ export async function runCaptureGapsProbe(_signal: AbortSignal, report: (step: s
       console.error("[chromium-watched] capture-gaps could not open the " + sourceKind + ": " + String(error));
     }
     let captured: { samples: Float32Array; emptyQuanta: number } = { samples: new Float32Array(0), emptyQuanta: 0 };
+    const events = { ended: 0, mute: 0 };
+    let mutedAtStart = false;
     if (source !== null) {
+      const track = source.track;
+      mutedAtStart = track.muted;
+      track.addEventListener("ended", () => events.ended++);
+      track.addEventListener("mute", () => events.mute++);
       report("capture");
       const frames = CAPTURE_SECONDS * context.sampleRate;
       try {
@@ -207,15 +225,18 @@ export async function runCaptureGapsProbe(_signal: AbortSignal, report: (step: s
     const captureSeconds = samples.length / context.sampleRate;
     const headZeros = headZerosOf(samples);
     const judged = judgeCaptureGaps(findZeroRuns(samples), findDuplicateBlocks(samples), headZeros, captureSeconds, context.sampleRate);
-    const verdict =
-      failedStep !== null ? `NOT CHECKED ${failedStep}`
-      : judged.verdict === "NOT CHECKED" ? `NOT CHECKED ${captureSeconds.toFixed(1)}-s`
-      : judged.verdict;
+    const endedAtEnd = source !== null && source.track.readyState === "ended";
+    const mutedAtEnd = source !== null && source.track.muted;
+    const health: SourceHealth = {
+      ended: events.ended > 0 || endedAtEnd,
+      muted: events.mute > 0 || mutedAtStart || mutedAtEnd,
+      emptyQuanta: captured.emptyQuanta,
+    };
+    const verdict = captureVerdict(judged, failedStep, health, captureSeconds);
     const settings: MediaTrackSettings = source === null ? {} : source.track.getSettings();
     const starts = (runs: readonly ZeroRun[]) => joinFirst(runs.map((run) => run.start));
     const lengths = (runs: readonly ZeroRun[]) => joinFirst(runs.map((run) => run.length));
-    const figures: Record<string, number | string | null> = {
-      verdict,
+    const figures: Figures = {
       source: sourceKind,
       requestedRate,
       sampleRate: context.sampleRate,
@@ -235,6 +256,10 @@ export async function runCaptureGapsProbe(_signal: AbortSignal, report: (step: s
       startDuplicateCount: judged.startDuplicates.length,
       startDuplicateStarts: joinFirst(judged.startDuplicates),
       emptyInputQuanta: captured.emptyQuanta,
+      trackEndedEvents: events.ended,
+      trackMuteEvents: events.mute,
+      trackMutedAtStart: source === null ? null : String(mutedAtStart),
+      trackStateAtEnd: source === null ? null : source.track.readyState,
       deviceLabel: source === null ? null : source.deviceLabel,
       trackSampleRate: settings.sampleRate ?? null,
       trackChannelCount: settings.channelCount ?? null,
@@ -246,7 +271,7 @@ export async function runCaptureGapsProbe(_signal: AbortSignal, report: (step: s
       chromeFullVersion: platform.uaFullVersion,
       userAgent: platform.userAgent,
     };
-    return { issue: "capture-gaps", chrome: browserOf(navigator), date: runDate(), runToken: newRunToken(), verdict, figures };
+    return makeEnvelope({ issue: "capture-gaps", chrome: browserOf(navigator), date: runDate(), runToken: newRunToken() }, verdict, figures);
   } finally {
     for (const stream of source?.streams ?? []) for (const track of stream.getTracks()) track.stop();
     await context.close();

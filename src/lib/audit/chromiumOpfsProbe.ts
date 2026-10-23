@@ -14,8 +14,8 @@
  */
 
 import { withDeadline } from "@/lib/deadline";
-import { browserOf, newRunToken, platformOf, runDate, type PlatformNavigator, type ProbeEnvelope } from "./chromiumWatched";
-import { parseStoredUsageRun, summarizeFlush, usageEnvelope, type StoredUsageRun } from "./chromiumOpfs";
+import { browserOf, isNotChecked, makeEnvelope, newRunToken, notChecked, platformOf, runDate, type Figures, type PlatformNavigator, type ProbeEnvelope } from "./chromiumWatched";
+import { STORED_USAGE_RUN_VERSION, parseStoredUsageRun, summarizeFlush, usageEnvelope, type StoredUsageRun } from "./chromiumOpfs";
 import {
   OPFS_WORKER_SOURCE,
   type FlushResult,
@@ -79,24 +79,15 @@ function hasGetDirectory(): boolean {
   return typeof navigator.storage?.getDirectory === "function";
 }
 
-async function notChecked(issue: "opfs-usage" | "opfs-flush", reason: string, runToken: string): Promise<ProbeEnvelope> {
+async function opfsMissing(issue: "opfs-usage" | "opfs-flush", reason: string, runToken: string): Promise<ProbeEnvelope> {
   const platform = await platformOf(navigator as PlatformNavigator);
-  const verdict = `NOT CHECKED opfs-${reason}`;
-  return {
-    issue,
-    chrome: browserOf(navigator),
-    date: runDate(),
-    runToken,
-    verdict,
-    figures: {
-      verdict,
-      opfsGetDirectory: hasGetDirectory() ? "yes" : "no",
-      syncAccessHandle: reason === "no-createSyncAccessHandle" ? "no" : null,
-      chromeFullVersion: platform.uaFullVersion,
-      osVersion: platform.platformVersion,
-      userAgent: platform.userAgent,
-    },
-  };
+  return makeEnvelope({ issue, chrome: browserOf(navigator), date: runDate(), runToken }, notChecked(`opfs-${reason}`), {
+    opfsGetDirectory: hasGetDirectory() ? "yes" : "no",
+    syncAccessHandle: reason === "no-createSyncAccessHandle" ? "no" : null,
+    chromeFullVersion: platform.uaFullVersion,
+    osVersion: platform.platformVersion,
+    userAgent: platform.userAgent,
+  });
 }
 
 /** The click of `?issue=opfs-usage`: write, read back, delete, store the readings, judge the session half. */
@@ -104,14 +95,15 @@ export async function runOpfsUsageProbe(_signal: AbortSignal, report: (step: str
   localStorage.removeItem(STORAGE_KEY);
   const runToken = newRunToken();
   sessionStorage.setItem(SESSION_MARKER_KEY, runToken);
-  if (!hasGetDirectory()) return notChecked("opfs-usage", "no-getDirectory", runToken);
+  if (!hasGetDirectory()) return opfsMissing("opfs-usage", "no-getDirectory", runToken);
   const truncateFirst = new URLSearchParams(window.location.search).get("truncateFirst") === "1";
   report("write-delete");
   const answer = answerOf<UsageResult>(await ask({ kind: "usage", runToken, mib: USAGE_MIB, truncateFirst }, USAGE_DEADLINE_MS), "usage");
-  if ("missing" in answer) return notChecked("opfs-usage", answer.missing, runToken);
+  if ("missing" in answer) return opfsMissing("opfs-usage", answer.missing, runToken);
   if (!answer.removed) throw new Error(`test/${runToken}.bin is still there after removeEntry()`);
   const platform = await platformOf(navigator as PlatformNavigator);
   const run: StoredUsageRun = {
+    version: STORED_USAGE_RUN_VERSION,
     runToken,
     chrome: browserOf(navigator),
     userAgent: platform.userAgent,
@@ -119,6 +111,7 @@ export async function runOpfsUsageProbe(_signal: AbortSignal, report: (step: str
     osVersion: platform.platformVersion,
     date: runDate(),
     truncateFirst,
+    requestedBytes: USAGE_MIB * 1024 * 1024,
     writtenBytes: answer.writtenBytes,
     sizeReadBack: answer.sizeReadBack,
     beforeWrite: answer.beforeWrite,
@@ -128,12 +121,15 @@ export async function runOpfsUsageProbe(_signal: AbortSignal, report: (step: str
     opfsBytesAtRun: answer.opfsBytesAtRun,
     storedAt: Date.now(),
   };
+  const envelope = usageEnvelope(run, null, runToken, Date.now());
+  // A run whose write or readings cannot be judged is not kept for a restart to judge either.
+  if (isNotChecked(envelope.verdict)) return envelope;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(run));
   console.log(
     "[chromium-watched] opfs-usage stored: before " + run.beforeWrite + ", after write " + run.afterWrite +
       ", after delete " + run.afterDelete + " bytes; quit Chrome fully and reopen this URL"
   );
-  return usageEnvelope(run, null, runToken, Date.now());
+  return envelope;
 }
 
 /**
@@ -141,7 +137,9 @@ export async function runOpfsUsageProbe(_signal: AbortSignal, report: (step: str
  * restart half. The run's `sessionStorage` marker tells a reload apart: still there, the load reads
  * `NOT CHECKED not-restarted` and the readings are KEPT for the real restart. Gone, the load is
  * judged against the previous restart reading, the readings are cleared, and this restart's
- * reading is kept for the next one. Null when nothing is stored.
+ * reading is kept for the next one, unless `estimate()` gave no usage (`NOT CHECKED
+ * restart-no-estimate`, never stored as the last restart). Null when nothing is stored; an entry
+ * that does not parse (an older page's schema included) is cleared with a warning.
  */
 export function judgeStoredOpfsUsageOnLoad(): Promise<ProbeEnvelope> | null {
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -149,7 +147,7 @@ export function judgeStoredOpfsUsageOnLoad(): Promise<ProbeEnvelope> | null {
   const run = parseStoredUsageRun(raw);
   if (run === null) {
     localStorage.removeItem(STORAGE_KEY);
-    console.warn("[chromium-watched] opfs-usage: the stored readings did not parse and were cleared");
+    console.warn("[chromium-watched] opfs-usage: the stored readings did not parse (corrupt, or an older page's schema) and were cleared");
     return null;
   }
   const sessionMarkerPresent = sessionStorage.getItem(SESSION_MARKER_KEY) !== null;
@@ -177,7 +175,7 @@ export function judgeStoredOpfsUsageOnLoad(): Promise<ProbeEnvelope> | null {
     );
     if (!sessionMarkerPresent) {
       localStorage.removeItem(STORAGE_KEY);
-      localStorage.setItem(LAST_RESTART_KEY, JSON.stringify({ usage: answer.usage, date: runDate() }));
+      if (answer.usage !== null) localStorage.setItem(LAST_RESTART_KEY, JSON.stringify({ usage: answer.usage, date: runDate() }));
     }
     return envelope;
   })();
@@ -190,12 +188,12 @@ function round(value: number, digits: number): number {
 /** The click of `?issue=opfs-flush`. */
 export async function runOpfsFlushProbe(_signal: AbortSignal, report: (step: string) => void): Promise<ProbeEnvelope> {
   const runToken = newRunToken();
-  if (!hasGetDirectory()) return notChecked("opfs-flush", "no-getDirectory", runToken);
+  if (!hasGetDirectory()) return opfsMissing("opfs-flush", "no-getDirectory", runToken);
   report("write-flush");
   const answer = answerOf<FlushResult>(await ask({ kind: "flush", runToken, counts: FLUSH_COUNT }, FLUSH_DEADLINE_MS), "flush");
-  if ("missing" in answer) return notChecked("opfs-flush", answer.missing, runToken);
+  if ("missing" in answer) return opfsMissing("opfs-flush", answer.missing, runToken);
   const platform = await platformOf(navigator as PlatformNavigator);
-  const figures: Record<string, number | string | null> = { verdict: "MEASURED" };
+  const figures: Figures = {};
   const sizes: [string, number, number[], number[]][] = [
     ["1MiB", 1, answer.writeMs1, answer.flushMs1],
     ["16MiB", 16, answer.writeMs16, answer.flushMs16],
@@ -223,5 +221,5 @@ export async function runOpfsFlushProbe(_signal: AbortSignal, report: (step: str
     osVersion: platform.platformVersion,
     userAgent: platform.userAgent,
   });
-  return { issue: "opfs-flush", chrome: browserOf(navigator), date: runDate(), runToken, verdict: "MEASURED", figures };
+  return makeEnvelope({ issue: "opfs-flush", chrome: browserOf(navigator), date: runDate(), runToken }, "MEASURED", figures);
 }

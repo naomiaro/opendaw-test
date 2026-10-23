@@ -33,6 +33,40 @@ export function issueFrom(params: URLSearchParams): WatchedIssue {
   throw new Error(`${got}: expected one of ${WATCHED_ISSUES.join(", ")}`);
 }
 
+/** Every closed verdict word a probe can give; anything else is a `NOT CHECKED <reason>`. */
+export const VERDICT_WORDS = [
+  "STALE FIRST READ",
+  "FIRST READ TRUE",
+  "HALF SPEED",
+  "NORMAL",
+  "HALF RATE",
+  "DISTORTED",
+  "DISTORTED (mic only)",
+  "CLEAN",
+  "GAPS",
+  "START GAPS",
+  "NEGATIVE USAGE",
+  "COUNTED",
+  "NOT COUNTED",
+  "MEASURED",
+] as const;
+
+export type VerdictWord = (typeof VERDICT_WORDS)[number];
+/** A run that could not exercise the condition, and why: the reason is never empty. */
+export type NotChecked = `NOT CHECKED ${string}`;
+export type Verdict = VerdictWord | NotChecked;
+
+export function notChecked(reason: string): NotChecked {
+  if (reason.trim() === "") throw new Error("a NOT CHECKED verdict needs a reason");
+  return `NOT CHECKED ${reason}`;
+}
+
+export function isNotChecked(verdict: Verdict): verdict is NotChecked {
+  return verdict.startsWith("NOT CHECKED ");
+}
+
+export type Figures = Record<string, number | string | null>;
+
 /** What one probe run reports: the verdict word and the figures it was judged on. */
 export interface ProbeEnvelope {
   issue: WatchedIssue;
@@ -42,8 +76,23 @@ export interface ProbeEnvelope {
   date: string;
   /** Lowercase letters, digits and dashes: it names the saved file. */
   runToken: string;
-  verdict: string;
-  figures: Record<string, number | string | null>;
+  verdict: Verdict;
+  /** `verdict` is always the first figure, and the same word as the envelope's. */
+  figures: Figures;
+}
+
+/** Who ran a probe, when, and under which token: the envelope's fields other than the verdict and figures. */
+export interface EnvelopeHead {
+  issue: WatchedIssue;
+  chrome: string;
+  date: string;
+  runToken: string;
+}
+
+/** The envelope, with the verdict written as the first figure (over any `verdict` the figures carry). */
+export function makeEnvelope(head: EnvelopeHead, verdict: Verdict, figures: Figures): ProbeEnvelope {
+  const { verdict: _ignored, ...rest } = figures;
+  return { ...head, verdict, figures: { verdict, ...rest } };
 }
 
 export function envelopeName(issue: WatchedIssue, runToken: string): string {
@@ -66,7 +115,7 @@ export function browserOf(nav: BrowserNavigator): string {
   return nav.userAgent;
 }
 
-/** Lowercase letters, digits and one dash: the dev server's `/__verify` sink accepts nothing else in a name. */
+/** Lowercase letters and digits either side of one dash; the dev server's `/__verify` sink accepts names of lowercase letters, digits and dashes only (`[a-z0-9-]`). */
 export function newRunToken(now: number = Date.now()): string {
   return now.toString(36) + "-" + Math.random().toString(36).slice(2, 6).padEnd(4, "0");
 }
