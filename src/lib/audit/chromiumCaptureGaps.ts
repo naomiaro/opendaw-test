@@ -8,6 +8,11 @@
 // signal in the first 5 s (a muted microphone delivers exact zeros) and reads `NOT CHECKED no-signal`.
 // A source that ended, was muted or fed the recorder an empty input during the capture leaves zeros
 // that are not the browser's: the run reads `NOT CHECKED source-<ended|muted|empty-input>`.
+// With `&stallMs`, the render thread is held at known frames; runs and duplicates after the start
+// window that start in a stall's span are reported apart and named in the detail, the verdict word
+// unchanged. The span runs from one quantum before the stall frame to twice the stall's length and
+// one quantum after it: the render thread catches the stall up after it, and the sink's FIFO
+// underruns while it does (measured: the zeros start about 48 ms into an 80 ms stall's catch-up).
 
 import { notChecked, type Verdict } from "./chromiumWatched";
 
@@ -51,6 +56,23 @@ export interface CaptureGapsJudgement {
   /** Zero runs and duplicates starting within `START_WINDOW_SEC` after the head. */
   startZeroRuns: ZeroRun[];
   startDuplicates: number[];
+  /** Of `zeroRuns` and `duplicates`, those starting in a stall's span (`atStall`). */
+  stallZeroRuns: ZeroRun[];
+  stallDuplicates: number[];
+  /** How many runs and duplicates coincide with a stall; null when the run had no stalls. */
+  detail: string | null;
+}
+
+/** True when `start` lies in a stall's span: one quantum before its frame to two stall lengths and one quantum after. */
+function atStall(start: number, stallFrames: readonly number[], stallLengthFrames: number): boolean {
+  return stallFrames.some((frame) => start >= frame - QUANTUM_FRAMES && start <= frame + 2 * stallLengthFrames + QUANTUM_FRAMES);
+}
+
+/** The frames from the latest stall at or before `start` to it; null when no stall came before. */
+export function sinceLastStall(start: number, stallFrames: readonly number[]): number | null {
+  let latest: number | null = null;
+  for (const frame of stallFrames) if (frame <= start && (latest === null || frame > latest)) latest = frame;
+  return latest === null ? null : start - latest;
 }
 
 /** The frames before the first non-zero one; the whole length when there is none. */
@@ -111,6 +133,8 @@ export function judgeCaptureGaps(
   headZeros: number,
   durationSec: number,
   sampleRate: number,
+  stallFrames: readonly number[] = [],
+  stallLengthFrames: number = 0,
 ): CaptureGapsJudgement {
   const windowEnd = headZeros + START_WINDOW_SEC * sampleRate;
   const afterHead = zeroRuns.filter((run) => run.start >= headZeros);
@@ -119,6 +143,8 @@ export function judgeCaptureGaps(
   const runs = afterHead.filter((run) => run.start >= windowEnd);
   const startDuplicates = repeatsAfterHead.filter((start) => start < windowEnd);
   const repeats = repeatsAfterHead.filter((start) => start >= windowEnd);
+  const stallZeroRuns = runs.filter((run) => atStall(run.start, stallFrames, stallLengthFrames));
+  const stallDuplicates = repeats.filter((start) => atStall(start, stallFrames, stallLengthFrames));
   const verdict: CaptureGapsVerdict =
     durationSec < MIN_CAPTURE_SECONDS ? "NOT CHECKED"
     : headZeros > MAX_HEAD_SEC * sampleRate ? "NOT CHECKED no-signal"
@@ -134,6 +160,12 @@ export function judgeCaptureGaps(
     duplicates: repeats,
     startZeroRuns,
     startDuplicates,
+    stallZeroRuns,
+    stallDuplicates,
+    detail:
+      stallFrames.length === 0 ? null
+      : `${stallZeroRuns.length} of ${runs.length} zero runs at stall times; ` +
+        `${stallDuplicates.length} of ${repeats.length} duplicates at stall times`,
   };
 }
 

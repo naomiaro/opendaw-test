@@ -9,6 +9,7 @@ import {
   findZeroRuns,
   headZerosOf,
   judgeCaptureGaps,
+  sinceLastStall,
   recorderChunkFrames,
   sourceProblem,
 } from "./chromiumCaptureGaps";
@@ -31,11 +32,11 @@ const withInsert = (frames: Float32Array, at: number, insert: Float32Array): Flo
   return out;
 };
 
-const judge = (frames: Float32Array) => {
+const judge = (frames: Float32Array, stallFrames: readonly number[] = [], stallLength = 0) => {
   const runs = findZeroRuns(frames);
   const headZeros = headZerosOf(frames);
   const duplicates = findDuplicateBlocks(frames);
-  return { runs, headZeros, duplicates, judged: judgeCaptureGaps(runs, duplicates, headZeros, frames.length / RATE, RATE) };
+  return { runs, headZeros, duplicates, judged: judgeCaptureGaps(runs, duplicates, headZeros, frames.length / RATE, RATE, stallFrames, stallLength) };
 };
 
 describe("capture gaps", () => {
@@ -211,5 +212,74 @@ describe("recorderChunkFrames", () => {
 
   it("keeps 48 000 as it was", () => {
     expect(recorderChunkFrames(48000)).toBe(48000);
+  });
+});
+
+describe("zero runs and duplicates at stall times", () => {
+  const at = 20 * RATE;
+  const withQuantumGap = () => withInsert(tone(60), at, new Float32Array(128));
+
+  it("reports a 128-zero insert at a stall frame as stall-coincident, still GAPS", () => {
+    const { judged } = judge(withQuantumGap(), [10 * RATE, at, 40 * RATE]);
+    expect(judged.verdict).toBe("GAPS");
+    expect(judged.stallZeroRuns).toEqual([{ start: at, length: 128 }]);
+    expect(judged.stallDuplicates).toEqual([]);
+    expect(judged.detail).toBe("1 of 1 zero runs at stall times; 0 of 0 duplicates at stall times");
+  });
+
+  it("counts an insert within one quantum of a stall, on either side", () => {
+    expect(judge(withQuantumGap(), [at - 128]).judged.stallZeroRuns).toHaveLength(1);
+    expect(judge(withQuantumGap(), [at + 128]).judged.stallZeroRuns).toHaveLength(1);
+    expect(judge(withQuantumGap(), [at - 129]).judged.stallZeroRuns).toHaveLength(0);
+  });
+
+  it("reports the same insert 1 000 frames from every stall as not stall-coincident, still GAPS", () => {
+    const { judged } = judge(withQuantumGap(), [at - 1000, at + 1000]);
+    expect(judged.verdict).toBe("GAPS");
+    expect(judged.zeroRunCount).toBe(1);
+    expect(judged.stallZeroRuns).toEqual([]);
+    expect(judged.detail).toBe("0 of 1 zero runs at stall times; 0 of 0 duplicates at stall times");
+  });
+
+  it("reports a duplicate at a stall frame as stall-coincident", () => {
+    const signal = tone(60);
+    const { judged } = judge(withInsert(signal, at + 128, signal.slice(at, at + 128)), [at + 128]);
+    expect(judged.verdict).toBe("GAPS");
+    expect(judged.stallDuplicates).toEqual([at + 128]);
+  });
+
+  it("leaves the results without stalls as they were, with no detail", () => {
+    const { judged } = judge(withInsert(tone(60), 30 * RATE, new Float32Array(480)));
+    expect(judged).toMatchObject({ verdict: "GAPS", zeroRunCount: 1, longestRunFrames: 480, stallZeroRuns: [], stallDuplicates: [] });
+    expect(judged.detail).toBeNull();
+  });
+});
+
+describe("a stall's span", () => {
+  const stall = 20 * RATE;
+  const length = Math.round(0.08 * RATE);
+  const gapAt = (offset: number) => withInsert(tone(60), stall + offset, new Float32Array(1536));
+
+  it("counts a run 48 ms into an 80 ms stall's catch-up, the measured place", () => {
+    expect(judge(gapAt(2304), [stall], length).judged.stallZeroRuns).toHaveLength(1);
+  });
+
+  it("ends two stall lengths and one quantum after the stall frame", () => {
+    expect(judge(gapAt(2 * length + 128), [stall], length).judged.stallZeroRuns).toHaveLength(1);
+    expect(judge(gapAt(2 * length + 129), [stall], length).judged.stallZeroRuns).toHaveLength(0);
+  });
+
+  it("starts one quantum before the stall frame", () => {
+    expect(judge(gapAt(-128), [stall], length).judged.stallZeroRuns).toHaveLength(1);
+    expect(judge(gapAt(-129), [stall], length).judged.stallZeroRuns).toHaveLength(0);
+  });
+});
+
+describe("sinceLastStall", () => {
+  it("gives the frames since the latest stall at or before a start, null before the first", () => {
+    expect(sinceLastStall(5000, [1000, 4000, 9000])).toBe(1000);
+    expect(sinceLastStall(4000, [1000, 4000])).toBe(0);
+    expect(sinceLastStall(500, [1000])).toBeNull();
+    expect(sinceLastStall(500, [])).toBeNull();
   });
 });

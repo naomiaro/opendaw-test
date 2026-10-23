@@ -16,6 +16,13 @@
  * recorder counts the quanta whose input had no channel: any of them reads `NOT CHECKED
  * source-<ended|muted|empty-input>`, the counts kept as figures. The judgement is
  * `chromiumCaptureGaps.ts`.
+ *
+ * `&stallMs=<ms>` (default 0, none) with `&stallEvery=<ms>` (default 1000) adds a stall node
+ * (`public/chromium-capture-stall.js`, its own file: the suspend/resume tone renders audio) and,
+ * every `stallEvery` ms of the capture, posts `stallMs` to it: the worklet thread busy-waits that
+ * long, the render thread falls behind the source, and the frame each stall began at is recorded;
+ * a run or duplicate starting in a stall's span (`chromiumCaptureGaps.ts`) counts as at the stall.
+ * This provokes the tracker's mechanism, the sink writing zeros on a FIFO underrun.
  */
 
 import { withDeadline } from "@/lib/deadline";
@@ -27,6 +34,7 @@ import {
   headZerosOf,
   judgeCaptureGaps,
   recorderChunkFrames,
+  sinceLastStall,
   type SourceHealth,
   type ZeroRun,
 } from "./chromiumCaptureGaps";
@@ -42,6 +50,10 @@ const DEADLINE_MS = 5000;
 /** How long the capture may run past its own length before it is given up. */
 const CAPTURE_GRACE_MS = 10000;
 const LISTED = 5;
+const STALL_PROCESSOR = "chromium-capture-stall";
+const STALL_PROCESSOR_URL = "/chromium-capture-stall.js";
+/** The stall offsets listed: every zero run of a minute with a few runs per one-second stall. */
+const LISTED_OFFSETS = 400;
 
 export type CaptureSource = "loopback" | "mic";
 export type CaptureRate = 48000 | 44100;
@@ -62,10 +74,25 @@ export function rateFrom(params: URLSearchParams): CaptureRate {
   throw new Error(`&rate=${value}: expected 48000 or 44100`);
 }
 
+/** A whole number of milliseconds from `&<name>=`; `fallback` without one; throws on anything else. */
+function msFrom(params: URLSearchParams, name: string, fallback: number, min: number): number {
+  const value = params.get(name);
+  if (value === null) return fallback;
+  const ms = Number(value);
+  if (!Number.isInteger(ms) || ms < min) throw new Error(`&${name}=${value}: expected a whole number of ms, at least ${min}`);
+  return ms;
+}
+
+/** `&stallMs=` (default 0: no stalls) and `&stallEvery=` (default 1000). */
+export function stallFrom(params: URLSearchParams): { stallMs: number; stallEveryMs: number } {
+  return { stallMs: msFrom(params, "stallMs", 0, 0), stallEveryMs: msFrom(params, "stallEvery", 1000, 1) };
+}
+
 /**
  * Copies channel 0 of its input into chunks of whole quanta, about a second (the last one shorter), until
  * `frames` frames are taken, transferring each; a quantum whose input has no channel is
- * recorded as zeros and counted in `emptyQuanta`.
+ * recorded as zeros and counted in `emptyQuanta`. Every message carries `firstFrame`, the
+ * `currentFrame` of the first quantum taken: frame 0 of the capture.
  */
 const PROCESSOR_SOURCE = `
 class CaptureGapsRecorder extends AudioWorkletProcessor {
@@ -75,6 +102,7 @@ class CaptureGapsRecorder extends AudioWorkletProcessor {
     this.chunkFrames = options.processorOptions.chunkFrames;
     this.taken = 0;
     this.emptyQuanta = 0;
+    this.firstFrame = -1;
     this.begin();
   }
   begin() {
@@ -83,6 +111,7 @@ class CaptureGapsRecorder extends AudioWorkletProcessor {
   }
   process(inputs) {
     if (this.taken >= this.total) return false;
+    if (this.firstFrame < 0) this.firstFrame = currentFrame;
     const input = inputs[0];
     if (input.length === 0) this.emptyQuanta++;
     const count = Math.min(${QUANTUM}, this.chunk.length - this.filled);
@@ -90,7 +119,7 @@ class CaptureGapsRecorder extends AudioWorkletProcessor {
     this.filled += count;
     this.taken += count;
     if (this.filled === this.chunk.length) {
-      this.port.postMessage({ samples: this.chunk, emptyQuanta: this.emptyQuanta }, [this.chunk.buffer]);
+      this.port.postMessage({ samples: this.chunk, emptyQuanta: this.emptyQuanta, firstFrame: this.firstFrame }, [this.chunk.buffer]);
       if (this.taken < this.total) this.begin();
     }
     return this.taken < this.total;
@@ -142,8 +171,15 @@ async function micSource(context: AudioContext): Promise<Source> {
   }
 }
 
-/** Records `frames` frames of the source node's channel 0; resolves with them and the empty-input quanta. */
-function record(context: AudioContext, source: Source, frames: number): Promise<{ samples: Float32Array; emptyQuanta: number }> {
+interface Captured {
+  samples: Float32Array;
+  emptyQuanta: number;
+  /** The context frame of the capture's frame 0. */
+  firstFrame: number;
+}
+
+/** Records `frames` frames of the source node's channel 0; resolves with them, the empty-input quanta and the first frame. */
+function record(context: AudioContext, source: Source, frames: number): Promise<Captured> {
   return new Promise((resolve, reject) => {
     const recorder = new AudioWorkletNode(context, PROCESSOR_NAME, {
       numberOfInputs: 1,
@@ -155,12 +191,12 @@ function record(context: AudioContext, source: Source, frames: number): Promise<
     });
     const samples = new Float32Array(frames);
     let offset = 0;
-    recorder.port.onmessage = (event: MessageEvent<{ samples: Float32Array; emptyQuanta: number }>) => {
+    recorder.port.onmessage = (event: MessageEvent<Captured>) => {
       samples.set(event.data.samples, offset);
       offset += event.data.samples.length;
       if (offset >= frames) {
         source.node.disconnect();
-        resolve({ samples, emptyQuanta: event.data.emptyQuanta });
+        resolve({ samples, emptyQuanta: event.data.emptyQuanta, firstFrame: event.data.firstFrame });
       }
     };
     recorder.port.onmessageerror = () => reject(new Error("recorder-chunk-unreadable"));
@@ -169,8 +205,46 @@ function record(context: AudioContext, source: Source, frames: number): Promise<
   });
 }
 
-function joinFirst(values: readonly number[]): string {
-  return values.slice(0, LISTED).join(" ");
+function joinFirst(values: readonly (number | null)[], count: number = LISTED): string {
+  return values.slice(0, count).map((value) => (value === null ? "-" : String(value))).join(" ");
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** What the stalls did: the context frame each began at and how long each post took to answer. */
+interface Stalls {
+  frames: number[];
+  roundTripMs: number[];
+  failed: string | null;
+}
+
+/** Every `everyMs` until `done()`, posts `stallMs` to the stall node and awaits its answer. */
+async function stallUntil(node: AudioWorkletNode, stallMs: number, everyMs: number, done: () => boolean): Promise<Stalls> {
+  const stalls: Stalls = { frames: [], roundTripMs: [], failed: null };
+  while (true) {
+    await wait(everyMs);
+    if (done()) return stalls;
+    const t0 = performance.now();
+    try {
+      const frame = await withDeadline(
+        new Promise<number>((resolve) => {
+          node.port.onmessage = (event: MessageEvent<{ type: string; frame: number }>) => {
+            if (event.data.type === "stalled") resolve(event.data.frame);
+          };
+          node.port.postMessage({ stall: stallMs });
+        }),
+        stallMs + DEADLINE_MS,
+        `stall-${stalls.frames.length + 1}`,
+      );
+      stalls.frames.push(frame);
+      stalls.roundTripMs.push(performance.now() - t0);
+    } catch (error) {
+      stalls.failed = stepOf(error);
+      return stalls;
+    }
+  }
 }
 
 function stepOf(error: unknown): string {
@@ -182,6 +256,7 @@ export async function runCaptureGapsProbe(_signal: AbortSignal, report: (step: s
   const params = new URLSearchParams(window.location.search);
   const sourceKind = sourceFrom(params);
   const requestedRate = rateFrom(params);
+  const { stallMs, stallEveryMs } = stallFrom(params);
   const platform = await platformOf(navigator as PlatformNavigator);
   report("start-audio");
   const context = new AudioContext({ sampleRate: requestedRate, latencyHint: "interactive" });
@@ -195,6 +270,11 @@ export async function runCaptureGapsProbe(_signal: AbortSignal, report: (step: s
     } finally {
       URL.revokeObjectURL(url);
     }
+    let stallNode: AudioWorkletNode | null = null;
+    if (stallMs > 0) {
+      await withDeadline(context.audioWorklet.addModule(STALL_PROCESSOR_URL), DEADLINE_MS, "addModule-stall");
+      stallNode = new AudioWorkletNode(context, STALL_PROCESSOR, { numberOfInputs: 0, numberOfOutputs: 1 });
+    }
     report("open-" + sourceKind);
     let failedStep: string | null = null;
     try {
@@ -203,7 +283,8 @@ export async function runCaptureGapsProbe(_signal: AbortSignal, report: (step: s
       failedStep = `${sourceKind}-${error instanceof Error ? error.name : "error"}-${stepOf(error)}`;
       console.error("[chromium-watched] capture-gaps could not open the " + sourceKind + ": " + String(error));
     }
-    let captured: { samples: Float32Array; emptyQuanta: number } = { samples: new Float32Array(0), emptyQuanta: 0 };
+    let captured: Captured = { samples: new Float32Array(0), emptyQuanta: 0, firstFrame: 0 };
+    let stalls: Stalls = { frames: [], roundTripMs: [], failed: null };
     const events = { ended: 0, mute: 0 };
     let mutedAtStart = false;
     if (source !== null) {
@@ -213,18 +294,30 @@ export async function runCaptureGapsProbe(_signal: AbortSignal, report: (step: s
       track.addEventListener("mute", () => events.mute++);
       report("capture");
       const frames = CAPTURE_SECONDS * context.sampleRate;
+      let capturing = true;
+      const stalling = stallNode === null ? null : stallUntil(stallNode, stallMs, stallEveryMs, () => !capturing);
       try {
         captured = await withDeadline(record(context, source, frames), CAPTURE_SECONDS * 1000 + CAPTURE_GRACE_MS, "capture");
       } catch (error) {
         failedStep = stepOf(error);
         console.error("[chromium-watched] capture-gaps capture failed: " + String(error));
+      } finally {
+        capturing = false;
+      }
+      if (stalling !== null) {
+        stalls = await stalling;
+        if (stalls.failed !== null && failedStep === null) failedStep = stalls.failed;
       }
     }
     report("judge");
     const samples = captured.samples;
     const captureSeconds = samples.length / context.sampleRate;
     const headZeros = headZerosOf(samples);
-    const judged = judgeCaptureGaps(findZeroRuns(samples), findDuplicateBlocks(samples), headZeros, captureSeconds, context.sampleRate);
+    const stallFrames = stalls.frames.map((frame) => frame - captured.firstFrame).filter((frame) => frame >= 0 && frame < samples.length);
+    const stallLengthFrames = Math.round((stallMs * context.sampleRate) / 1000);
+    const judged = judgeCaptureGaps(
+      findZeroRuns(samples), findDuplicateBlocks(samples), headZeros, captureSeconds, context.sampleRate, stallFrames, stallLengthFrames,
+    );
     const endedAtEnd = source !== null && source.track.readyState === "ended";
     const mutedAtEnd = source !== null && source.track.muted;
     const health: SourceHealth = {
@@ -255,6 +348,23 @@ export async function runCaptureGapsProbe(_signal: AbortSignal, report: (step: s
       startZeroRunLengths: lengths(judged.startZeroRuns),
       startDuplicateCount: judged.startDuplicates.length,
       startDuplicateStarts: joinFirst(judged.startDuplicates),
+      stallMs,
+      stallEveryMs: stallMs > 0 ? stallEveryMs : null,
+      stallCount: stalls.frames.length,
+      stallFramesInCapture: stallFrames.length,
+      stallFrames: stallFrames.join(" "),
+      stallSpanFrames: stallMs > 0 ? `-128..+${2 * stallLengthFrames + 128}` : null,
+      stallRoundTripMsMin: stalls.roundTripMs.length === 0 ? null : Number(Math.min(...stalls.roundTripMs).toFixed(1)),
+      stallRoundTripMsMax: stalls.roundTripMs.length === 0 ? null : Number(Math.max(...stalls.roundTripMs).toFixed(1)),
+      stallFailed: stalls.failed,
+      verdictDetail: judged.detail,
+      stallZeroRunCount: judged.stallZeroRuns.length,
+      stallZeroRunStarts: starts(judged.stallZeroRuns),
+      stallZeroRunLengths: lengths(judged.stallZeroRuns),
+      stallDuplicateCount: judged.stallDuplicates.length,
+      stallDuplicateStarts: joinFirst(judged.stallDuplicates),
+      zeroRunFramesSinceStall: joinFirst(judged.zeroRuns.map((run) => sinceLastStall(run.start, stallFrames)), LISTED_OFFSETS),
+      zeroRunLengthsAll: joinFirst(judged.zeroRuns.map((run) => run.length), LISTED_OFFSETS),
       emptyInputQuanta: captured.emptyQuanta,
       trackEndedEvents: events.ended,
       trackMuteEvents: events.mute,

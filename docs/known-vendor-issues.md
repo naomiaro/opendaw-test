@@ -312,47 +312,47 @@ Chromium tracker through the browser).
   device's clock domain).
 - **Last checked:** Chrome 155.0.8059.85, macOS 15.6.1, 2026-10-22.
 
-## Watched — read from the tracker, not reproduced here
-
-### Chromium [40103985](https://issues.chromium.org/issues/40103985) — zero-filled 10 ms gaps and duplicated blocks in `getUserMedia` input under underrun
+### Chromium [40103985](https://issues.chromium.org/issues/40103985) — a render-thread stall leaves zeros in `getUserMedia` input (the sink's FIFO underruns)
 
 - **Tracker:** [issues.chromium.org/issues/40103985](https://issues.chromium.org/issues/40103985),
   "Webaudio inserts zero filled parts into buffers supplied by getUserMedia". Filed 2019, **open**, P3,
-  "Available"; a Microsoft engineer traced it to `WebAudioMediaStreamAudioSink::ProvideInput` writing
-  zeros on a FIFO underrun (2024-12) and prototyped a fix, nothing landed.
-- **Symptom:** a captured stream shows 480-sample (10 ms at 48 kHz) zero-filled inserts and, with an
-  input and an output device on different clocks (USB in, USB out), 128-frame duplications about once a
-  second; the stream's own time then drifts against the context clock. Reported on Windows, macOS and
-  Linux; worse on slow machines and under a large graph.
-- **Where it bites here:** any recording through a `MediaStreamAudioSourceNode`, the loopback included
-  (the sink this issue is about feeds that node). No zero-filled gap or 128-frame duplication has been
-  identified in a take here, and every beat of every take matched on 0.0.174 through 0.0.177 (the
-  `aligned` verdict requires no missing beat). The loopback HAS shown two capture-side artifacts on the
-  same path that could be this mechanism, unestablished: at 44.1 kHz a node's delay stepping UP by
-  exactly 441 frames (10 ms) in 6 of 70 opens, 0.4–1.0 s after the node started, never at 48 kHz in 150
-  opens, which the register reads as a 10 ms-chunked FIFO path; and a 44.1 kHz stream-start head
-  duplicate (the first click copied about 20 ms later at about 65 %, 14 of 30 cells), read as a
-  stream-start FIFO or resampler artifact. The bare probe (no SDK, 60 s per cell) measured a stream-start
-  zero run: one 441-frame run (10 ms) 441 frames after the tone arrives on the loopback at 44 100, and one
-  128-frame run on the built-in microphone at 48 000, every run of those cells, all within the first
-  55 ms; loopback 48 000 and microphone 44 100 were clean. That run is the same node path as the
-  441-frame step and the same size, but not the same timing: it comes in the first 32 ms of a bare
-  capture, the step 0.4–1.0 s into a capture beside the engine. A real-device recording with a 10 ms hole or a drifting beat
-  is a candidate for this issue — reproduce and attribute before concluding, since an SDK ring-buffer
+  "Available". A Microsoft engineer traced it to `WebAudioMediaStreamAudioSink::ProvideInput` writing
+  zeros on a FIFO underrun (2024-12) and prototyped a fix; nothing landed. The reports: 480-sample
+  (10 ms at 48 kHz) zero-filled inserts and, with input and output on different clocks (USB in, USB
+  out), 128-frame duplications about once a second, worse on slow machines and under a large graph.
+- **Symptom here:** an 80 ms synchronous task on the worklet thread, once a second, leaves a zero run in
+  the built-in microphone's input after every stall. The run is 512 to 1 792 frames long (about 32 ms)
+  and starts 48 to 72 ms into the catch-up after the stall frame. This was 116 of 137 runs at 48 000 and
+  60 of 60 at 44 100. At 48 000, 21 single-quantum runs also came between stalls, where an unstalled
+  microphone minute holds none. There were no duplicates, since the microphone and speakers share a clock.
+  The same-context loopback stays clean under the same stalls, because its producer renders on the
+  stalled thread. Without a stall there is no gap after the first 0.1 s of any minute. A stream-start zero run
+  does appear in two cells, every run: 441 frames, 441 frames after the tone arrives, on the loopback at
+  44 100, and 128 frames on the microphone at 48 000, all within the first 55 ms.
+- **Where it bites here:** any recording through a `MediaStreamAudioSourceNode`. Each render-thread stall
+  longer than the sink's buffer of about 48 ms costs the take input: a long WASM compile, a large message
+  handled on the worklet thread, or a heavy `process()` during a take. The recording-alignment harness
+  cannot see it, because its loopback producer stalls with the consumer. The stream-start run meets a
+  take only when arming and recording start together (`CaptureAudio` opens its stream on arm). The
+  loopback's 441-frame stream-start run is the same node path and size as the 441-frame delay step
+  (`debug/2026-09-02-recording-start-alignment/note.md`), but not the same timing. The step comes
+  0.4–1.0 s into a capture beside the engine, so the link is not settled. A real-device take with a hole
+  is a candidate for this issue. Reproduce and attribute it before concluding, since an SDK ring-buffer
   regression would look the same.
-- **Workaround:** none; a `MediaRecorder` capture of the same stream was clean in the reports (not what
-  the SDK does). Keep the audio graph small during a take; check `tailMissingMs` and the per-beat errors
-  of a real-device take before blaming placement.
-- **Evidence:** `debug/2026-09-02-recording-start-alignment/note.md` (the 441-frame step and the
-  stream-start duplicate); `src/demos/recording/CLAUDE.md` (the step);
-  `debug/2026-10-22-chromium-watched-issues/note.md`, "capture-gaps" (envelopes
-  `chromium-capture-gaps-mvk38gho-fzko.json`, `…-mvk35pnx-czdb.json`, `…-mvk39txh-gxhd.json`,
-  `…-mvk37334-0nth.json`).
-- **Last checked:** steady-state gaps not reproduced on Chrome 155.0.8059.85 / macOS 15.6.1, 2026-10-22,
-  probe `?issue=capture-gaps`: no zero run and no duplicate after the first 0.1 s in any unspliced
-  minute; `START GAPS` at loopback 44 100 and microphone 48 000, `CLEAN` at loopback 48 000 and
-  microphone 44 100. The tracker ties the steady-state gaps to a large graph and to devices on different
-  clocks, neither of which the probe had.
+- **Workaround:** keep the worklet thread free of long tasks during a take; keep the audio graph small.
+  A `MediaRecorder` capture of the same stream was clean in the reports (not what the SDK does).
+  Check a stall-prone change on a real input, not the loopback.
+- **Evidence:** `debug/2026-10-22-chromium-watched-issues/note.md`, "capture-gaps" and its "Render-thread
+  stalls"; probe `chromium-watched-issues-debug-demo.html?issue=capture-gaps&source=mic&stallMs=80&stallEvery=1000`
+  (`&rate=44100`; `&source=loopback` for the clean comparison); stall envelopes
+  `chromium-capture-gaps-mvk8sh5j-wdul.json` (mic 48 000), `…-mvk8tv7j-emkw.json` (mic 44 100),
+  `…-mvk8ibbw-6u1w.json` and `…-mvk8juge-cjxt.json` (loopback), control `…-mvk8qfyt-uyws.json`;
+  unstalled envelopes `…-mvk38gho-fzko.json`, `…-mvk35pnx-czdb.json`, `…-mvk39txh-gxhd.json`,
+  `…-mvk37334-0nth.json`.
+- **Last checked:** Chrome 155.0.8059.85, macOS 15.6.1, 2026-10-22: `GAPS`, with the zero runs at stall
+  times, on the microphone at both rates.
+
+## Watched — read from the tracker, not reproduced here
 
 ### Chromium [40909520](https://issues.chromium.org/issues/40909520) / [541725401](https://issues.chromium.org/issues/541725401) / [40068799](https://issues.chromium.org/issues/40068799) — OPFS: slow `flush()` on Mac, and a quota overrun that returns a sentinel
 
