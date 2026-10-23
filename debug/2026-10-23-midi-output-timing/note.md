@@ -230,8 +230,8 @@ Run with `&frameDriver=hidden-safe` (see "Harness notes"). Columns as in run A.
    pair, that drift is indistinguishable from an SDK offset of the same size; against a per-frame live pair
    it drops to the one or two notes between two reads. The engine's stamps follow the live relation. The
    input alignment and combined harnesses judge on one pair per repeat; their 3 ms-scale constant terms
-   carry this. Not filed anywhere yet; a candidate for the vendor register once it is characterised on its
-   own (a page with no SDK, the pair sampled for a minute, at 44.1 and 48 kHz).
+   carry this. Characterised SDK-free the same day (Chromium 40726491, vendor register): the mechanism is
+   the browser's, but the per-repeat frequency seen here was not reproduced without the SDK's engine.
 
 ### The band (`midiOutputVerdict.ts`, `MIDI_OUT_KNOWN_DEFECTS`)
 
@@ -271,10 +271,14 @@ cell with a late clear note or a stuck note outside the blocks is never swallowe
 
 - A draft comment for openDAW#356 with runs A–C and the scope note on `plans/capture.md`:
   `drafts/TO-REVIEW-opendaw-356-comment.md`, waiting for the user's read.
-- ~~The `getOutputTimestamp` drift on its own page (no SDK)~~ DONE 2026-10-23: it is Chrome's, open tracker
-  40726491 (40693959 merged in names the mechanism), measured SDK-free on
-  `chromium-watched-issues-debug-demo.html?issue=clock-drift` and entered in the vendor register; a decision
-  for the input alignment and combined harnesses (a live pair there too) remains.
+- ~~The `getOutputTimestamp` drift on its own page (no SDK)~~ DONE 2026-10-23, with a caveat: the mechanism is
+  Chrome's (open tracker 40726491; 40693959 merged in names it) and shows SDK-free on
+  `chromium-watched-issues-debug-demo.html?issue=clock-drift` (a 278-frame sawtooth every 4.5 s on a 48 kHz
+  context over the 44.1 kHz device; single early steps at the device's rate), entered in the vendor register.
+  NOT reproduced SDK-free: this audit's ±3 ms movement within most 10 s repeats at 44.1 kHz, with or without a
+  60 % render load on the probe. The attribution of that wander to Chrome rests on the mechanism, not on a
+  reproduction; a probe arm with the SDK's engine in the graph would settle it. A decision for the input
+  alignment and combined harnesses (a live pair there too) remains.
 - **Re-read openDAW#491's jitter sentence before anything new is posted.** #491 states a 7–10 ms jitter and
   attributes it to the MIDI recorder; it was read against one pair per repeat, and the drift measured here
   (±3 ms within a repeat) could be part of that spread. The 33 ms constant term is far larger than the
