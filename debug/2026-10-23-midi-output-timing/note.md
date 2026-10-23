@@ -271,8 +271,10 @@ cell with a late clear note or a stuck note outside the blocks is never swallowe
 
 - A draft comment for openDAW#356 with runs A–C and the scope note on `plans/capture.md`:
   `drafts/TO-REVIEW-opendaw-356-comment.md`, waiting for the user's read.
-- The `getOutputTimestamp` drift on its own page (no SDK), then a vendor-register entry if it holds; and a
-  decision for the input alignment and combined harnesses (a live pair there too).
+- ~~The `getOutputTimestamp` drift on its own page (no SDK)~~ DONE 2026-10-23: it is Chrome's, open tracker
+  40726491 (40693959 merged in names the mechanism), measured SDK-free on
+  `chromium-watched-issues-debug-demo.html?issue=clock-drift` and entered in the vendor register; a decision
+  for the input alignment and combined harnesses (a live pair there too) remains.
 - **Re-read openDAW#491's jitter sentence before anything new is posted.** #491 states a 7–10 ms jitter and
   attributes it to the MIDI recorder; it was read against one pair per repeat, and the drift measured here
   (±3 ms within a repeat) could be part of that spread. The 33 ms constant term is far larger than the

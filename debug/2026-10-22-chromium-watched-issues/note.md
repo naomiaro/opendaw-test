@@ -66,6 +66,10 @@ did with it.
   Stays watched with the figures; no slowness here.
 - **541725401 / 40068799, quota sentinel:** no probe (needs the quota exhausted or an incognito
   profile). Stays watched, out of scope.
+- **40726491, `getOutputTimestamp` wanders (added 2026-10-23, first seen on the MIDI output timing audit):**
+  `STEPS` on both rates: a 278-frame sawtooth every 4.49 s on a 48 kHz context over the 44.1 kHz device (idle,
+  janked, graph-churned and hidden alike), one −229-frame step in 60 s at the native rate; `outputLatency` fixed. Moved to "Measured here" under the open
+  tracker 40726491 (40693959, merged into it, names the mechanism).
 - **388871416, `outputLatency` with Bluetooth:** measured. Chrome reports a fixed 161 ms for the headset
   against 28 ms for the built-in speaker (a difference of 133 ms). With the microphone on its own
   device-free clock, the acoustic round trip measures 68.9 ms for the speaker and 349.5 / 272.3 / 270.9 ms
@@ -91,6 +95,7 @@ stand), the single-window bfcache runs, and the OPFS stored-readings load before
 | `opfs-usage` | [436552046](https://issues.chromium.org/issues/436552046) / [401692415](https://issues.chromium.org/issues/401692415) — OPFS usage not counted for sync-handle writes, negative after a delete | Writes through a sync access handle in a worker, reads `estimate()` before, after the write and after the delete; the user quits and reopens Chrome and the page judges the restart reading on load (`&truncateFirst=1` for the reporter's workaround) | `NOT COUNTED`, `COUNTED`, `NEGATIVE USAGE`, `NOT CHECKED` with `readings-missing`, `write-none`, `write-short`, `write-size-mismatch`, `not-restarted`, `restart-no-estimate`, `opfs-<missing>` | **reproduced**: `NEGATIVE USAGE` after a restart of the user's Chrome 155, 2026-10-22 (saved figure −16.5 MB after a plain run's delete, read back as 4.28 GB; about +50.6 MB before it if the delete took the full 64 MiB, as the off-disk reading and round 2 show); the saved figure read off disk drops by the deleted size on a plain delete, by 0 after a truncate; a truncate-first run and a second restart moved it by the hand-deleted samples' size only (−238 137 857 against −238 135 417 predicted) |
 | `opfs-flush` | [40909520](https://issues.chromium.org/issues/40909520) — slow `flush()` on Mac | Times 20 writes of 1 MiB and 20 of 16 MiB, each followed by `flush()`, in a worker; median, p95 and max per size | `MEASURED` (figures only: the tracker's claim is a comparison with other browsers this repo does not make), `NOT CHECKED opfs-<missing>` | **measured**: flush median 0.53–0.57 ms (1 MiB), 1.44–1.46 ms (16 MiB), Chrome 155, macOS 15.6.1, 2026-10-22 |
 | — | [541725401](https://issues.chromium.org/issues/541725401) / [40068799](https://issues.chromium.org/issues/40068799) — a quota overrun returns a sentinel | No probe: needs the origin's quota exhausted or an incognito profile | — | out of scope, stays watched |
+| `clock-drift` | [40726491](https://issues.chromium.org/issues/40726491) — `getOutputTimestamp`'s relation wanders (40693959 merged in: the position is updated per render quantum, not from the device) | A running context with the bfcache probe's steady graph; `getOutputTimestamp` and `outputLatency` read on a WORKER tick every 10 ms through four phases of `&seconds` (idle; an 80 ms main-thread block every 500 ms; an unrelated gain pair connected/disconnected every 50 ms; hidden by hand, then back); the relation's offset from the first sample in frames at the context rate, steps over half a quantum, the ramp between them, the 128-frame lattice fit, the device's native rate | `STEPS`, `STEADY`, `NOT CHECKED` with `context-<state>`, `too-few-samples`, `hidden-never-happened` or the step that failed | **reproduced** on Chrome 155, 2026-10-23: 48 kHz context on the 44.1 kHz device: a sawtooth, +62 frames/s then −278 frames every 4.49 s, 14 in 60 s, every phase; 44.1 kHz (native): one −229-frame step at 12 s in idle, then +0.25 frames/s; `outputLatency` 28.00 throughout |
 | `output-latency` | [388871416](https://issues.chromium.org/issues/388871416) — `outputLatency` with a Bluetooth headset | Readout: resumes a context and reads `baseLatency`, `outputLatency`, `sinkId` and the output device's label from `enumerateDevices()` every second for 30 s; no classifier, the rows are the finding. `&roundtrip=1`: plays 10 clicks through the output and finds them in a built-in-mic capture (`&sink=<label>`, `&gain=`) | `MEASURED` (figures only), `NOT CHECKED context-<state>`; with `&roundtrip=1` also `NOT CHECKED` with `<n>-of-10-clicks-found-…`, `clock-pair-unstable`, `non-positive-round-trip`, `mic-<error>`, `capture-context-<error>`, `sink-none-unsupported` or the step that failed | **measured, understated by about 70 ms (about 148 ms on the first stream after connecting)**: reported 28 / 161 ms; isolated round trips 68.9 ms (speaker) and 349.5 / 272.3 / 270.9 ms (headset); Chrome 155, 2026-10-22 |
 
 ## Run recipe
@@ -115,6 +120,7 @@ stand), the single-window bfcache runs, and the OPFS stored-readings load before
    https://localhost:5173/chromium-watched-issues-debug-demo.html?issue=capture-gaps&source=crosscontext&rate=48000&generatorRate=48000&seconds=90
    https://localhost:5173/chromium-watched-issues-debug-demo.html?issue=opfs-usage
    https://localhost:5173/chromium-watched-issues-debug-demo.html?issue=opfs-flush
+   https://localhost:5173/chromium-watched-issues-debug-demo.html?issue=clock-drift&rate=48000&hidden=1
    ```
 
 3. Click **Run** with a real click (Playwright `click`, never a dispatched event): the audio starts from it.
@@ -1159,6 +1165,54 @@ the envelope (`flush1MiBAllMs`, `flush16MiBAllMs`). The 25.65 ms is one flush of
   does not appear here at these sizes.
 - **The entry stays watched**, with these figures and "not slow on Chrome 155, macOS 15.6.1,
   2026-10-22".
+
+### clock-drift (40726491)
+
+**Reproduced: the context ↔ performance relation `getOutputTimestamp()` reports is not steady.** Chrome
+155.0.8059.85 (macOS 15.6.1, the user's Chrome through claude-in-chrome), 2026-10-23. The probe is SDK-free:
+the bfcache probe's graph (a worklet tone and an oscillator into a quiet gain), the pair and `outputLatency`
+read on a worker tick every 10 ms (frames stop on a hidden page), 20 s per phase. The figure is the relation's
+offset from the first sample, `(Δcontext − Δperformance) × rate`, in frames; a step is a change over half a
+quantum between consecutive samples.
+
+Why it was built: the MIDI output timing audit (2026-10-23, `debug/2026-10-23-midi-output-timing/note.md`) saw
+the relation move by ±3 ms within a 10 s repeat at 44.1 kHz with the SDK's engine running, in steps of about a
+quantum, `outputLatency` constant; the engine's stamps followed the live relation and the pre-scheduled control
+did not, so the two arms disagreed by the drift. Whether that was the SDK's doing or the browser's needed a page
+with no SDK on it.
+
+| envelope | context rate | device rate | phases | steps | shape | `outputLatency` |
+|---|---|---|---|---|---|---|
+| `chromium-clock-drift-mvlittyz-4k1r.json` | 44 100 | 44 100 | idle, jank, graph | 1: −229 frames at 12.04 s (idle) | then a slope of about +0.25 frames/s (−224 → −214 over 40 s) | 28.00 ms throughout |
+| `chromium-clock-drift-mvliwl6b-50bw.json` | 48 000 | 44 100 | idle, jank, graph | 14: −278 frames every 4.49 s, in every phase | a sawtooth: +62 frames/s between snaps (offset −247 … +45) | 28.00 ms throughout |
+| `chromium-clock-drift-mvlj1841-ip0c.json` | 48 000 | 44 100 (read by the probe) | idle, jank, graph, hidden (3 185 samples hidden, frames stopped for 24.6 s) | 35: one −248, then −278 every 4.49 s, in every phase, hidden included | the same sawtooth; ramp 62–64 frames/s in every phase | 28.00 ms throughout |
+
+- **On a resampled context the relation is a sawtooth.** 48 kHz over this Mac's 44.1 kHz output device: the
+  performance-time side gains about 62 frames per second on the context side, 0.13 %, until a snap of exactly
+  278 frames (5.8 ms) every 4.49 s puts it back. 14 of 14 snaps the same size. Not a step under load: the jank
+  and graph-churn phases show the same period as idle. 278 frames is not a multiple of 128 (the lattice column
+  counts it as "on" within the quarter-quantum tolerance; it is 2.17 quanta); the period × slope product,
+  4.49 s × 62 ≈ 278, says the snap is the accumulated ramp, a correction of a position estimate that runs 0.13 %
+  fast against the device, which is the ratio of the two rates' remainder, not clock skew.
+- **At the device's native rate the relation steps once and otherwise skews slowly.** One −229-frame step 12 s
+  in, with nothing happening on the page; then about +0.25 frames per second, which is 5.7 ppm, the size of a
+  crystal difference between the audio device and the CPU clock and the expected part. No step from an 80 ms
+  main-thread block every 500 ms, none from a graph change every 50 ms.
+- **`outputLatency` does not move** (28.00 ms in every phase of all three runs), so a page that corrects a
+  scheduled time by `outputLatency` does not see the change.
+- **Hidden changes nothing.** The third run sampled 32 s with the window hidden (the operator's Cmd+H; the
+  worker tick kept the 10 ms cadence while frames stopped for 24.6 s): the same sawtooth, eight snaps of 278
+  frames at the same period. A tab playing audio is exempt from Chrome's background throttling, so the hidden
+  phase is a condition compared, not a control; the probe's instrument fired on the phenomenon itself (a step
+  in the idle phase of the first run).
+- **The tracker knows the mechanism.** 40693959 (2020, merged into 40726491): the position behind
+  `getOutputTimestamp` is updated per render quantum from the renderer's side, not from the device's output
+  position; the reporter's log at a large `latencyHint` wanders by 170 ms. 40726491 is open, P3, triaged in
+  2026-05. The sawtooth on a resampled context is a sharper instance of the same thing, not a new issue.
+- **What it means for the harnesses here:** a pair read once per repeat carries this wander into any figure
+  judged against it (the input alignment and combined harnesses' 3 ms-scale terms); the output timing audit
+  reads the pair every frame and judges the engine on the live relation. A context at the device's native rate
+  is the lesser case. Firefox and Safari are not measured; 40693959 says Firefox reads steady.
 
 ### output-latency (388871416)
 

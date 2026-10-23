@@ -5,7 +5,9 @@
  * hidden page), through four phases of `&seconds` each: `idle`; `jank` (an 80 ms synchronous block
  * every 500 ms); `graph` (an unrelated gain pair connected and disconnected every 50 ms, the
  * 442866743 condition); `hidden` (the page asks the operator to hide Chrome by hand, samples while
- * hidden, asks them back, samples ten more seconds visible). The judgement is `chromiumClockDrift.ts`.
+ * hidden, asks them back, samples ten more seconds visible; the waits for the hand are labelled `await`
+ * and `returned`, not conditions). A tab playing audio is not throttled by Chrome when hidden, so the
+ * hidden phase is a condition to compare, not a control. The judgement is `chromiumClockDrift.ts`.
  */
 import { createWorkerTicker } from "@/lib/workerTicker";
 import { BFCACHE_PROCESSOR_SOURCE } from "./chromiumBfcacheProbe";
@@ -188,6 +190,7 @@ export async function runClockDriftProbe(signal: AbortSignal, report: (step: str
 
     if (options.hidden) {
       report(AWAITING_HIDE);
+      phase = "await";
       const askedAt = performance.now();
       await waitForVisibility("hidden", HIDE_WAIT_MS, signal);
       hideWaitMs = performance.now() - askedAt;
@@ -198,6 +201,7 @@ export async function runClockDriftProbe(signal: AbortSignal, report: (step: str
       const askedBackAt = performance.now();
       await waitForVisibility("visible", HIDE_WAIT_MS, signal);
       returnWaitMs = performance.now() - askedBackAt;
+      phase = "returned";
       report("returned");
       await wait(RETURN_SECONDS * 1000, signal);
     }

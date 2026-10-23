@@ -152,6 +152,12 @@ describe("judgeClockDrift", () => {
   });
 });
 
+describe("CLOCK_DRIFT_PHASES", () => {
+  it("names the two hand-driven spans apart, so a minute spent waiting for the operator is not counted under graph churn", () => {
+    expect([...CLOCK_DRIFT_PHASES]).toEqual(["idle", "jank", "graph", "await", "hidden", "returned"]);
+  });
+});
+
 describe("the quantum", () => {
   it("is 128 frames whatever the rate, so a step size reads the same at 44.1 and 48 kHz", () => {
     expect(QUANTUM).toBe(128);

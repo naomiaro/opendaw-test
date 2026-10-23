@@ -6,7 +6,8 @@
  * pure and Node-testable; the browser half is `chromiumClockDriftProbe.ts`.
  */
 
-export const CLOCK_DRIFT_PHASES = ["idle", "jank", "graph", "hidden"] as const;
+/** `await` is the span between the hide prompt and the window going hidden, `returned` the ten seconds after it came back: both the operator's hand, neither a condition. */
+export const CLOCK_DRIFT_PHASES = ["idle", "jank", "graph", "await", "hidden", "returned"] as const;
 export type ClockDriftPhase = (typeof CLOCK_DRIFT_PHASES)[number];
 
 /** One read of the pair, on a worker tick. */
@@ -163,7 +164,9 @@ export function judgeClockDrift(
   const lattice = latticeFit(allSteps);
   const notChecked = (reason: string): ClockDriftJudgement => ({ verdict: `NOT CHECKED ${reason}`, steppedPhases, totalSteps: allSteps.length, lattice, reason });
   if (context.contextState !== "running") return notChecked(`context-${context.contextState}`);
-  if (phases.length === 0 || phases.some((p) => p.samples < MIN_SAMPLES_PER_PHASE)) return notChecked("too-few-samples");
+  // The hand-driven spans may be short (a fast operator) and are not conditions; the sample floor applies to the measured phases.
+  const measured = phases.filter((p) => p.phase !== "await" && p.phase !== "returned");
+  if (measured.length === 0 || measured.some((p) => p.samples < MIN_SAMPLES_PER_PHASE)) return notChecked("too-few-samples");
   if (context.hiddenRequested) {
     const hidden = phases.find((p) => p.phase === "hidden");
     if (hidden === undefined || hidden.hiddenSamples === 0) return notChecked("hidden-never-happened");

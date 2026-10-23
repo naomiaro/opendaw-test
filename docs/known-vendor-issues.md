@@ -443,6 +443,45 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   times, on the built-in and a USB microphone at both rates; one zero run just after 30 s of silent
   output, none with dither, on the built-in microphone.
 
+### Chromium [40726491](https://issues.chromium.org/issues/40726491) — `getOutputTimestamp()`'s context ↔ performance relation wanders: a sawtooth of 278 frames every 4.5 s on a resampled context, quantum-sized steps on a native one
+
+- **Tracker:** [issues.chromium.org/issues/40726491](https://issues.chromium.org/issues/40726491) "WebAudio
+  currentTime and synchronisation issue", **open** (Available), P3, hotlist WebAudio-timeline, filed 2020-10, last
+  touched 2026-05 by an AI-assisted triage. [40693959](https://issues.chromium.org/issues/40693959) "getOutputTimestamp
+  doesn't accurately represent the output audio stream position" (2020-05, reproduced by Chromium QA on Windows,
+  Mac and Linux from M65) is merged into it and names the mechanism: the position behind `getOutputTimestamp` is
+  updated per render quantum (`HandlePreRenderTasks`) rather than from the device's own output position, so the
+  performance-time side wanders; the reporter's log wanders by 170 ms at a large `latencyHint`. Firefox reads steady.
+  [41399279](https://issues.chromium.org/issues/41399279) "Clock drift between AudioContext currentTime and
+  getOutputTimestamp when under load" (duplicate) is the same family.
+- **Symptom here:** `getOutputTimestamp()` sampled on a worker tick every 10 ms for 60 s, the relation
+  `contextTime − performanceTime` read in frames from the first sample, `outputLatency` beside it.
+  - A **48 kHz context on this Mac's 44.1 kHz device** (Chrome resamples): a sawtooth. The relation ramps up at
+    about 62 frames per second and snaps back by exactly **278 frames every 4.49 s**, 14 times in 60 s, in the idle,
+    jank and graph-churn phases alike, and unchanged with the window hidden for 32 s (a tab playing audio is not
+    throttled); `outputLatency` 28.00 ms throughout.
+  - A **44.1 kHz context, the device's native rate**: one step of **−229 frames at 12 s** into the idle phase, nothing
+    happening on the page, then a slow slope of about +0.25 frames per second (clock skew of a few ppm, which is
+    the expected part); no step under an 80 ms main-thread block every 500 ms, none under a gain pair connected and
+    disconnected every 50 ms; `outputLatency` 28.00 ms throughout.
+  - First seen on the MIDI output timing audit (44.1 kHz, the SDK's engine running): the relation moved by ±3 ms
+    within a 10 s repeat, in steps of about a quantum, with `outputLatency` constant at 23.00 ms.
+- **Where it bites here:** every MIDI harness bridges the AudioContext clock to Web MIDI's performance clock through
+  this pair. Read once per repeat (the input alignment and combined harnesses), the bridge carries this wander into
+  the figure at the 3 ms scale, which is the size of their jitter bands; the output timing audit reads the pair every
+  frame and judges the engine against the live relation for that reason (`debug/2026-10-23-midi-output-timing/note.md`).
+  The SDK itself stamps outgoing MIDI with `performance.now()` plus `outputLatency`, never with this pair, so a
+  hardware note follows whatever the relation does. A context at a rate other than the device's is the bad case:
+  the sample-rate audit's 48 kHz rows run on a 44.1 kHz device here.
+- **Workaround:** in the harnesses, a live pair (per-frame reads) instead of one per repeat, and a context at the
+  device's rate where the measurement allows it. Nothing in the demos needs the pair.
+- **Evidence:** `debug/2026-10-22-chromium-watched-issues/note.md`, "clock-drift"; probe
+  `chromium-watched-issues-debug-demo.html?issue=clock-drift&rate=48000|44100&hidden=0|1`, envelopes
+  `chromium-clock-drift-mvliwl6b-50bw.json` (48 kHz, `STEPS`, 14 steps), `chromium-clock-drift-mvlj1841-ip0c.json`
+  (48 kHz with the hidden phase, `STEPS`, 35 steps, device rate 44 100 read by the probe) and
+  `chromium-clock-drift-mvlittyz-4k1r.json` (44.1 kHz, `STEPS`, one step).
+- **Last checked:** Chrome 155.0.8059.85, macOS 15.6.1, the user's Chrome, 2026-10-23 (tracker read the same day).
+
 ## Watched — read from the tracker, not reproduced here
 
 ### Chromium [40909520](https://issues.chromium.org/issues/40909520) / [541725401](https://issues.chromium.org/issues/541725401) / [40068799](https://issues.chromium.org/issues/40068799) — OPFS: slow `flush()` on Mac, and a quota overrun that returns a sentinel
