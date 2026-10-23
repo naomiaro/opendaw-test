@@ -43,7 +43,11 @@ did with it.
   44 100, 128 at mic 48 000). The tracker's JSFiddle lever, a larger `latencyHint`, gave the USB
   microphone one 384- or 256-frame run about 0.55 s in at 0.1 and 0.2 s (plus a 384-frame start-window
   run at 0.1), never a 480-multiple hole, and no
-  duplicate anywhere. Moved to "Measured here".
+  duplicate anywhere. A later comment's lever, a silent output for more than 30 s, also reproduces: with
+  nothing but zeros reaching the destination, the built-in microphone's 90 s capture has one zero run
+  just after the 30 s mark (128 frames, 21 ms after it, twice; 256 frames, 373 ms after it, at
+  `latencyHint` 0.1). With the commenter's dither on the output, none (three rows). Moved to "Measured
+  here".
 - **436552046 / 401692415, OPFS usage going negative:** `NEGATIVE USAGE` after a real restart of the
   user's Chrome, and a truncate-first delete left the saved figure alone across a second restart. The
   measured entry's unmeasured half is now measured, and the workaround is confirmed.
@@ -71,7 +75,7 @@ stand), the single-window bfcache runs, and the OPFS stored-readings load before
 | `first-read` | [571344687](https://issues.chromium.org/issues/571344687) — stale first clock read after a slow module load | Builds a worklet node right after `addModule()` resolves (a slow module, a large module, none), five runs each in a running context; the processor reports `currentFrame` from its constructor and first three `process()` calls, judged against the main thread's frame read just before the node was made | `STALE FIRST READ`, `FIRST READ TRUE`, `NOT CHECKED context-not-running`, `NOT CHECKED too-few-runs` | **reproduced**: `STALE FIRST READ` on Chrome 155, 2026-10-22 |
 | `bfcache` | [575891839](https://issues.chromium.org/issues/575891839) — half-speed worklet clock after a back/forward-cache restore | Measures the context clock against `performance.now()` with a worklet tone and an oscillator control playing, navigates away and back; on `pageshow.persisted` re-measures in three one-second windows and judges on the last two, otherwise records the `notRestoredReasons` | `HALF SPEED`, `NORMAL`, `NOT CHECKED` with `not-cached`, `not-back-forward-<type>`, `context-<state>`, `too-few-windows`, `baseline-slow` | **reproduced**: `HALF SPEED` on Chrome 155, 2026-10-22, all three restore windows; a playing demo also restores at half speed (the user's Chrome; Playwright's cannot enter the cache) |
 | `suspend-resume` | [560233271](https://issues.chromium.org/issues/560233271) — distortion after suspend / resume cycles | The tracker's tone (a stateless 440 Hz sine from `currentFrame`, from a module file) into an analyser; a two-second baseline, then `suspend()` / `resume()` cycles, with the tracker's preconditions under `&tracker=1` (44.1 kHz, one restart, an 80 ms worklet-thread stall before each cycle). Each one-second window is judged three ways: the clock witness (context clock against wall clock, `process()` calls per second), the graph's purity, click and dropout rules, and with `&witness=mic` the microphone in a context of its own | `HALF RATE`, `DISTORTED`, `DISTORTED (mic only)`, `CLEAN`, `NOT CHECKED` with `<n>-cycles`, `no-signal`, `no-baseline-purity`, `processor-error-tone`, `processor-error-recorder`, `mic-<error>` or the step that failed | **reproduced**: `HALF RATE` with `&tracker=1` (an 80 ms worklet-thread stall before each cycle) on Chrome 155, 2026-10-22; the render rate halves at cycle 2, 3 or 10 and stays halved (344.5 → 172.3 `process()` calls per second, clock 0.50); without the stall, 20 cycles stay true |
-| `capture-gaps` | [40103985](https://issues.chromium.org/issues/40103985) — zero-filled gaps and duplicated blocks in `getUserMedia` input | Records 60 s of a `MediaStreamAudioSourceNode` (`&source=loopback` or `mic`, `&rate=48000` or `44100`) through a worklet; counts zero runs of 100 frames or more after the head and 128-frame blocks identical to the one before, the first 0.1 s after the head reported apart; `&latencyHint`, `&input=<label>`; `&stallMs` holds the worklet thread every `&stallEvery` ms and reports the runs in each stall's span apart | `GAPS`, `START GAPS`, `CLEAN`, `NOT CHECKED` with `<s>-s`, `no-signal`, `source-ended`, `source-muted`, `source-empty-input`, `mic-<error>` or the step that failed | **reproduced with render-thread stalls**: an 80 ms worklet-thread stall each second leaves a 512–1 792-frame zero run 48–72 ms after each stall on the microphone, at 48 000 (116 of 137 runs at stall times) and 44 100 (60 of 60); the loopback stays clean under the same stalls; without stalls, no gap after the first 0.1 s, `START GAPS` at loopback 44 100 and mic 48 000; a USB microphone the same under stalls (114 of 138, 62 of 62); `latencyHint` 0.1 / 0.2 gave one 384- or 256-frame run about 0.55 s in (plus a 384-frame start-window run at 0.1), never a 480-multiple hole; no duplicate anywhere; Chrome 155, 2026-10-22 |
+| `capture-gaps` | [40103985](https://issues.chromium.org/issues/40103985) — zero-filled gaps and duplicated blocks in `getUserMedia` input | Records 60 s of a `MediaStreamAudioSourceNode` (`&source=loopback` or `mic`, `&rate=48000` or `44100`) through a worklet; counts zero runs of 100 frames or more after the head and 128-frame blocks identical to the one before, the first 0.1 s after the head reported apart; `&latencyHint`, `&input=<label>`, `&dither`, `&speakerTone=0`, `&seconds`, a per-second clock witness; `&stallMs` holds the worklet thread every `&stallEvery` ms and reports the runs in each stall's span apart | `GAPS`, `START GAPS`, `CLEAN`, `NOT CHECKED` with `<s>-s`, `no-signal`, `source-ended`, `source-muted`, `source-empty-input`, `mic-<error>` or the step that failed | **reproduced with render-thread stalls**: an 80 ms worklet-thread stall each second leaves a 512–1 792-frame zero run 48–72 ms after each stall on the microphone, at 48 000 (116 of 137 runs at stall times) and 44 100 (60 of 60); the loopback stays clean under the same stalls; without stalls, no gap after the first 0.1 s, `START GAPS` at loopback 44 100 and mic 48 000; a USB microphone the same under stalls (114 of 138, 62 of 62); `latencyHint` 0.1 / 0.2 gave one 384- or 256-frame run about 0.55 s in (plus a 384-frame start-window run at 0.1), never a 480-multiple hole; no duplicate anywhere; with a silent output, one 128- or 256-frame run just after the 30 s mark in 3 of 3 rows, none with the commenter's dither (3 rows); Chrome 155, 2026-10-22 |
 | `opfs-usage` | [436552046](https://issues.chromium.org/issues/436552046) / [401692415](https://issues.chromium.org/issues/401692415) — OPFS usage not counted for sync-handle writes, negative after a delete | Writes through a sync access handle in a worker, reads `estimate()` before, after the write and after the delete; the user quits and reopens Chrome and the page judges the restart reading on load (`&truncateFirst=1` for the reporter's workaround) | `NOT COUNTED`, `COUNTED`, `NEGATIVE USAGE`, `NOT CHECKED` with `readings-missing`, `write-none`, `write-short`, `write-size-mismatch`, `not-restarted`, `restart-no-estimate`, `opfs-<missing>` | **reproduced**: `NEGATIVE USAGE` after a restart of the user's Chrome 155, 2026-10-22 (saved figure −16.5 MB after a plain run's delete, read back as 4.28 GB; about +50.6 MB before it if the delete took the full 64 MiB, as the off-disk reading and round 2 show); the saved figure read off disk drops by the deleted size on a plain delete, by 0 after a truncate; a truncate-first run and a second restart moved it by the hand-deleted samples' size only (−238 137 857 against −238 135 417 predicted) |
 | `opfs-flush` | [40909520](https://issues.chromium.org/issues/40909520) — slow `flush()` on Mac | Times 20 writes of 1 MiB and 20 of 16 MiB, each followed by `flush()`, in a worker; median, p95 and max per size | `MEASURED` (figures only: the tracker's claim is a comparison with other browsers this repo does not make), `NOT CHECKED opfs-<missing>` | **measured**: flush median 0.53–0.57 ms (1 MiB), 1.44–1.46 ms (16 MiB), Chrome 155, macOS 15.6.1, 2026-10-22 |
 | — | [541725401](https://issues.chromium.org/issues/541725401) / [40068799](https://issues.chromium.org/issues/40068799) — a quota overrun returns a sentinel | No probe: needs the origin's quota exhausted or an incognito profile | — | out of scope, stays watched |
@@ -94,6 +98,7 @@ stand), the single-window bfcache runs, and the OPFS stored-readings load before
    https://localhost:5173/chromium-watched-issues-debug-demo.html?issue=capture-gaps&source=loopback&rate=48000
    https://localhost:5173/chromium-watched-issues-debug-demo.html?issue=capture-gaps&source=mic&rate=48000&stallMs=80&stallEvery=1000
    https://localhost:5173/chromium-watched-issues-debug-demo.html?issue=capture-gaps&source=mic&input=USB&rate=48000&latencyHint=0.04
+   https://localhost:5173/chromium-watched-issues-debug-demo.html?issue=capture-gaps&source=mic&rate=48000&seconds=90&speakerTone=0&dither=1
    https://localhost:5173/chromium-watched-issues-debug-demo.html?issue=opfs-usage
    https://localhost:5173/chromium-watched-issues-debug-demo.html?issue=opfs-flush
    ```
@@ -677,6 +682,69 @@ What these rows show:
   fiddle's 480-frame quantisation reads as the Windows capture path's 10 ms buffers. Here every hole is
   a multiple of 128 frames (one 441-frame exception on the loopback at 44 100).
 - **The device-free counterpart is clean.** The loopback at a 0.2 s hint reads `CLEAN`.
+
+#### Silence detection on the output (`&dither`, `&seconds`)
+
+A later comment on the tracker names another lever: "Chrome gives up on the OUTPUT device if it sees
+>30s of complete silence … if you wish to 'record' audio using a scriptprocessor, or audioWorklet, you
+MUST NOT set the output buffer to all zeros, else Chrome ditches your output device and the clocks then
+go to hell". The commenter's fix writes `outputSamples[n] = (n&1)/10000`, a tiny dither, and the holes
+stop. They identified it with chrome://tracing: "the audio output device trace was active for exactly
+30s". Their fiddle connects its recording node to the destination (`node.connect(ac.destination)`).
+
+**What the earlier rows had.** The recorder's output was not connected to anything. The microphone rows
+also played the 1 kHz tone to the speaker at −20 dB, so no earlier microphone row ever had a silent
+output. The loopback rows sent nothing to the destination, a silent output, and read clean in 60 s
+minutes. Now the recorder is connected to the destination in every row (`outputConnected`), and three
+switches control what reaches the output:
+- **`&dither=1`.** The recorder writes `(n & 1) / 10000` to its output on every frame. The default
+  writes zeros.
+- **`&speakerTone=0`.** It turns the microphone rows' speaker tone off, so the recorder's output is all
+  that reaches the destination.
+- **`&seconds=<n>`.** It sets the capture length, 30 to 600 s, default 60.
+
+A clock witness reads `currentTime` against `performance.now()` once a second during the capture and
+records each second's ratio (`clockRatioPerSecond`, `clockRatioMin` and the second it happened, and
+`clockDipSeconds` for any second under 0.75). The detail also names zero runs that start within 2 s of
+the 30 s mark of context time (`runsNear30s`; the mark is converted to a capture frame with the
+recorder's first context frame).
+
+The USB microphone was disconnected by the time these rows ran; Chrome listed only the built-in
+microphone and Zoom's virtual device, so the rows use the built-in microphone. The user was present and
+the room had its normal noise. The runs were in Playwright's Chrome 155.0.8059.85 on macOS 15.6.1,
+2026-10-22, with a real click and 90 s each.
+
+| envelope | source | `latencyHint` | output | runs after the start window | near the 30 s mark | clock min (second) | RMS | verdict |
+|---|---|---|---|---|---|---|---|---|
+| `chromium-capture-gaps-mvk9nuuo-s3x1.json` | built-in mic | interactive | zeros | 1: 128 at frame 1 433 728 | 1, 1 024 frames (21 ms) after it | 0.990 (78) | 0.0061 | `GAPS` |
+| `chromium-capture-gaps-mvk9wabz-l4w8.json` | built-in mic | interactive | zeros | 1: 128 at frame 1 433 984 | 1, 1 024 frames (21 ms) after it | 0.990 (31) | 0.0036 | `GAPS` |
+| `chromium-capture-gaps-mvk9pzn2-83bx.json` | built-in mic | interactive | dither | 0 (start window: one 128) | 0 | 0.991 (1) | 0.0072 | `START GAPS` |
+| `chromium-capture-gaps-mvk9ybig-f9be.json` | built-in mic | interactive | dither | 0 (start window: one 128) | 0 | 0.993 (55) | 0.0045 | `START GAPS` |
+| `chromium-capture-gaps-mvk9s0lh-u9sp.json` | built-in mic | 0.1 → 92.9 ms | zeros | 1: 256 at frame 1 435 520 | 1, 17 920 frames (373 ms) after it | 0.925 (79) | 0.0050 | `GAPS` |
+| `chromium-capture-gaps-mvk9u1pc-xmca.json` | built-in mic | 0.1 → 92.9 ms | dither | 0 | 0 | 0.925 (4) | 0.0050 | `CLEAN` |
+| `chromium-capture-gaps-mvk9lpjr-ddsz.json` | loopback | interactive | zeros | 0 | 0 | 0.924 (1) | 0.354 | `CLEAN` |
+
+No row had a duplicate, an empty input, or a track that started muted or fired `mute`. The microphone
+rows' RMS is room noise alone, with no speaker tone. The `&input=USB` attempt before them read `NOT
+CHECKED mic-Error-no-input-matching-USB` and is not quoted.
+
+What these rows show:
+- **The lever reproduces, as one render quantum or two.** Every silent-output microphone row has exactly
+  one zero run after the start window, and it sits just after the 30 s mark of context time. The two
+  default-hint rows put it at the same place, 1 024 frames after the mark. Every dithered row has none.
+- **The holes are not 10 ms here, and the clock does not "go to hell".** The runs are 128 and 256 frames.
+  The lowest per-second ratio in any row is 0.92, at the first second or in rows with a 92.9 ms
+  `baseLatency`, where one-second readings are jittery. No second dips under 0.75.
+- **The loopback is clean with a silent output.** Its producer is in the same graph, with no device FIFO
+  between, so a dropped output device has nothing to underrun there. This is a reading, not measured.
+- **Earlier rows are unaffected.** The tone-on microphone rows never had a silent output. The 60 s
+  loopback rows were silent and clean, as here.
+
+What it means for the SDK:
+- **A take recorded with playback and the metronome off drives a silent engine output.** If the engine
+  worklet's output is all zeros then, a take longer than 30 s would meet this hole. Whether the engine's
+  output is exactly zero in that state is a reading, not measured here.
+- **The commenter's dither is a workaround.** In these rows it removed the hole that silence produced.
 
 ### opfs-usage (436552046 / 401692415)
 

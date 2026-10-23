@@ -333,7 +333,12 @@ Chromium tracker through the browser).
   lever, a larger `latencyHint`, gave the USB microphone one 384- or 256-frame run about 0.55 s in at
   0.1 and 0.2 s (`baseLatency` capped at 92.9 ms). The 0.1 s row also had a 384-frame run in the start
   window. The fiddle's 480-multiple holes
-  (Windows, Chrome 77) were not seen here: every hole is whole render quanta.
+  (Windows, Chrome 77) were not seen here: every hole is whole render quanta. A later comment's lever,
+  more than 30 s of complete silence on the output, reproduces too. With nothing but zeros reaching the
+  destination, a 90 s built-in microphone capture has one zero run just after the 30 s mark of context
+  time: 128 frames 21 ms after it in two rows, and 256 frames 373 ms after it at `latencyHint` 0.1. With
+  the commenter's dither, `(n & 1) / 10000` written to the output, none in three rows. The context clock
+  never dipped under 0.92 in any second.
 - **Where it bites here:** any recording through a `MediaStreamAudioSourceNode`. An 80 ms render-thread
   stall cost about 32 ms of input. The sink's buffer of about 48 ms is inferred from where the zeros
   start, not measured, since only 80 ms stalls were run. A long WASM compile, a large message handled on
@@ -346,6 +351,9 @@ Chromium tracker through the browser).
   is a candidate for this issue. Reproduce and attribute it before concluding, since an SDK ring-buffer
   regression would look the same.
 - **Workaround:** keep the worklet thread free of long tasks during a take; keep the audio graph small.
+  Never let the output go completely silent for more than 30 s during a take: a dither of
+  `(n & 1) / 10000` on an output removed the post-30 s hole in every row here. Whether the engine's
+  output is exactly zero during a take with playback and the metronome off is not measured.
   A `MediaRecorder` capture of the same stream was clean in the reports (not what the SDK does).
   Check a stall-prone change on a real input, not the loopback.
 - **Evidence:** `debug/2026-10-22-chromium-watched-issues/note.md`, "capture-gaps" and its "Render-thread
@@ -357,9 +365,13 @@ Chromium tracker through the browser).
   `…-mvk9469i-pqmu.json` (no stall), `…-mvk8zu9c-3vg1.json`, `…-mvk918b0-8vcw.json`, `…-mvk92m9e-0dhp.json`
   (`&latencyHint` 0.04 / 0.1 / 0.2), loopback `…-mvk98cij-giwz.json` (`&latencyHint=0.2`);
   unstalled envelopes `…-mvk38gho-fzko.json`, `…-mvk35pnx-czdb.json`, `…-mvk39txh-gxhd.json`,
-  `…-mvk37334-0nth.json`.
+  `…-mvk37334-0nth.json`; silent output against dither over 90 s (`&seconds=90&speakerTone=0`, `&dither=1`)
+  `…-mvk9nuuo-s3x1.json`, `…-mvk9wabz-l4w8.json`, `…-mvk9s0lh-u9sp.json` (silent),
+  `…-mvk9pzn2-83bx.json`, `…-mvk9ybig-f9be.json`, `…-mvk9u1pc-xmca.json` (dither), loopback
+  `…-mvk9lpjr-ddsz.json`.
 - **Last checked:** Chrome 155.0.8059.85, macOS 15.6.1, 2026-10-22: `GAPS`, with the zero runs at stall
-  times, on the built-in and a USB microphone at both rates.
+  times, on the built-in and a USB microphone at both rates; one zero run just after 30 s of silent
+  output, none with dither, on the built-in microphone.
 
 ## Watched — read from the tracker, not reproduced here
 

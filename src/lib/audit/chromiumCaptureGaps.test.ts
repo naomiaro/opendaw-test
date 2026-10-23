@@ -10,6 +10,11 @@ import {
   headZerosOf,
   judgeCaptureGaps,
   sinceLastStall,
+  runsNearMark,
+  clockDipSeconds,
+  clockRatios,
+  captureDetail,
+  secondsFrom,
   latencyHintFrom,
   lengthsIn480s,
   rmsAfterHead,
@@ -332,5 +337,55 @@ describe("matchInput", () => {
 
   it("gives null when none matches", () => {
     expect(matchInput(inputs, "scarlett")).toBeNull();
+  });
+});
+
+describe("runsNearMark", () => {
+  it("keeps the runs starting within the window either side of the mark", () => {
+    const runs = [
+      { start: 27 * RATE, length: 480 },
+      { start: 28 * RATE, length: 480 },
+      { start: 31 * RATE, length: 128 },
+      { start: 32 * RATE + 1, length: 128 },
+    ];
+    expect(runsNearMark(runs, 30 * RATE, 2 * RATE)).toEqual([runs[1], runs[2]]);
+  });
+});
+
+describe("clockRatios and clockDipSeconds", () => {
+  it("gives one ratio per interval between readings", () => {
+    const readings = [
+      { contextSec: 0, wallSec: 0 },
+      { contextSec: 1, wallSec: 1 },
+      { contextSec: 1.5, wallSec: 2 },
+    ];
+    expect(clockRatios(readings)).toEqual([1, 0.5]);
+    expect(clockRatios(readings.slice(0, 1))).toEqual([]);
+  });
+
+  it("names the seconds (from 1) whose ratio is under 0.75", () => {
+    expect(clockDipSeconds([1, 0.99, 0.74, 1.01, 0.5])).toEqual([3, 5]);
+    expect(clockDipSeconds([1, 0.75])).toEqual([]);
+  });
+});
+
+describe("captureDetail", () => {
+  it("joins the stall detail, the runs near 30 s and the clock dips; null when there is nothing to say", () => {
+    expect(captureDetail(null, [], [])).toBeNull();
+    expect(captureDetail("1 of 1 zero runs at stall times; 0 of 0 duplicates at stall times", [], [])).toBe(
+      "1 of 1 zero runs at stall times; 0 of 0 duplicates at stall times",
+    );
+    expect(captureDetail(null, [{ start: 30 * RATE, length: 480 }], [31])).toBe(
+      "1 zero runs within 2 s of the 30 s mark; clock under 0.75 in second 31",
+    );
+  });
+});
+
+describe("secondsFrom", () => {
+  it("reads whole seconds from 30 to 600; 60 without one", () => {
+    expect(secondsFrom(null)).toBe(60);
+    expect(secondsFrom("90")).toBe(90);
+    expect(() => secondsFrom("29")).toThrow(/seconds/);
+    expect(() => secondsFrom("1.5")).toThrow(/seconds/);
   });
 });

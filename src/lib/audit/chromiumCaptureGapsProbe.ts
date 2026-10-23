@@ -1,7 +1,7 @@
 /**
  * The browser half of the Chromium 40103985 probe (`?issue=capture-gaps`). The click opens a
  * context at `&rate=48000|44100` (default 48000) and captures a 1 kHz tone through a
- * `MediaStreamAudioSourceNode` for `CAPTURE_SECONDS`:
+ * `MediaStreamAudioSourceNode` for `&seconds` (default 60):
  *
  * - `&source=loopback` (default): an oscillator into a `MediaStreamAudioDestinationNode` in
  *   the SAME context, its stream cloned and consumed by the source node: the node path of the
@@ -27,6 +27,13 @@
  * `&latencyHint=<seconds|interactive|balanced|playback>` (default interactive) goes to the capture
  * context's constructor: the tracker's JSFiddle repro ties the holes to it. `&input=<label text>`
  * picks the microphone whose `enumerateDevices()` label holds the text.
+ *
+ * The recorder's output is connected to the destination. It writes zeros (the default, a silent
+ * output: the tracker reports Chrome dropping an output device after 30 s of complete silence) or,
+ * with `&dither=1`, `(n & 1) / 10000` on every frame, the tracker commenter's fix. `&speakerTone=0`
+ * turns the microphone rows' speaker tone off, so nothing else reaches the destination.
+ * `&seconds=<n>` (30 to 600, default 60) sets the capture length. A clock witness reads the
+ * context's `currentTime` against `performance.now()` once a second during the capture.
  */
 
 import { withDeadline } from "@/lib/deadline";
@@ -42,12 +49,21 @@ import {
   matchInput,
   recorderChunkFrames,
   rmsAfterHead,
+  runsNearMark,
+  clockRatios,
+  clockDipSeconds,
+  captureDetail,
+  secondsFrom,
+  type ClockReading,
   sinceLastStall,
   type SourceHealth,
   type ZeroRun,
 } from "./chromiumCaptureGaps";
 
-export const CAPTURE_SECONDS = 60;
+/** Seconds of context time after which the tracker reports Chrome dropping a silent output device. */
+const SILENCE_MARK_SEC = 30;
+/** Zero runs this close to the mark are named in the detail. */
+const MARK_WINDOW_SEC = 2;
 
 const PROCESSOR_NAME = "chromium-capture-gaps-recorder";
 const TONE_HZ = 1000;
@@ -100,7 +116,8 @@ export function stallFrom(params: URLSearchParams): { stallMs: number; stallEver
  * Copies channel 0 of its input into chunks of whole quanta, about a second (the last one shorter), until
  * `frames` frames are taken, transferring each; a quantum whose input has no channel is
  * recorded as zeros and counted in `emptyQuanta`. Every message carries `firstFrame`, the
- * `currentFrame` of the first quantum taken: frame 0 of the capture.
+ * `currentFrame` of the first quantum taken: frame 0 of the capture. Its output writes zeros, or
+ * `(n & 1) / 10000` with `processorOptions.dither`.
  */
 const PROCESSOR_SOURCE = `
 class CaptureGapsRecorder extends AudioWorkletProcessor {
@@ -111,14 +128,16 @@ class CaptureGapsRecorder extends AudioWorkletProcessor {
     this.taken = 0;
     this.emptyQuanta = 0;
     this.firstFrame = -1;
+    this.dither = options.processorOptions.dither;
     this.begin();
   }
   begin() {
     this.chunk = new Float32Array(Math.min(this.chunkFrames, this.total - this.taken));
     this.filled = 0;
   }
-  process(inputs) {
-    if (this.taken >= this.total) return false;
+  process(inputs, outputs) {
+    if (this.dither) for (const channel of outputs[0]) for (let n = 0; n < channel.length; n++) channel[n] = (n & 1) / 10000;
+    if (this.taken >= this.total) return this.dither;
     if (this.firstFrame < 0) this.firstFrame = currentFrame;
     const input = inputs[0];
     if (input.length === 0) this.emptyQuanta++;
@@ -130,7 +149,7 @@ class CaptureGapsRecorder extends AudioWorkletProcessor {
       this.port.postMessage({ samples: this.chunk, emptyQuanta: this.emptyQuanta, firstFrame: this.firstFrame }, [this.chunk.buffer]);
       if (this.taken < this.total) this.begin();
     }
-    return this.taken < this.total;
+    return this.taken < this.total || this.dither;
   }
 }
 registerProcessor("${PROCESSOR_NAME}", CaptureGapsRecorder);
@@ -178,7 +197,7 @@ async function inputDeviceId(text: string): Promise<string> {
   return match.deviceId;
 }
 
-async function micSource(context: AudioContext, input: string | null): Promise<Source> {
+async function micSource(context: AudioContext, input: string | null, speakerTone: boolean): Promise<Source> {
   const deviceId = input === null ? null : await inputDeviceId(input);
   const stream = await withDeadline(
     navigator.mediaDevices.getUserMedia({ audio: deviceId === null ? RAW_INPUT : { ...RAW_INPUT, deviceId: { exact: deviceId } } }),
@@ -190,9 +209,11 @@ async function micSource(context: AudioContext, input: string | null): Promise<S
     if (track === undefined) throw new Error("no-audio-track");
     const settingsId = track.getSettings().deviceId;
     const listed = (await audioInputs()).find((device) => device.deviceId === settingsId);
-    const oscillator = new OscillatorNode(context, { frequency: TONE_HZ });
-    oscillator.connect(new GainNode(context, { gain: SPEAKER_GAIN })).connect(context.destination);
-    oscillator.start();
+    if (speakerTone) {
+      const oscillator = new OscillatorNode(context, { frequency: TONE_HZ });
+      oscillator.connect(new GainNode(context, { gain: SPEAKER_GAIN })).connect(context.destination);
+      oscillator.start();
+    }
     const node = new MediaStreamAudioSourceNode(context, { mediaStream: stream });
     return { node, track, deviceLabel: listed?.label || track.label, streams: [stream] };
   } catch (error) {
@@ -209,7 +230,7 @@ interface Captured {
 }
 
 /** Records `frames` frames of the source node's channel 0; resolves with them, the empty-input quanta and the first frame. */
-function record(context: AudioContext, source: Source, frames: number): Promise<Captured> {
+function record(context: AudioContext, source: Source, frames: number, dither: boolean): Promise<Captured> {
   return new Promise((resolve, reject) => {
     const recorder = new AudioWorkletNode(context, PROCESSOR_NAME, {
       numberOfInputs: 1,
@@ -217,7 +238,7 @@ function record(context: AudioContext, source: Source, frames: number): Promise<
       channelCount: 1,
       channelCountMode: "explicit",
       channelInterpretation: "discrete",
-      processorOptions: { frames, chunkFrames: recorderChunkFrames(context.sampleRate) },
+      processorOptions: { frames, chunkFrames: recorderChunkFrames(context.sampleRate), dither },
     });
     const samples = new Float32Array(frames);
     let offset = 0;
@@ -232,6 +253,7 @@ function record(context: AudioContext, source: Source, frames: number): Promise<
     recorder.port.onmessageerror = () => reject(new Error("recorder-chunk-unreadable"));
     recorder.onprocessorerror = () => reject(new Error("recorder-threw"));
     source.node.connect(recorder);
+    recorder.connect(context.destination);
   });
 }
 
@@ -289,6 +311,9 @@ export async function runCaptureGapsProbe(_signal: AbortSignal, report: (step: s
   const { stallMs, stallEveryMs } = stallFrom(params);
   const latencyHint = latencyHintFrom(params.get("latencyHint"));
   const input = params.get("input");
+  const captureSecondsWanted = secondsFrom(params.get("seconds"));
+  const dither = params.get("dither") === "1";
+  const speakerTone = params.get("speakerTone") !== "0";
   const platform = await platformOf(navigator as PlatformNavigator);
   report("start-audio");
   const context = new AudioContext({ sampleRate: requestedRate, latencyHint });
@@ -310,13 +335,14 @@ export async function runCaptureGapsProbe(_signal: AbortSignal, report: (step: s
     report("open-" + sourceKind);
     let failedStep: string | null = null;
     try {
-      source = sourceKind === "mic" ? await micSource(context, input) : loopbackSource(context);
+      source = sourceKind === "mic" ? await micSource(context, input, speakerTone) : loopbackSource(context);
     } catch (error) {
       failedStep = `${sourceKind}-${error instanceof Error ? error.name : "error"}-${stepOf(error)}`;
       console.error("[chromium-watched] capture-gaps could not open the " + sourceKind + ": " + String(error));
     }
     let captured: Captured = { samples: new Float32Array(0), emptyQuanta: 0, firstFrame: 0 };
     let stalls: Stalls = { frames: [], roundTripMs: [], failed: null };
+    const clockReadings: ClockReading[] = [];
     const events = { ended: 0, mute: 0 };
     let mutedAtStart = false;
     if (source !== null) {
@@ -325,16 +351,21 @@ export async function runCaptureGapsProbe(_signal: AbortSignal, report: (step: s
       track.addEventListener("ended", () => events.ended++);
       track.addEventListener("mute", () => events.mute++);
       report("capture");
-      const frames = CAPTURE_SECONDS * context.sampleRate;
+      const frames = captureSecondsWanted * context.sampleRate;
       let capturing = true;
       const stalling = stallNode === null ? null : stallUntil(stallNode, stallMs, stallEveryMs, () => !capturing);
+      const readClock = () => clockReadings.push({ contextSec: context.currentTime, wallSec: performance.now() / 1000 });
+      readClock();
+      const witness = setInterval(readClock, 1000);
       try {
-        captured = await withDeadline(record(context, source, frames), CAPTURE_SECONDS * 1000 + CAPTURE_GRACE_MS, "capture");
+        captured = await withDeadline(record(context, source, frames, dither), captureSecondsWanted * 1000 + CAPTURE_GRACE_MS, "capture");
       } catch (error) {
         failedStep = stepOf(error);
         console.error("[chromium-watched] capture-gaps capture failed: " + String(error));
       } finally {
         capturing = false;
+        clearInterval(witness);
+        readClock();
       }
       if (stalling !== null) {
         stalls = await stalling;
@@ -358,6 +389,11 @@ export async function runCaptureGapsProbe(_signal: AbortSignal, report: (step: s
       emptyQuanta: captured.emptyQuanta,
     };
     const verdict = captureVerdict(judged, failedStep, health, captureSeconds);
+    const ratios = clockRatios(clockReadings);
+    const dips = clockDipSeconds(ratios);
+    const markFrame = SILENCE_MARK_SEC * context.sampleRate - captured.firstFrame;
+    const nearMark = runsNearMark([...judged.startZeroRuns, ...judged.zeroRuns], markFrame, MARK_WINDOW_SEC * context.sampleRate);
+    const minRatio = ratios.length === 0 ? null : Math.min(...ratios);
     const settings: MediaTrackSettings = source === null ? {} : source.track.getSettings();
     const starts = (runs: readonly ZeroRun[]) => joinFirst(runs.map((run) => run.start));
     const lengths = (runs: readonly ZeroRun[]) => joinFirst(runs.map((run) => run.length));
@@ -389,7 +425,20 @@ export async function runCaptureGapsProbe(_signal: AbortSignal, report: (step: s
       stallRoundTripMsMin: stalls.roundTripMs.length === 0 ? null : Number(Math.min(...stalls.roundTripMs).toFixed(1)),
       stallRoundTripMsMax: stalls.roundTripMs.length === 0 ? null : Number(Math.max(...stalls.roundTripMs).toFixed(1)),
       stallFailed: stalls.failed,
-      verdictDetail: judged.detail,
+      verdictDetail: captureDetail(judged.detail, nearMark, dips),
+      seconds: captureSecondsWanted,
+      outputConnected: "true",
+      dither: String(dither),
+      speakerTone: sourceKind === "mic" ? String(speakerTone) : null,
+      captureStartContextFrame: captured.firstFrame,
+      silenceMarkCaptureFrame: markFrame,
+      runsNear30s: nearMark.length,
+      runsNear30sStarts: joinFirst(nearMark.map((run) => run.start)),
+      runsNear30sLengths: joinFirst(nearMark.map((run) => run.length)),
+      clockRatioPerSecond: ratios.map((ratio) => ratio.toFixed(3)).join(" "),
+      clockRatioMin: minRatio === null ? null : Number(minRatio.toFixed(4)),
+      clockRatioMinSecond: minRatio === null ? null : ratios.indexOf(minRatio) + 1,
+      clockDipSeconds: dips.join(" "),
       stallZeroRunCount: judged.stallZeroRuns.length,
       stallZeroRunStarts: starts(judged.stallZeroRuns),
       stallZeroRunLengths: lengths(judged.stallZeroRuns),

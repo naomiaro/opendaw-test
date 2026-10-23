@@ -15,6 +15,7 @@
 // underruns while it does (measured: the zeros start about 48 ms into an 80 ms stall's catch-up).
 
 import { notChecked, type Verdict } from "./chromiumWatched";
+import { clockRatio } from "./chromiumBfcache";
 
 /** The shortest run of exact zeros counted as a gap: a tone never holds zero this long. */
 export const MIN_ZERO_RUN = 100;
@@ -238,4 +239,54 @@ export function matchInput<T extends { deviceId: string; label: string }>(inputs
       (input) => input.deviceId !== "default" && input.deviceId !== "communications" && input.label.toLowerCase().includes(wanted),
     ) ?? null
   );
+}
+
+/** The runs starting within `windowFrames` either side of `markFrame`. */
+export function runsNearMark(runs: readonly ZeroRun[], markFrame: number, windowFrames: number): ZeroRun[] {
+  return runs.filter((run) => Math.abs(run.start - markFrame) <= windowFrames);
+}
+
+/** One clock reading: `context.currentTime` and `performance.now()`, both in seconds. */
+export interface ClockReading {
+  contextSec: number;
+  wallSec: number;
+}
+
+/** The context clock's advance over the wall clock's, per interval between consecutive readings. */
+export function clockRatios(readings: readonly ClockReading[]): number[] {
+  const ratios: number[] = [];
+  for (let i = 1; i < readings.length; i++) {
+    ratios.push(
+      clockRatio({
+        contextAdvanceSec: readings[i].contextSec - readings[i - 1].contextSec,
+        wallAdvanceSec: readings[i].wallSec - readings[i - 1].wallSec,
+      }),
+    );
+  }
+  return ratios;
+}
+
+/** A per-second clock ratio under this is a dip. */
+export const CLOCK_DIP_RATIO = 0.75;
+
+/** The seconds (from 1) whose clock ratio is under `CLOCK_DIP_RATIO`. */
+export function clockDipSeconds(ratios: readonly number[]): number[] {
+  return ratios.flatMap((ratio, i) => (ratio < CLOCK_DIP_RATIO ? [i + 1] : []));
+}
+
+/** The run's detail: the stall coincidence, the zero runs near the 30 s mark, the clock dips; null when empty. */
+export function captureDetail(stallDetail: string | null, nearMark: readonly ZeroRun[], dips: readonly number[]): string | null {
+  const parts: string[] = [];
+  if (stallDetail !== null) parts.push(stallDetail);
+  if (nearMark.length > 0) parts.push(`${nearMark.length} zero runs within 2 s of the 30 s mark`);
+  if (dips.length > 0) parts.push(`clock under ${CLOCK_DIP_RATIO} in second ${dips.join(", ")}`);
+  return parts.length === 0 ? null : parts.join("; ");
+}
+
+/** The capture length named by `&seconds=`: whole seconds from 30 to 600; 60 without one. */
+export function secondsFrom(value: string | null): number {
+  if (value === null) return 60;
+  const seconds = Number(value);
+  if (!Number.isInteger(seconds) || seconds < 30 || seconds > 600) throw new Error(`&seconds=${value}: expected whole seconds from 30 to 600`);
+  return seconds;
 }
