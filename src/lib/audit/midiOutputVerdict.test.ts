@@ -38,6 +38,18 @@ describe("classifyEngineCell", () => {
     expect(classifyEngineCell([clean(10, 1), { ...clean(10, 1), stuck: 1 }], bus, ctx).detail).toMatch(/stuck 1 on repeat 2/);
   });
 
+  it("judges the engine arm against the live pair when the repeat has one, and says so", () => {
+    // One-pair median 12.9 (the heard-clock relation drifted 3 ms during the repeat), live median 10.2: on the delay.
+    const drifted: OutputRepeatFigures = { ...clean(12.9, 1.2), medianErrorLiveMs: 10.2, maxAbsDevLiveMs: 1.5 };
+    expect(classifyEngineCell([drifted], bus, ctx)).toMatchObject({ status: "on-time", detail: expect.stringMatching(/live pair/) });
+    // Live figures failing fail the cell even when the one-pair figures would pass.
+    const liveOff: OutputRepeatFigures = { ...clean(10.2, 1.2), medianErrorLiveMs: 14, maxAbsDevLiveMs: 1.5 };
+    expect(classifyEngineCell([liveOff], bus, ctx)).toMatchObject({ status: "investigate", detail: expect.stringMatching(/medianErrorLiveMs 14/) });
+    // Without samples (null live figures) the one pair judges, as before.
+    const noWitness: OutputRepeatFigures = { ...clean(10.2, 1.2), medianErrorLiveMs: null, maxAbsDevLiveMs: null };
+    expect(classifyEngineCell([noWitness], bus, ctx)).toMatchObject({ status: "on-time", detail: expect.stringMatching(/one pair/) });
+  });
+
   it("does not judge an engine arm without a true control", () => {
     expect(classifyEngineCell([clean(10, 0)], null, ctx)).toEqual({ status: "not-judged", detail: "no-control" });
     expect(classifyEngineCell([clean(10, 0)], { status: "investigate", detail: "x" }, ctx)).toEqual({ status: "not-judged", detail: "bus" });
