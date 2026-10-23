@@ -8,7 +8,7 @@
  */
 
 /** `await` is the span between the hide prompt and the window going hidden, `returned` the ten seconds after it came back: both the operator's hand, neither a condition. */
-export const CLOCK_DRIFT_PHASES = ["idle", "jank", "graph", "await", "hidden", "returned"] as const;
+export const CLOCK_DRIFT_PHASES = ["idle", "jank", "graph", "load", "await", "hidden", "returned"] as const;
 export type ClockDriftPhase = (typeof CLOCK_DRIFT_PHASES)[number];
 
 /** One read of the pair, on a worker tick. */

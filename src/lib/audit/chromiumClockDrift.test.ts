@@ -131,6 +131,10 @@ describe("judgeClockDrift", () => {
 
   const steadyRun = (): PhaseSummary[] => CLOCK_DRIFT_PHASES.map((p) => phase(p, [], 2000, p === "hidden" ? 1500 : 0));
 
+  it("a run without the load phase (load 0) is judged on the phases it ran", () => {
+    expect(judgeClockDrift(steadyRun().filter((p) => p.phase !== "load"), { hiddenRequested: true, contextState: "running" }).verdict).toBe("STEADY");
+  });
+
   it("reads a run with no step in any phase as steady", () => {
     const phases = steadyRun();
     expect(judgeClockDrift(phases, { hiddenRequested: true, contextState: "running" })).toMatchObject({ verdict: "STEADY" });
@@ -165,7 +169,7 @@ describe("judgeClockDrift", () => {
 
 describe("CLOCK_DRIFT_PHASES", () => {
   it("names the two hand-driven spans apart, so a minute spent waiting for the operator is not counted under graph churn", () => {
-    expect([...CLOCK_DRIFT_PHASES]).toEqual(["idle", "jank", "graph", "await", "hidden", "returned"]);
+    expect([...CLOCK_DRIFT_PHASES]).toEqual(["idle", "jank", "graph", "load", "await", "hidden", "returned"]);
   });
 });
 

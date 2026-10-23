@@ -4,7 +4,8 @@
  * `getOutputTimestamp()` plus `outputLatency` read on a WORKER tick every 10 ms (frames stop on a
  * hidden page), through four phases of `&seconds` each: `idle`; `jank` (an 80 ms synchronous block
  * every 500 ms); `graph` (an unrelated gain pair connected and disconnected every 50 ms, the
- * 442866743 condition); `hidden` (the page asks the operator to hide Chrome by hand, samples while
+ * 442866743 condition); `load` (with `&load=<percent>`, a worklet that burns that share of every render
+ * quantum, connected for the phase only: the render thread busy like an engine's); `hidden` (the page asks the operator to hide Chrome by hand, samples while
  * hidden, asks them back, samples ten more seconds visible; the waits for the hand are labelled `await`
  * and `returned`, not conditions). A tab playing audio is not throttled by Chrome when hidden, so the
  * hidden phase is a condition to compare, not a control. The judgement is `chromiumClockDrift.ts`.
@@ -26,6 +27,8 @@ export interface ClockDriftOptions {
   seconds: number;
   /** Run the hidden phase (needs a hand on the window). */
   hidden: boolean;
+  /** The `load` phase: a worklet that burns this share of every render quantum, 0 (phase skipped) to 90 percent. */
+  loadPercent: number;
 }
 
 /** `&rate=`, `&seconds=`, `&hidden=`; a bad value is refused, naming it. */
@@ -37,8 +40,43 @@ export function clockDriftOptionsFrom(params: URLSearchParams): ClockDriftOption
   if (!Number.isInteger(seconds) || seconds < 5 || seconds > 120) throw new Error(`&seconds=${secondsRaw}: expected an integer 5–120`);
   const hiddenRaw = params.get("hidden") ?? "1";
   if (hiddenRaw !== "1" && hiddenRaw !== "0") throw new Error(`&hidden=${hiddenRaw}: expected 1 or 0`);
-  return { rate: rateRaw === "48000" ? 48000 : 44100, seconds, hidden: hiddenRaw === "1" };
+  const loadRaw = params.get("load") ?? "0";
+  const loadPercent = Number(loadRaw);
+  if (!Number.isInteger(loadPercent) || loadPercent < 0 || loadPercent > 90) throw new Error(`&load=${loadRaw}: expected an integer 0–90 (percent of each render quantum)`);
+  return { rate: rateRaw === "48000" ? 48000 : 44100, seconds, hidden: hiddenRaw === "1", loadPercent };
 }
+
+const LOAD_PROCESSOR_NAME = "chromium-clock-drift-load";
+
+/**
+ * The load: a processor that burns `loadPercent` of each render quantum's wall time in a busy loop, silent output.
+ * It calibrates its loop against `Date.now()` once (the worklet scope has no `performance`), so the share is
+ * approximate; the point is a render thread that is busy, like an engine's, not an exact figure.
+ */
+export const LOAD_PROCESSOR_SOURCE = `
+class ClockDriftLoad extends AudioWorkletProcessor {
+  constructor(options) {
+    super();
+    const share = (options && options.processorOptions && options.processorOptions.loadPercent) || 0;
+    this.targetMs = (128 / sampleRate) * 1000 * share / 100;
+    let ops = 0;
+    const start = Date.now();
+    let x = 0.5;
+    while (Date.now() - start < 50) { for (let i = 0; i < 1000; i++) x = Math.sin(x) + 0.1; ops += 1000; }
+    this.opsPerMs = ops / Math.max(1, Date.now() - start);
+    this.x = x;
+  }
+  process(_inputs, outputs) {
+    const ops = Math.floor(this.opsPerMs * this.targetMs);
+    let x = this.x;
+    for (let i = 0; i < ops; i++) x = Math.sin(x) + 0.1;
+    this.x = x;
+    for (const channel of outputs[0]) channel.fill(0);
+    return true;
+  }
+}
+registerProcessor("${LOAD_PROCESSOR_NAME}", ClockDriftLoad);
+`;
 
 const PROCESSOR_NAME = "chromium-bfcache-tone";
 const TICK_MS = 10;
@@ -52,6 +90,8 @@ const DEADLINE_MS = 5000;
 interface Live {
   context: AudioContext;
   churnSource: GainNode;
+  /** The load worklet, made when `loadPercent` > 0 and connected for the `load` phase only. */
+  load: AudioWorkletNode | null;
 }
 
 function wait(ms: number, signal: AbortSignal): Promise<void> {
@@ -69,11 +109,11 @@ function deadline<T>(promise: Promise<T>, ms: number, what: string): Promise<T> 
   });
 }
 
-async function startLive(rate: number): Promise<Live> {
+async function startLive(rate: number, loadPercent: number): Promise<Live> {
   const context = new AudioContext({ latencyHint: "interactive", sampleRate: rate });
   try {
     await deadline(context.resume(), DEADLINE_MS, "resume");
-    const url = URL.createObjectURL(new Blob([BFCACHE_PROCESSOR_SOURCE], { type: "text/javascript" }));
+    const url = URL.createObjectURL(new Blob([BFCACHE_PROCESSOR_SOURCE + LOAD_PROCESSOR_SOURCE], { type: "text/javascript" }));
     try {
       await deadline(context.audioWorklet.addModule(url), DEADLINE_MS, "addModule");
     } finally {
@@ -89,7 +129,8 @@ async function startLive(rate: number): Promise<Live> {
     // The churn source: silent, so connecting and disconnecting it changes the graph and nothing audible.
     const churnSource = new GainNode(context, { gain: 0 });
     control.connect(churnSource);
-    return { context, churnSource };
+    const load = loadPercent > 0 ? new AudioWorkletNode(context, LOAD_PROCESSOR_NAME, { outputChannelCount: [1], processorOptions: { loadPercent } }) : null;
+    return { context, churnSource, load };
   } catch (error) {
     await context.close();
     throw error;
@@ -137,7 +178,7 @@ export async function runClockDriftProbe(signal: AbortSignal, report: (step: str
   report("device-rate");
   const deviceRate = await deviceRateHz();
   report("start-audio");
-  const live = await startLive(options.rate);
+  const live = await startLive(options.rate, options.loadPercent);
   const samples: ClockSample[] = [];
   const frameStamps: number[] = [];
   let phase: ClockDriftPhase = "idle";
@@ -189,6 +230,18 @@ export async function runClockDriftProbe(signal: AbortSignal, report: (step: str
     }
     if (connected) live.churnSource.disconnect(live.context.destination);
 
+    if (live.load !== null) {
+      // A worklet node is pulled only while it reaches the destination: the load runs for this phase alone.
+      report("load");
+      phase = "load";
+      live.load.connect(live.context.destination);
+      try {
+        await wait(phaseMs, signal);
+      } finally {
+        live.load.disconnect(live.context.destination);
+      }
+    }
+
     if (options.hidden) {
       report(AWAITING_HIDE);
       phase = "await";
@@ -229,6 +282,7 @@ export async function runClockDriftProbe(signal: AbortSignal, report: (step: str
     totalSteps: judged.totalSteps,
     onLattice: `${judged.lattice.onLattice}/${judged.totalSteps}`,
     sampleRate: options.rate,
+    loadPercent: options.loadPercent,
     deviceRateHz: deviceRate,
     resampled: deviceRate === options.rate ? "false" : "true",
     secondsPerPhase: options.seconds,
