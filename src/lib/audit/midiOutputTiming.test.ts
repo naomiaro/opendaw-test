@@ -106,6 +106,33 @@ describe("measureOutputRepeat", () => {
     expect(r.figures.p5p95WidthMs).toBeGreaterThan(0);
   });
 
+  it("counts a duplicated note-on as extra and takes the velocity from the paired receipt", () => {
+    const receipts = receiptsAt(pattern, 0);
+    const first = receipts.find((r) => r.kind === "on" && r.pitch === pattern[0].pitch) as Receipt;
+    const duplicate: Receipt = { ...first, velocity: first.velocity + 20 };
+    const r = measureOutputRepeat({ ...base, receipts: [...receipts, duplicate] });
+    expect(r.figures.extra).toBe(1);
+    expect(r.figures.velocityMismatches).toBe(0);
+    expect(r.notes[0].velocityMatch).toBe(true);
+    const twoOffs = measureOutputRepeat({ ...base, receipts: [...receipts, { ...receipts[1] }] });
+    expect(twoOffs.figures.extra).toBe(1);
+  });
+
+  it("reads the spread of the notes outside the blocks apart, and counts the stuck notes inside them", () => {
+    const render = (i: number): number => scheduled[i].onPerfMs - base.outputLatencyMs;
+    const blocks: JankBlock[] = [{ startPerfMs: render(10) - 1, endPerfMs: render(11) + 1 }];
+    const receipts = receiptsAt(pattern, 0, { 10: 80, 11: 80, 20: 5 }).filter((r) => !(r.kind === "off" && r.pitch === pattern[10].pitch));
+    const r = measureOutputRepeat({ ...base, blocks, receipts });
+    expect(r.figures.maxAbsDevMs).toBeCloseTo(80, 6);
+    expect(r.figures.maxAbsDevOutsideBlocksMs).toBeCloseTo(5, 6);
+    expect(r.figures.maxAbsDevOutsideBlocksLiveMs).toBeNull();
+    expect(r.figures.stuck).toBe(1);
+    expect(r.figures.stuckInsideBlocks).toBe(1);
+    const stuckOutside = measureOutputRepeat({ ...base, blocks, receipts: receiptsAt(pattern, 0, { 10: 80, 11: 80 }).filter((x) => !(x.kind === "off" && x.pitch === pattern[3].pitch)) });
+    expect(stuckOutside.figures.stuck).toBe(1);
+    expect(stuckOutside.figures.stuckInsideBlocks).toBe(0);
+  });
+
   it("gives null figures, not NaN, with no receipts at all", () => {
     const r = measureOutputRepeat({ ...base, receipts: [] });
     expect(r.figures.missing).toBe(32);
@@ -162,6 +189,7 @@ describe("the pair-drift witness", () => {
     expect(r.figures.medianErrorMs).toBeCloseTo(10, 6);
     expect(r.figures.medianErrorLiveMs).toBeCloseTo(12, 6);
     expect(r.figures.maxAbsDevLiveMs).toBeCloseTo(2, 6);
+    expect(r.figures.maxAbsDevOutsideBlocksLiveMs).toBeCloseTo(2, 6);
     const none = measureOutputRepeat({ ...base, receipts: receiptsAt(pattern, 10) });
     expect(none.notes[0].errorLiveMs).toBeNull();
     expect(none.figures.medianErrorLiveMs).toBeNull();

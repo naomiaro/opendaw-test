@@ -64,7 +64,8 @@ export function emptyRepeatRow(repeat: number, originPpqn: number, notesInPatter
   return {
     repeat, error: null, notes: [], anchor: null, originPpqn,
     medianErrorMs: null, maxAbsDevMs: null, p5p95WidthMs: null, lateTailMs: null, medianErrorLiveMs: null, maxAbsDevLiveMs: null,
-    missing: notesInPattern, extra: 0, stuck: 0, velocityMismatches: 0, transportMessages: 0,
+    maxAbsDevOutsideBlocksMs: null, maxAbsDevOutsideBlocksLiveMs: null,
+    missing: notesInPattern, extra: 0, stuck: 0, stuckInsideBlocks: 0, velocityMismatches: 0, transportMessages: 0,
     notesInsideBlocks: 0, medianErrorInsideBlocksMs: null,
     heardLagMs: null, outputLatencyMs: null, compensationLatencyMs: null, delayInMs,
     quantumMs: quantumMs(sampleRate), frameIntervalMs: null, frameGapMaxMs: null,

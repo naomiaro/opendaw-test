@@ -85,3 +85,16 @@ export function classifyMidiStatus(status: number): MidiStatusKind {
   if (status === 0xf8 || status === 0xfa || status === 0xfc || status === 0xf2) return "transport";
   return "other";
 }
+
+/** Reset, anchor wait, pair, stop and measurement: what a repeat needs beyond its transport time. */
+const REPEAT_SLACK_MS = 35_000;
+/** Density `both` is the input page's shape: two bars of eighths and one of 1/32, whatever `bars` says. */
+const BOTH_DENSITY_BARS = 3;
+
+/** The outer deadline of one repeat: the bars before the origin, the pattern, the trailing bar, plus the slack. Derived, so no allowed cell is cut off. */
+export function repeatDeadlineMs({ bpm, density, bars, originBar }: { bpm: number; density: Density; bars: number; originBar: number }): number {
+  const patternBars = density === "both" ? BOTH_DENSITY_BARS : bars;
+  const transportBars = originBar - 1 + patternBars + 1;
+  return transportBars * (4 * 60_000 / bpm) + REPEAT_SLACK_MS;
+}
+

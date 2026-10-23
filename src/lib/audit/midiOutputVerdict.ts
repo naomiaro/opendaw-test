@@ -42,23 +42,32 @@ export interface OutputKnownDefectBand {
  * ends (late by up to the block length), and a note whose on and off both render inside one block comes out
  * off-before-on (read as one `stuck` plus one `extra`). Every bound is computed from the row's own context.
  */
+const MAIN_THREAD_BASE_RUN = "1792790180843";
+
 const MAIN_THREAD_BASE: OutputKnownDefectBand = {
   id: "midi-out-main-thread-base",
   applies: (ctx) => ctx.jankActive,
   matches: (f, ctx) => {
     const quantum = quantumMs(ctx.sampleRate);
-    const median = f.medianErrorLiveMs ?? f.medianErrorMs;
-    if (median === null || f.maxAbsDevMs === null || f.medianErrorInsideBlocksMs === null || f.notesInsideBlocks === 0) return false;
+    // The cell's reference: live where sampled, else the one pair (the inside-block median stays on the one pair; its range is wide).
+    const live = f.medianErrorLiveMs !== null && f.maxAbsDevOutsideBlocksLiveMs !== null;
+    const median = live ? f.medianErrorLiveMs : f.medianErrorMs;
+    const outsideDev = live ? f.maxAbsDevOutsideBlocksLiveMs : f.maxAbsDevOutsideBlocksMs;
+    if (median === null || outsideDev === null || f.maxAbsDevMs === null || f.medianErrorInsideBlocksMs === null || f.notesInsideBlocks === 0) return false;
     return f.missing === 0
       && f.velocityMismatches === 0
+      // The inversion, and only the inversion: every stuck note inside a block, one unplaced off per stuck note.
       && f.stuck === f.extra
+      && f.stuck === f.stuckInsideBlocks
       && f.stuck <= f.notesInsideBlocks
       && Math.abs(median - ctx.delayInMs) <= quantum
+      // The notes clear of every block keep the idle shape (two quanta: the first-after notes read up to 3.4 ms off on run B).
+      && outsideDev <= 2 * quantum
       && f.medianErrorInsideBlocksMs >= ctx.delayInMs + ctx.jankMs / 4
       && f.medianErrorInsideBlocksMs <= ctx.delayInMs + ctx.jankMs + quantum
       && f.maxAbsDevMs <= ctx.jankMs + quantum;
   },
-  detail: "notes rendered inside a main-thread block are requested when the block ends (the timestamp base is the ring read); a note whose on and off both render in one block comes out off-before-on",
+  detail: `notes rendered inside a main-thread block are requested when the block ends (the timestamp base is the ring read); a note whose on and off both render in one block comes out off-before-on (pinned on run ${MAIN_THREAD_BASE_RUN})`,
 };
 
 export const MIDI_OUT_KNOWN_DEFECTS: readonly OutputKnownDefectBand[] = [MAIN_THREAD_BASE];

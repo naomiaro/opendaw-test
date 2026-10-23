@@ -88,6 +88,8 @@ explains every repeat; else `investigate`. `?arm=engine` alone reads `not-judged
 - ENGINE arm, jank 80 ms: notes rendered during a block are stamped when the handler finally runs:
   errors up to ≈ 80 ms, several notes sharing one late base, the pattern's 107 ms step at 140 bpm 1/32
   making one or two notes per block late. `medianErrorInsideBlocksMs` ≫ `medianErrorMs`.
+  [Correction after the run, the prediction kept as written: a 1/32 step at 140 bpm is 53.6 ms, not
+  107, so one to two notes per 80 ms block was right for the wrong reason.]
 - If the ENGINE arm reads `on-time` under jank, the mechanism above is wrong and the note says so.
 
 ## Harness check (smoke run, 2026-10-23, before the matrix)
@@ -234,11 +236,14 @@ Run with `&frameDriver=hidden-safe` (see "Harness notes"). Columns as in run A.
 ### The band (`midiOutputVerdict.ts`, `MIDI_OUT_KNOWN_DEFECTS`)
 
 `midi-out-main-thread-base`, applies to a janked cell, pinned on run B's four engine repeats (the test
-holds their figures): live median within a quantum of `delayInMs`; at least one note inside a block;
-the inside-block median between `delayInMs + jankMs / 4` and `delayInMs + jankMs + 1 quantum`;
-`maxAbsDevMs ≤ jankMs + 1 quantum`; no missing note, no velocity mismatch; `stuck == extra ≤
-notesInsideBlocks` (the inversion). Every bound is computed from the row's context. A janked cell that
-reads `on-time` would mean the base changed; a clean cell is never swallowed (tests).
+holds their figures, and the verdict detail names the run): median (live where sampled) within a quantum
+of `delayInMs`; at least one note inside a block; the inside-block median between `delayInMs + jankMs / 4`
+and `delayInMs + jankMs + 1 quantum`; `maxAbsDevMs ≤ jankMs + 1 quantum`; the spread of the notes CLEAR
+of every block within two quanta (run B's first-after notes read up to 3.4 ms off), so a second defect
+beside the janked notes is not swallowed; no missing note, no velocity mismatch; `stuck == extra ==
+stuckInsideBlocks ≤ notesInsideBlocks` (the inversion, and only the inversion). Every bound is computed
+from the row's context. A janked cell that reads `on-time` would mean the base changed; a clean cell, a
+cell with a late clear note or a stuck note outside the blocks is never swallowed (tests).
 
 ### What it does not say
 
@@ -257,8 +262,10 @@ reads `on-time` would mean the base changed; a clean cell is never swallowed (te
   One page row of run B carried a 6.7 s frame gap with its figures intact (its sends were pre-scheduled).
 - The two pre-witness envelopes (`1792789580116`, `1792789677646`) are read with the live fields null
   (schema 1); their one-pair figures are in the first section. The smoke run is `1792789473864`.
-- The page arm's transport count (1–3) is the previous engine repeat's Stop / Clock tail arriving during
-  the reset, before `loopback.clear()`; harmless, noted so it is not read as a leak of the arm switch.
+- The page arm's transport count (1–3) is the previous engine repeat's Stop / Clock tail: those messages
+  are stamped about `outputLatency + delayInMs` ahead, and the next repeat's reset and `loopback.clear()`
+  follow the measurement at once, so the last of them land after the clear. Harmless, noted so it is not
+  read as a leak of the arm switch (the page arm's box id is empty, and the engine queues nothing for it).
 
 ### What remains
 

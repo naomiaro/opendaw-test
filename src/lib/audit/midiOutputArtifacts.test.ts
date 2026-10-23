@@ -9,7 +9,8 @@ const row = (repeat: number, median: number | null, error: string | null = null)
   repeat, error, notes: [], anchor: { contextTime: 10, position: 0 }, originPpqn: 3840,
   medianErrorMs: median, maxAbsDevMs: median === null ? null : 1.2, p5p95WidthMs: median === null ? null : 2.1, lateTailMs: median === null ? null : 1.1,
   medianErrorLiveMs: median, maxAbsDevLiveMs: median === null ? null : 1.0,
-  missing: 0, extra: 0, stuck: 0, velocityMismatches: 0, transportMessages: 56, notesInsideBlocks: 0, medianErrorInsideBlocksMs: null,
+  maxAbsDevOutsideBlocksMs: median === null ? null : 1.2, maxAbsDevOutsideBlocksLiveMs: median === null ? null : 1.0,
+  missing: median === null ? 96 : 0, extra: 0, stuck: 0, stuckInsideBlocks: 0, velocityMismatches: 0, transportMessages: 56, notesInsideBlocks: 0, medianErrorInsideBlocksMs: null,
   heardLagMs: 0.4, outputLatencyMs: 20, compensationLatencyMs: 0, delayInMs: 10, quantumMs: 2.6667,
   frameIntervalMs: 16.67, frameGapMaxMs: 17.2, jankBlocks: [], jankMs: null,
   pairDrift: median === null ? null : { samples: 120, driftMinMs: -0.3, driftMaxMs: 0.4, outputLatencyMinMs: 23, outputLatencyMaxMs: 23 },
@@ -26,7 +27,7 @@ describe("midiOutputArtifacts", () => {
   it("names the file and parses its own schema, refusing another version or token", () => {
     expect(summaryFileName(42)).toBe("midiout-summary-42.json");
     expect(parseMidiOutputSummary(JSON.parse(JSON.stringify(summary)), 42)).toEqual(summary);
-    expect(() => parseMidiOutputSummary({ ...summary, schemaVersion: 3 }, 42)).toThrow(/schemaVersion/);
+    expect(() => parseMidiOutputSummary({ ...summary, schemaVersion: 4 }, 42)).toThrow(/schemaVersion/);
     expect(() => parseMidiOutputSummary(summary, 43)).toThrow(/runToken/);
     expect(() => parseMidiOutputSummary({ ...summary, cells: "none" }, 42)).toThrow(/cells/);
   });
@@ -51,11 +52,24 @@ describe("midiOutputArtifacts", () => {
     expect(cellTableLines(parsed)[0]).toMatch(/\| — \/ — \| — \| — \|/);
     const current = { ...v1, schemaVersion: MIDI_OUTPUT_SCHEMA_VERSION };
     expect(() => parseMidiOutputSummary(JSON.parse(JSON.stringify(current)), 42)).toThrow(/medianErrorLiveMs/);
-    expect(MIDI_OUTPUT_SCHEMA_VERSION).toBe(2);
+    expect(MIDI_OUTPUT_SCHEMA_VERSION).toBe(3);
   });
 
-  it("prints an error row's stage instead of figures", () => {
-    const errored: OutputCellRecord = { ...engine, repeats: [row(1, null, "anchor: no fresh recordingStart within 30s")] };
-    expect(cellTableLines({ ...summary, cells: [errored] })[0]).toMatch(/— \| .*r1 error: anchor: no fresh/);
+  it("prints an error row's stage instead of figures, and leaves its sentinel counts out of the sums", () => {
+    const errored: OutputCellRecord = { ...engine, repeats: [row(1, 10.8), row(2, null, "anchor: no fresh recordingStart within 30s")] };
+    const line = cellTableLines({ ...summary, cells: [errored] })[0];
+    expect(line).toMatch(/r2 error: anchor: no fresh/);
+    expect(line).toMatch(/\| 0\/0\/0\/0 \|/);
+  });
+
+  it("reads a schema-2 envelope (before the outside-block figures) with them mapped to null and zero", () => {
+    const v2Row = (r: OutputRepeatRow): Record<string, unknown> => {
+      const { maxAbsDevOutsideBlocksMs: _a, maxAbsDevOutsideBlocksLiveMs: _b, stuckInsideBlocks: _c, ...rest } = r;
+      return rest;
+    };
+    const v2 = { ...summary, schemaVersion: 2, cells: summary.cells.map((c) => ({ ...c, repeats: c.repeats.map(v2Row) })) };
+    const parsed = parseMidiOutputSummary(JSON.parse(JSON.stringify(v2)), 42);
+    expect(parsed.cells[0].repeats[0]).toMatchObject({ maxAbsDevOutsideBlocksMs: null, maxAbsDevOutsideBlocksLiveMs: null, stuckInsideBlocks: 0 });
+    expect(MIDI_OUTPUT_SCHEMA_VERSION).toBe(3);
   });
 });

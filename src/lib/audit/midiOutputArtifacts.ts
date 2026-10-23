@@ -8,9 +8,12 @@ import type { JankBlock } from "./midiOutputPattern";
 import type { OutputNoteRow, OutputRepeatFigures, PairDriftSummary } from "./midiOutputTiming";
 import type { OutputCellStatus } from "./midiOutputVerdict";
 
-/** 2 added the drift witness (`medianErrorLiveMs`, `maxAbsDevLiveMs`, `pairDrift`, a note's `errorLiveMs`); a 1 is read with those null. */
-export const MIDI_OUTPUT_SCHEMA_VERSION = 2;
-export const MIDI_OUTPUT_SCHEMA_VERSIONS_READABLE = [1, 2] as const;
+/**
+ * 2 added the drift witness (`medianErrorLiveMs`, `maxAbsDevLiveMs`, `pairDrift`, a note's `errorLiveMs`); 3 added the
+ * outside-block spreads and `stuckInsideBlocks`. An older file is read with the later fields null (counts 0).
+ */
+export const MIDI_OUTPUT_SCHEMA_VERSION = 3;
+export const MIDI_OUTPUT_SCHEMA_VERSIONS_READABLE = [1, 2, 3] as const;
 
 export interface OutputCellKey {
   arm: OutputArm;
@@ -72,14 +75,17 @@ export function parseMidiOutputSummary(json: unknown, runToken: number): MidiOut
   if (summary.runToken !== runToken) throw new Error(`summary ${runToken}: runToken ${String(summary.runToken)} does not match the file`);
   if (!Array.isArray(summary.cells)) throw new Error(`summary ${runToken}: cells is not an array`);
   const current = summary.schemaVersion === MIDI_OUTPUT_SCHEMA_VERSION;
-  const witnessFields = ["medianErrorLiveMs", "maxAbsDevLiveMs", "pairDrift"] as const;
+  const laterFields: ReadonlyArray<[string, null | 0]> = [
+    ["medianErrorLiveMs", null], ["maxAbsDevLiveMs", null], ["pairDrift", null],
+    ["maxAbsDevOutsideBlocksMs", null], ["maxAbsDevOutsideBlocksLiveMs", null], ["stuckInsideBlocks", 0],
+  ];
   summary.cells.forEach((cell: Record<string, unknown>, c: number) => {
     if (!Array.isArray(cell.repeats)) throw new Error(`summary ${runToken}: cell ${c} repeats is not an array`);
     cell.repeats.forEach((row: Record<string, unknown>, i: number) => {
-      for (const field of witnessFields) {
+      for (const [field, fallback] of laterFields) {
         if (row[field] === undefined) {
           if (current) throw new Error(`summary ${runToken}: cell ${c} repeat ${i} lacks ${field}`);
-          row[field] = null;
+          row[field] = fallback;
         }
       }
       if (Array.isArray(row.notes)) {
@@ -105,8 +111,9 @@ export function cellTableLines(summary: MidiOutputSummary): string[] {
   const present = (values: Array<number | null>): number[] => values.filter((v): v is number => v !== null);
   const max = (values: Array<number | null>): number | null => (present(values).length === 0 ? null : Math.max(...present(values)));
   const min = (values: Array<number | null>): number | null => (present(values).length === 0 ? null : Math.min(...present(values)));
+  // Error rows carry sentinel counts (every note missing), so the sums read the measured rows only.
   const sum = (rows: OutputRepeatRow[], key: "missing" | "extra" | "stuck" | "velocityMismatches"): number =>
-    rows.reduce((acc, r) => acc + r[key], 0);
+    rows.filter((r) => r.error === null).reduce((acc, r) => acc + r[key], 0);
   return summary.cells.map((cell) => {
     const rows = cell.repeats;
     return [

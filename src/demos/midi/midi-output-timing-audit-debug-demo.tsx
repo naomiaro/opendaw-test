@@ -25,7 +25,7 @@ import { withDeadline } from "@/lib/deadline";
 import { runRepeatWithDeadline } from "@/lib/audit/recordingCellRunner";
 import { FrameWatch } from "@/lib/audit/midiInputCellRunner";
 import { MidiLoopbackSender, pickIacPorts } from "@/lib/audit/midiLoopback";
-import { parseMidiOutputParams, type MidiOutputParams, type OutputArm } from "@/lib/audit/midiOutputParams";
+import { parseMidiOutputParams, repeatDeadlineMs, type MidiOutputParams, type OutputArm } from "@/lib/audit/midiOutputParams";
 import { buildOutputProject, type OutputProjectState } from "@/lib/audit/midiOutputProject";
 import { emptyRepeatRow, runOutputRepeat } from "@/lib/audit/midiOutputCellRunner";
 import { classifyEngineCell, classifyPageCell, type OutputVerdict } from "@/lib/audit/midiOutputVerdict";
@@ -140,7 +140,7 @@ async function runAudit(params: MidiOutputParams, setAuditState: (s: string) => 
                 try {
                   row = await runRepeatWithDeadline(
                     (token) => runOutputRepeat({ project, audioContext, loopback, state, portId, key, params, repeat, token, frameWatch, onStage: () => {} }),
-                    60_000,
+                    repeatDeadlineMs({ bpm, density, bars: params.bars, originBar: params.originBar }),
                     label,
                   );
                 } catch (err) {

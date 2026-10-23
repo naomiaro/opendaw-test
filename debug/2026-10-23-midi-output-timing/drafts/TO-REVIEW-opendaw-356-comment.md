@@ -39,7 +39,10 @@ it. On a page with UI work, GC or a heavy frame, that is the erratic swing the r
 
 What the figure is: Chrome stamps an IAC receipt with the time the sender asked for, so this is the time the
 SDK requested, not when the message physically left the Mac. A cable loopback into an audio input would add
-that half.
+that half. The engine figures above are read against a per-frame `getOutputTimestamp` pair: Chrome's
+context ↔ performance relation moved by up to 6 ms within a single 10 s repeat on this machine, and against
+one pair read at the start the same repeats read up to 12.9 ms (the envelopes carry both); the control's
+0.00 is against the one pair its sends were built from.
 
 One scope note on `plans/capture.md`: phase 5 says "closes #356 for input" and principle 1 ("the main thread
 never infers timing from when it observed something") covers exactly the mechanism above, but no phase names

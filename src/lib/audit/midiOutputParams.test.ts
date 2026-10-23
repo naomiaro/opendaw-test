@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyMidiStatus, parseMidiOutputParams } from "./midiOutputParams";
+import { classifyMidiStatus, parseMidiOutputParams, repeatDeadlineMs } from "./midiOutputParams";
 
 describe("parseMidiOutputParams", () => {
   it("defaults to both arms, 140 bpm, 1/32, 3 bars, 2 repeats, delay 10, no jank, transport on, origin bar 2, bus IAC", () => {
@@ -51,3 +51,17 @@ describe("classifyMidiStatus", () => {
     expect(classifyMidiStatus(0xfe)).toBe("other");
   });
 });
+
+describe("repeatDeadlineMs", () => {
+  it("covers the origin, the pattern, the trailing bar and the setup, so the longest allowed cell is not cut off", () => {
+    // 60 bpm, 8 bars of eighths from bar 8: 28 s to the origin, 32 s of pattern, a 4 s tail = 64 s of transport.
+    const longest = repeatDeadlineMs({ bpm: 60, density: "8th", bars: 8, originBar: 8 });
+    expect(longest).toBeGreaterThan(64_000 + 30_000);
+    expect(longest).toBeLessThan(64_000 + 60_000);
+    // The default cell (140 bpm, 3 bars of 1/32 from bar 2) stays near the minute it had.
+    expect(repeatDeadlineMs({ bpm: 140, density: "32nd", bars: 3, originBar: 2 })).toBeLessThan(60_000);
+    // Density "both" is three bars whatever `bars` says.
+    expect(repeatDeadlineMs({ bpm: 60, density: "both", bars: 8, originBar: 1 })).toBeLessThan(repeatDeadlineMs({ bpm: 60, density: "8th", bars: 8, originBar: 1 }));
+  });
+});
+

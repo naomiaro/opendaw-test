@@ -7,7 +7,7 @@
  */
 import { contextSecAtPosition, heardContextSecAt, perfMsAtHeardContextSec, pulsesToMs, type OutputStampPair, type RecordingAnchor } from "./midiClockMap";
 import { median, percentile, quantumMs } from "./midiInputAlignment";
-import { pairReceipts, RECEIPT_WINDOW_MS, type Receipt, type ScheduledNote } from "./midiLoopback";
+import { pairReceiptObjects, RECEIPT_WINDOW_MS, type Receipt, type ScheduledNote } from "./midiLoopback";
 import { jankLabelFor, type JankBlock, type JankLabel, type OutputPatternNote } from "./midiOutputPattern";
 
 /** The engine rounds a 0..1 velocity float back to a byte, so one byte either way is a match. */
@@ -85,12 +85,17 @@ export interface OutputRepeatFigures {
   p5p95WidthMs: number | null;
   /** p95 − median: the hop's shape is one-sided. */
   lateTailMs: number | null;
-  /** The live-pair figures, for attribution only; null without pair samples. */
+  /** The live-pair figures; null without pair samples. The engine cell is judged on these when present. */
   medianErrorLiveMs: number | null;
   maxAbsDevLiveMs: number | null;
+  /** The spread of the notes CLEAR of every block (label `clear` or `first-after`), so a band for janked notes cannot hide a defect beside them. */
+  maxAbsDevOutsideBlocksMs: number | null;
+  maxAbsDevOutsideBlocksLiveMs: number | null;
   missing: number;
   extra: number;
   stuck: number;
+  /** The stuck notes whose render time fell inside a block: the off-before-on inversion lives there. */
+  stuckInsideBlocks: number;
   velocityMismatches: number;
   transportMessages: number;
   notesInsideBlocks: number;
@@ -128,19 +133,19 @@ export function measureOutputRepeat(input: MeasureInput): { notes: OutputNoteRow
   const { pattern, receipts, anchor, pair, bpm } = input;
   const scheduled = expectedSchedule(pattern, anchor, pair, bpm);
   const window = receiptWindowMs(input.delayInMs, input.jankMs, input.sampleRate);
-  const paired = pairReceipts(scheduled, receipts, window);
-  const receiptKey = (kind: Receipt["kind"], pitch: number, timeStamp: number): string => `${kind}:${pitch}:${timeStamp}`;
-  const used = new Set<string>();
+  const paired = pairReceiptObjects(scheduled, receipts, window);
+  const used = new Set<Receipt>();
   const notes: OutputNoteRow[] = pattern.map((note, i) => {
-    const { onPerfMs, offPerfMs } = paired[i];
+    const { on: onReceipt, off: offReceipt } = paired[i];
+    const onPerfMs = onReceipt?.timeStamp ?? null;
+    const offPerfMs = offReceipt?.timeStamp ?? null;
     const expectedHeardCtxSec = contextSecAtPosition(anchor, bpm, note.onPpqn);
     const receiptHeardCtxSec = onPerfMs === null ? null : heardContextSecAt(pair, onPerfMs);
     const live = onPerfMs === null ? null : livePairAt(input.pairSamples ?? [], onPerfMs);
     const receiptLiveCtxSec = live === null || onPerfMs === null ? null : heardContextSecAt({ contextTime: live.contextTime, performanceTime: live.performanceTime }, onPerfMs);
     const expectedDurationMs = pulsesToMs(note.durationPpqn, bpm);
-    const onReceipt = onPerfMs === null ? null : receipts.find((r) => r.kind === "on" && r.pitch === note.pitch && r.timeStamp === onPerfMs) ?? null;
-    if (onPerfMs !== null) used.add(receiptKey("on", note.pitch, onPerfMs));
-    if (offPerfMs !== null) used.add(receiptKey("off", note.pitch, offPerfMs));
+    if (onReceipt !== null) used.add(onReceipt);
+    if (offReceipt !== null) used.add(offReceipt);
     const renderPerfMs = scheduled[i].onPerfMs - input.outputLatencyMs;
     return {
       index: note.index,
@@ -163,20 +168,28 @@ export function measureOutputRepeat(input: MeasureInput): { notes: OutputNoteRow
   const inside = notes.filter((n) => n.jankLabel === "inside" && n.errorMs !== null).map((n) => n.errorMs as number);
   const liveErrors = notes.map((n) => n.errorLiveMs).filter((e): e is number => e !== null);
   const medianErrorLiveMs = median(liveErrors);
-  // Receipts the pairing left unused: stray pitches, duplicate releases, anything outside every window.
-  const extra = receipts.filter((r) => !used.has(receiptKey(r.kind, r.pitch, r.timeStamp))).length;
+  const outside = notes.filter((n) => n.jankLabel !== "inside");
+  const outsideErrors = outside.map((n) => n.errorMs).filter((e): e is number => e !== null);
+  const outsideLiveErrors = outside.map((n) => n.errorLiveMs).filter((e): e is number => e !== null);
+  const maxAbsDevFrom = (centre: number | null, values: readonly number[]): number | null =>
+    centre === null || values.length === 0 ? null : Math.max(...values.map((e) => Math.abs(e - centre)));
+  // Receipts the pairing left unused, by object: stray pitches, duplicate messages, anything outside every window.
+  const extra = receipts.length - used.size;
   return {
     notes,
     figures: {
       medianErrorMs,
-      maxAbsDevMs: medianErrorMs === null ? null : Math.max(...errors.map((e) => Math.abs(e - medianErrorMs))),
+      maxAbsDevMs: maxAbsDevFrom(medianErrorMs, errors),
       p5p95WidthMs: p5 === null || p95 === null ? null : p95 - p5,
       lateTailMs: medianErrorMs === null || p95 === null ? null : p95 - medianErrorMs,
       medianErrorLiveMs,
-      maxAbsDevLiveMs: medianErrorLiveMs === null ? null : Math.max(...liveErrors.map((e) => Math.abs(e - medianErrorLiveMs))),
+      maxAbsDevLiveMs: maxAbsDevFrom(medianErrorLiveMs, liveErrors),
+      maxAbsDevOutsideBlocksMs: maxAbsDevFrom(medianErrorMs, outsideErrors),
+      maxAbsDevOutsideBlocksLiveMs: maxAbsDevFrom(medianErrorLiveMs, outsideLiveErrors),
       missing: notes.filter((n) => n.receiptPerfMs === null).length,
       extra,
       stuck: notes.filter((n) => n.receiptPerfMs !== null && n.durationErrorMs === null).length,
+      stuckInsideBlocks: notes.filter((n) => n.receiptPerfMs !== null && n.durationErrorMs === null && n.jankLabel === "inside").length,
       velocityMismatches: notes.filter((n) => n.velocityMatch === false).length,
       transportMessages: input.transportMessages,
       notesInsideBlocks: notes.filter((n) => n.jankLabel === "inside").length,

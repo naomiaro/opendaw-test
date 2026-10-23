@@ -319,14 +319,17 @@ register `debug/2026-10-23-midi-output-timing/note.md`. Chrome only; a real clic
   spread within a quantum; `matches-known-defect` when a band in `MIDI_OUT_KNOWN_DEFECTS`
   explains every repeat, today `midi-out-main-thread-base` for a janked cell (live median on the
   delay, inside-block median between `delay + jank/4` and `delay + jank + 1 quantum`, spread
-  within `jank + 1 quantum`, `stuck == extra ≤ notesInsideBlocks`: the off-before-on inversion),
-  pinned on run B of the note; else `investigate` naming the first failing figure. A band is
+  within `jank + 1 quantum`, the notes clear of every block within two quanta,
+  `stuck == extra == stuckInsideBlocks ≤ notesInsideBlocks`: the off-before-on inversion and only
+  it), pinned on run B of the note and named in the detail; else `investigate` naming the first
+  failing figure. The repeat deadline is derived from the tuple (`repeatDeadlineMs`), so no allowed
+  cell is cut off. A band is
   tried on any failure, integrity included. Transport messages (Clock / Start / Stop /
   SongPosition) are counted per repeat, never paired or judged.
 - **Run it with `&frameDriver=hidden-safe`** (any demo URL takes it): the anchor and stop waits
   are frame-driven, and a covered window lost repeats on the SDK's own driver
   (`[the page was hidden during this repeat]`); the envelope is `midiout-summary-<runToken>.json`
-  under `.verify-output/` (schema 2; a schema-1 file reads with the witness null). Edits under
+  under `.verify-output/` (schema 3; older files read with the later fields null). Edits under
   `src/` reload the page and lose a run.
 
 ### MIDI Effect Placement Audit (unlisted)

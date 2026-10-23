@@ -66,6 +66,15 @@ export function pairReceipts(
   receipts: readonly Receipt[],
   windowMs: number = RECEIPT_WINDOW_MS,
 ): Array<{ onPerfMs: number | null; offPerfMs: number | null }> {
+  return pairReceiptObjects(scheduled, receipts, windowMs).map(({ on, off }) => ({ onPerfMs: on?.timeStamp ?? null, offPerfMs: off?.timeStamp ?? null }));
+}
+
+/** The same pairing, returning the receipt OBJECTS, so a caller can tell a paired receipt from an identical duplicate. */
+export function pairReceiptObjects(
+  scheduled: readonly ScheduledNote[],
+  receipts: readonly Receipt[],
+  windowMs: number = RECEIPT_WINDOW_MS,
+): Array<{ on: Receipt | null; off: Receipt | null }> {
   const sorted = [...receipts].sort((a, b) => a.timeStamp - b.timeStamp);
   const used = new Set<Receipt>();
   const take = (kind: Receipt["kind"], pitch: number, notBefore: number, notAfter: number): Receipt | null => {
@@ -80,7 +89,7 @@ export function pairReceipts(
   return scheduled.map((note) => {
     const on = take("on", note.pitch, note.onPerfMs - windowMs, note.onPerfMs + windowMs);
     const off = on === null ? null : take("off", note.pitch, on.timeStamp, note.offPerfMs + windowMs);
-    return { onPerfMs: on?.timeStamp ?? null, offPerfMs: off?.timeStamp ?? null };
+    return { on, off };
   });
 }
 
