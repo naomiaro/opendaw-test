@@ -10,6 +10,7 @@ import { NANO_SAMPLES, type NanoSampleId } from "@/lib/nanoSamples";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
+import { MidiSupportNotice } from "@/components/MidiSupportNotice";
 import { DropZone } from "@/components/DropZone";
 import { ParamSlider, useSliderThumbLabel } from "@/components/ParamSlider";
 import { PianoKeyboard, PIANO_STYLES } from "@/demos/midi/PianoKeyboard";
@@ -329,8 +330,9 @@ const App: React.FC = () => {
   const [busy, setBusy] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [activeNotes, setActiveNotes] = useState<Set<number>>(new Set());
-  const [midiState, setMidiState] = useState<"idle" | "enabled" | "unavailable">("idle");
-  const [midiError, setMidiError] = useState<string | null>(null);
+  const [canRequestMidi] = useState(() => MidiDevices.canRequestMidiAccess());
+  const [midiState, setMidiState] = useState<"idle" | "enabled">("idle");
+  const [midiDenied, setMidiDenied] = useState(false);
   // Counts selections, so a callback from an earlier selection can be told apart.
   const selectionRef = useRef(0);
 
@@ -364,7 +366,6 @@ const App: React.FC = () => {
         setProject(newProject);
         setSetup(built);
         setCurrent(built.initialSample);
-        setMidiState(MidiDevices.canRequestMidiAccess() ? "idle" : "unavailable");
         setStatus("Ready");
       } catch (error) {
         console.error(
@@ -454,13 +455,13 @@ const App: React.FC = () => {
   }, []);
 
   const enableMidi = useCallback(async () => {
-    setMidiError(null);
+    setMidiDenied(false);
     try {
       await MidiDevices.requestPermission();
       setMidiState("enabled");
     } catch (error) {
       console.warn("Nano demo: MIDI permission was not granted: " + String(error));
-      setMidiError("MIDI input was not enabled. The browser refused access or has no MIDI support.");
+      setMidiDenied(true);
     }
   }, []);
 
@@ -487,6 +488,12 @@ const App: React.FC = () => {
               waveform are the engine's own read heads.
             </p>
           </div>
+
+          <MidiSupportNotice
+            canRequestMidi={canRequestMidi}
+            userAgent={navigator.userAgent}
+            denied={midiDenied}
+          />
 
           {initError ? (
             <Callout.Root color="red" role="alert">
@@ -619,20 +626,14 @@ const App: React.FC = () => {
                 <Flex direction="column" gap="3">
                   <Flex align="center" justify="between" wrap="wrap" gap="2">
                     <Text size="2" weight="bold" color="gray">Keyboard</Text>
-                    {midiState === "idle" && (
+                    {canRequestMidi && midiState === "idle" && (
                       <Button size="1" variant="soft" onClick={() => void enableMidi()}>Enable MIDI input</Button>
                     )}
                     {midiState === "enabled" && <Badge color="green">MIDI input on</Badge>}
-                    {midiState === "unavailable" && <Badge color="gray">No MIDI in this browser</Badge>}
                   </Flex>
                   <div className="nn-keys">
                     <PianoKeyboard activeNotes={activeNotes} onNoteOn={handleNoteOn} onNoteOff={handleNoteOff} />
                   </div>
-                  {midiError && (
-                    <Callout.Root color="amber" size="1" role="status">
-                      <Callout.Text>{midiError}</Callout.Text>
-                    </Callout.Root>
-                  )}
                 </Flex>
               </Card>
 

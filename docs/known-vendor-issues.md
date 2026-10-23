@@ -571,7 +571,9 @@ and the feature requests for virtual ports ([41487942](https://issues.chromium.o
 - **Where it bites here:** the three MIDI sweeps' recipe "IAC Driver online (Audio MIDI Setup)" (root CLAUDE.md): in
   Firefox the driver must be online before the browser starts, and a device plugged in
   during a session is missing until a restart. A rejected request rejects `requestPermission()` with the SDK's "Could
-  not request MIDI" warning, whichever of the two causes it; each demo catches it and reports in its own words. The sweeps run in Chrome; none of this is measured here. Not reaching
+  not request MIDI" warning, whichever of the two causes it; the MIDI recording and Nano demos catch it and show the
+  refusal in their info area, where a Firefox visitor also reads about the fixed device list and the add-on prompt from
+  load (`MidiSupportNotice`, user-agent gated). The sweeps run in Chrome; none of this is measured here. Not reaching
   here: `MIDIOutput.clear()` not cancelling scheduled sends ([1869483](https://bugzilla.mozilla.org/show_bug.cgi?id=1869483)),
   the unbounded send queue on a closed port ([2031623](https://bugzilla.mozilla.org/show_bug.cgi?id=2031623)),
   `MIDIAccess` not transferable to a worker ([1937056](https://bugzilla.mozilla.org/show_bug.cgi?id=1937056)), the
@@ -684,9 +686,9 @@ and the feature requests for virtual ports ([41487942](https://issues.chromium.o
   "This browser does not support MIDI" warning, and `inputDevices()` lists the software input alone. The MIDI recording
   demo, the Nano demo and the two MIDI audit pages have no hardware input in Safari; their on-screen keyboards (the SDK's
   `softwareMIDIInput`) work. The Neon and Apparat demos only drive the software input and are unaffected. The MIDI
-  recording demo (a callout) and the Nano demo (a "No MIDI in this browser" badge) say so, both gated on
-  `canRequestMidiAccess()`; the two audit pages are Chrome-only debug pages and fail at their MIDI-access step with the
-  SDK's warning instead.
+  recording demo and the Nano demo say so in the info area at the top of the page (`MidiSupportNotice`,
+  `src/lib/midiSupportNotice.ts`, gated on `canRequestMidiAccess()`); the two audit pages are Chrome-only debug pages
+  and fail at their MIDI-access step with the SDK's warning instead.
 - **Last checked:** 2026-10-23 (tracker read).
 
 # Across vendors
