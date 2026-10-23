@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  CLOCK_DRIFT_PHASES, findSteps, judgeClockDrift, latticeFit, offsetFrames, STEP_MIN_FRAMES_OF_QUANTUM, summarisePhases,
+  CLOCK_DRIFT_PHASES, findSteps, judgeClockDrift, latticeFit, offsetFrames, rampFramesPerSec, STEP_MIN_FRAMES_OF_QUANTUM, summarisePhases,
   type ClockSample, type PhaseSummary,
 } from "./chromiumClockDrift";
 
@@ -79,6 +79,32 @@ describe("summarisePhases", () => {
   });
 });
 
+describe("rampFramesPerSec", () => {
+  it("reads the slope between steps: a sawtooth ramping 62 frames/s and snapping back reads +62, a flat series 0, one sample null", () => {
+    // 4.5 s ramps of +62 frames/s, then a −278 snap, three teeth, sampled every 10 ms.
+    const points: Array<{ t: number; offset: number }> = [];
+    let offset = 0;
+    for (let i = 0; i < 1350; i++) {
+      const t = i * 10;
+      if (i > 0 && i % 450 === 0) offset -= 278;
+      points.push({ t, offset });
+      offset += 0.62;
+    }
+    const samples = series(points);
+    expect(rampFramesPerSec(samples, RATE)).toBeCloseTo(62, 0);
+    expect(findSteps(samples, RATE)).toHaveLength(2);
+    expect(rampFramesPerSec(series([{ t: 0, offset: 0 }, { t: 1000, offset: 0 }, { t: 2000, offset: 0 }]), RATE)).toBeCloseTo(0, 6);
+    expect(rampFramesPerSec(series([{ t: 0, offset: 0 }]), RATE)).toBeNull();
+  });
+
+  it("is carried per phase by the summary", () => {
+    const samples = series(Array.from({ length: 200 }, (_, i) => ({ t: i * 10, offset: i * 0.5, phase: i < 100 ? "idle" : "jank" })));
+    const phases = summarisePhases(samples, RATE);
+    expect(phases[0].rampFramesPerSec).toBeCloseTo(50, 0);
+    expect(phases[1].rampFramesPerSec).toBeCloseTo(50, 0);
+  });
+});
+
 describe("judgeClockDrift", () => {
   const phase = (name: PhaseSummary["phase"], steps: number[], samples = 2000, hiddenSamples = 0): PhaseSummary => ({
     phase: name,
@@ -88,6 +114,7 @@ describe("judgeClockDrift", () => {
     maxOffsetFrames: Math.max(0, ...steps),
     steps: steps.map((frames, i) => ({ frames, atMs: i * 1000, phase: name })),
     lattice: latticeFit(steps),
+    rampFramesPerSec: 0,
     outputLatenciesMs: [23],
   });
 

@@ -320,16 +320,17 @@ const App: React.FC<{ issue: WatchedIssue }> = ({ issue }) => {
       <DebugLinkBar
         links={[
           { label: "debug/2026-10-22-chromium-watched-issues/note.md", href: NOTE_URL, kind: "note" },
-          {
+          // A candidate issue has no tracker entry yet: no link to a page that does not exist.
+          ...(info.tracker === "candidate" ? [] : [{
             label: `Chromium issue ${info.tracker}`,
             href: `https://issues.chromium.org/issues/${info.tracker}`,
-            kind: "note",
-          },
+            kind: "note" as const,
+          }]),
         ]}
       />
 
       <Heading size="7" align="center">
-        Chromium {info.tracker}: {info.title}
+        {info.tracker === "candidate" ? "Chromium candidate (no tracker yet)" : `Chromium ${info.tracker}`}: {info.title}
       </Heading>
 
       <Callout.Root color="blue">

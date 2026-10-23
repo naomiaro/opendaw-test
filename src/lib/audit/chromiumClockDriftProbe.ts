@@ -116,13 +116,24 @@ function phaseFigures(phases: readonly PhaseSummary[]): Figures {
     figures[`${p.phase}OffsetFramesMinMax`] = `${p.minOffsetFrames.toFixed(1)}..${p.maxOffsetFrames.toFixed(1)}`;
     figures[`${p.phase}Steps`] = p.steps.length === 0 ? "none" : p.steps.map((s) => `${Math.round(s.frames)}@${(s.atMs / 1000).toFixed(2)}s`).join(" ");
     figures[`${p.phase}OnLattice`] = `${p.lattice.onLattice}/${p.steps.length}`;
+    figures[`${p.phase}RampFramesPerSec`] = p.rampFramesPerSec === null ? null : Number(p.rampFramesPerSec.toFixed(2));
     figures[`${p.phase}OutputLatencyMs`] = p.outputLatenciesMs.map((v) => v.toFixed(2)).join(" ");
   }
   return figures;
 }
 
+/** The output device's native rate: a context made with no rate hint takes it. */
+async function deviceRateHz(): Promise<number> {
+  const probe = new AudioContext();
+  const rate = probe.sampleRate;
+  await probe.close();
+  return rate;
+}
+
 export async function runClockDriftProbe(signal: AbortSignal, report: (step: string) => void, options: ClockDriftOptions): Promise<ProbeEnvelope> {
   const head = { issue: "clock-drift" as const, chrome: browserOf(navigator), date: runDate(), runToken: newRunToken() };
+  report("device-rate");
+  const deviceRate = await deviceRateHz();
   report("start-audio");
   const live = await startLive(options.rate);
   const samples: ClockSample[] = [];
@@ -207,6 +218,8 @@ export async function runClockDriftProbe(signal: AbortSignal, report: (step: str
     totalSteps: judged.totalSteps,
     onLattice: `${judged.lattice.onLattice}/${judged.totalSteps}`,
     sampleRate: options.rate,
+    deviceRateHz: deviceRate,
+    resampled: deviceRate === options.rate ? "false" : "true",
     secondsPerPhase: options.seconds,
     tickMs: TICK_MS,
     phasesRun: CLOCK_DRIFT_PHASES.filter((p) => phases.some((s) => s.phase === p)).join(" "),

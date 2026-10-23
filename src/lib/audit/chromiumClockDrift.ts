@@ -68,6 +68,30 @@ export function latticeFit(stepFrames: readonly number[]): LatticeFit {
   return { onLattice, offLattice: stepFrames.length - onLattice };
 }
 
+/**
+ * The slope of the relation BETWEEN steps, in frames per second: the median of the per-sample slopes with the
+ * step samples left out, so a sawtooth reads its ramp and a flat series 0. Null with fewer than two samples.
+ */
+export function rampFramesPerSec(samples: readonly ClockSample[], sampleRate: number): number | null {
+  if (samples.length < 2) return null;
+  const first = samples[0];
+  const stepThreshold = STEP_MIN_FRAMES_OF_QUANTUM * RENDER_QUANTUM_FRAMES;
+  const slopes: number[] = [];
+  let previousOffset = offsetFrames(first, first, sampleRate);
+  for (let i = 1; i < samples.length; i++) {
+    const offset = offsetFrames(samples[i], first, sampleRate);
+    const dt = (samples[i].perfMs - samples[i - 1].perfMs) / 1000;
+    const delta = offset - previousOffset;
+    previousOffset = offset;
+    if (dt <= 0 || Math.abs(delta) > stepThreshold) continue;
+    slopes.push(delta / dt);
+  }
+  if (slopes.length === 0) return null;
+  const sorted = [...slopes].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
 export interface PhaseSummary {
   phase: ClockDriftPhase;
   samples: number;
@@ -76,6 +100,8 @@ export interface PhaseSummary {
   maxOffsetFrames: number;
   steps: ClockStep[];
   lattice: LatticeFit;
+  /** The ramp between steps, frames per second; null with fewer than two samples. */
+  rampFramesPerSec: number | null;
   /** Distinct values, in the order first seen. */
   outputLatenciesMs: number[];
 }
@@ -108,6 +134,7 @@ export function summarisePhases(samples: readonly ClockSample[], sampleRate: num
       maxOffsetFrames: Math.max(...offsets),
       steps,
       lattice: latticeFit(steps.map((s) => s.frames)),
+      rampFramesPerSec: rampFramesPerSec(own, sampleRate),
       outputLatenciesMs: latencies,
     };
   });
