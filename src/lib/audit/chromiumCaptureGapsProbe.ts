@@ -347,7 +347,7 @@ function witnessFigures(prefix: string, readings: readonly WitnessReading[]): Fi
     [named(prefix, "outputLatencyPerSecond")]: readings.map((r) => ms(r.outputLatency)).join(" "),
     // Baseline at 1 s: `outputLatency` reads 0 the instant after `resume()` (docs/known-vendor-issues.md).
     [named(prefix, "latencyChangedAtSecond")]: firstChangedSecond(readings.map((r) => `${r.baseLatency}|${r.outputLatency}`), 1),
-    [named(prefix, "sinkIdChanged")]: String(firstChangedSecond(readings.map((r) => r.sinkId)) !== null),
+    [named(prefix, "sinkIdChanged")]: firstChangedSecond(readings.map((r) => r.sinkId)) === null ? "no" : "yes",
     [named(prefix, "sinkId")]: readings.length === 0 ? null : readings[0].sinkId,
     [named(prefix, "contextSecAtCaptureStart")]: readings.length === 0 ? null : Number(readings[0].contextSec.toFixed(3)),
   };
@@ -530,7 +530,7 @@ export async function runCaptureGapsProbe(_signal: AbortSignal, report: (step: s
       stallRoundTripMsMin: stalls.roundTripMs.length === 0 ? null : Number(Math.min(...stalls.roundTripMs).toFixed(1)),
       stallRoundTripMsMax: stalls.roundTripMs.length === 0 ? null : Number(Math.max(...stalls.roundTripMs).toFixed(1)),
       stallFailed: stalls.failed,
-      verdictDetail: captureDetail(judged.detail, nearMark, dips),
+      verdictDetail: captureDetail(judged.detail, nearMark, dips, { markSec: SILENCE_MARK_SEC, windowSec: MARK_WINDOW_SEC }),
       seconds: captureSecondsWanted,
       outputConnected: "true",
       dither: String(dither),

@@ -284,10 +284,18 @@ export function clockDipSeconds(ratios: readonly number[]): number[] {
 }
 
 /** The run's detail: the stall coincidence, the zero runs near the 30 s mark, the clock dips; null when empty. */
-export function captureDetail(stallDetail: string | null, nearMark: readonly ZeroRun[], dips: readonly number[]): string | null {
+export function captureDetail(
+  stallDetail: string | null,
+  nearMark: readonly ZeroRun[],
+  dips: readonly number[],
+  mark: { markSec: number; windowSec: number },
+): string | null {
   const parts: string[] = [];
   if (stallDetail !== null) parts.push(stallDetail);
-  if (nearMark.length > 0) parts.push(`${nearMark.length} zero runs within 2 s of the 30 s mark`);
+  if (nearMark.length > 0) {
+    const runs = nearMark.length === 1 ? "zero run" : "zero runs";
+    parts.push(`${nearMark.length} ${runs} within ${mark.windowSec} s of the ${mark.markSec} s mark`);
+  }
   if (dips.length > 0) parts.push(`clock under ${CLOCK_DIP_RATIO} in second ${dips.join(", ")}`);
   return parts.length === 0 ? null : parts.join("; ");
 }

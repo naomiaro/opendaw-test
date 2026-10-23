@@ -341,6 +341,9 @@ Chromium tracker through the browser).
   destination, a 90 s built-in microphone capture has one zero run just after the 30 s mark of context
   time: 128 frames 21 to 32 ms after it in three rows, and 256 frames 373 ms after it at `latencyHint`
   0.1. With the commenter's dither, `(n & 1) / 10000` written to the output, there was none in four rows.
+  A fifine USB microphone has the same hole, 13 and 21 ms after the mark, in 2 of 2 silent rows. With
+  the dither it still had one 128-frame run, 1.93 s after the mark, in 1 of 2 rows. That device is very
+  quiet (RMS 0.0005 to 0.0018), and a gate in the microphone would read the same.
   A later comment on the tracker says Chrome moves a silent output to a fake software device after
   30 s. The context's `baseLatency`, `outputLatency` and `sinkId`, read each second, did not change at
   the switch, and the clock never dipped under 0.92 in any second. Shipped Chrome fills an underrun with
@@ -364,7 +367,8 @@ Chromium tracker through the browser).
   regression would look the same.
 - **Workaround:** keep the worklet thread free of long tasks during a take; keep the audio graph small.
   Never let the output go completely silent for more than 30 s during a take: a dither of
-  `(n & 1) / 10000` on an output removed the post-30 s hole in every row here. An engine that renders
+  `(n & 1) / 10000` on an output removed the post-30 s hole in every built-in microphone row here and
+  in 1 of 2 rows on a fifine USB microphone. An engine that renders
   exact zeros while recording (nothing playing, metronome off, monitoring off) would be moved to the
   fake device after 30 s. Whether the engine's output is exactly zero then is not measured. A dither in
   the engine output while recording is an upstream suggestion candidate, not drafted.
@@ -382,7 +386,8 @@ Chromium tracker through the browser).
   `…-mvk37334-0nth.json`; silent output against dither over 90 s (`&seconds=90&speakerTone=0`, `&dither=1`)
   `…-mvk9nuuo-s3x1.json`, `…-mvk9wabz-l4w8.json`, `…-mvk9s0lh-u9sp.json` (silent),
   `…-mvka3ha2-0d3j.json` (silent, with the latency and sink witness), `…-mvk9pzn2-83bx.json`,
-  `…-mvk9ybig-f9be.json`, `…-mvk9u1pc-xmca.json`, `…-mvka5n99-y698.json` (dither); cross-context (`&source=crosscontext&seconds=90`)
+  `…-mvk9ybig-f9be.json`, `…-mvk9u1pc-xmca.json`, `…-mvka5n99-y698.json` (dither); fifine USB microphone (`&input=fifine`) `…-mvkazeel-sexy.json`,
+  `…-mvkb5nr6-uwfr.json` (silent), `…-mvkb1ev7-mdld.json`, `…-mvkb3lxu-snp9.json` (dither); cross-context (`&source=crosscontext&seconds=90`)
   `…-mvkacrmf-k8rx.json`, `…-mvkaes9g-srld.json`, `…-mvkagspp-oi2e.json` (44 100 exact mirror),
   `…-mvkaj06l-m0om.json`, `…-mvkalf9k-bm9r.json`, `…-mvkannu4-bvse.json` (48 000, silent recorder output),
   `…-mvkapr64-7nb1.json`, `…-mvkart84-a3fm.json` (recorder dither), `…-mvkattvu-a4v5.json`,

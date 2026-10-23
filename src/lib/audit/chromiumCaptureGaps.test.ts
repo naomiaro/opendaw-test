@@ -373,13 +373,16 @@ describe("clockRatios and clockDipSeconds", () => {
 
 describe("captureDetail", () => {
   it("joins the stall detail, the runs near 30 s and the clock dips; null when there is nothing to say", () => {
-    expect(captureDetail(null, [], [])).toBeNull();
-    expect(captureDetail("1 of 1 zero runs at stall times; 0 of 0 duplicates at stall times", [], [])).toBe(
+    expect(captureDetail(null, [], [], { markSec: 30, windowSec: 2 })).toBeNull();
+    expect(captureDetail("1 of 1 zero runs at stall times; 0 of 0 duplicates at stall times", [], [], { markSec: 30, windowSec: 2 })).toBe(
       "1 of 1 zero runs at stall times; 0 of 0 duplicates at stall times",
     );
-    expect(captureDetail(null, [{ start: 30 * RATE, length: 480 }], [31])).toBe(
-      "1 zero runs within 2 s of the 30 s mark; clock under 0.75 in second 31",
+    expect(captureDetail(null, [{ start: 30 * RATE, length: 480 }], [31], { markSec: 30, windowSec: 2 })).toBe(
+      "1 zero run within 2 s of the 30 s mark; clock under 0.75 in second 31",
     );
+    expect(
+      captureDetail(null, [{ start: 0, length: 480 }, { start: 1, length: 480 }], [], { markSec: 45, windowSec: 3 }),
+    ).toBe("2 zero runs within 3 s of the 45 s mark");
   });
 });
 
