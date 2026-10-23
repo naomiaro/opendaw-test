@@ -929,6 +929,14 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   move position/isPlaying/UI-state verification to the Playwright browser (rAF
   ticks there). Beware: frozen React isPlaying=false leaves "disabled during
   playback" guards open. Not an SDK bug — don't debug it as one.
+- A page RESTORED from the back/forward cache (Back after leaving a playing demo) runs its
+  worklet clock at half speed on Chrome (Chromium 575891839, vendor register). `initializeOpenDAW`
+  installs `installBfcacheReloadGuard` (`src/lib/bfcacheReloadGuard.ts`) before its first await; it
+  reloads the page on `pageshow` with `persisted`, in every browser (the defect is Chrome's, the
+  reload is unconditional). A demo coming back from Back is therefore a FRESH load, never a
+  resumed one: in-memory state (project, transport, React state) does not survive it; storage
+  does. The SDK-free probe `chromium-watched-issues-debug-demo.html?issue=bfcache` does not boot
+  through init and keeps measuring the raw behaviour.
 - Verify in-browser AUDIO demos by measuring the actual OUTPUT SIGNAL, not `isPlaying`/a
   disabled Play button — a transport reports "playing" while the engine renders silence
   (e.g. a note region with `loopDuration:0`). Tap output: monkeypatch
