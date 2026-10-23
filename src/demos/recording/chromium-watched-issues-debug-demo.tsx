@@ -91,7 +91,7 @@ const ISSUE_INFO: Record<WatchedIssue, IssueInfo> = {
   },
   "clock-drift": {
     tracker: "40726491",
-    title: "getOutputTimestamp's context ↔ performance relation wanders (a 278-frame sawtooth on a resampled context) while outputLatency stays put",
+    title: "getOutputTimestamp's context ↔ performance relation wanders while outputLatency stays put",
   },
 };
 
@@ -321,17 +321,16 @@ const App: React.FC<{ issue: WatchedIssue }> = ({ issue }) => {
       <DebugLinkBar
         links={[
           { label: "debug/2026-10-22-chromium-watched-issues/note.md", href: NOTE_URL, kind: "note" },
-          // A candidate issue has no tracker entry yet: no link to a page that does not exist.
-          ...(info.tracker === "candidate" ? [] : [{
+          {
             label: `Chromium issue ${info.tracker}`,
             href: `https://issues.chromium.org/issues/${info.tracker}`,
-            kind: "note" as const,
-          }]),
+            kind: "note",
+          },
         ]}
       />
 
       <Heading size="7" align="center">
-        {info.tracker === "candidate" ? "Chromium candidate (no tracker yet)" : `Chromium ${info.tracker}`}: {info.title}
+        Chromium {info.tracker}: {info.title}
       </Heading>
 
       <Callout.Root color="blue">

@@ -6,9 +6,10 @@
  * every 500 ms); `graph` (an unrelated gain pair connected and disconnected every 50 ms, the
  * 442866743 condition); `load` (with `&load=<percent>`, a worklet that burns that share of every render
  * quantum, connected for the phase only: the render thread busy like an engine's); `hidden` (the page asks the operator to hide Chrome by hand, samples while
- * hidden, asks them back, samples ten more seconds visible; the waits for the hand are labelled `await`
- * and `returned`, not conditions). A tab playing audio is not throttled by Chrome when hidden, so the
- * hidden phase is a condition to compare, not a control. The judgement is `chromiumClockDrift.ts`.
+ * hidden, asks them back, samples ten more seconds visible). Both waits for the hand are labelled `await`,
+ * the ten seconds after the return `returned`; neither is a condition. A tab playing audio is not throttled
+ * by Chrome when hidden, so the hidden phase is a condition to compare, not a control. The judgement is
+ * `chromiumClockDrift.ts`.
  */
 import { createWorkerTicker } from "@/lib/workerTicker";
 import { BFCACHE_PROCESSOR_SOURCE } from "./chromiumBfcacheProbe";
@@ -81,6 +82,7 @@ registerProcessor("${LOAD_PROCESSOR_NAME}", ClockDriftLoad);
 const PROCESSOR_NAME = "chromium-bfcache-tone";
 const TICK_MS = 10;
 const JANK_MS = 80;
+/** Blocks start every 500 ms: the wait between them is the period less the block. */
 const JANK_PERIOD_MS = 500;
 const GRAPH_PERIOD_MS = 50;
 const RETURN_SECONDS = 10;
@@ -212,7 +214,7 @@ export async function runClockDriftProbe(signal: AbortSignal, report: (step: str
     phase = "jank";
     const jankEnd = performance.now() + phaseMs;
     while (performance.now() < jankEnd) {
-      await wait(Math.max(0, Math.min(JANK_PERIOD_MS, jankEnd - performance.now())), signal);
+      await wait(Math.max(0, Math.min(JANK_PERIOD_MS - JANK_MS, jankEnd - performance.now())), signal);
       if (performance.now() >= jankEnd) break;
       const until = performance.now() + JANK_MS;
       while (performance.now() < until) { /* spin */ }
@@ -252,6 +254,7 @@ export async function runClockDriftProbe(signal: AbortSignal, report: (step: str
       report("hidden");
       await wait(phaseMs, signal);
       report(AWAITING_RETURN);
+      phase = "await";
       const askedBackAt = performance.now();
       await waitForVisibility("visible", HIDE_WAIT_MS, signal);
       returnWaitMs = performance.now() - askedBackAt;

@@ -1,13 +1,13 @@
 /**
  * Chromium 40726491 (40693959 merged in: the position behind `getOutputTimestamp` is updated per
  * render quantum, not from the device): the context ↔ performance relation the pair reports wanders
- * while `outputLatency` stays put. Measured here as a 278-frame sawtooth every 4.49 s on a 48 kHz
- * context over a 44.1 kHz device and a quantum-sized step at the native rate; seen first on the MIDI
- * output timing audit. This file holds the judgement, pure and Node-testable; the browser half is
- * `chromiumClockDriftProbe.ts`.
+ * while `outputLatency` stays put. What it did on this machine is in
+ * `debug/2026-10-22-chromium-watched-issues/note.md`, "clock-drift" (a sawtooth on a context resampled
+ * to the device, single steps at the device's rate). This file holds the judgement, pure and
+ * Node-testable; the browser half is `chromiumClockDriftProbe.ts`.
  */
 
-/** `await` is the span between the hide prompt and the window going hidden, `returned` the ten seconds after it came back: both the operator's hand, neither a condition. */
+/** `await` is each span spent waiting for the operator's hand (to hide the window, and to bring it back), `returned` the ten seconds after it came back: neither a condition. */
 export const CLOCK_DRIFT_PHASES = ["idle", "jank", "graph", "load", "await", "hidden", "returned"] as const;
 export type ClockDriftPhase = (typeof CLOCK_DRIFT_PHASES)[number];
 
@@ -40,7 +40,7 @@ export interface ClockStep {
   phase: ClockDriftPhase;
 }
 
-/** Every change of more than half a quantum between consecutive samples; a slow slope never steps. */
+/** Every change of more than half a quantum between consecutive samples; a slope under that per sample interval never steps. */
 export function findSteps(samples: readonly ClockSample[], sampleRate: number): ClockStep[] {
   if (samples.length < 2) return [];
   const first = samples[0];
