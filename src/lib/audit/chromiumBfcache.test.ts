@@ -3,8 +3,10 @@ import {
   BASELINE_MIN_RATIO,
   HALF_SPEED_MAX_RATIO,
   STORED_BFCACHE_RUN_VERSION,
+  bfcacheOptionsFrom,
   clockRatio,
   judgeBfcache,
+  judgeMidiArm,
   parseStoredBfcacheRun,
   type ClockRatioSample,
   type StoredBfcacheRun,
@@ -127,10 +129,18 @@ describe("parseStoredBfcacheRun", () => {
     pitchBefore: { control: 660, worklet: 440 },
     sampleRate: 48000,
     startedAt: 1_000_000,
+    midiRequested: false,
   };
 
   it("parses what the run stored", () => {
     expect(parseStoredBfcacheRun(JSON.stringify(run))).toEqual(run);
+    expect(parseStoredBfcacheRun(JSON.stringify({ ...run, midiRequested: true }))?.midiRequested).toBe(true);
+  });
+
+  it("refuses an entry that does not say whether MIDI was requested", () => {
+    const { midiRequested: _midi, ...withoutMidi } = run;
+    expect(parseStoredBfcacheRun(JSON.stringify(withoutMidi))).toBeNull();
+    expect(parseStoredBfcacheRun(JSON.stringify({ ...run, midiRequested: "yes" }))).toBeNull();
   });
 
   it("refuses text that is not JSON, or JSON of another shape", () => {
@@ -144,6 +154,44 @@ describe("parseStoredBfcacheRun", () => {
   it("refuses an entry an older page stored: no version, or another one", () => {
     const { version: _version, ...unversioned } = run;
     expect(parseStoredBfcacheRun(JSON.stringify(unversioned))).toBeNull();
-    expect(parseStoredBfcacheRun(JSON.stringify({ ...run, version: 1 }))).toBeNull();
+    expect(parseStoredBfcacheRun(JSON.stringify({ ...run, version: 2 }))).toBeNull();
+  });
+});
+
+describe("bfcacheOptionsFrom", () => {
+  it("reads &midi=1 as the MIDI arm and its absence as the plain run", () => {
+    expect(bfcacheOptionsFrom(new URLSearchParams("issue=bfcache&midi=1"))).toEqual({ midi: true });
+    expect(bfcacheOptionsFrom(new URLSearchParams("issue=bfcache"))).toEqual({ midi: false });
+  });
+
+  it("refuses any other value of &midi=", () => {
+    expect(() => bfcacheOptionsFrom(new URLSearchParams("midi=yes"))).toThrow(/midi/);
+    expect(() => bfcacheOptionsFrom(new URLSearchParams("midi=0"))).toThrow(/midi/);
+  });
+});
+
+describe("judgeMidiArm", () => {
+  // The shape `NotRestoredReasons.toJSON()` serializes to, with the reason Blink names for
+  // `WebSchedulerTrackedFeature::kRequestedMIDIPermission`.
+  const reasonsWith = (...reasons: string[]): string =>
+    JSON.stringify({ src: "", id: "", name: "", url: "https://localhost:5173/x", reasons: reasons.map((reason) => ({ reason })), children: [] });
+
+  it("reads a page restored from the cache as cached with MIDI", () => {
+    expect(judgeMidiArm(true, null)).toBe("CACHED WITH MIDI");
+  });
+
+  it("reads a page kept out of the cache for the MIDI reason as MIDI blocking the cache", () => {
+    expect(judgeMidiArm(false, reasonsWith("requested midi permission"))).toBe("MIDI BLOCKS CACHE");
+    expect(judgeMidiArm(false, reasonsWith("unload-listener", "MIDI"))).toBe("MIDI BLOCKS CACHE");
+  });
+
+  it("does not judge a page kept out of the cache for other reasons, or for none reported", () => {
+    expect(judgeMidiArm(false, reasonsWith("unload-listener"))).toBe("NOT CHECKED not-cached-without-a-midi-reason");
+    expect(judgeMidiArm(false, null)).toBe("NOT CHECKED not-cached-no-reasons-reported");
+  });
+
+  it("does not read the page's own URL as a MIDI reason", () => {
+    const reasons = JSON.stringify({ src: "", id: "", name: "", url: "https://localhost:5173/page.html?issue=bfcache&midi=1", reasons: [{ reason: "unload-listener" }], children: [] });
+    expect(judgeMidiArm(false, reasons)).toBe("NOT CHECKED not-cached-without-a-midi-reason");
   });
 });

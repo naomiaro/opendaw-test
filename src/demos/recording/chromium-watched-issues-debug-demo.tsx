@@ -15,6 +15,7 @@ import {
   judgeStoredBfcacheOnLoad,
   runBfcacheProbe,
 } from "@/lib/audit/chromiumBfcacheProbe";
+import { bfcacheOptionsFrom } from "@/lib/audit/chromiumBfcache";
 import { runRoundTripProbe } from "@/lib/audit/chromiumRoundTripProbe";
 import { runOutputLatencyProbe } from "@/lib/audit/chromiumOutputLatencyProbe";
 import { judgeStoredOpfsUsageOnLoad, runOpfsFlushProbe, runOpfsUsageProbe } from "@/lib/audit/chromiumOpfsProbe";
@@ -27,6 +28,8 @@ import { InfoCircledIcon, PlayIcon } from "@radix-ui/react-icons";
 //   chromium-watched-issues-debug-demo.html?issue=first-read|bfcache|suspend-resume|capture-gaps|opfs-usage|opfs-flush|output-latency
 //
 // Parameters beyond `?issue=`, each read by its probe:
+//   bfcache         &midi=1 (Chromium 40635109: request Web MIDI access first, and judge whether the page is
+//                   cached at all — `MIDI BLOCKS CACHE` when the not-restored reasons name MIDI)
 //   suspend-resume  &control=crackle|harmonic &witness=mic &pace=<ms> &cycles=<n> &stallMs=<ms> &gapMs=<ms>
 //                   &rate=44100|48000 &firstCycle=1 &module=file|blob &manual=1 &tracker=1
 //                   (`chromiumSuspendResumeOptions.ts`)
@@ -83,6 +86,17 @@ const ISSUE_INFO: Record<WatchedIssue, IssueInfo> = {
   },
 };
 
+/** The bfcache probe's MIDI arm (`&midi=1`) probes another issue under the same page. */
+const BFCACHE_MIDI_INFO: IssueInfo = {
+  tracker: "40635109",
+  title: "A page that has requested MIDI access is not put in the back/forward cache",
+};
+
+function infoFor(issue: WatchedIssue): IssueInfo {
+  if (issue === "bfcache" && new URLSearchParams(window.location.search).get("midi") === "1") return BFCACHE_MIDI_INFO;
+  return ISSUE_INFO[issue];
+}
+
 type Probe = (signal: AbortSignal, report: (step: string) => void) => Promise<ProbeEnvelope>;
 
 /** The probe for an issue: one per watched issue, the output-latency readout or its round trip by `&roundtrip=1`. */
@@ -91,7 +105,7 @@ function probeFor(issue: WatchedIssue): Probe {
     case "first-read":
       return runFirstReadProbe;
     case "bfcache":
-      return runBfcacheProbe;
+      return (signal, report) => runBfcacheProbe(signal, report, bfcacheOptionsFrom(new URLSearchParams(window.location.search)));
     case "suspend-resume":
       return runSuspendResumeProbe;
     case "capture-gaps":
@@ -272,7 +286,7 @@ const App: React.FC<{ issue: WatchedIssue }> = ({ issue }) => {
     }
   }, [issue, finish]);
 
-  const info = ISSUE_INFO[issue];
+  const info = infoFor(issue);
   const verdictWord =
     state.kind === "done" ? state.envelope.verdict
     : state.kind === "error" ? "THREW"

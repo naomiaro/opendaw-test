@@ -227,8 +227,9 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   `notRestoredReasons` and still "Playing", and its position advanced 1.50 s in 3.00 s of wall clock
   (0.4996); a fresh load of it ran at 0.993. One run, through an injected `pageshow` listener, not swept.
   A page that has requested MIDI access is never put in the cache ([40635109](https://issues.chromium.org/issues/40635109)
-  below), so the MIDI recording demo, the Nano demo and the two MIDI audit pages that request access are out of its
-  reach once the visitor has enabled MIDI on them; before that click they are cacheable like the rest.
+  below, measured 2026-10-23), so the MIDI recording demo, the Nano demo and the two MIDI audit pages that request
+  access are out of its reach once the visitor has enabled MIDI on them; before that click they are cacheable like the
+  rest.
   The dev server's HMR socket and COOP / COEP did not keep the probe page out of the cache either.
 - **Workaround:** in place. Every demo that boots through `initializeOpenDAW` installs
   `installBfcacheReloadGuard` (`src/lib/bfcacheReloadGuard.ts`) before its first await: on `pageshow`
@@ -248,6 +249,36 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
 - **Last checked:** Chrome 155.0.8059.85, macOS 15.6.1, the user's Chrome, 2026-10-22: `HALF SPEED`
   twice, probe `?issue=bfcache`. Workaround verified 2026-10-23 on `looping-demo.html` (navigation type
   `reload` after Back, ratio 0.999).
+
+### Chromium [40635109](https://issues.chromium.org/issues/40635109) — a page that has requested MIDI access is not put in the back/forward cache
+
+- **Tracker:** [issues.chromium.org/issues/40635109](https://issues.chromium.org/issues/40635109), the "BFCache
+  Correctness: pages in BFCache should not break platform APIs" umbrella, **in progress**, P2 (demoted from P1 in the
+  2026-06 debt sweep). Among its commits the browser test `WebMidiNotCached` (relanded 2019-12-04), which pins that a
+  document holding a `MIDIAccess` is not cached; Blink's scheduler tracks the request as
+  `WebSchedulerTrackedFeature::kRequestedMIDIPermission` (`web_scheduler_tracked_feature.cc`, read 2026-10-23).
+- **Symptom here:** a page that called `navigator.requestMIDIAccess()` and holds the access, navigated away from
+  and returned to with Back, is loaded afresh: navigation type `back_forward`, `pageshow.persisted` false, and
+  `performance.getEntriesByType("navigation")[0].notRestoredReasons` lists the reasons `masked` and `midi` (the
+  API's name for the feature; the tracker's prose says "requested midi permission"). Two runs, both the same. The
+  same page without the request, in the same Chrome a minute apart, was restored (`persisted` true) and ran its
+  clock at 0.499 — the positive control that the cache was on.
+- **Where it bites here:** it narrows [575891839](https://issues.chromium.org/issues/575891839) above. The MIDI
+  recording demo and the Nano demo call `MidiDevices.requestPermission()` when the visitor enables MIDI, the two MIDI
+  audit pages when Run is clicked; from that moment a visitor who leaves them and comes back with Back gets a fresh load
+  from the browser itself, and the reload guard never fires there. Before that click, and on the audio-only demos, the
+  half-speed clock remains the risk the guard covers. The Neon and Apparat demos only use the SDK's software
+  input, never request access, and are cacheable like the rest. Measured on the SDK-free probe, not swept over the
+  demos: the mechanism is the request itself, which the demos make through the same API.
+- **Workaround:** none needed; the behaviour is in the demos' favour. Nothing in this repo relies on a MIDI page
+  being cached.
+- **Evidence:** `debug/2026-10-22-chromium-watched-issues/note.md`, "bfcache", the MIDI arm; probe
+  `chromium-watched-issues-debug-demo.html?issue=bfcache&midi=1` (verdict `MIDI BLOCKS CACHE`), envelopes
+  `chromium-bfcache-mvle4tqu-7mcs.json` and `chromium-bfcache-mvle6m6x-hp50.json`; control
+  `chromium-bfcache-mvle5mr7-1e5v.json` (`?issue=bfcache`, `HALF SPEED`, persisted).
+- **Last checked:** Chrome 155.0.8059.85, macOS 15.6.1, the user's Chrome, 2026-10-23: `MIDI BLOCKS CACHE` twice.
+  Run it in a Chrome the user launched: Playwright's Chrome runs with `--disable-back-forward-cache`, reports no
+  reasons, and the arm reads `NOT CHECKED not-cached-no-reasons-reported`.
 
 ### Chromium [560233271](https://issues.chromium.org/issues/560233271) — worklet playback stays at half rate, distorted, after an AudioContext suspend / resume that follows a worklet-thread stall
 
@@ -456,24 +487,6 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   (searched 2026-10-23: `midi` with timestamp, latency, jitter, CoreMIDI and IAC), so the campaign's +32 ms has no
   vendor candidate.
 - **Last checked:** 2026-10-23 (tracker read; no probe — the sweeps are the measurement).
-
-### Chromium [40635109](https://issues.chromium.org/issues/40635109) — a page that has requested MIDI access is not put in the back/forward cache
-
-- **Tracker:** [issues.chromium.org/issues/40635109](https://issues.chromium.org/issues/40635109), the "BFCache
-  Correctness: pages in BFCache should not break platform APIs" umbrella, **in progress**, P2 (demoted from P1 in the
-  2026-06 debt sweep). Among its commits the browser test `WebMidiNotCached` (relanded 2019-12-04), which pins that a
-  document holding a `MIDIAccess` is not cached; Blink's scheduler tracks the request as
-  `WebSchedulerTrackedFeature::kRequestedMIDIPermission` (`web_scheduler_tracked_feature.cc`, read 2026-10-23), which
-  a Back navigation reports in `performance.getEntriesByType("navigation")[0].notRestoredReasons` as
-  `requested midi permission`.
-- **Where it bites here:** it narrows [575891839](https://issues.chromium.org/issues/575891839) above. The MIDI
-  recording demo and the Nano demo call `MidiDevices.requestPermission()` when the visitor enables MIDI, the two MIDI
-  audit pages when Run is clicked; from that moment a visitor who leaves them and comes back with Back gets a fresh load
-  from the browser itself, and the reload guard never fires there. Before that click, and on the audio-only demos, the
-  half-speed clock remains the risk the guard covers. The Neon and Apparat demos only use the SDK's software
-  input, never request access, and are cacheable like the rest. Not measured here (the `?issue=bfcache` probe does not
-  request MIDI).
-- **Last checked:** 2026-10-23 (tracker read).
 
 ### Chromium Web MIDI — read and not reaching here
 
