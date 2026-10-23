@@ -7,6 +7,7 @@ import {
 
 const clean = (median: number, maxDev: number): OutputRepeatFigures => ({
   medianErrorMs: median, maxAbsDevMs: maxDev, p5p95WidthMs: maxDev, lateTailMs: maxDev,
+  medianErrorLiveMs: median, maxAbsDevLiveMs: maxDev,
   missing: 0, extra: 0, stuck: 0, velocityMismatches: 0, transportMessages: 0,
   notesInsideBlocks: 0, medianErrorInsideBlocksMs: null,
 });

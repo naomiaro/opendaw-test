@@ -15,7 +15,8 @@ import type { OutputCellKey, OutputRepeatRow } from "./midiOutputArtifacts";
 import type { MidiOutputParams } from "./midiOutputParams";
 import { buildOutputPattern, jankSchedule, patternEndPpqnOf, type JankBlock } from "./midiOutputPattern";
 import { resetOutputTransport, setOutputArm, writeOutputPattern, type OutputProjectState } from "./midiOutputProject";
-import { anchorTooLate, expectedSchedule, measureOutputRepeat, ORIGIN_LEAD_MS } from "./midiOutputTiming";
+import { anchorTooLate, expectedSchedule, measureOutputRepeat, ORIGIN_LEAD_MS, pairDriftSummary, type PairSample } from "./midiOutputTiming";
+import { AnimationFrame } from "@opendaw/lib-dom";
 import { assertCurrent, waitForPositionSettled, type RepeatToken } from "./recordingCellRunner";
 import type { Project } from "@opendaw/studio-core";
 
@@ -35,6 +36,41 @@ export interface OutputRepeatOptions {
 
 const ANCHOR_DEADLINE_MS = 30_000;
 const STOP_DEADLINE_MS = 10_000;
+
+/** Reads `getOutputTimestamp()` and `outputLatency` on every animation frame between `start()` and `stop()`: the drift witness. */
+class PairWatch {
+  #samples: PairSample[] = [];
+  #sub: { terminate(): void } | null = null;
+
+  start(audioContext: AudioContext): void {
+    this.#sub?.terminate();
+    this.#samples = [];
+    this.#sub = AnimationFrame.add(() => {
+      const raw = audioContext.getOutputTimestamp();
+      if (raw.contextTime === undefined || raw.performanceTime === undefined) return;
+      this.#samples.push({ perfMs: performance.now(), contextTime: raw.contextTime, performanceTime: raw.performanceTime, outputLatencyMs: audioContext.outputLatency * 1000 });
+    });
+  }
+
+  stop(): PairSample[] {
+    this.#sub?.terminate();
+    this.#sub = null;
+    return this.#samples;
+  }
+}
+
+/** A row with no figures: the shape an error row and the runner's starting point share. */
+export function emptyRepeatRow(repeat: number, originPpqn: number, notesInPattern: number, delayInMs: number, sampleRate: number, jankMs: number | null): OutputRepeatRow {
+  return {
+    repeat, error: null, notes: [], anchor: null, originPpqn,
+    medianErrorMs: null, maxAbsDevMs: null, p5p95WidthMs: null, lateTailMs: null, medianErrorLiveMs: null, maxAbsDevLiveMs: null,
+    missing: notesInPattern, extra: 0, stuck: 0, velocityMismatches: 0, transportMessages: 0,
+    notesInsideBlocks: 0, medianErrorInsideBlocksMs: null,
+    heardLagMs: null, outputLatencyMs: null, compensationLatencyMs: null, delayInMs,
+    quantumMs: quantumMs(sampleRate), frameIntervalMs: null, frameGapMaxMs: null,
+    jankBlocks: [], jankMs, pairDrift: null,
+  };
+}
 
 /** A synchronous block on the main thread from `startPerfMs` for `jankMs`; the measured span is what the row keeps. */
 async function runJankBlocks(planned: readonly JankBlock[], jankMs: number, token: RepeatToken): Promise<JankBlock[]> {
@@ -56,15 +92,8 @@ export async function runOutputRepeat(options: OutputRepeatOptions): Promise<Out
   const originPpqn = (params.originBar - 1) * BAR_PPQN;
   const pattern = buildOutputPattern(key.density, params.bars, originPpqn);
   const jankMs = key.jank === "mid" ? params.jankMs : null;
-  const row: OutputRepeatRow = {
-    repeat, error: null, notes: [], anchor: null, originPpqn,
-    medianErrorMs: null, maxAbsDevMs: null, p5p95WidthMs: null, lateTailMs: null,
-    missing: pattern.length, extra: 0, stuck: 0, velocityMismatches: 0, transportMessages: 0,
-    notesInsideBlocks: 0, medianErrorInsideBlocksMs: null,
-    heardLagMs: null, outputLatencyMs: null, compensationLatencyMs: null, delayInMs: params.delayInMs,
-    quantumMs: quantumMs(audioContext.sampleRate), frameIntervalMs: null, frameGapMaxMs: null,
-    jankBlocks: [], jankMs,
-  };
+  const row = emptyRepeatRow(repeat, originPpqn, pattern.length, params.delayInMs, audioContext.sampleRate, jankMs);
+  const pairWatch = new PairWatch();
   let stage = "reset";
   const at = (name: string): void => {
     stage = name;
@@ -92,6 +121,7 @@ export async function runOutputRepeat(options: OutputRepeatOptions): Promise<Out
 
     at("record");
     frameWatch.start();
+    pairWatch.start(audioContext);
     watching = true;
     project.engine.setPosition(0);
     await waitForPositionSettled(project, 0, ANCHOR_DEADLINE_MS);
@@ -142,17 +172,21 @@ export async function runOutputRepeat(options: OutputRepeatOptions): Promise<Out
 
     at("measure");
     const frames = frameWatch.stop();
+    const pairSamples = pairWatch.stop();
     watching = false;
     row.frameIntervalMs = frames.medianMs;
     row.frameGapMaxMs = frames.maxGapMs;
+    row.pairDrift = pairDriftSummary(pairSamples, pair);
     const { notes, figures } = measureOutputRepeat({
       pattern, receipts: loopback.receipts(), transportMessages: loopback.transportCount(), anchor, pair, bpm: key.bpm,
       delayInMs: params.delayInMs, jankMs: jankMs ?? 0, blocks: row.jankBlocks, outputLatencyMs: row.outputLatencyMs, sampleRate: audioContext.sampleRate,
+      pairSamples,
     });
     return { ...row, ...figures, notes };
   } catch (err) {
     if (watching) {
       const frames = frameWatch.stop();
+      pairWatch.stop();
       row.frameIntervalMs = frames.medianMs;
       row.frameGapMaxMs = frames.maxGapMs;
     }

@@ -8,9 +8,11 @@ import {
 const row = (repeat: number, median: number | null, error: string | null = null): OutputRepeatRow => ({
   repeat, error, notes: [], anchor: { contextTime: 10, position: 0 }, originPpqn: 3840,
   medianErrorMs: median, maxAbsDevMs: median === null ? null : 1.2, p5p95WidthMs: median === null ? null : 2.1, lateTailMs: median === null ? null : 1.1,
+  medianErrorLiveMs: median, maxAbsDevLiveMs: median === null ? null : 1.0,
   missing: 0, extra: 0, stuck: 0, velocityMismatches: 0, transportMessages: 56, notesInsideBlocks: 0, medianErrorInsideBlocksMs: null,
   heardLagMs: 0.4, outputLatencyMs: 20, compensationLatencyMs: 0, delayInMs: 10, quantumMs: 2.6667,
   frameIntervalMs: 16.67, frameGapMaxMs: 17.2, jankBlocks: [], jankMs: null,
+  pairDrift: median === null ? null : { samples: 120, driftMinMs: -0.3, driftMaxMs: 0.4, outputLatencyMinMs: 23, outputLatencyMaxMs: 23 },
 });
 const key = { bpm: 140, density: "32nd" as const, jank: "none" as const, transport: true };
 const engine: OutputCellRecord = { ...key, arm: "engine", status: "on-time", detail: "every repeat clean", repeats: [row(1, 10.8), row(2, 11.1)] };
@@ -32,7 +34,7 @@ describe("midiOutputArtifacts", () => {
   it("prints one line per cell with the status, the medians per repeat and the counts", () => {
     const lines = cellTableLines(summary);
     expect(lines).toHaveLength(2);
-    expect(lines[0]).toMatch(/engine \| 140 \| 32nd \| none \| on \| on-time \| 10\.80 \/ 11\.10 \| 1\.20 \| 1\.10 \| — \| 0\/0\/0\/0 \| 56 \| 10 \| 16\.67/);
+    expect(lines[0]).toMatch(/engine \| 140 \| 32nd \| none \| on \| on-time \| 10\.80 \/ 11\.10 \| 1\.20 \| 1\.10 \| — \| 10\.80 \/ 11\.10 \| 1\.00 \| -0\.30\.\.0\.40 \| 0\/0\/0\/0 \| 56 \| 10 \| 16\.67/);
     expect(lines[1]).toMatch(/^page \| 140 .* bus-true \| 0\.02 \/ -0\.01/);
   });
 

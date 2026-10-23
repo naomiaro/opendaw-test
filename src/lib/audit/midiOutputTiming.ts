@@ -16,6 +16,50 @@ const VELOCITY_TOLERANCE = 1;
 /** The origin must be at least this far ahead of the anchor's arrival for the page arm to schedule every note in the future. */
 export const ORIGIN_LEAD_MS = 300;
 
+/** One read of `getOutputTimestamp()` and `outputLatency` during the repeat, on the frame it was taken. */
+export interface PairSample {
+  perfMs: number;
+  contextTime: number;
+  performanceTime: number;
+  outputLatencyMs: number;
+}
+
+/** How far the heard-clock relation has moved from the repeat's pair, in ms: positive when the same performance time maps later on the context clock. */
+export function pairOffsetDriftMs(sample: Pick<PairSample, "contextTime" | "performanceTime">, pair: OutputStampPair): number {
+  return ((sample.contextTime - sample.performanceTime / 1000) - (pair.contextTime - pair.performanceTime / 1000)) * 1000;
+}
+
+export interface PairDriftSummary {
+  samples: number;
+  driftMinMs: number | null;
+  driftMaxMs: number | null;
+  outputLatencyMinMs: number | null;
+  outputLatencyMaxMs: number | null;
+}
+
+export function pairDriftSummary(samples: readonly PairSample[], pair: OutputStampPair): PairDriftSummary {
+  if (samples.length === 0) return { samples: 0, driftMinMs: null, driftMaxMs: null, outputLatencyMinMs: null, outputLatencyMaxMs: null };
+  const drifts = samples.map((s) => pairOffsetDriftMs(s, pair));
+  const latencies = samples.map((s) => s.outputLatencyMs);
+  return {
+    samples: samples.length,
+    driftMinMs: Math.min(...drifts),
+    driftMaxMs: Math.max(...drifts),
+    outputLatencyMinMs: Math.min(...latencies),
+    outputLatencyMaxMs: Math.max(...latencies),
+  };
+}
+
+/** The last sample taken at or before `perfMs`; null before the first. Samples are in time order. */
+export function livePairAt(samples: readonly PairSample[], perfMs: number): PairSample | null {
+  let found: PairSample | null = null;
+  for (const sample of samples) {
+    if (sample.perfMs > perfMs) break;
+    found = sample;
+  }
+  return found;
+}
+
 export interface OutputNoteRow {
   index: number;
   pitch: number;
@@ -25,6 +69,8 @@ export interface OutputNoteRow {
   receiptHeardCtxSec: number | null;
   /** (receiptHeardCtxSec − expectedHeardCtxSec) × 1000, raw. */
   errorMs: number | null;
+  /** The same, the receipt mapped through the live pair sample nearest before it: attribution for a drifting clock relation; null without samples. */
+  errorLiveMs: number | null;
   /** (off receipt − on receipt) − the expected duration, ms; null without both receipts. */
   durationErrorMs: number | null;
   /** |sent − received| ≤ 1; null without an on receipt. */
@@ -39,6 +85,9 @@ export interface OutputRepeatFigures {
   p5p95WidthMs: number | null;
   /** p95 − median: the hop's shape is one-sided. */
   lateTailMs: number | null;
+  /** The live-pair figures, for attribution only; null without pair samples. */
+  medianErrorLiveMs: number | null;
+  maxAbsDevLiveMs: number | null;
   missing: number;
   extra: number;
   stuck: number;
@@ -60,6 +109,8 @@ export interface MeasureInput {
   blocks: readonly JankBlock[];
   outputLatencyMs: number;
   sampleRate: number;
+  /** The repeat's per-frame pair reads, in time order; absent on a page without the witness. */
+  pairSamples?: readonly PairSample[];
 }
 
 /** Each note at the performance time its heard position is reached: what the page arm sends, and the pairing's reference. */
@@ -84,6 +135,8 @@ export function measureOutputRepeat(input: MeasureInput): { notes: OutputNoteRow
     const { onPerfMs, offPerfMs } = paired[i];
     const expectedHeardCtxSec = contextSecAtPosition(anchor, bpm, note.onPpqn);
     const receiptHeardCtxSec = onPerfMs === null ? null : heardContextSecAt(pair, onPerfMs);
+    const live = onPerfMs === null ? null : livePairAt(input.pairSamples ?? [], onPerfMs);
+    const receiptLiveCtxSec = live === null || onPerfMs === null ? null : heardContextSecAt({ contextTime: live.contextTime, performanceTime: live.performanceTime }, onPerfMs);
     const expectedDurationMs = pulsesToMs(note.durationPpqn, bpm);
     const onReceipt = onPerfMs === null ? null : receipts.find((r) => r.kind === "on" && r.pitch === note.pitch && r.timeStamp === onPerfMs) ?? null;
     if (onPerfMs !== null) used.add(receiptKey("on", note.pitch, onPerfMs));
@@ -97,6 +150,7 @@ export function measureOutputRepeat(input: MeasureInput): { notes: OutputNoteRow
       receiptPerfMs: onPerfMs,
       receiptHeardCtxSec,
       errorMs: receiptHeardCtxSec === null ? null : (receiptHeardCtxSec - expectedHeardCtxSec) * 1000,
+      errorLiveMs: receiptLiveCtxSec === null ? null : (receiptLiveCtxSec - expectedHeardCtxSec) * 1000,
       durationErrorMs: onPerfMs === null || offPerfMs === null ? null : offPerfMs - onPerfMs - expectedDurationMs,
       velocityMatch: onReceipt === null ? null : Math.abs(onReceipt.velocity - note.velocity) <= VELOCITY_TOLERANCE,
       jankLabel: jankLabelFor(renderPerfMs, input.blocks, 2 * pulsesToMs(note.durationPpqn, bpm)),
@@ -107,6 +161,8 @@ export function measureOutputRepeat(input: MeasureInput): { notes: OutputNoteRow
   const p5 = percentile(errors, 5);
   const p95 = percentile(errors, 95);
   const inside = notes.filter((n) => n.jankLabel === "inside" && n.errorMs !== null).map((n) => n.errorMs as number);
+  const liveErrors = notes.map((n) => n.errorLiveMs).filter((e): e is number => e !== null);
+  const medianErrorLiveMs = median(liveErrors);
   // Receipts the pairing left unused: stray pitches, duplicate releases, anything outside every window.
   const extra = receipts.filter((r) => !used.has(receiptKey(r.kind, r.pitch, r.timeStamp))).length;
   return {
@@ -116,6 +172,8 @@ export function measureOutputRepeat(input: MeasureInput): { notes: OutputNoteRow
       maxAbsDevMs: medianErrorMs === null ? null : Math.max(...errors.map((e) => Math.abs(e - medianErrorMs))),
       p5p95WidthMs: p5 === null || p95 === null ? null : p95 - p5,
       lateTailMs: medianErrorMs === null || p95 === null ? null : p95 - medianErrorMs,
+      medianErrorLiveMs,
+      maxAbsDevLiveMs: medianErrorLiveMs === null ? null : Math.max(...liveErrors.map((e) => Math.abs(e - medianErrorLiveMs))),
       missing: notes.filter((n) => n.receiptPerfMs === null).length,
       extra,
       stuck: notes.filter((n) => n.receiptPerfMs !== null && n.durationErrorMs === null).length,

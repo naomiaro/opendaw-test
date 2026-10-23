@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { BAR_PPQN } from "./auditExpectations";
 import { quantumMs } from "./midiInputAlignment";
-import { perfMsAtHeardContextSec, type OutputStampPair, type RecordingAnchor } from "./midiClockMap";
+import { heardContextSecAt, perfMsAtHeardContextSec, type OutputStampPair, type RecordingAnchor } from "./midiClockMap";
 import { RECEIPT_WINDOW_MS, type Receipt } from "./midiLoopback";
 import { buildOutputPattern, type JankBlock, type OutputPatternNote } from "./midiOutputPattern";
-import { anchorTooLate, expectedSchedule, measureOutputRepeat, receiptWindowMs, type MeasureInput } from "./midiOutputTiming";
+import {
+  anchorTooLate, expectedSchedule, livePairAt, measureOutputRepeat, pairDriftSummary, pairOffsetDriftMs, receiptWindowMs,
+  type MeasureInput, type PairSample,
+} from "./midiOutputTiming";
 
 const anchor: RecordingAnchor = { contextTime: 10, position: 0 };
 const pair: OutputStampPair = { contextTime: 10.02, performanceTime: 5000 };
@@ -117,5 +120,50 @@ describe("anchorTooLate", () => {
     // origin bar 2 = one bar in = 1.714 s at 140 bpm; the anchor's context time is 10
     expect(anchorTooLate(anchor, BAR_PPQN, 140, 10 + 1.714 - 0.5)).toBe(false);
     expect(anchorTooLate(anchor, BAR_PPQN, 140, 10 + 1.714 - 0.2)).toBe(true);
+  });
+});
+
+describe("the pair-drift witness", () => {
+  const sampleAt = (perfMs: number, driftMs: number, outputLatencyMs = 23): PairSample => ({
+    perfMs,
+    // The heard-clock relation moved by driftMs: the same performance time maps driftMs later on the context clock.
+    contextTime: heardContextSecAt(pair, perfMs) + driftMs / 1000,
+    performanceTime: perfMs,
+    outputLatencyMs,
+  });
+
+  it("reads a sample on the repeat's pair as 0 drift and one 4 ms further along as +4", () => {
+    expect(pairOffsetDriftMs(sampleAt(6000, 0), pair)).toBeCloseTo(0, 6);
+    expect(pairOffsetDriftMs(sampleAt(6000, 4), pair)).toBeCloseTo(4, 6);
+    expect(pairOffsetDriftMs(sampleAt(6000, -2.5), pair)).toBeCloseTo(-2.5, 6);
+  });
+
+  it("summarises the drift and the output latency over the samples, null without any", () => {
+    const summary = pairDriftSummary([sampleAt(5000, 0), sampleAt(5500, -2.5, 23), sampleAt(6000, 4, 27)], pair);
+    expect(summary).toEqual({ samples: 3, driftMinMs: expect.closeTo(-2.5, 6), driftMaxMs: expect.closeTo(4, 6), outputLatencyMinMs: 23, outputLatencyMaxMs: 27 });
+    expect(pairDriftSummary([], pair)).toEqual({ samples: 0, driftMinMs: null, driftMaxMs: null, outputLatencyMinMs: null, outputLatencyMaxMs: null });
+  });
+
+  it("picks the last sample at or before a time", () => {
+    const samples = [sampleAt(5000, 0), sampleAt(5500, 1), sampleAt(6000, 2)];
+    expect(livePairAt(samples, 5499)).toBe(samples[0]);
+    expect(livePairAt(samples, 5500)).toBe(samples[1]);
+    expect(livePairAt(samples, 9000)).toBe(samples[2]);
+    expect(livePairAt(samples, 4000)).toBeNull();
+    expect(livePairAt([], 5000)).toBeNull();
+  });
+
+  it("reads each note against the live pair too: a +4 ms drift over the last notes moves their live error by +4", () => {
+    const lastOn = scheduled[16].onPerfMs;
+    const samples = [sampleAt(scheduled[0].onPerfMs - 1, 0), sampleAt(lastOn - 1, 4)];
+    const r = measureOutputRepeat({ ...base, receipts: receiptsAt(pattern, 10), pairSamples: samples });
+    expect(r.notes[0].errorLiveMs).toBeCloseTo(10, 6);
+    expect(r.notes[20].errorLiveMs).toBeCloseTo(14, 6);
+    expect(r.figures.medianErrorMs).toBeCloseTo(10, 6);
+    expect(r.figures.medianErrorLiveMs).toBeCloseTo(12, 6);
+    expect(r.figures.maxAbsDevLiveMs).toBeCloseTo(2, 6);
+    const none = measureOutputRepeat({ ...base, receipts: receiptsAt(pattern, 10) });
+    expect(none.notes[0].errorLiveMs).toBeNull();
+    expect(none.figures.medianErrorLiveMs).toBeNull();
   });
 });

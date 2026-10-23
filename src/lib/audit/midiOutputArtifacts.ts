@@ -5,7 +5,7 @@
 import type { RecordingAnchor } from "./midiClockMap";
 import type { Density, JankMode, MidiOutputParams, OutputArm } from "./midiOutputParams";
 import type { JankBlock } from "./midiOutputPattern";
-import type { OutputNoteRow, OutputRepeatFigures } from "./midiOutputTiming";
+import type { OutputNoteRow, OutputRepeatFigures, PairDriftSummary } from "./midiOutputTiming";
 import type { OutputCellStatus } from "./midiOutputVerdict";
 
 export const MIDI_OUTPUT_SCHEMA_VERSION = 1;
@@ -36,6 +36,8 @@ export interface OutputRepeatRow extends OutputRepeatFigures {
   /** The measured spans; empty without jank. */
   jankBlocks: JankBlock[];
   jankMs: number | null;
+  /** How far the heard-clock relation and the output latency moved during the repeat (per-frame reads); null when nothing was sampled. */
+  pairDrift: PairDriftSummary | null;
 }
 
 export interface OutputCellRecord extends OutputCellKey {
@@ -73,14 +75,13 @@ export function parseMidiOutputSummary(json: unknown, runToken: number): MidiOut
 const ms = (v: number | null): string => (v === null ? "—" : v.toFixed(2));
 
 export const CELL_TABLE_HEADER =
-  "arm | bpm | density | jank | transport | status | median ms (per repeat) | max dev ms | late tail ms | inside-blocks median ms | missing/extra/stuck/velocity | transport msgs (max per repeat) | delay ms | frame ms | heard lag ms | detail";
+  "arm | bpm | density | jank | transport | status | median ms (per repeat) | max dev ms | late tail ms | inside-blocks median ms | live median ms (per repeat) | live max dev ms | pair drift min..max ms | missing/extra/stuck/velocity | transport msgs (max per repeat) | delay ms | frame ms | heard lag ms | detail";
 
 /** One line per cell, the columns of `CELL_TABLE_HEADER`; an error repeat adds `r<n> error: <stage>` at the end. */
 export function cellTableLines(summary: MidiOutputSummary): string[] {
-  const max = (values: Array<number | null>): number | null => {
-    const present = values.filter((v): v is number => v !== null);
-    return present.length === 0 ? null : Math.max(...present);
-  };
+  const present = (values: Array<number | null>): number[] => values.filter((v): v is number => v !== null);
+  const max = (values: Array<number | null>): number | null => (present(values).length === 0 ? null : Math.max(...present(values)));
+  const min = (values: Array<number | null>): number | null => (present(values).length === 0 ? null : Math.min(...present(values)));
   const sum = (rows: OutputRepeatRow[], key: "missing" | "extra" | "stuck" | "velocityMismatches"): number =>
     rows.reduce((acc, r) => acc + r[key], 0);
   return summary.cells.map((cell) => {
@@ -96,6 +97,11 @@ export function cellTableLines(summary: MidiOutputSummary): string[] {
       ms(max(rows.map((r) => r.maxAbsDevMs))),
       ms(max(rows.map((r) => r.lateTailMs))),
       ms(max(rows.map((r) => r.medianErrorInsideBlocksMs))),
+      rows.map((r) => ms(r.medianErrorLiveMs)).join(" / "),
+      ms(max(rows.map((r) => r.maxAbsDevLiveMs))),
+      rows.every((r) => r.pairDrift === null)
+        ? "—"
+        : `${ms(min(rows.map((r) => r.pairDrift?.driftMinMs ?? null)))}..${ms(max(rows.map((r) => r.pairDrift?.driftMaxMs ?? null)))}`,
       `${sum(rows, "missing")}/${sum(rows, "extra")}/${sum(rows, "stuck")}/${sum(rows, "velocityMismatches")}`,
       max(rows.map((r) => r.transportMessages)) ?? "—", // per repeat, the largest
       rows[0]?.delayInMs ?? "—",

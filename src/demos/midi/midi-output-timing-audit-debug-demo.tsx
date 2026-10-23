@@ -27,7 +27,7 @@ import { FrameWatch } from "@/lib/audit/midiInputCellRunner";
 import { MidiLoopbackSender, pickIacPorts } from "@/lib/audit/midiLoopback";
 import { parseMidiOutputParams, type MidiOutputParams, type OutputArm } from "@/lib/audit/midiOutputParams";
 import { buildOutputProject, type OutputProjectState } from "@/lib/audit/midiOutputProject";
-import { runOutputRepeat } from "@/lib/audit/midiOutputCellRunner";
+import { emptyRepeatRow, runOutputRepeat } from "@/lib/audit/midiOutputCellRunner";
 import { classifyEngineCell, classifyPageCell, type OutputVerdict } from "@/lib/audit/midiOutputVerdict";
 import {
   MIDI_OUTPUT_SCHEMA_VERSION, summaryFileName,
@@ -145,13 +145,10 @@ async function runAudit(params: MidiOutputParams, setAuditState: (s: string) => 
                   );
                 } catch (err) {
                   const gaps = frameWatch.stop();
-                  row = {
-                    repeat, error: `deadline: ${err instanceof Error ? err.message : String(err)}`, notes: [], anchor: null, originPpqn: 0,
-                    medianErrorMs: null, maxAbsDevMs: null, p5p95WidthMs: null, lateTailMs: null,
-                    missing: 0, extra: 0, stuck: 0, velocityMismatches: 0, transportMessages: 0, notesInsideBlocks: 0, medianErrorInsideBlocksMs: null,
-                    heardLagMs: null, outputLatencyMs: null, compensationLatencyMs: null, delayInMs: params.delayInMs, quantumMs: (128 / sampleRate) * 1000,
-                    frameIntervalMs: gaps.medianMs, frameGapMaxMs: gaps.maxGapMs, jankBlocks: [], jankMs: jank === "mid" ? params.jankMs : null,
-                  };
+                  row = emptyRepeatRow(repeat, 0, 0, params.delayInMs, sampleRate, jank === "mid" ? params.jankMs : null);
+                  row.error = `deadline: ${err instanceof Error ? err.message : String(err)}`;
+                  row.frameIntervalMs = gaps.medianMs;
+                  row.frameGapMaxMs = gaps.maxGapMs;
                 }
                 if (row.error !== null && (hiddenCount > hiddenBefore || document.visibilityState !== "visible")) {
                   row.error += " [the page was hidden during this repeat — not an SDK finding]";
@@ -309,8 +306,8 @@ function Harness({ params }: { params: MidiOutputParams }) {
             <Table.Header>
               <Table.Row>
                 {["arm", "bpm", "density", "jank", "transport", "rep", "status", "median ms", "max dev ms", "late tail ms", "p5–p95 ms",
-                  "inside blocks (n / median ms)", "miss", "extra", "stuck", "vel", "transport msgs", "delay ms", "out lat ms", "heard lag ms",
-                  "frame ms", "frame gap max ms", "detail"]
+                  "inside blocks (n / median ms)", "live median ms", "live max dev ms", "pair drift ms", "miss", "extra", "stuck", "vel", "transport msgs",
+                  "delay ms", "out lat ms", "heard lag ms", "frame ms", "frame gap max ms", "detail"]
                   .map((h) => <Table.ColumnHeaderCell key={h}>{h}</Table.ColumnHeaderCell>)}
               </Table.Row>
             </Table.Header>
@@ -329,6 +326,9 @@ function Harness({ params }: { params: MidiOutputParams }) {
                   <Table.Cell>{ms(r.lateTailMs)}</Table.Cell>
                   <Table.Cell>{ms(r.p5p95WidthMs)}</Table.Cell>
                   <Table.Cell>{r.notesInsideBlocks} / {ms(r.medianErrorInsideBlocksMs)}</Table.Cell>
+                  <Table.Cell>{ms(r.medianErrorLiveMs)}</Table.Cell>
+                  <Table.Cell>{ms(r.maxAbsDevLiveMs)}</Table.Cell>
+                  <Table.Cell>{r.pairDrift === null ? "—" : `${ms(r.pairDrift.driftMinMs)}..${ms(r.pairDrift.driftMaxMs)}`}</Table.Cell>
                   <Table.Cell>{r.missing}</Table.Cell>
                   <Table.Cell>{r.extra}</Table.Cell>
                   <Table.Cell>{r.stuck}</Table.Cell>
