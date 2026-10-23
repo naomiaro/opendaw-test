@@ -267,6 +267,55 @@ picks another). Register: `debug/2026-10-20-midi-input-alignment/note.md`.
   `document.visibilityState` stayed `visible`; a row's `frameGapMaxMs` is the figure to check
   before reading a hang as an SDK finding.
 
+### MIDI Output Timing Audit (unlisted)
+`midi-output-timing-audit-debug-demo.html[?arm=both|engine|page][&bpm=<n|all>][&density=32nd|8th|both][&bars=<1-8>][&repeats=<1-10>][&delay=<0-500>][&jank=none|mid|both][&jankMs=<10-500>][&transport=1|0|both][&origin=<1-8>][&bus=<substring>]`
+measures WHEN the SDK asks a hardware MIDI output to deliver each note, on the AudioContext
+clock, over the IAC Driver. The engine plays a note region (default the openDAW#356 case: 1/32
+notes at 140 bpm, three bars) on a unit whose instrument is `InstrumentFactories.MIDIOutput`,
+its `MIDIOutputBox` (under `rootBox.outputMidiDevices`) naming the IAC output port with the
+schema's `delayInMs` 10 and `sendTransportMessages` on; the page listens on the IAC input.
+Library `src/lib/audit/midiOutput*.ts`; table `node scripts/audit/midi-output-timing/table.ts`;
+register `debug/2026-10-23-midi-output-timing/note.md`. Chrome only; a real click on Run.
+
+- **What the figure is.** Per note, `errorMs` = the receipt stamp mapped to the heard context
+  clock minus the heard context time of the note's position, raw. On the IAC bus Chrome stamps
+  a receipt with the time the sender ASKED for, so the figure is what the SDK requested; it says
+  nothing about physical delivery (a hardware session with audio capture would).
+- **What the SDK does.** The engine times a note as its offset inside the quantum being
+  rendered plus `delayInMs`; the worklet drains that into a ring and posts a wake-up; the main
+  thread adds the output and compensation latency and sends at `performance.now()` plus that
+  (`Project.receivedMIDIFromEngine`). The base is the moment the main thread read the ring, so
+  a late handler lands on the note, in one direction, and `delayInMs` absorbs none of it.
+- **The clock rule.** The anchor is `engine.recordingStart` from a recording with NOTHING armed
+  (`Recording.start` reaches `prepareRecordingState` with zero captures; the engine stamps the
+  start and records nothing). ONE `getOutputTimestamp` pair per repeat bridges to the Web MIDI
+  clock both ways (`midiClockMap.ts`); `heardLagMs` on every row checks it. The page arm sends
+  the identical pattern at those heard times through `MIDIOutput.send` and must read zero.
+- **Two arms, one tuple.** The page arm runs first in each repeat, then the engine arm, over
+  the same (bpm, density, jank, transport) tuple. The page arm is made by emptying the output
+  box's `id` (the engine interns `""` to device −1 and queues nothing); the engine arm names the
+  port again, so its timing path is the installed one. `?arm=engine` alone reads `not-judged`
+  (`no-control`): a debugging mode, never a figure for a note.
+- **Origin.** The region starts at `&origin` (default bar 2, one bar in) for both arms: the
+  anchor reaches the page a frame or two after the first quantum, and a note at position 0
+  would be scheduled in the past. A repeat whose anchor arrives under 300 ms before the origin
+  is an error row `anchor-too-late`, never a late control. The notes right after a transport
+  start are therefore not judged by this page.
+- **Jank.** `&jank=mid` blocks the main thread synchronously for `jankMs` from the pattern's
+  midpoint and every 500 ms until its end; each block's measured span is on the row, and every
+  note is labelled `clear` / `inside` / `first-after` by its RENDER time (heard perf time minus
+  the output latency). `medianErrorInsideBlocksMs` is the inside notes' own median.
+- **Verdicts** (`midiOutputVerdict.ts`). Page: `bus-true` when every repeat is clean (no
+  missing / extra / stuck / velocity mismatch, a byte either way is a match) with the median
+  and the spread within 1 ms. Engine: `not-judged` (`bus` or `no-control`); `on-time` when
+  clean, the median within half a quantum of `delayInMs` and the spread within a quantum;
+  `matches-known-defect` when a band in `MIDI_OUT_KNOWN_DEFECTS` explains every repeat (the
+  table ships empty; the note says which rows pinned each band); else `investigate` naming
+  the first failing figure. Transport messages (Clock / Start / Stop / SongPosition) are
+  counted per repeat, never paired or judged.
+- The envelope is `midiout-summary-<runToken>.json` under `.verify-output/` (schema 1).
+  Edits under `src/` reload the page and lose a run; keep the window uncovered.
+
 ### MIDI Effect Placement Audit (unlisted)
 `midi-effect-placement-audit-debug-demo.html[?rate=48000|44100][&bpm=<n>][&device=all|pitch|velocity|arpeggio|zeitgeist|spielwerk][&sampleMs=<n>][&importMs=<n>]`
 renders a Nano burst pattern offline dry and through each stock MIDI effect, enabled and
