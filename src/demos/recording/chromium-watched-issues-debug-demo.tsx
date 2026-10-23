@@ -26,8 +26,12 @@ import { InfoCircledIcon, PlayIcon } from "@radix-ui/react-icons";
 //
 //   chromium-watched-issues-debug-demo.html?issue=first-read|bfcache|suspend-resume|capture-gaps|opfs-usage|opfs-flush|output-latency
 //
+// output-latency also takes `&roundtrip=1` (an acoustic round trip through the built-in microphone),
+// `&sink=<output label text>` and `&gain=<click amplitude>`.
+//
 // No SDK engine is loaded: a probe says what Chrome does, not what the SDK repairs (the
-// suspend-resume probe imports lib-dsp's WAV encoder for its microphone capture, nothing else). Each probe
+// suspend-resume and output-latency round-trip probes import lib-dsp's WAV encoder for their microphone
+// captures, nothing else). Each probe
 // self-classifies into a verdict word (`#verdict`, `data-verdict`) with the figures it was
 // judged on; the run's progress is `#audit-state[data-audit-state]`: idle, running:<step>,
 // then done or error. On the dev server the envelope is also written to `.verify-output/`.

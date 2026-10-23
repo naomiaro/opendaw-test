@@ -42,9 +42,11 @@ did with it.
   Stays watched with the figures; no slowness here.
 - **541725401 / 40068799, quota sentinel:** no probe (needs the quota exhausted or an incognito
   profile). Stays watched, out of scope.
-- **388871416, `outputLatency` with Bluetooth:** the understatement did not reproduce. `outputLatency`
-  read 28 ms on the built-in speaker and 161 ms on a Bluetooth headset (base 5.8 ms both), in line with
-  the tracker's current triage, not the original report. Stays watched.
+- **388871416, `outputLatency` with Bluetooth:** measured, and Chrome understates this headset's output
+  latency by about 70 ms. Reported 28 ms on the built-in speaker and 161 ms on the headset (a difference
+  of 133 ms); an acoustic round trip through the built-in mic measured 103 ms and 307 ms (a difference
+  of 204 ms). Moved to "Measured here"; `outputLatency` also follows the system default device, not the
+  context's sink.
 
 Runs made with an earlier version of a probe are kept below as data and not quoted for a verdict: the
 gated suspend / resume runs, the 44 100 capture minutes spliced at chunk boundaries (their start events
@@ -61,7 +63,7 @@ stand), the single-window bfcache runs, and the OPFS stored-readings load before
 | `opfs-usage` | [436552046](https://issues.chromium.org/issues/436552046) / [401692415](https://issues.chromium.org/issues/401692415) — OPFS usage not counted for sync-handle writes, negative after a delete | Writes through a sync access handle in a worker, reads `estimate()` before, after the write and after the delete; the user quits and reopens Chrome and the page judges the restart reading on load (`&truncateFirst=1` for the reporter's workaround) | `NOT COUNTED`, `COUNTED`, `NEGATIVE USAGE`, `NOT CHECKED` | **reproduced**: `NEGATIVE USAGE` after a restart of the user's Chrome 155, 2026-10-22 (saved figure −16.5 MB after a plain run's delete, read back as 4.28 GB; about +50.6 MB before it if the delete took the full 64 MiB, as the off-disk reading and round 2 show); the saved figure read off disk drops by the deleted size on a plain delete, by 0 after a truncate; a truncate-first run and a second restart moved it by the hand-deleted samples' size only (−238 137 857 against −238 135 417 predicted) |
 | `opfs-flush` | [40909520](https://issues.chromium.org/issues/40909520) — slow `flush()` on Mac | Times 20 writes of 1 MiB and 20 of 16 MiB, each followed by `flush()`, in a worker; median, p95 and max per size | `MEASURED` (figures only: the tracker's claim is a comparison with other browsers this repo does not make) | **measured**: flush median 0.53–0.57 ms (1 MiB), 1.44–1.46 ms (16 MiB), Chrome 155, macOS 15.6.1, 2026-10-22 |
 | — | [541725401](https://issues.chromium.org/issues/541725401) / [40068799](https://issues.chromium.org/issues/40068799) — a quota overrun returns a sentinel | No probe: needs the origin's quota exhausted or an incognito profile | — | out of scope, stays watched |
-| `output-latency` | [388871416](https://issues.chromium.org/issues/388871416) — `outputLatency` with a Bluetooth headset | Resumes a context and reads `baseLatency`, `outputLatency`, `sinkId` and the output device's label from `enumerateDevices()` every second for 30 s; no classifier, the rows are the finding | `MEASURED` (figures only), `NOT CHECKED context-<state>` | **understatement not reproduced**: output 28 ms on the built-in speaker, 161 ms on a Bluetooth headset, base 5.8 ms both, Chrome 155, 2026-10-22 |
+| `output-latency` | [388871416](https://issues.chromium.org/issues/388871416) — `outputLatency` with a Bluetooth headset | Readout: resumes a context and reads `baseLatency`, `outputLatency`, `sinkId` and the output device's label from `enumerateDevices()` every second for 30 s; no classifier, the rows are the finding. `&roundtrip=1`: plays 10 clicks through the output and finds them in a built-in-mic capture (`&sink=<label>`, `&gain=`) | `MEASURED` (figures only), `NOT CHECKED context-<state>` | **measured, understated by about 70 ms**: reported 28 ms (built-in speaker) and 161 ms (Bluetooth headset), measured round trips 103 ms and 307 ms through the built-in mic, Chrome 155, 2026-10-22 |
 
 ## Run recipe
 
@@ -697,31 +699,48 @@ the envelope (`flush1MiBAllMs`, `flush16MiBAllMs`). The 25.65 ms is one flush of
 
 ### output-latency (388871416)
 
-**The understatement did not reproduce: 28 ms on the built-in speaker, 161 ms on a Bluetooth headset.**
-The original report read the headset LOWER than the speaker (17 ms against 33 ms). Chromium's triage on
-current builds reads 200+ ms on a headset. This pair agrees with the triage, so the entry stays watched.
-Both runs are Chrome 155.0.8059.85 on macOS 15.6.1, Playwright's Chrome, 2026-10-22, one real click,
-`sinkId` empty (the default), sample rate 44 100.
+**Measured: Chrome reports 133 ms more output latency for this Bluetooth headset than for the built-in
+speaker, and the acoustic round trip says the difference is 204 ms. The reported figure understates the
+headset by about 70 ms.** The original report read the headset LOWER than the speaker (17 ms against
+33 ms) and the triage on current builds reads 200+ ms on a headset; this headset is reported at 161 ms
+and is real at about 204 ms more than the speaker. All runs are Chrome 155.0.8059.85 on macOS 15.6.1,
+Playwright's Chrome, 2026-10-22, one real click each.
+
+The readout (`?issue=output-latency`, 30 one-second rows, `sinkId` empty, 44 100 Hz) is the context:
 
 | envelope | device label (every row) | base | first row | rows after it |
-|---|---|---|---|---|---|
+|---|---|---|---|---|
 | `chromium-output-latency-mvk3xjzv-1180.json` | `Default - MacBook Pro Speakers (Built-in)` | 5.8 ms | 0 ms | 28 ms on all 30 |
 | `chromium-output-latency-mvk6xq4h-115y.json` | `Default - Defunc TRUE AUDIO (Bluetooth)` | 5.8 ms | 0 ms | 161 ms on all 30 |
 
-- `outputLatency` reads 0 ms at the first row (the instant after `resume()`) on both outputs. A reader
-  that takes one value right after `resume()` gets 0. Wait a second first.
-- The headset was the system output for the whole run, so there is no switch inside one envelope; the
-  two envelopes are the before and after.
+The round trip (`&roundtrip=1`, built-in mic, gain 1, 10 of 10 clicks found each):
 
-**To re-run the Bluetooth half:** open
-`https://localhost:5173/chromium-watched-issues-debug-demo.html?issue=output-latency` in Chrome with the
-Mac's output on the built-in speaker, click Run, and connect the AirPods (or any Bluetooth output) while
-the 30 seconds run, with the system output switched to them. Read the rows: the tracker expects about
-33 ms before and 200+ ms after on current builds. The witness for the switch is the `outputLatency`
-jump. The label is secondary: it shows the device only when the page has a media permission, and
-without one every label reads `(label hidden)` and the `labelsHidden` figure is true. A `sinkId` that
-stays empty is the default device following the system. The saved envelope in `.verify-output/` carries
-every row.
+| envelope | route | reported output / base | round trips (ms) | median |
+|---|---|---|---|---|
+| `chromium-output-latency-mvk7f761-cq4x.json` | built-in speaker, headset disconnected, default sink | 28 / 5.8 ms | 103.17 to 103.22 | 103.22 ms |
+| `chromium-output-latency-mvk7dex7-o1zq.json` | Defunc headset, `&sink=Defunc`, earbud held to the mic | 161 / 5.8 ms | 304.5 to 311.8 | 306.96 ms |
+| `chromium-output-latency-mvk7bppn-2mc0.json` | `&sink=speakers`, headset still connected and the system default | 161 / 5.8 ms | 303.2 to 309.8 | 306.35 ms |
+
+- **The differential.** The mic's input path (and the air) is the same for every output, so it cancels in
+  a difference: 306.96 - 103.22 = 203.7 ms of extra delay for the headset, against 161 - 28 = 133 ms
+  reported. Chrome understates the headset's output latency by about 70.7 ms. A take recorded with this
+  headset as the output, with the SDK netting the reported figure, is placed about 70 ms early.
+- **The readout pair agrees with the reported column of the round-trip runs** (28 and 161 ms), so the
+  readout is a fair statement of what Chrome says; the round trip is the check against what is heard.
+- **Side finding (a): `outputLatency` follows the system default device, not the context's sink.** The
+  `&sink=speakers` run made a context on the speakers' sink id (`ae245f22...`, different from the
+  headset's `a2b231f4...`) while the headset was the default, and read 161 ms one second after resume
+  and again at the end.
+- **Side finding (b), unexplained: the `&sink=speakers` run with the headset still connected measured
+  306.35 ms, the headset's trip and not the speaker's 103 ms.** The sink ids differed and the context
+  read its sink back, and the mic heard the clicks, yet the trip matched the headset. What settles it is a
+  run where someone listens to which device the clicks come out of, or a mic at each device. Nothing
+  more is claimed here.
+- **Drift.** The two runs through the headset path (and the `&sink=speakers` run) grow by about 0.7 ms
+  per click, 304.5 to 311.8 ms; the speaker baseline is flat, 103.17 to 103.22 ms. All three contexts
+  ran at 44 100 Hz against a 48 000 Hz mic, so the rate mismatch alone does not explain it. The cause
+  is not established. The drift also matches the third run to the headset's, which is a pattern in
+  the numbers, not evidence of where the sound came out. Compare medians.
 
 #### Acoustic round trip (`&roundtrip=1`)
 
@@ -747,19 +766,8 @@ is open), so a run does not depend on the system's default; `&gain=` sets the cl
 - **What the figure means:** the round trip is output path plus air plus the mic's input path (about
   300 ms here, mostly the browser's microphone source node). That constant is the same for any
   output, so the register's figure is the difference: headset round trip minus speaker round trip,
-  against the reported difference (161 - 28 = 133 ms, with the readouts above).
-- **Speaker run (Chrome 155, macOS 15.6.1, 2026-10-22, `&sink=speakers&gain=1`):**
-  `chromium-output-latency-mvk7bppn-2mc0.json`, 10 of 10 clicks, round trip median 306.35 ms, p95
-  309.82 ms, first click 303.2 ms, last 309.82 ms. The trips grow by about 0.7 ms per click: the
-  output and input clocks drift against each other (the mic is 48 000 Hz, the context 44 100), so
-  read a median, not a single click, and run both outputs the same way.
-- **Reported `outputLatency` did not follow the sink.** The system default output was the headset at
-  the time (161 ms). A context made with `sinkId` set to the built-in speakers still read 161 ms
-  one second after resume and again at the end, while the speaker readout earlier read 28 ms with
-  the speakers as the default. The label of the used output was the speakers' and the clicks were
-  heard by the mic. So with a non-default sink this Chrome reported the default device's latency.
-  One run; not yet checked with the headset as `sinkId` and the speakers as default.
-- **How to do the headset run:** quiet room, the headset connected. Hold one earbud against the
+  against the reported difference.
+- **How the headset run is done:** quiet room, the headset connected as the output. Hold one earbud against the
   built-in mic (top-left of the keyboard area on a MacBook Pro), then run
   `...&roundtrip=1&sink=Defunc&gain=1` (the headset's label, a substring is enough). The speaker run
   is the same URL with `&sink=speakers`. A 6 kHz click through a Bluetooth earbud is quiet; if clicks

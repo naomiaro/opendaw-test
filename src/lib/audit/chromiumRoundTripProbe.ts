@@ -96,14 +96,12 @@ export async function runRoundTripProbe(_signal: AbortSignal, report: (step: str
     const track = stream.getAudioTracks()[0];
     if (track === undefined) return { ...base, verdict: "NOT CHECKED mic-no-audio-track", figures: {} };
     const sinkWanted = new URLSearchParams(window.location.search).get("sink");
-    let sinkLabel: string | null = null;
     let sinkId: string | undefined;
     if (sinkWanted !== null) {
       const outputs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audiooutput");
       const target = outputs.find((d) => d.label.toLowerCase().includes(sinkWanted.toLowerCase()) && d.deviceId !== "default");
       if (target === undefined) throw new Error(`no-output-labelled-${sinkWanted}-among-${outputs.map((d) => d.label).join("+")}`);
       sinkId = target.deviceId;
-      sinkLabel = target.label;
     }
     context = new AudioContext({ latencyHint: "interactive", ...(sinkId === undefined ? {} : { sinkId }) } as AudioContextOptions);
     await withDeadline(context.resume(), DEADLINE_MS, "resume");
@@ -168,9 +166,14 @@ export async function runRoundTripProbe(_signal: AbortSignal, report: (step: str
     const wav = await saveWav(samples, rate, base.runToken);
     const settings = track.getSettings();
     const devices = await navigator.mediaDevices.enumerateDevices();
-    const output = devices.find((d) => d.kind === "audiooutput" && d.deviceId === "default");
-    const usedSink = (context as AudioContext & { sinkId?: unknown }).sinkId;
-    const verdict = found.length < MIN_CLICKS_FOUND ? `NOT CHECKED ${found.length}-of-${CLICKS}-clicks-found-missed-${missed.join("-")}` : "MEASURED";
+    const readBack = (context as AudioContext & { sinkId?: unknown }).sinkId;
+    const usedSink = typeof readBack === "string" ? readBack : "";
+    const usedOutput = devices.find((d) => d.kind === "audiooutput" && d.deviceId === (usedSink === "" ? "default" : usedSink));
+    const outputLabel = usedOutput === undefined ? "(no matching output)" : usedOutput.label || "(label hidden)";
+    const verdict =
+      found.length < MIN_CLICKS_FOUND
+        ? `NOT CHECKED ${found.length}-of-${CLICKS}-clicks-found-missed-${missed.join("-")}-check-the-system-output-device-which-was-${outputLabel.replace(/\s+/g, "-")}`
+        : "MEASURED";
     return {
       ...base,
       verdict,
@@ -184,9 +187,9 @@ export async function runRoundTripProbe(_signal: AbortSignal, report: (step: str
         clickGain,
         reportedOutputLatencyAtEndMs: round(context.outputLatency * 1000),
         reportedBaseLatencyMs: round(reportedBaseMs),
-        outputLabel: sinkLabel ?? (output?.label || "(label hidden)"),
+        outputLabel,
         sinkRequested: sinkWanted,
-        sinkIdUsed: typeof usedSink === "string" && usedSink !== "" ? usedSink : "(default)",
+        sinkIdUsed: usedSink === "" ? "(default)" : usedSink,
         micLabel: track.label,
         micSampleRate: settings.sampleRate ?? null,
         micChannelCount: settings.channelCount ?? null,
