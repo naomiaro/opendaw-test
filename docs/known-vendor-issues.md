@@ -498,6 +498,8 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   step); with the device at 48 kHz, `-mvljq6cr-vqrf.json` (48 kHz context, one step) and `-mvljs00m-nk1m.json`
   (44.1 kHz context, 39 steps). The first three were taken on earlier builds of the probe (no device-rate, ramp or
   `await` figures); the figures above are unaffected.
+- **Upstream:** the signature above is on the tracker as [comment #16](https://issues.chromium.org/issues/40726491#comment16) (2026-10-23; the body as posted:
+  `debug/2026-10-23-midi-output-timing/drafts/posted-chromium-40726491-clock-drift-comment.md`).
 - **Last checked:** Chrome 155.0.8059.85, macOS 15.6.1, the user's Chrome, 2026-10-23.
 
 ## Watched — read from the tracker, not reproduced here

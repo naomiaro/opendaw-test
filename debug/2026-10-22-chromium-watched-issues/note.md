@@ -1214,6 +1214,8 @@ disagreed by the drift. Whether that was the SDK's doing or the browser's needed
   destination every 50 ms, none from a worklet burning 60 % of every render quantum for 20 s.
 - **`outputLatency` does not move** (28.00 ms on every sample of all four runs), so a page that corrects a
   scheduled time by `outputLatency` does not see the change.
+- **Posted upstream:** the signature is [comment #16 on 40726491](https://issues.chromium.org/issues/40726491#comment16) (2026-10-23; the body as posted is kept
+  with the investigation it came from, `debug/2026-10-23-midi-output-timing/drafts/posted-chromium-40726491-clock-drift-comment.md`).
 - **The tracker knows the mechanism.** 40693959 (2020, merged into 40726491): the position behind
   `getOutputTimestamp` is updated per render quantum from the renderer's side, not from the device's output
   position; the reporter's log at a large `latencyHint` wanders by 170 ms. 40726491 is open, P3, triaged in
