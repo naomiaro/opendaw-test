@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { firstReceiptFor, pairReceipts, pickIacPorts } from "./midiLoopback";
+import { firstReceiptFor, pairReceipts, pickIacPorts, RECEIPT_WINDOW_MS } from "./midiLoopback";
 
 describe("pickIacPorts", () => {
   const i = (id: string, name: string) => ({ id, name });
@@ -46,5 +46,18 @@ describe("firstReceiptFor", () => {
     expect(firstReceiptFor(receipts, 85, 0)?.timeStamp).toBe(500);
     expect(firstReceiptFor(receipts, 85, 700)?.timeStamp).toBe(900);
     expect(firstReceiptFor(receipts, 86, 0)).toBeNull();
+  });
+});
+
+describe("pairReceipts window", () => {
+  it("takes a window: a receipt 300 ms late pairs at 400 and not at the default 50", () => {
+    const scheduled = [{ pitch: 60, velocity: 100, onPerfMs: 1000, offPerfMs: 1050 }];
+    const receipts = [
+      { kind: "on" as const, pitch: 60, velocity: 100, timeStamp: 1300 },
+      { kind: "off" as const, pitch: 60, velocity: 0, timeStamp: 1350 },
+    ];
+    expect(pairReceipts(scheduled, receipts)).toEqual([{ onPerfMs: null, offPerfMs: null }]);
+    expect(pairReceipts(scheduled, receipts, 400)).toEqual([{ onPerfMs: 1300, offPerfMs: 1350 }]);
+    expect(RECEIPT_WINDOW_MS).toBe(50);
   });
 });

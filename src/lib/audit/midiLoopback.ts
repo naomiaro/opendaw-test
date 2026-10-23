@@ -56,13 +56,14 @@ export interface Receipt {
   timeStamp: number;
 }
 
-/** A receipt belongs to a note when it lies within this much of the note's scheduled time. */
-const RECEIPT_WINDOW_MS = 50;
+/** A receipt belongs to a note when it lies within this much of the note's scheduled time (the output audit widens it by the delay and the jank). */
+export const RECEIPT_WINDOW_MS = 50;
 
-/** Per scheduled note, in order: the earliest unused on-receipt of its pitch within the window of its time, then the earliest unused off after it within the window of its release. */
+/** Per scheduled note, in order: the earliest unused on-receipt of its pitch within `windowMs` of its time, then the earliest unused off after it within the window of its release. */
 export function pairReceipts(
   scheduled: readonly ScheduledNote[],
   receipts: readonly Receipt[],
+  windowMs: number = RECEIPT_WINDOW_MS,
 ): Array<{ onPerfMs: number | null; offPerfMs: number | null }> {
   const sorted = [...receipts].sort((a, b) => a.timeStamp - b.timeStamp);
   const used = new Set<Receipt>();
@@ -76,8 +77,8 @@ export function pairReceipts(
     return null;
   };
   return scheduled.map((note) => {
-    const on = take("on", note.pitch, note.onPerfMs - RECEIPT_WINDOW_MS, note.onPerfMs + RECEIPT_WINDOW_MS);
-    const off = on === null ? null : take("off", note.pitch, on.timeStamp, note.offPerfMs + RECEIPT_WINDOW_MS);
+    const on = take("on", note.pitch, note.onPerfMs - windowMs, note.onPerfMs + windowMs);
+    const off = on === null ? null : take("off", note.pitch, on.timeStamp, note.offPerfMs + windowMs);
     return { onPerfMs: on?.timeStamp ?? null, offPerfMs: off?.timeStamp ?? null };
   });
 }

@@ -1,0 +1,133 @@
+/**
+ * The MIDI output timing audit's figures, pure and Node-tested. Per note: the receipt stamp mapped
+ * back to the heard context clock through the repeat's one `getOutputTimestamp` pair, minus the
+ * heard context time of the note's position. Nothing is netted out of `errorMs`; the latencies, the
+ * box delay and the jank blocks ride beside it for attribution. On the IAC bus the receipt stamp is
+ * the time the sender ASKED for, so the figure judges what the SDK requested, never delivery.
+ */
+import { contextSecAtPosition, heardContextSecAt, perfMsAtHeardContextSec, pulsesToMs, type OutputStampPair, type RecordingAnchor } from "./midiClockMap";
+import { median, percentile, quantumMs } from "./midiInputAlignment";
+import { pairReceipts, RECEIPT_WINDOW_MS, type Receipt, type ScheduledNote } from "./midiLoopback";
+import { jankLabelFor, type JankBlock, type JankLabel, type OutputPatternNote } from "./midiOutputPattern";
+
+/** The engine rounds a 0..1 velocity float back to a byte, so one byte either way is a match. */
+const VELOCITY_TOLERANCE = 1;
+
+/** The origin must be at least this far ahead of the anchor's arrival for the page arm to schedule every note in the future. */
+export const ORIGIN_LEAD_MS = 300;
+
+export interface OutputNoteRow {
+  index: number;
+  pitch: number;
+  tag: string;
+  expectedHeardCtxSec: number;
+  receiptPerfMs: number | null;
+  receiptHeardCtxSec: number | null;
+  /** (receiptHeardCtxSec − expectedHeardCtxSec) × 1000, raw. */
+  errorMs: number | null;
+  /** (off receipt − on receipt) − the expected duration, ms; null without both receipts. */
+  durationErrorMs: number | null;
+  /** |sent − received| ≤ 1; null without an on receipt. */
+  velocityMatch: boolean | null;
+  jankLabel: JankLabel;
+}
+
+export interface OutputRepeatFigures {
+  medianErrorMs: number | null;
+  /** The largest |errorMs − median|. */
+  maxAbsDevMs: number | null;
+  p5p95WidthMs: number | null;
+  /** p95 − median: the hop's shape is one-sided. */
+  lateTailMs: number | null;
+  missing: number;
+  extra: number;
+  stuck: number;
+  velocityMismatches: number;
+  transportMessages: number;
+  notesInsideBlocks: number;
+  medianErrorInsideBlocksMs: number | null;
+}
+
+export interface MeasureInput {
+  pattern: readonly OutputPatternNote[];
+  receipts: readonly Receipt[];
+  transportMessages: number;
+  anchor: RecordingAnchor;
+  pair: OutputStampPair;
+  bpm: number;
+  delayInMs: number;
+  jankMs: number;
+  blocks: readonly JankBlock[];
+  outputLatencyMs: number;
+  sampleRate: number;
+}
+
+/** Each note at the performance time its heard position is reached: what the page arm sends, and the pairing's reference. */
+export function expectedSchedule(pattern: readonly OutputPatternNote[], anchor: RecordingAnchor, pair: OutputStampPair, bpm: number): ScheduledNote[] {
+  const perfAt = (ppqn: number): number => perfMsAtHeardContextSec(pair, contextSecAtPosition(anchor, bpm, ppqn));
+  return pattern.map((note) => ({ pitch: note.pitch, velocity: note.velocity, onPerfMs: perfAt(note.onPpqn), offPerfMs: perfAt(note.onPpqn + note.durationPpqn) }));
+}
+
+/** The engine arm is late by the box delay by design, and a janked note by the block, so the window covers both plus a quantum. */
+export function receiptWindowMs(delayInMs: number, jankMs: number, sampleRate: number): number {
+  return RECEIPT_WINDOW_MS + delayInMs + jankMs + quantumMs(sampleRate);
+}
+
+export function measureOutputRepeat(input: MeasureInput): { notes: OutputNoteRow[]; figures: OutputRepeatFigures } {
+  const { pattern, receipts, anchor, pair, bpm } = input;
+  const scheduled = expectedSchedule(pattern, anchor, pair, bpm);
+  const window = receiptWindowMs(input.delayInMs, input.jankMs, input.sampleRate);
+  const paired = pairReceipts(scheduled, receipts, window);
+  const receiptKey = (kind: Receipt["kind"], pitch: number, timeStamp: number): string => `${kind}:${pitch}:${timeStamp}`;
+  const used = new Set<string>();
+  const notes: OutputNoteRow[] = pattern.map((note, i) => {
+    const { onPerfMs, offPerfMs } = paired[i];
+    const expectedHeardCtxSec = contextSecAtPosition(anchor, bpm, note.onPpqn);
+    const receiptHeardCtxSec = onPerfMs === null ? null : heardContextSecAt(pair, onPerfMs);
+    const expectedDurationMs = pulsesToMs(note.durationPpqn, bpm);
+    const onReceipt = onPerfMs === null ? null : receipts.find((r) => r.kind === "on" && r.pitch === note.pitch && r.timeStamp === onPerfMs) ?? null;
+    if (onPerfMs !== null) used.add(receiptKey("on", note.pitch, onPerfMs));
+    if (offPerfMs !== null) used.add(receiptKey("off", note.pitch, offPerfMs));
+    const renderPerfMs = scheduled[i].onPerfMs - input.outputLatencyMs;
+    return {
+      index: note.index,
+      pitch: note.pitch,
+      tag: note.tag,
+      expectedHeardCtxSec,
+      receiptPerfMs: onPerfMs,
+      receiptHeardCtxSec,
+      errorMs: receiptHeardCtxSec === null ? null : (receiptHeardCtxSec - expectedHeardCtxSec) * 1000,
+      durationErrorMs: onPerfMs === null || offPerfMs === null ? null : offPerfMs - onPerfMs - expectedDurationMs,
+      velocityMatch: onReceipt === null ? null : Math.abs(onReceipt.velocity - note.velocity) <= VELOCITY_TOLERANCE,
+      jankLabel: jankLabelFor(renderPerfMs, input.blocks, 2 * pulsesToMs(note.durationPpqn, bpm)),
+    };
+  });
+  const errors = notes.map((n) => n.errorMs).filter((e): e is number => e !== null);
+  const medianErrorMs = median(errors);
+  const p5 = percentile(errors, 5);
+  const p95 = percentile(errors, 95);
+  const inside = notes.filter((n) => n.jankLabel === "inside" && n.errorMs !== null).map((n) => n.errorMs as number);
+  // Receipts the pairing left unused: stray pitches, duplicate releases, anything outside every window.
+  const extra = receipts.filter((r) => !used.has(receiptKey(r.kind, r.pitch, r.timeStamp))).length;
+  return {
+    notes,
+    figures: {
+      medianErrorMs,
+      maxAbsDevMs: medianErrorMs === null ? null : Math.max(...errors.map((e) => Math.abs(e - medianErrorMs))),
+      p5p95WidthMs: p5 === null || p95 === null ? null : p95 - p5,
+      lateTailMs: medianErrorMs === null || p95 === null ? null : p95 - medianErrorMs,
+      missing: notes.filter((n) => n.receiptPerfMs === null).length,
+      extra,
+      stuck: notes.filter((n) => n.receiptPerfMs !== null && n.durationErrorMs === null).length,
+      velocityMismatches: notes.filter((n) => n.velocityMatch === false).length,
+      transportMessages: input.transportMessages,
+      notesInsideBlocks: notes.filter((n) => n.jankLabel === "inside").length,
+      medianErrorInsideBlocksMs: median(inside),
+    },
+  };
+}
+
+/** True when `nowCtxSec` plus the lead is already past the origin's heard context time: the page arm could not schedule every note ahead. */
+export function anchorTooLate(anchor: RecordingAnchor, originPpqn: number, bpm: number, nowCtxSec: number, leadMs: number = ORIGIN_LEAD_MS): boolean {
+  return nowCtxSec + leadMs / 1000 > contextSecAtPosition(anchor, bpm, originPpqn);
+}
