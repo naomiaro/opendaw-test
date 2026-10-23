@@ -1,0 +1,75 @@
+import { describe, expect, it } from "vitest";
+import { parseMidiOutputParams } from "./midiOutputParams";
+import {
+  cellTableLines, MIDI_OUTPUT_SCHEMA_VERSION, parseMidiOutputSummary, summaryFileName,
+  type MidiOutputSummary, type OutputCellRecord, type OutputRepeatRow,
+} from "./midiOutputArtifacts";
+
+const row = (repeat: number, median: number | null, error: string | null = null): OutputRepeatRow => ({
+  repeat, error, notes: [], anchor: { contextTime: 10, position: 0 }, originPpqn: 3840,
+  medianErrorMs: median, maxAbsDevMs: median === null ? null : 1.2, p5p95WidthMs: median === null ? null : 2.1, lateTailMs: median === null ? null : 1.1,
+  medianErrorLiveMs: median, maxAbsDevLiveMs: median === null ? null : 1.0,
+  maxAbsDevOutsideBlocksMs: median === null ? null : 1.2, maxAbsDevOutsideBlocksLiveMs: median === null ? null : 1.0,
+  missing: median === null ? 96 : 0, extra: 0, stuck: 0, stuckInsideBlocks: 0, velocityMismatches: 0, transportMessages: 56, notesInsideBlocks: 0, medianErrorInsideBlocksMs: null,
+  heardLagMs: 0.4, outputLatencyMs: 20, compensationLatencyMs: 0, delayInMs: 10, quantumMs: 2.6667,
+  frameIntervalMs: 16.67, frameGapMaxMs: 17.2, jankBlocks: [], jankMs: null,
+  pairDrift: median === null ? null : { samples: 120, driftMinMs: -0.3, driftMaxMs: 0.4, outputLatencyMinMs: 23, outputLatencyMaxMs: 23 },
+});
+const key = { bpm: 140, density: "32nd" as const, jank: "none" as const, transport: true };
+const engine: OutputCellRecord = { ...key, arm: "engine", status: "on-time", detail: "every repeat clean", repeats: [row(1, 10.8), row(2, 11.1)] };
+const page: OutputCellRecord = { ...key, arm: "page", status: "bus-true", detail: "every repeat clean", repeats: [row(1, 0.02), row(2, -0.01)] };
+const summary: MidiOutputSummary = {
+  schemaVersion: MIDI_OUTPUT_SCHEMA_VERSION, runToken: 42, sdkVersion: "0.0.177", chrome: "Google Chrome 155", date: "2026-10-23",
+  sampleRate: 48000, params: parseMidiOutputParams(new URLSearchParams("")), cells: [engine, page],
+};
+
+describe("midiOutputArtifacts", () => {
+  it("names the file and parses its own schema, refusing another version or token", () => {
+    expect(summaryFileName(42)).toBe("midiout-summary-42.json");
+    expect(parseMidiOutputSummary(JSON.parse(JSON.stringify(summary)), 42)).toEqual(summary);
+    expect(() => parseMidiOutputSummary({ ...summary, schemaVersion: 4 }, 42)).toThrow(/schemaVersion/);
+    expect(() => parseMidiOutputSummary(summary, 43)).toThrow(/runToken/);
+    expect(() => parseMidiOutputSummary({ ...summary, cells: "none" }, 42)).toThrow(/cells/);
+  });
+
+  it("prints one line per cell with the status, the medians per repeat and the counts", () => {
+    const lines = cellTableLines(summary);
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatch(/engine \| 140 \| 32nd \| none \| on \| on-time \| 10\.80 \/ 11\.10 \| 1\.20 \| 1\.10 \| — \| 10\.80 \/ 11\.10 \| 1\.00 \| -0\.30\.\.0\.40 \| 0\/0\/0\/0 \| 56 \| 10 \| 16\.67/);
+    expect(lines[1]).toMatch(/^page \| 140 .* bus-true \| 0\.02 \/ -0\.01/);
+  });
+
+  it("reads a schema-1 envelope (before the drift witness) with the live fields mapped to null, and refuses a current one lacking them", () => {
+    const v1Row = (r: OutputRepeatRow): Record<string, unknown> => {
+      const { medianErrorLiveMs: _m, maxAbsDevLiveMs: _d, pairDrift: _p, ...rest } = r;
+      return { ...rest, notes: [{ index: 0, pitch: 36, tag: "thirtysecond", expectedHeardCtxSec: 10, receiptPerfMs: 5000, receiptHeardCtxSec: 10.01, errorMs: 10, durationErrorMs: 0, velocityMatch: true, jankLabel: "clear" }] };
+    };
+    const v1 = { ...summary, schemaVersion: 1, cells: summary.cells.map((c) => ({ ...c, repeats: c.repeats.map(v1Row) })) };
+    const parsed = parseMidiOutputSummary(JSON.parse(JSON.stringify(v1)), 42);
+    expect(parsed.schemaVersion).toBe(1);
+    expect(parsed.cells[0].repeats[0]).toMatchObject({ medianErrorLiveMs: null, maxAbsDevLiveMs: null, pairDrift: null });
+    expect(parsed.cells[0].repeats[0].notes[0].errorLiveMs).toBeNull();
+    expect(cellTableLines(parsed)[0]).toMatch(/\| — \/ — \| — \| — \|/);
+    const current = { ...v1, schemaVersion: MIDI_OUTPUT_SCHEMA_VERSION };
+    expect(() => parseMidiOutputSummary(JSON.parse(JSON.stringify(current)), 42)).toThrow(/medianErrorLiveMs/);
+    expect(MIDI_OUTPUT_SCHEMA_VERSION).toBe(3);
+  });
+
+  it("prints an error row's stage instead of figures, and leaves its sentinel counts out of the sums", () => {
+    const errored: OutputCellRecord = { ...engine, repeats: [row(1, 10.8), row(2, null, "anchor: no fresh recordingStart within 30s")] };
+    const line = cellTableLines({ ...summary, cells: [errored] })[0];
+    expect(line).toMatch(/r2 error: anchor: no fresh/);
+    expect(line).toMatch(/\| 0\/0\/0\/0 \|/);
+  });
+
+  it("reads a schema-2 envelope (before the outside-block figures) with them mapped to null and zero", () => {
+    const v2Row = (r: OutputRepeatRow): Record<string, unknown> => {
+      const { maxAbsDevOutsideBlocksMs: _a, maxAbsDevOutsideBlocksLiveMs: _b, stuckInsideBlocks: _c, ...rest } = r;
+      return rest;
+    };
+    const v2 = { ...summary, schemaVersion: 2, cells: summary.cells.map((c) => ({ ...c, repeats: c.repeats.map(v2Row) })) };
+    const parsed = parseMidiOutputSummary(JSON.parse(JSON.stringify(v2)), 42);
+    expect(parsed.cells[0].repeats[0]).toMatchObject({ maxAbsDevOutsideBlocksMs: null, maxAbsDevOutsideBlocksLiveMs: null, stuckInsideBlocks: 0 });
+    expect(MIDI_OUTPUT_SCHEMA_VERSION).toBe(3);
+  });
+});

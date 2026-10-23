@@ -195,6 +195,7 @@ export default defineConfig(({command}) => ({
                 samplerateAudit: resolve(__dirname, "samplerate-audit-debug-demo.html"),
                 recordingAlignmentAudit: resolve(__dirname, "recording-alignment-audit-debug-demo.html"),
                 midiInputAlignmentAudit: resolve(__dirname, "midi-input-alignment-audit-debug-demo.html"),
+                midiOutputTimingAudit: resolve(__dirname, "midi-output-timing-audit-debug-demo.html"),
                 midiAudioCombinedAudit: resolve(__dirname, "midi-audio-combined-audit-debug-demo.html"),
                 midiEffectPlacementAudit: resolve(__dirname, "midi-effect-placement-audit-debug-demo.html"),
                 loudnessMeterAudit: resolve(__dirname, "loudness-meter-audit-debug-demo.html"),
