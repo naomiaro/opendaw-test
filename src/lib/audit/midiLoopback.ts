@@ -6,6 +6,7 @@
  * main thread is doing; the page's receipt stamps are what the SDK's capture sees too.
  */
 import { MidiData } from "@opendaw/lib-midi";
+import { classifyMidiStatus } from "./midiOutputParams";
 
 export interface PortLike {
   id: string;
@@ -92,11 +93,21 @@ export function firstReceiptFor(receipts: readonly Receipt[], pitch: number, not
 
 const ALL_NOTES_OFF = 123;
 
+/** Raw bytes to a receipt (a note-on at velocity 0 is a release), the mark `"transport"` for Clock / Start / Stop / SongPosition, or null. */
+export function receiptFrom(data: Uint8Array, timeStamp: number): Receipt | "transport" | null {
+  if (data.length === 0) return null;
+  if (MidiData.isNoteOn(data)) return { kind: "on", pitch: MidiData.readPitch(data), velocity: MidiData.readParam2(data), timeStamp };
+  if (MidiData.isNoteOff(data)) return { kind: "off", pitch: MidiData.readPitch(data), velocity: 0, timeStamp };
+  if (classifyMidiStatus(data[0]) === "transport") return "transport";
+  return null;
+}
+
 export class MidiLoopbackSender {
   readonly #output: MIDIOutput;
   readonly #input: MIDIInput;
   readonly #channel: number;
   #receipts: Receipt[] = [];
+  #transportCount = 0;
 
   constructor(output: MIDIOutput, input: MIDIInput, channel: number = 0) {
     this.#output = output;
@@ -105,12 +116,15 @@ export class MidiLoopbackSender {
     this.#input.onmidimessage = (event: MIDIMessageEvent) => {
       const data = event.data;
       if (data === null) return;
-      if (MidiData.isNoteOn(data)) {
-        this.#receipts.push({ kind: "on", pitch: MidiData.readPitch(data), velocity: MidiData.readParam2(data), timeStamp: event.timeStamp });
-      } else if (MidiData.isNoteOff(data)) {
-        this.#receipts.push({ kind: "off", pitch: MidiData.readPitch(data), velocity: 0, timeStamp: event.timeStamp });
-      }
+      const receipt = receiptFrom(data, event.timeStamp);
+      if (receipt === "transport") this.#transportCount++;
+      else if (receipt !== null) this.#receipts.push(receipt);
     };
+  }
+
+  /** Clock / Start / Stop / SongPosition messages seen since the last `clear()`: counted, never paired. */
+  transportCount(): number {
+    return this.#transportCount;
   }
 
   schedule(notes: readonly ScheduledNote[]): void {
@@ -136,6 +150,7 @@ export class MidiLoopbackSender {
     if ("clear" in this.#output && typeof this.#output.clear === "function") this.#output.clear();
     this.#output.send(MidiData.control(this.#channel, ALL_NOTES_OFF, 0));
     this.#receipts = [];
+    this.#transportCount = 0;
   }
 
   terminate(): void {

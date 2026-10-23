@@ -231,7 +231,7 @@ export function waitUntilPerf(atPerfMs: number, token: RepeatToken, stage: strin
   });
 }
 
-function waitForNotRecording(project: Project, deadlineMs: number): Promise<void> {
+export function waitForNotRecording(project: Project, deadlineMs: number): Promise<void> {
   let settled = false;
   let subscribed = false;
   const sub = project.engine.isRecording.catchupAndSubscribe((obs) => {

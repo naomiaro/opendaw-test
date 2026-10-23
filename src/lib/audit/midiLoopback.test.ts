@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { firstReceiptFor, pairReceipts, pickIacPorts, RECEIPT_WINDOW_MS } from "./midiLoopback";
+import { firstReceiptFor, pairReceipts, pickIacPorts, RECEIPT_WINDOW_MS, receiptFrom } from "./midiLoopback";
 
 describe("pickIacPorts", () => {
   const i = (id: string, name: string) => ({ id, name });
@@ -59,5 +59,15 @@ describe("pairReceipts window", () => {
     expect(pairReceipts(scheduled, receipts)).toEqual([{ onPerfMs: null, offPerfMs: null }]);
     expect(pairReceipts(scheduled, receipts, 400)).toEqual([{ onPerfMs: 1300, offPerfMs: 1350 }]);
     expect(RECEIPT_WINDOW_MS).toBe(50);
+  });
+});
+
+describe("receiptFrom", () => {
+  it("turns raw bytes into a receipt, a transport mark, or nothing", () => {
+    expect(receiptFrom(new Uint8Array([0x90, 60, 100]), 5)).toEqual({ kind: "on", pitch: 60, velocity: 100, timeStamp: 5 });
+    expect(receiptFrom(new Uint8Array([0x90, 60, 0]), 5)).toEqual({ kind: "off", pitch: 60, velocity: 0, timeStamp: 5 });
+    expect(receiptFrom(new Uint8Array([0x80, 60, 64]), 5)).toEqual({ kind: "off", pitch: 60, velocity: 0, timeStamp: 5 });
+    for (const status of [0xf8, 0xfa, 0xfc, 0xf2]) expect(receiptFrom(new Uint8Array([status]), 5)).toBe("transport");
+    expect(receiptFrom(new Uint8Array([0xb0, 123, 0]), 5)).toBeNull();
   });
 });
