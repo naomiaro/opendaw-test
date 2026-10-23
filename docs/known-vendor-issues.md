@@ -346,13 +346,14 @@ Chromium tracker through the browser).
   quiet (RMS 0.0005 to 0.0018), and a gate in the microphone would read the same.
   A later comment on the tracker says Chrome moves a silent output to a fake software device after
   30 s. The context's `baseLatency`, `outputLatency` and `sinkId`, read each second, did not change at
-  the switch, and the clock never dipped under 0.92 in any second. Shipped Chrome fills an underrun with
+  around the 30 s mark, and in those microphone rows the clock never dipped under 0.92 in any second. Shipped Chrome fills an underrun with
   zeros. "Duplicated blocks" describe a tracker engineer's unshipped prototype that repeats the prior
   frame, so zero duplicates is the expected reading here. Tracker comment 50's two-context graph (one
   context generating, another recording the first's `MediaStreamAudioDestinationNode` stream; neither
   outputs to the speakers), mirrored by `&source=crosscontext`, gives two readings:
   - **At 44 100 on both contexts:** one block of exactly 441 zeros at the stream's start, 3 of 3.
-  - **At 48 000 on both:** one hole of exactly 480 frames (10 ms) about 32 s in, 3 of 3. The recording
+  - **At 48 000 on both:** one hole of exactly 480 frames (10 ms) about 32 s in, 3 of 3 with both outputs
+    silent and once more with only the generator dithered. The recording
     context's output dither removes it; the generator's alone does not.
 - **Where it bites here:** any recording through a `MediaStreamAudioSourceNode`. An 80 ms render-thread
   stall cost about 32 ms of input. The sink's buffer of about 48 ms is inferred from where the zeros
@@ -389,9 +390,10 @@ Chromium tracker through the browser).
   `…-mvk9ybig-f9be.json`, `…-mvk9u1pc-xmca.json`, `…-mvka5n99-y698.json` (dither); fifine USB microphone (`&input=fifine`) `…-mvkazeel-sexy.json`,
   `…-mvkb5nr6-uwfr.json` (silent), `…-mvkb1ev7-mdld.json`, `…-mvkb3lxu-snp9.json` (dither); cross-context (`&source=crosscontext&seconds=90`)
   `…-mvkacrmf-k8rx.json`, `…-mvkaes9g-srld.json`, `…-mvkagspp-oi2e.json` (44 100 exact mirror),
-  `…-mvkaj06l-m0om.json`, `…-mvkalf9k-bm9r.json`, `…-mvkannu4-bvse.json` (48 000, silent recorder output),
+  `…-mvkaj06l-m0om.json`, `…-mvkalf9k-bm9r.json`, `…-mvkb9tol-97v7.json` (48 000, both outputs silent),
+  `…-mvkannu4-bvse.json` (48 000, generator dithered only),
   `…-mvkapr64-7nb1.json`, `…-mvkart84-a3fm.json` (recorder dither), `…-mvkattvu-a4v5.json`,
-  `…-mvka9y3q-ofr0.json` (mixed rates); loopback
+  `…-mvkbbup9-z9ax.json` (mixed rates; `…-mvka9y3q-ofr0.json`, an earlier build, kept as data); loopback
   `…-mvk9lpjr-ddsz.json`.
 - **Last checked:** Chrome 155.0.8059.85, macOS 15.6.1, 2026-10-22: `GAPS`, with the zero runs at stall
   times, on the built-in and a USB microphone at both rates; one zero run just after 30 s of silent

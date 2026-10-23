@@ -98,11 +98,11 @@ export function sourceFrom(params: URLSearchParams): CaptureSource {
 }
 
 /** The context rate named by `&rate=`; 48000 without one; throws on any other. */
-export function rateFrom(params: URLSearchParams): CaptureRate {
-  const value = params.get("rate");
+export function rateFrom(params: URLSearchParams, name: string = "rate"): CaptureRate {
+  const value = params.get(name);
   if (value === null || value === "48000") return 48000;
   if (value === "44100") return 44100;
-  throw new Error(`&rate=${value}: expected 48000 or 44100`);
+  throw new Error(`&${name}=${value}: expected 48000 or 44100`);
 }
 
 /** A whole number of milliseconds from `&<name>=`; `fallback` without one; throws on anything else. */
@@ -304,6 +304,9 @@ function record(context: AudioContext, source: Source, frames: number, dither: b
   });
 }
 
+/** The witness reading the latency change is judged against: `outputLatency` reads 0 the instant after `resume()`. */
+const WITNESS_BASELINE_SECOND = 1;
+
 /** One witness reading of a context: its clock against the wall clock, its latencies and its sink. */
 interface WitnessReading extends ClockReading {
   baseLatency: number;
@@ -346,7 +349,8 @@ function witnessFigures(prefix: string, readings: readonly WitnessReading[]): Fi
     [named(prefix, "baseLatencyPerSecond")]: readings.map((r) => ms(r.baseLatency)).join(" "),
     [named(prefix, "outputLatencyPerSecond")]: readings.map((r) => ms(r.outputLatency)).join(" "),
     // Baseline at 1 s: `outputLatency` reads 0 the instant after `resume()` (docs/known-vendor-issues.md).
-    [named(prefix, "latencyChangedAtSecond")]: firstChangedSecond(readings.map((r) => `${r.baseLatency}|${r.outputLatency}`), 1),
+    [named(prefix, "latencyChangedAtSecond")]: firstChangedSecond(readings.map((r) => `${r.baseLatency}|${r.outputLatency}`), WITNESS_BASELINE_SECOND),
+    [named(prefix, "witnessBaselineSecond")]: WITNESS_BASELINE_SECOND,
     [named(prefix, "sinkIdChanged")]: firstChangedSecond(readings.map((r) => r.sinkId)) === null ? "no" : "yes",
     [named(prefix, "sinkId")]: readings.length === 0 ? null : readings[0].sinkId,
     [named(prefix, "contextSecAtCaptureStart")]: readings.length === 0 ? null : Number(readings[0].contextSec.toFixed(3)),
@@ -410,7 +414,7 @@ export async function runCaptureGapsProbe(_signal: AbortSignal, report: (step: s
   const captureSecondsWanted = secondsFrom(params.get("seconds"));
   const dither = params.get("dither") === "1";
   const speakerTone = params.get("speakerTone") !== "0";
-  const generatorRate = params.get("generatorRate") === null ? null : rateFrom(new URLSearchParams({ rate: params.get("generatorRate") ?? "" }));
+  const generatorRate = params.get("generatorRate") === null ? null : rateFrom(params, "generatorRate");
   const generatorDither = params.get("generatorDither") === "1";
   const platform = await platformOf(navigator as PlatformNavigator);
   report("start-audio");
