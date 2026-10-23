@@ -305,16 +305,29 @@ register `debug/2026-10-23-midi-output-timing/note.md`. Chrome only; a real clic
   midpoint and every 500 ms until its end; each block's measured span is on the row, and every
   note is labelled `clear` / `inside` / `first-after` by its RENDER time (heard perf time minus
   the output latency). `medianErrorInsideBlocksMs` is the inside notes' own median.
+- **The drift witness.** Every frame from the record request to the measurement the runner reads
+  `getOutputTimestamp()` and `outputLatency`; each note is read a second time against the live
+  pair nearest before its receipt (`errorLiveMs`), and the row carries `pairDrift` (the
+  relation's range against the repeat's pair) and the live median / spread. Measured: the
+  relation moves by up to 6 ms within a 10 s repeat at 44.1 kHz, `outputLatency` constant. The
+  ENGINE cell is therefore judged on the live pair (the engine stamps with Chrome's live
+  relation); the PAGE cell stays on the one pair its sends were built from (it is the bus check).
 - **Verdicts** (`midiOutputVerdict.ts`). Page: `bus-true` when every repeat is clean (no
   missing / extra / stuck / velocity mismatch, a byte either way is a match) with the median
-  and the spread within 1 ms. Engine: `not-judged` (`bus` or `no-control`); `on-time` when
-  clean, the median within half a quantum of `delayInMs` and the spread within a quantum;
-  `matches-known-defect` when a band in `MIDI_OUT_KNOWN_DEFECTS` explains every repeat (the
-  table ships empty; the note says which rows pinned each band); else `investigate` naming
-  the first failing figure. Transport messages (Clock / Start / Stop / SongPosition) are
-  counted per repeat, never paired or judged.
-- The envelope is `midiout-summary-<runToken>.json` under `.verify-output/` (schema 1).
-  Edits under `src/` reload the page and lose a run; keep the window uncovered.
+  and the spread within 1 ms of the one pair. Engine: `not-judged` (`bus` or `no-control`);
+  `on-time` when clean, the live median within half a quantum of `delayInMs` and the live
+  spread within a quantum; `matches-known-defect` when a band in `MIDI_OUT_KNOWN_DEFECTS`
+  explains every repeat, today `midi-out-main-thread-base` for a janked cell (live median on the
+  delay, inside-block median between `delay + jank/4` and `delay + jank + 1 quantum`, spread
+  within `jank + 1 quantum`, `stuck == extra ≤ notesInsideBlocks`: the off-before-on inversion),
+  pinned on run B of the note; else `investigate` naming the first failing figure. A band is
+  tried on any failure, integrity included. Transport messages (Clock / Start / Stop /
+  SongPosition) are counted per repeat, never paired or judged.
+- **Run it with `&frameDriver=hidden-safe`** (any demo URL takes it): the anchor and stop waits
+  are frame-driven, and a covered window lost repeats on the SDK's own driver
+  (`[the page was hidden during this repeat]`); the envelope is `midiout-summary-<runToken>.json`
+  under `.verify-output/` (schema 2; a schema-1 file reads with the witness null). Edits under
+  `src/` reload the page and lose a run.
 
 ### MIDI Effect Placement Audit (unlisted)
 `midi-effect-placement-audit-debug-demo.html[?rate=48000|44100][&bpm=<n>][&device=all|pitch|velocity|arpeggio|zeitgeist|spielwerk][&sampleMs=<n>][&importMs=<n>]`

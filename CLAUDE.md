@@ -723,6 +723,16 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   nothing, and a span under a second reads `not-hidden`, the page refusing to judge, not a
   regression), expect `intact`. Register
   `debug/2026-10-21-hidden-page-recording/note.md`.
+- After SDK upgrades, also run the MIDI output timing audit:
+  `midi-output-timing-audit-debug-demo.html?bpm=140&density=32nd&transport=both&repeats=2&frameDriver=hidden-safe`,
+  then `…&jank=mid`, then `?bpm=all&density=both&repeats=2&frameDriver=hidden-safe` — Chrome, a real
+  click on Run, the IAC Driver online, the window uncovered. Read the PAGE cell first: it must be
+  `bus-true` or nothing of the engine cell counts. Expect the engine cells `on-time` without jank (live
+  median on the box delay within half a quantum; a one-off `investigate` whose live spread tracks a
+  `pair drift` excursion is the clock relation, not the SDK) and `matches-known-defect`
+  (`midi-out-main-thread-base`) with jank; a janked cell reading `on-time` means the output timestamp
+  base changed. Register `debug/2026-10-23-midi-output-timing/note.md`, table
+  `node scripts/audit/midi-output-timing/table.ts`, reading recipe `src/demos/midi/CLAUDE.md`.
 - After SDK upgrades, also run the MIDI effect placement audit:
   `midi-effect-placement-audit-debug-demo.html?device=all` then `?rate=44100` — a real click on
   Run, deterministic, no hardware, about fifteen seconds; expect every row `as-predicted` (a
