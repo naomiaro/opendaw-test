@@ -23,9 +23,17 @@ describe("MidiSupportNotice", () => {
     expect(markup).not.toMatch(/role="alert"/);
   });
 
-  it("shows a refusal as an alert above the Firefox note", () => {
+  it("shows the Firefox note as a status, not an alert", () => {
+    const markup = render(<MidiSupportNotice canRequestMidi userAgent={FIREFOX_UA} denied={false} />);
+    expect(markup).toContain(FIREFOX_TEXT);
+    expect(markup).toMatch(/data-accent-color="blue"[^>]*role="status"/);
+    expect(markup).not.toMatch(/role="alert"/);
+  });
+
+  it("shows a refusal as a red alert above the Firefox note", () => {
     const markup = render(<MidiSupportNotice canRequestMidi userAgent={FIREFOX_UA} denied />);
-    expect(markup).toMatch(/role="alert"/);
+    expect(markup).toMatch(/data-accent-color="red"[^>]*role="alert"/);
+    expect(markup.match(/role="alert"/g)).toHaveLength(1);
     expect(markup.indexOf(DENIED_TEXT)).toBeGreaterThan(-1);
     expect(markup.indexOf(DENIED_TEXT)).toBeLessThan(markup.indexOf(FIREFOX_TEXT));
   });

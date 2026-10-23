@@ -330,7 +330,8 @@ const App: React.FC = () => {
   const [busy, setBusy] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [activeNotes, setActiveNotes] = useState<Set<number>>(new Set());
-  const [midiState, setMidiState] = useState<"idle" | "enabled" | "unavailable">("idle");
+  const [canRequestMidi] = useState(() => MidiDevices.canRequestMidiAccess());
+  const [midiState, setMidiState] = useState<"idle" | "enabled">("idle");
   const [midiDenied, setMidiDenied] = useState(false);
   // Counts selections, so a callback from an earlier selection can be told apart.
   const selectionRef = useRef(0);
@@ -365,7 +366,6 @@ const App: React.FC = () => {
         setProject(newProject);
         setSetup(built);
         setCurrent(built.initialSample);
-        setMidiState(MidiDevices.canRequestMidiAccess() ? "idle" : "unavailable");
         setStatus("Ready");
       } catch (error) {
         console.error(
@@ -490,7 +490,7 @@ const App: React.FC = () => {
           </div>
 
           <MidiSupportNotice
-            canRequestMidi={midiState !== "unavailable"}
+            canRequestMidi={canRequestMidi}
             userAgent={navigator.userAgent}
             denied={midiDenied}
           />
@@ -626,7 +626,7 @@ const App: React.FC = () => {
                 <Flex direction="column" gap="3">
                   <Flex align="center" justify="between" wrap="wrap" gap="2">
                     <Text size="2" weight="bold" color="gray">Keyboard</Text>
-                    {midiState === "idle" && (
+                    {canRequestMidi && midiState === "idle" && (
                       <Button size="1" variant="soft" onClick={() => void enableMidi()}>Enable MIDI input</Button>
                     )}
                     {midiState === "enabled" && <Badge color="green">MIDI input on</Badge>}

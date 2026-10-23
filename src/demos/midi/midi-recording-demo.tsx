@@ -85,7 +85,8 @@ const App: React.FC = () => {
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
 
   // MIDI state
-  const [midiAvailable, setMidiAvailable] = useState(false);
+  // Synchronous: whether requestMIDIAccess exists. Read once so the notice is right from the first paint.
+  const [midiAvailable] = useState(() => MidiDevices.canRequestMidiAccess());
   const [midiDenied, setMidiDenied] = useState(false);
   const [midiDevices, setMidiDevices] = useState<MIDIInput[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>("");
@@ -185,11 +186,6 @@ const App: React.FC = () => {
       mounted = false;
       subs.forEach(s => s.terminate());
     };
-  }, []);
-
-  // Check MIDI availability
-  useEffect(() => {
-    setMidiAvailable(MidiDevices.canRequestMidiAccess());
   }, []);
 
   // Request MIDI permission

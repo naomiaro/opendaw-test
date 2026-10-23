@@ -15,6 +15,9 @@ describe("isFirefox", () => {
     expect(isFirefox(CHROME_UA)).toBe(false);
     expect(isFirefox(SAFARI_UA)).toBe(false);
   });
+  it("wants the version after the name, not the bare word", () => {
+    expect(isFirefox(CHROME_UA + " Firefox")).toBe(false);
+  });
 });
 
 describe("midiSupportNotices", () => {
@@ -42,6 +45,11 @@ describe("midiSupportNotices", () => {
     const notices = midiSupportNotices({ canRequestMidi: true, userAgent: CHROME_UA, denied: true });
     expect(notices.map((n) => n.kind)).toEqual(["denied"]);
     expect(notices[0].text).toMatch(/denied/);
+  });
+
+  it("says only that there is no Web MIDI, whatever else is true", () => {
+    const notices = midiSupportNotices({ canRequestMidi: false, userAgent: FIREFOX_UA, denied: true });
+    expect(notices.map((n) => n.kind)).toEqual(["no-web-midi"]);
   });
 
   it("keeps the Firefox notice next to a refusal, refusal first", () => {

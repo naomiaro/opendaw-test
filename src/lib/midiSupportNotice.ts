@@ -28,7 +28,7 @@ export const NO_WEB_MIDI_TEXT =
 
 export const FIREFOX_TEXT =
   "Firefox lists only the MIDI devices that were present when it started: plug in your device, then " +
-  "restart Firefox. The first request installs a site permission add-on.";
+  "restart Firefox. The first request asks you to install a site permission add-on.";
 
 export const DENIED_TEXT =
   "MIDI access was denied, so hardware MIDI devices are unavailable. The on-screen keyboard still works.";
