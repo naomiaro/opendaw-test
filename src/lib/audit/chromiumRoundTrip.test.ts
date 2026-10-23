@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findClickOffsets, median, percentile } from "./chromiumRoundTrip";
+import { clockOffsetMs, contextTimeToPerformanceMs, expectedCaptureFrame, findClickOffsets, median, percentile, performanceMsToContextTime, type ClockPair } from "./chromiumRoundTrip";
 
 const RATE = 48000;
 
@@ -53,5 +53,43 @@ describe("median and percentile", () => {
     expect(median([1, 2, 3, 4])).toBe(2.5);
     expect(percentile([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 95)).toBe(10);
     expect(median([])).toBeNull();
+  });
+});
+
+function pairsAt(offsetMs: number, driftMsPerSecond = 0, lateEvery = 0): ClockPair[] {
+  return Array.from({ length: 150 }, (_, i) => {
+    const contextTime = i * 0.1;
+    const late = lateEvery > 0 && i % lateEvery === 0 ? 4 : 0;
+    return { contextTime, performanceMs: contextTime * 1000 + offsetMs + driftMsPerSecond * contextTime + late };
+  });
+}
+
+describe("clock pairs", () => {
+  it("maps a context time to the page's clock and back", () => {
+    const pairs = pairsAt(5000);
+    expect(contextTimeToPerformanceMs(pairs, 7.25)).toBeCloseTo(12250, 6);
+    expect(performanceMsToContextTime(pairs, 12250)).toBeCloseTo(7.25, 6);
+  });
+
+  it("takes the offset locally, so a drifting clock is followed", () => {
+    const pairs = pairsAt(5000, 0.7);
+    expect(clockOffsetMs(pairs, 2)).toBeCloseTo(5001.4, 0);
+    expect(clockOffsetMs(pairs, 12)).toBeCloseTo(5008.4, 0);
+  });
+
+  it("ignores a pair read late on the main thread", () => {
+    expect(clockOffsetMs(pairsAt(5000, 0, 3), 5)).toBeCloseTo(5000, 6);
+  });
+
+  it("places a click on a capture whose device clock is unrelated to the output's", () => {
+    const output = pairsAt(5000);
+    const capture = pairsAt(9000);
+    // Output context 8 s is page time 13 000 ms, which is capture context 4 s.
+    const frame = expectedCaptureFrame(output, capture, 8, 48000, 1000);
+    expect(frame).toBeCloseTo(4 * 48000 - 1000, 3);
+  });
+
+  it("throws without any pair", () => {
+    expect(() => clockOffsetMs([], 1)).toThrow();
   });
 });

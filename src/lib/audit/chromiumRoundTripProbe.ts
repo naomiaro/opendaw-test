@@ -7,7 +7,18 @@
  * apart at known context times. Each click's arrival is found in the capture by
  * `chromiumRoundTrip.ts`; the round trip is the arrival minus the scheduled time, and includes
  * the microphone's own input latency, which is the same for any output and cancels in a
- * difference between two outputs. `&sink=<text>` routes the context to the audio output whose
+ * difference between two outputs.
+ *
+ * `&isolate=1` takes the microphone and the recorder off the output's device clock: a second,
+ * capture context made with `sinkId: { type: "none" }` owns them, the output context (the default
+ * sink or `&sink=`) schedules the clicks, and each click's expected place in the capture goes through
+ * the page's clock (`currentTime` read together with `performance.now()`, every 100 ms, on both
+ * contexts), so the capture path is the same whatever the output device is. The pairs use
+ * `currentTime`, the render position, not `getOutputTimestamp()`, whose context time is already
+ * the sample at the speaker by the browser's own latency estimate and would book the reported
+ * `outputLatency` into the figure; the `getOutputTimestamp()` offsets are recorded beside it.
+ *
+ * `&sink=<text>` routes the context to the audio output whose
  * label contains the text (the `sinkId` option of a context made after the microphone is open, when labels are readable), so a
  * run does not depend on the system's default output. The recorder reuses the capture-gaps probe's chunked pattern.
  */
@@ -16,7 +27,7 @@ import { WavFile } from "@opendaw/lib-dsp";
 import { withDeadline } from "@/lib/deadline";
 import { REF_CLICK_DURATION_SEC, REF_CLICK_GAIN, REF_CLICK_HZ } from "./loopbackInjection";
 import { recorderChunkFrames } from "./chromiumCaptureGaps";
-import { findClickOffsets, median, percentile } from "./chromiumRoundTrip";
+import { contextTimeToPerformanceMs, expectedCaptureFrame, findClickOffsets, median, percentile, type ClockPair } from "./chromiumRoundTrip";
 import { browserOf, newRunToken, platformOf, runDate, type PlatformNavigator, type ProbeEnvelope } from "./chromiumWatched";
 
 export const CLICKS = 10;
@@ -62,6 +73,12 @@ class RoundTripRecorder extends AudioWorkletProcessor {
 registerProcessor("${PROCESSOR_NAME}", RoundTripRecorder);
 `;
 
+/** The median of `performanceMs - contextTime * 1000` over pairs that carry a real timestamp (a zero one is skipped). */
+function medianOffset(pairs: readonly ClockPair[]): number {
+  const real = pairs.filter((p) => p.contextTime > 0 && p.performanceMs > 0);
+  return median(real.map((p) => p.performanceMs - p.contextTime * 1000)) ?? 0;
+}
+
 const stepOf = (error: unknown): string => String(error instanceof Error ? error.message : error).replace(/\s+/g, "-");
 const round = (value: number, digits = 2): number => Number(value.toFixed(digits));
 
@@ -81,6 +98,8 @@ export async function runRoundTripProbe(_signal: AbortSignal, report: (step: str
   const platform = await platformOf(navigator as unknown as PlatformNavigator);
   const base = { issue: "output-latency" as const, chrome: browserOf(navigator), date: runDate(), runToken: newRunToken() };
   let context: AudioContext | null = null;
+  let capture: AudioContext | null = null;
+  let pairTimer: ReturnType<typeof setInterval> | undefined;
   let stream: MediaStream | null = null;
   try {
     report("open-mic");
@@ -106,16 +125,48 @@ export async function runRoundTripProbe(_signal: AbortSignal, report: (step: str
     context = new AudioContext({ latencyHint: "interactive", ...(sinkId === undefined ? {} : { sinkId }) } as AudioContextOptions);
     await withDeadline(context.resume(), DEADLINE_MS, "resume");
     if (context.state !== "running") throw new Error(`context-${context.state}`);
+    const isolate = new URLSearchParams(window.location.search).get("isolate") === "1";
+    if (isolate) {
+      try {
+        capture = new AudioContext({ latencyHint: "interactive", sinkId: { type: "none" } } as unknown as AudioContextOptions);
+      } catch {
+        return { ...base, verdict: "NOT CHECKED sink-none-unsupported", figures: {} };
+      }
+      const noneSink = (capture as AudioContext & { sinkId?: unknown }).sinkId;
+      if (typeof noneSink !== "object" || noneSink === null || (noneSink as { type?: string }).type !== "none") {
+        return { ...base, verdict: "NOT CHECKED sink-none-unsupported", figures: {} };
+      }
+      await withDeadline(capture.resume(), DEADLINE_MS, "resume-capture");
+      if (capture.state !== "running") throw new Error(`capture-context-${capture.state}`);
+    } else {
+      capture = context;
+    }
     const url = URL.createObjectURL(new Blob([PROCESSOR_SOURCE], { type: "text/javascript" }));
     try {
-      await withDeadline(context.audioWorklet.addModule(url), DEADLINE_MS, "addModule");
+      await withDeadline(capture.audioWorklet.addModule(url), DEADLINE_MS, "addModule");
     } finally {
       URL.revokeObjectURL(url);
     }
-    const rate = context.sampleRate;
+    const outRate = context.sampleRate;
+    const rate = capture.sampleRate;
+    const outputPairs: ClockPair[] = [];
+    const capturePairs: ClockPair[] = [];
+    const outputStamps: ClockPair[] = [];
+    const captureStamps: ClockPair[] = [];
+    const sample = (): void => {
+      const now = performance.now();
+      outputPairs.push({ contextTime: context!.currentTime, performanceMs: now });
+      capturePairs.push({ contextTime: capture!.currentTime, performanceMs: now });
+      const o = context!.getOutputTimestamp();
+      const c = capture!.getOutputTimestamp();
+      outputStamps.push({ contextTime: o.contextTime ?? 0, performanceMs: o.performanceTime ?? 0 });
+      captureStamps.push({ contextTime: c.contextTime ?? 0, performanceMs: c.performanceTime ?? 0 });
+    };
+    sample();
+    pairTimer = setInterval(sample, 100);
     const seconds = SETTLE_MS / 1000 + FIRST_CLICK_AFTER_SEC + CLICKS + TAIL_SEC;
     const frames = Math.round(seconds * rate);
-    const recorder = new AudioWorkletNode(context, PROCESSOR_NAME, {
+    const recorder = new AudioWorkletNode(capture, PROCESSOR_NAME, {
       numberOfInputs: 1,
       numberOfOutputs: 1,
       channelCount: 1,
@@ -135,17 +186,17 @@ export async function runRoundTripProbe(_signal: AbortSignal, report: (step: str
       };
       recorder.onprocessorerror = () => reject(new Error("recorder-threw"));
     });
-    new MediaStreamAudioSourceNode(context, { mediaStream: stream }).connect(recorder);
+    new MediaStreamAudioSourceNode(capture, { mediaStream: stream }).connect(recorder);
     report("settle");
     await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
     const reportedOutputMs = context.outputLatency * 1000;
     const reportedBaseMs = context.baseLatency * 1000;
     report("clicks");
     const clickGain = Number(new URLSearchParams(window.location.search).get("gain") ?? REF_CLICK_GAIN);
-    const burst = context.createBuffer(1, Math.round(REF_CLICK_DURATION_SEC * rate), rate);
+    const burst = context.createBuffer(1, Math.round(REF_CLICK_DURATION_SEC * outRate), outRate);
     const data = burst.getChannelData(0);
-    for (let i = 0; i < data.length; i++) data[i] = clickGain * Math.sin((2 * Math.PI * REF_CLICK_HZ * i) / rate);
-    const firstAt = Math.ceil((context.currentTime + FIRST_CLICK_AFTER_SEC) * rate) / rate;
+    for (let i = 0; i < data.length; i++) data[i] = clickGain * Math.sin((2 * Math.PI * REF_CLICK_HZ * i) / outRate);
+    const firstAt = Math.ceil((context.currentTime + FIRST_CLICK_AFTER_SEC) * outRate) / outRate;
     const scheduled: number[] = [];
     for (let k = 0; k < CLICKS; k++) {
       const at = firstAt + k;
@@ -158,7 +209,10 @@ export async function runRoundTripProbe(_signal: AbortSignal, report: (step: str
     report("judge");
     const begin = startFrame as number | null;
     if (begin === null) throw new Error("recorder-never-started");
-    const expected = scheduled.map((at) => at * rate - begin);
+    clearInterval(pairTimer);
+    const expected = scheduled.map((at) =>
+      isolate ? expectedCaptureFrame(outputPairs, capturePairs, at, rate, begin) : at * rate - begin
+    );
     const offsets = findClickOffsets(samples, rate, expected, REF_CLICK_HZ, REF_CLICK_DURATION_SEC);
     const roundTripsMs = offsets.map((o) => (o === null ? null : (o / rate) * 1000));
     const found = roundTripsMs.filter((v): v is number => v !== null);
@@ -195,7 +249,17 @@ export async function runRoundTripProbe(_signal: AbortSignal, report: (step: str
         micChannelCount: settings.channelCount ?? null,
         micEchoCancellation: settings.echoCancellation === undefined ? null : String(settings.echoCancellation),
         micLatency: (settings as { latency?: number }).latency ?? null,
-        sampleRate: rate,
+        sampleRate: outRate,
+        captureSampleRate: rate,
+        isolate: isolate ? "true" : "false",
+        captureBaseLatencyMs: round(capture.baseLatency * 1000),
+        captureOutputLatencyMs: round(capture.outputLatency * 1000),
+        captureSinkId: isolate ? "none" : "(same context)",
+        outputStampOffsetMs: round(medianOffset(outputStamps)),
+        captureStampOffsetMs: round(medianOffset(captureStamps)),
+        outputPairOffsetMs: round(medianOffset(outputPairs)),
+        capturePairOffsetMs: round(medianOffset(capturePairs)),
+        clickPerformanceMs: scheduled.slice(0, 3).map((at) => round(contextTimeToPerformanceMs(outputPairs, at), 1)).join(" "),
         wav,
         userAgent: platform.userAgent,
         uaFullVersion: platform.uaFullVersion,
@@ -206,6 +270,8 @@ export async function runRoundTripProbe(_signal: AbortSignal, report: (step: str
     return { ...base, verdict: `NOT CHECKED ${stepOf(error)}`, figures: {} };
   } finally {
     for (const track of stream?.getTracks() ?? []) track.stop();
+    clearInterval(pairTimer);
     void context?.close();
+    if (capture !== context) void capture?.close();
   }
 }

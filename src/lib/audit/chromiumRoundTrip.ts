@@ -72,3 +72,51 @@ export function percentile(values: readonly number[], p: number): number | null 
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[Math.max(0, Math.ceil((p / 100) * sorted.length) - 1)];
 }
+
+/** One reading of a context's clock against the page's: `AudioContext.currentTime` and `performance.now()` read together. */
+export interface ClockPair {
+  contextTime: number;
+  performanceMs: number;
+}
+
+/** Pairs closer than this to a context time (seconds) are the ones its clock offset is taken from. */
+export const CLOCK_WINDOW_SECONDS = 1;
+
+/**
+ * The offset (ms) to add to a context time in milliseconds to get the page's `performance.now()`,
+ * the median over the pairs within `CLOCK_WINDOW_SECONDS` of `contextTime` (the nearest pair when none
+ * is). A median, because a pair read late on the main thread is only ever late.
+ */
+export function clockOffsetMs(pairs: readonly ClockPair[], contextTime: number): number {
+  if (pairs.length === 0) throw new Error("no clock pairs");
+  const near = pairs.filter((p) => Math.abs(p.contextTime - contextTime) <= CLOCK_WINDOW_SECONDS);
+  const used = near.length > 0 ? near : [[...pairs].sort((a, b) => Math.abs(a.contextTime - contextTime) - Math.abs(b.contextTime - contextTime))[0]];
+  return median(used.map((p) => p.performanceMs - p.contextTime * 1000)) as number;
+}
+
+export function contextTimeToPerformanceMs(pairs: readonly ClockPair[], contextTime: number): number {
+  return contextTime * 1000 + clockOffsetMs(pairs, contextTime);
+}
+
+/** The context time (seconds) whose `performance.now()` is `performanceMs`. */
+export function performanceMsToContextTime(pairs: readonly ClockPair[], performanceMs: number): number {
+  let time = (performanceMs - clockOffsetMs(pairs, pairs[pairs.length - 1].contextTime)) / 1000;
+  for (let i = 0; i < 3; i++) time = (performanceMs - clockOffsetMs(pairs, time)) / 1000;
+  return time;
+}
+
+/**
+ * The frame in a capture (the context's frame counter at the capture's first frame is `captureStartFrame`)
+ * that coincides with a click scheduled at `clickContextTime` on ANOTHER context: through the page's
+ * clock, so the two contexts need not share a device.
+ */
+export function expectedCaptureFrame(
+  outputPairs: readonly ClockPair[],
+  capturePairs: readonly ClockPair[],
+  clickContextTime: number,
+  captureRate: number,
+  captureStartFrame: number
+): number {
+  const performanceMs = contextTimeToPerformanceMs(outputPairs, clickContextTime);
+  return performanceMsToContextTime(capturePairs, performanceMs) * captureRate - captureStartFrame;
+}
