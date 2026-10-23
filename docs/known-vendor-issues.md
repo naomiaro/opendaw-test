@@ -453,7 +453,10 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   updated per render quantum (`HandlePreRenderTasks`) rather than from the device's own output position, so the
   performance-time side wanders; the reporter's log wanders by 170 ms at a large `latencyHint`. Firefox reads steady.
   [41399279](https://issues.chromium.org/issues/41399279) "Clock drift between AudioContext currentTime and
-  getOutputTimestamp when under load" (duplicate) is the same family.
+  getOutputTimestamp when under load" (duplicate) is the same family. No separate report of the resampled case
+  (searched 2026-10-23 through the user's Chrome: `getOutputTimestamp` across all statuses, 15 issues, the two open
+  ones unrelated; `WebAudio sampleRate device timestamp drift`; `AudioContext sampleRate mismatch device
+  currentTime jitter`).
 - **Symptom here:** `getOutputTimestamp()` sampled on a worker tick every 10 ms for 60 s, the relation
   `contextTime − performanceTime` read in frames from the first sample, `outputLatency` beside it.
   - A **48 kHz context on this Mac's 44.1 kHz device** (Chrome resamples): a sawtooth. The relation ramps up at
