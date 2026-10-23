@@ -97,6 +97,34 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
 - **Evidence:** `debug/2026-09-02-recording-start-alignment/note.md` (stream-tap measurement, repo PRs [#136](https://github.com/naomiaro/opendaw-test/pull/136) and [#138](https://github.com/naomiaro/opendaw-test/pull/138)).
 - **Last checked:** 2026-10-22 (32 multi-mic rows, raw skew accounted for by the node delays on every repeat).
 
+### Chrome — a `MediaStreamAudioDestinationNode` stream is re-timed once every source feeding it has ended
+
+- **Tracker:** none; measured behaviour, not reported.
+- **Symptom:** the delay from a sound scheduled into a destination node to its arrival in a worklet that
+  captures the node's stream is constant while something is connected and playing into the node, and
+  steps whenever every source into it has ended and a new one starts. Measured on a loopback probe
+  (three MLS bursts scheduled into the destination node, captured through a `MediaStreamAudioSourceNode`
+  on the same stream and cross-correlated; one measurement per set of bursts, each set spread 0 frames):
+  four sets back to back, each started after the previous one's sources had ended, read 992, 864, 704 and
+  576 frames at 48 kHz; a 16-click take afterwards sat at 865 frames on every click; the next set read 832.
+  The steps are 128 and 160 frames, whole or near-whole render quanta. With a silent `ConstantSourceNode`
+  kept connected to the destination node for the stream's lifetime, four sets read 992, 992, 992 and 992,
+  the 16 clicks sat at 993, and the next set read 992. Under the idle stream the captured buffer also
+  opened with a spurious onset 18 ms in, absent with the keep-alive. Chrome 156.0.8078.48, headless,
+  48 kHz, 2026-10-23.
+- **Where it bites here:** not in this repo's rows: `installLoopbackCapture`
+  (`src/lib/audit/loopbackInjection.ts`) feeds the destination node from the engine tap, which never
+  ends, so the stream never goes idle between a calibration and a take. It bites any probe or demo that
+  feeds a destination node with scheduled sources alone (an oscillator click schedule, a one-shot buffer)
+  and measures or records across the gap after they end: the loopback delay it was calibrated with no
+  longer holds, by one quantum or more. A microphone's stream never goes idle like this.
+- **Workaround:** keep a silent source connected to the destination node for as long as its stream is
+  captured (`new ConstantSourceNode(ctx, { offset: 0 })`, started once, stopped on teardown); it
+  contributes exact zeros, so onset detection and RMS are unchanged. Or feed the node continuously, as
+  the engine tap does.
+- **Evidence:** the figures above; no row in this repo's campaigns, since the harness path is not idle.
+- **Last checked:** 2026-10-23 (probe measurement; not reproduced on this repo's own pages).
+
 ### A `MediaStreamAudioDestinationNode` stream from another `AudioContext` reads silent when captured
 
 - **Tracker:** none; measured in Chrome, not tried elsewhere.
