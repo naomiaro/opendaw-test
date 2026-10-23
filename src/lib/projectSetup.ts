@@ -120,8 +120,8 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
   const frameDriver = resolveFrameDriver(options.frameDriver, window.location.search);
 
   // A page restored from the back/forward cache runs its worklet clock at half speed
-  // (Chromium 575891839); it reloads itself instead. Installed before the first await so
-  // a restore during boot is caught too.
+  // (Chromium 575891839), so a restored page reloads itself. Installed before the first
+  // await so a restore during boot is caught too.
   installBfcacheReloadGuard(window, () => window.location.reload());
 
   console.log("========================================");

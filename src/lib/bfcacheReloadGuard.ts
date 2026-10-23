@@ -2,8 +2,10 @@
  * Chrome restores a page from the back/forward cache with its AudioContext still
  * running and the worklet clock at half speed (Chromium 575891839, measured on the
  * looping demo: a position readout advancing 1.50 s per 3.00 s of wall clock). A
- * reload is the one repair that works, so a restored demo reloads itself and the
- * visitor lands on the page as on a first visit.
+ * reload is the one repair a page can apply, so a restored demo reloads itself and
+ * the visitor lands on the page as on a first visit. The guard fires in every
+ * browser that restores from the cache; the defect is Chrome's, the reload is
+ * unconditional.
  *
  * `docs/known-vendor-issues.md`, the Chromium section, has the entry.
  */
@@ -16,7 +18,9 @@ interface PageShowLike {
 
 /**
  * Reload the page when it comes back from the back/forward cache. Returns the
- * listener's handle; a page never needs to terminate it, tests do.
+ * listener's handle; a page never needs to terminate it, tests do. A page that
+ * boots more than once installs more than one listener, which is harmless: the
+ * first `reload()` on a restore starts the navigation, the rest are no-ops.
  */
 export function installBfcacheReloadGuard(page: EventTarget, reload: () => void): Terminable {
   const onPageShow = (event: Event): void => {

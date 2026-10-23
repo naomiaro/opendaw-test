@@ -923,19 +923,20 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   `src/lib/frameScheduler.ts`; the tick worker warns in the console if it fails to start). A
   hidden page with the transport idle stays idle on it. `?frameDriver=throttled&frameEvery=N`
   delivers every Nth real frame, for a slower engine sync than the display gives.
-  A page RESTORED from the back/forward cache (Back after leaving a playing demo) runs its
-  worklet clock at half speed on Chrome (Chromium 575891839, vendor register); `initializeOpenDAW`
-  installs `installBfcacheReloadGuard` (`src/lib/bfcacheReloadGuard.ts`), which reloads the page
-  on `pageshow` with `persisted`. A demo coming back from Back is therefore a FRESH load, never
-  a resumed one — nothing in a demo may expect state to survive it. The SDK-free probe
-  `chromium-watched-issues-debug-demo.html?issue=bfcache` does not boot through init and keeps
-  measuring the raw behaviour.
   `resize_window` does NOT reliably unhide a fully occluded window
   (verified: visibility stayed hidden after resize + screenshot). Audio and
   setInterval keep running while hidden — analyser RMS taps still measure fine;
   move position/isPlaying/UI-state verification to the Playwright browser (rAF
   ticks there). Beware: frozen React isPlaying=false leaves "disabled during
   playback" guards open. Not an SDK bug — don't debug it as one.
+- A page RESTORED from the back/forward cache (Back after leaving a playing demo) runs its
+  worklet clock at half speed on Chrome (Chromium 575891839, vendor register). `initializeOpenDAW`
+  installs `installBfcacheReloadGuard` (`src/lib/bfcacheReloadGuard.ts`) before its first await; it
+  reloads the page on `pageshow` with `persisted`, in every browser (the defect is Chrome's, the
+  reload is unconditional). A demo coming back from Back is therefore a FRESH load, never a
+  resumed one: in-memory state (project, transport, React state) does not survive it; storage
+  does. The SDK-free probe `chromium-watched-issues-debug-demo.html?issue=bfcache` does not boot
+  through init and keeps measuring the raw behaviour.
 - Verify in-browser AUDIO demos by measuring the actual OUTPUT SIGNAL, not `isPlaying`/a
   disabled Play button — a transport reports "playing" while the engine renders silence
   (e.g. a note region with `loopDuration:0`). Tap output: monkeypatch

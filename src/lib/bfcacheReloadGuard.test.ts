@@ -20,6 +20,14 @@ describe("installBfcacheReloadGuard", () => {
     expect(reloads).toBe(0);
   });
 
+  it("leaves a pageshow that carries no persisted flag alone", () => {
+    const page = new EventTarget();
+    let reloads = 0;
+    installBfcacheReloadGuard(page, () => { reloads++; });
+    page.dispatchEvent(new Event("pageshow"));
+    expect(reloads).toBe(0);
+  });
+
   it("stops listening once terminated", () => {
     const page = new EventTarget();
     let reloads = 0;

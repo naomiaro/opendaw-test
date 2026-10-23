@@ -227,8 +227,11 @@ Chromium tracker through the browser).
 - **Workaround:** in place. Every demo that boots through `initializeOpenDAW` installs
   `installBfcacheReloadGuard` (`src/lib/bfcacheReloadGuard.ts`) before its first await: on `pageshow`
   with `persisted` the page reloads itself, so a visitor who comes back with Back lands on the demo as
-  on a first visit. A reload is the one repair the tracker and the measurement agree on. The SDK-free
-  probe page does not boot through init and still measures the raw behaviour. (Keeping the page out of
+  on a first visit. A reload is the one repair a page can apply that the tracker reports working, and the
+  one verified here (the restored looping demo reloaded, then ran at 0.999; note, "bfcache", the dated
+  update). The guard fires in every browser that restores from the cache; the defect is Chrome's, the
+  reload is unconditional. The SDK-free probe page does not boot through init and still measures the
+  raw behaviour. (Keeping the page out of
   the cache was not an option: a `pagehide` listener does not do it, an `unload` listener did and Chrome
   is deprecating that, and `Cache-Control: no-store` is no longer an absolute block in Chrome either.)
   Run the probe in a Chrome the user launched: Playwright's Chrome runs with
@@ -237,7 +240,8 @@ Chromium tracker through the browser).
   `chromium-watched-issues-debug-demo.html?issue=bfcache`, envelopes `chromium-bfcache-mvk1sddg-wilz.json`
   and `chromium-bfcache-mvk1suit-b7ru.json`.
 - **Last checked:** Chrome 155.0.8059.85, macOS 15.6.1, the user's Chrome, 2026-10-22: `HALF SPEED`
-  twice, probe `?issue=bfcache`.
+  twice, probe `?issue=bfcache`. Workaround verified 2026-10-23 on `looping-demo.html` (navigation type
+  `reload` after Back, ratio 0.999).
 
 ### Chromium [560233271](https://issues.chromium.org/issues/560233271) — worklet playback stays at half rate, distorted, after an AudioContext suspend / resume that follows a worklet-thread stall
 

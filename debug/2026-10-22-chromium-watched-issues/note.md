@@ -24,7 +24,8 @@ did with it.
   load (5.8 / 29.0 / 110.3 ms at most). Moved to "Measured here".
 - **575891839, half-speed clock after a back/forward-cache restore:** `HALF SPEED` twice in the user's
   Chrome (windows 0.48–0.50), and the looping demo restored at 0.4996. Moved to "Measured here".
-  Follow-up PR (not in this one): handle `pageshow` with `persisted` true in the demos — reload or tear the engine down — so a visitor pressing Back on a playing demo does not hear the half-speed clock; verify with the demo reading in the note (injected pageshow listener, transport ratio).
+  Follow-up DONE in PR #177 (2026-10-23): `initializeOpenDAW` reloads a page restored from the cache
+  (`installBfcacheReloadGuard`); the reading that verifies it is at the end of the "bfcache" section.
 - **560233271, distortion after suspend / resume:** reproduced, and the trigger is found. An 80 ms
   synchronous task on the worklet thread right before `suspend()` / `resume()` halves the render rate.
   The processor runs 172.3 calls per second against 344.5 before, the context clock runs at 0.50, and
@@ -295,11 +296,19 @@ second. The route makes no difference; the switch does. Run this probe in a Chro
 **What it means for the register.** The entry moves to measured. On Chrome 155, a page with a running
 context and a worklet node comes back from the cache with its clock at half speed in every window
 measured, and its context still reads `running`. A demo is such a page. The looping demo entered the cache
-while playing, despite its Web Lock, and came back with its transport at half speed. The demos have no
-`pageshow` handling. (Update 2026-10-23: they do now — `installBfcacheReloadGuard` in
-`src/lib/bfcacheReloadGuard.ts`, installed by `initializeOpenDAW`, reloads a restored page.) The workaround the entry names, tearing the engine down or asking for a reload on
-`pageshow` with `persisted`, is now a decision backed by measurement. This probe checks that decision and
-any upstream fix. The demo reading was taken once, on one demo; it was not swept.
+while playing, despite its Web Lock, and came back with its transport at half speed. At the time of this
+reading the demos had no `pageshow` handling; the reload the register entry now names as its workaround
+was a decision backed by this measurement. This probe checks that decision and any upstream fix. The demo
+reading was taken once, on one demo; it was not swept.
+
+**Update 2026-10-23 (PR #177): the demos reload themselves on a restore, and the reload runs true.**
+`initializeOpenDAW` installs `installBfcacheReloadGuard` (`src/lib/bfcacheReloadGuard.ts`) before its
+first await; on `pageshow` with `persisted` the page calls `location.reload()`. Verified on
+`looping-demo.html` in the user's Chrome 155.0.8059.85, dev server, the same route as above: a real click
+on Play, a navigation to `/`, Back. A `pageshow` listener injected into the original document recorded
+`persisted: true` with no `notRestoredReasons` (so the page WAS restored, and the guard fired on the
+restore, not on a miss); the page that then came back had navigation type `reload` and its transport read
+`00:00.00 Stopped`; Play on it advanced 3.00 s in 3.00 s of wall clock, ratio **0.999**. One run.
 
 ### suspend-resume (560233271)
 
