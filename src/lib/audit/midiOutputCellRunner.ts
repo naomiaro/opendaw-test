@@ -1,9 +1,9 @@
 /**
  * One repeat of one cell of the MIDI output timing audit: reset, switch the arm, write the pattern,
  * start a recording with NOTHING armed (the engine stamps its start and records nothing), take the
- * anchor and ONE `getOutputTimestamp` pair, schedule the pattern from the page (page arm) or let the
- * engine play it (engine arm), run the jank blocks, stop a bar after the pattern, measure the IAC
- * receipts. Every wait is deadlined and token-guarded; a throw at any stage yields an error row that
+ * anchor and ONE `getOutputTimestamp` pair (while a watch samples the pair every frame, the drift
+ * witness), schedule the pattern from the page (page arm) or let the engine play it (engine arm), run
+ * the jank blocks, stop a bar after the pattern, measure the IAC receipts. Every wait is deadlined and token-guarded; a throw at any stage yields an error row that
  * names the stage. Browser-only; no unit tests by repo convention.
  */
 import { BAR_PPQN } from "./auditExpectations";
@@ -37,6 +37,12 @@ export interface OutputRepeatOptions {
 const ANCHOR_DEADLINE_MS = 30_000;
 const STOP_DEADLINE_MS = 10_000;
 
+/**
+ * Chrome does not implement `MIDIOutput.clear()`, so a page repeat abandoned after `schedule` leaves its
+ * sends queued; the next repeat's reset waits until they have all gone out before it clears the receipts.
+ */
+let drainUntilPerfMs = 0;
+
 /** Reads `getOutputTimestamp()` and `outputLatency` on every animation frame between `start()` and `stop()`: the drift witness. */
 class PairWatch {
   #samples: PairSample[] = [];
@@ -59,7 +65,7 @@ class PairWatch {
   }
 }
 
-/** A row with no figures: the shape an error row and the runner's starting point share. */
+/** A row with no figures and sentinel counts (every note missing): the shape an error row and the runner's starting point share. */
 export function emptyRepeatRow(repeat: number, originPpqn: number, notesInPattern: number, delayInMs: number, sampleRate: number, jankMs: number | null): OutputRepeatRow {
   return {
     repeat, error: null, notes: [], anchor: null, originPpqn,
@@ -104,8 +110,9 @@ export async function runOutputRepeat(options: OutputRepeatOptions): Promise<Out
   let watching = false;
   try {
     at("reset");
-    const warning = await resetOutputTransport(project);
-    if (warning !== null) console.warn(`[midi-output-audit] ${warning}`);
+    if (audioContext.state !== "running") throw new Error(`AudioContext is ${audioContext.state}: click Run with a real click`);
+    await resetOutputTransport(project);
+    if (drainUntilPerfMs > performance.now()) await waitUntilPerf(drainUntilPerfMs, token, "reset");
     loopback.clear();
 
     at("arm");
@@ -153,14 +160,19 @@ export async function runOutputRepeat(options: OutputRepeatOptions): Promise<Out
 
     at("schedule");
     const scheduled = expectedSchedule(pattern, anchor, pair, key.bpm);
-    if (key.arm === "page") loopback.schedule(scheduled);
     const perfAt = (ppqn: number): number => perfMsAtHeardContextSec(pair, contextSecAtPosition(anchor, key.bpm, ppqn));
     const endPpqn = patternEndPpqnOf(pattern);
     const endPerfMs = perfAt(endPpqn);
     const midPerfMs = perfAt(originPpqn + (endPpqn - originPpqn) / 2);
+    if (key.arm === "page") {
+      loopback.schedule(scheduled);
+      drainUntilPerfMs = endPerfMs + pulsesToMs(BAR_PPQN, key.bpm);
+    }
 
     at("jank");
     const jankDone = jankMs === null ? Promise.resolve<JankBlock[]>([]) : runJankBlocks(jankSchedule(midPerfMs, endPerfMs, jankMs), jankMs, token);
+    // An abandoned repeat rejects the play wait first; the jank chain's own rejection must not surface unhandled.
+    jankDone.catch(() => undefined);
 
     at("play");
     await waitUntilPerf(endPerfMs + pulsesToMs(BAR_PPQN, key.bpm), token, "play");
@@ -169,6 +181,7 @@ export async function runOutputRepeat(options: OutputRepeatOptions): Promise<Out
     at("stop");
     project.stopRecording();
     await waitForNotRecording(project, STOP_DEADLINE_MS);
+    assertCurrent(token, "stop");
     project.engine.stop(true);
 
     at("measure");

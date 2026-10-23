@@ -268,7 +268,7 @@ picks another). Register: `debug/2026-10-20-midi-input-alignment/note.md`.
   before reading a hang as an SDK finding.
 
 ### MIDI Output Timing Audit (unlisted)
-`midi-output-timing-audit-debug-demo.html[?arm=both|engine|page][&bpm=<n|all>][&density=32nd|8th|both][&bars=<1-8>][&repeats=<1-10>][&delay=<0-500>][&jank=none|mid|both][&jankMs=<10-500>][&transport=1|0|both][&origin=<1-8>][&bus=<substring>]`
+`midi-output-timing-audit-debug-demo.html[?arm=both|engine|page][&bpm=<n|all>][&density=32nd|8th|both][&bars=<1-8>][&repeats=<1-10>][&delay=<0-500>][&jank=none|mid|both][&jankMs=<10-500>][&transport=1|0|both][&origin=<2-8>][&bus=<substring>]`
 measures WHEN the SDK asks a hardware MIDI output to deliver each note, on the AudioContext
 clock, over the IAC Driver. The engine plays a note region (default the openDAW#356 case: 1/32
 notes at 140 bpm, three bars) on a unit whose instrument is `InstrumentFactories.MIDIOutput`,
@@ -296,9 +296,9 @@ register `debug/2026-10-23-midi-output-timing/note.md`. Chrome only; a real clic
   box's `id` (the engine interns `""` to device −1 and queues nothing); the engine arm names the
   port again, so its timing path is the installed one. `?arm=engine` alone reads `not-judged`
   (`no-control`): a debugging mode, never a figure for a note.
-- **Origin.** The region starts at `&origin` (default bar 2, one bar in) for both arms: the
-  anchor reaches the page a frame or two after the first quantum, and a note at position 0
-  would be scheduled in the past. A repeat whose anchor arrives under 300 ms before the origin
+- **Origin.** The region starts at `&origin` (default bar 2, one bar in; bar 1 is refused) for
+  both arms: the anchor reaches the page a frame or two after the first quantum, and a note at
+  position 0 would be scheduled in the past. A repeat whose anchor arrives under 300 ms before the origin
   is an error row `anchor-too-late`, never a late control. The notes right after a transport
   start are therefore not judged by this page.
 - **Jank.** `&jank=mid` blocks the main thread synchronously for `jankMs` from the pattern's
@@ -309,16 +309,17 @@ register `debug/2026-10-23-midi-output-timing/note.md`. Chrome only; a real clic
   `getOutputTimestamp()` and `outputLatency`; each note is read a second time against the live
   pair nearest before its receipt (`errorLiveMs`), and the row carries `pairDrift` (the
   relation's range against the repeat's pair) and the live median / spread. Measured: the
-  relation moves by up to 6 ms within a 10 s repeat at 44.1 kHz, `outputLatency` constant. The
-  ENGINE cell is therefore judged on the live pair (the engine stamps with Chrome's live
-  relation); the PAGE cell stays on the one pair its sends were built from (it is the bus check).
+  relation moves by ±3 ms (6 ms peak to peak) within a 10 s repeat at 44.1 kHz, `outputLatency`
+  constant. The ENGINE cell is therefore judged on the live pair when every repeat sampled one
+  (the engine stamps with Chrome's live relation); the PAGE cell stays on the one pair its sends
+  were built from (it is the bus check).
 - **Verdicts** (`midiOutputVerdict.ts`). Page: `bus-true` when every repeat is clean (no
   missing / extra / stuck / velocity mismatch, a byte either way is a match) with the median
   and the spread within 1 ms of the one pair. Engine: `not-judged` (`bus` or `no-control`);
   `on-time` when clean, the live median within half a quantum of `delayInMs` and the live
   spread within a quantum; `matches-known-defect` when a band in `MIDI_OUT_KNOWN_DEFECTS`
   explains every repeat, today `midi-out-main-thread-base` for a janked cell (live median on the
-  delay, inside-block median between `delay + jank/4` and `delay + jank + 1 quantum`, spread
+  delay within a quantum, inside-block median between `delay + jank/4` and `delay + jank + 1 quantum`, spread
   within `jank + 1 quantum`, the notes clear of every block within two quanta,
   `stuck == extra == stuckInsideBlocks ≤ notesInsideBlocks`: the off-before-on inversion and only
   it), pinned on run B of the note and named in the detail; else `investigate` naming the first

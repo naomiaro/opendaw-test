@@ -21,12 +21,12 @@ export interface MidiOutputParams {
   repeats: number;
   /** `MIDIOutputBox.delayInMs` written for the run, 0–500; the schema default is the default. */
   delayInMs: number;
-  /** `&jank=none|mid|both` → one or two cells per tuple. */
+  /** `&jank=none|mid|both` → one or two tuples (jank is part of the cell key). */
   janks: readonly JankMode[];
   jankMs: number;
   /** `&transport=1|0|both`; default on, the schema's and the studio's default. */
   transports: readonly boolean[];
-  /** The bar the pattern starts on, 1–8 (bar 2 = one bar in). */
+  /** The bar the pattern starts on, 2–8 (bar 2 = one bar in): the anchor reaches the page after position 0 has passed, so bar 1 can never be scheduled ahead. */
   originBar: number;
   bus: string;
 }
@@ -70,7 +70,7 @@ export function parseMidiOutputParams(params: URLSearchParams): MidiOutputParams
     janks: jank === "both" ? ["none", "mid"] : [jank],
     jankMs: integer(params, "jankMs", 80, 10, 500),
     transports: transport === "both" ? [true, false] : [transport === "1"],
-    originBar: integer(params, "origin", 2, 1, 8),
+    originBar: integer(params, "origin", 2, 2, 8),
     bus: params.get("bus") ?? MIDI_BUS_DEFAULT,
   };
 }
@@ -86,8 +86,11 @@ export function classifyMidiStatus(status: number): MidiStatusKind {
   return "other";
 }
 
-/** Reset, anchor wait, pair, stop and measurement: what a repeat needs beyond its transport time. */
-const REPEAT_SLACK_MS = 35_000;
+/**
+ * What a repeat needs beyond its transport time: the sum of the runner's own deadlines (reset 10 s, position settle
+ * 30 s, anchor 30 s, stop 10 s) plus a margin, so the outer deadline never pre-empts a stage-named error row.
+ */
+export const REPEAT_SLACK_MS = 10_000 + 30_000 + 30_000 + 10_000 + 10_000;
 /** Density `both` is the input page's shape: two bars of eighths and one of 1/32, whatever `bars` says. */
 const BOTH_DENSITY_BARS = 3;
 

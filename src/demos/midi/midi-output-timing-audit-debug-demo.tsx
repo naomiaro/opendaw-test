@@ -12,7 +12,7 @@
 //
 // Library: src/lib/audit/midiOutput*.ts; table: node scripts/audit/midi-output-timing/table.ts;
 // register: debug/2026-10-23-midi-output-timing/note.md. `#audit-state[data-audit-state]` walks
-// setup → running:<cell> → done | error:<message>. A real click on Run; the IAC Driver online.
+// idle → setup → running:<cell> → done | error:<message>. A real click on Run; the IAC Driver online.
 import { useCallback, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Badge, Button, Card, Container, Flex, Heading, Table, Text, Theme } from "@radix-ui/themes";
@@ -28,7 +28,9 @@ import { MidiLoopbackSender, pickIacPorts } from "@/lib/audit/midiLoopback";
 import { parseMidiOutputParams, repeatDeadlineMs, type MidiOutputParams, type OutputArm } from "@/lib/audit/midiOutputParams";
 import { buildOutputProject, type OutputProjectState } from "@/lib/audit/midiOutputProject";
 import { emptyRepeatRow, runOutputRepeat } from "@/lib/audit/midiOutputCellRunner";
-import { classifyEngineCell, classifyPageCell, type OutputVerdict } from "@/lib/audit/midiOutputVerdict";
+import { engineCellVerdict, pageCellVerdict, type OutputVerdict } from "@/lib/audit/midiOutputVerdict";
+import { BAR_PPQN } from "@/lib/audit/auditExpectations";
+import { buildOutputPattern } from "@/lib/audit/midiOutputPattern";
 import {
   MIDI_OUTPUT_SCHEMA_VERSION, summaryFileName,
   type MidiOutputSummary, type OutputCellKey, type OutputCellRecord, type OutputRepeatRow,
@@ -93,8 +95,13 @@ async function createMatrixContext(params: MidiOutputParams): Promise<MatrixCont
 
 // Booted once per page load (`Workers.install` asserts on a second call); a failed boot stays failed — reload.
 let matrixContextPromise: Promise<MatrixContext> | null = null;
+let bootFailed = false;
 function getMatrixContext(params: MidiOutputParams): Promise<MatrixContext> {
-  if (matrixContextPromise === null) matrixContextPromise = createMatrixContext(params);
+  if (bootFailed) return Promise.reject(new Error("the engine boot failed earlier on this page — reload the page to retry"));
+  if (matrixContextPromise === null) {
+    matrixContextPromise = createMatrixContext(params);
+    matrixContextPromise.catch(() => { bootFailed = true; });
+  }
   return matrixContextPromise;
 }
 
@@ -136,17 +143,21 @@ async function runAudit(params: MidiOutputParams, setAuditState: (s: string) => 
                 setAuditState(`running:${label}`);
                 const frameWatch = new FrameWatch();
                 const hiddenBefore = hiddenCount;
+                let lastStage = "start";
                 let row: OutputRepeatRow;
                 try {
                   row = await runRepeatWithDeadline(
-                    (token) => runOutputRepeat({ project, audioContext, loopback, state, portId, key, params, repeat, token, frameWatch, onStage: () => {} }),
+                    (token) => runOutputRepeat({ project, audioContext, loopback, state, portId, key, params, repeat, token, frameWatch, onStage: (s) => { lastStage = s; } }),
                     repeatDeadlineMs({ bpm, density, bars: params.bars, originBar: params.originBar }),
                     label,
                   );
                 } catch (err) {
+                  // The outer deadline cut the repeat: the same sentinel shape as a runner error row, with the stage it was in.
                   const gaps = frameWatch.stop();
-                  row = emptyRepeatRow(repeat, 0, 0, params.delayInMs, sampleRate, jank === "mid" ? params.jankMs : null);
-                  row.error = `deadline: ${err instanceof Error ? err.message : String(err)}`;
+                  const originPpqn = (params.originBar - 1) * BAR_PPQN;
+                  const notesInPattern = buildOutputPattern(density, params.bars, originPpqn).length;
+                  row = emptyRepeatRow(repeat, originPpqn, notesInPattern, params.delayInMs, sampleRate, jank === "mid" ? params.jankMs : null);
+                  row.error = `deadline (at ${lastStage}): ${err instanceof Error ? err.message : String(err)}`;
                   row.frameIntervalMs = gaps.medianMs;
                   row.frameGapMaxMs = gaps.maxGapMs;
                 }
@@ -165,18 +176,17 @@ async function runAudit(params: MidiOutputParams, setAuditState: (s: string) => 
             const pageFigures = pageRows.filter((r) => r.error === null);
             let pageVerdict: OutputVerdict | null = null;
             if (armsInOrder.includes("page")) {
-              pageVerdict = pageFigures.length === params.repeats
-                ? classifyPageCell(pageFigures)
-                : { status: "investigate", detail: `${params.repeats - pageFigures.length} of ${params.repeats} page repeats failed` };
+              pageVerdict = pageCellVerdict(pageFigures, pageRows.length - pageFigures.length);
               verdictsByTuple.set(tupleKey(tuple), pageVerdict);
               finishCell(pageRows, { arm: "page", ...tuple }, pageVerdict, cells);
             }
             if (armsInOrder.includes("engine")) {
               const engineRows = rowsByArm.get("engine") ?? [];
               const engineFigures = engineRows.filter((r) => r.error === null);
-              const verdict = engineFigures.length === params.repeats
-                ? classifyEngineCell(engineFigures, pageVerdict, { delayInMs: params.delayInMs, jankMs: params.jankMs, jankActive: jank === "mid", sampleRate })
-                : { status: "investigate" as const, detail: `${params.repeats - engineFigures.length} of ${params.repeats} engine repeats failed` };
+              const verdict = engineCellVerdict(
+                engineFigures, engineRows.length - engineFigures.length, pageVerdict,
+                { delayInMs: params.delayInMs, jankMs: params.jankMs, jankActive: jank === "mid", sampleRate },
+              );
               finishCell(engineRows, { arm: "engine", ...tuple }, verdict, cells);
             }
             onRows([...allRows]);

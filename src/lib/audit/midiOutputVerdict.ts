@@ -1,11 +1,11 @@
 /**
  * The MIDI output timing audit's verdicts, pure and Node-tested. The PAGE arm is the control: it
  * must read zero (against the one pair its sends were built from) before anything the ENGINE arm
- * says can be read; the ENGINE arm is read against the live pair when the repeat sampled one. The engine arm is `on-time`
+ * says can be read; the ENGINE arm is read against the live pair when every repeat of the cell sampled one. The engine arm is `on-time`
  * when it lands on the box delay, `matches-known-defect` when a band this file pins explains every
  * repeat, else `investigate`. Bands classify a raw figure from the row's own context; they never
- * net anything out. The table holds the bands the first run's rows pinned
- * (`debug/2026-10-23-midi-output-timing/note.md` says which).
+ * net anything out. The table holds the band run B's rows pinned
+ * (`debug/2026-10-23-midi-output-timing/note.md` names the envelope).
  */
 import { quantumMs } from "./midiInputAlignment";
 import type { OutputRepeatFigures } from "./midiOutputTiming";
@@ -49,7 +49,7 @@ const MAIN_THREAD_BASE: OutputKnownDefectBand = {
   applies: (ctx) => ctx.jankActive,
   matches: (f, ctx) => {
     const quantum = quantumMs(ctx.sampleRate);
-    // The cell's reference: live where sampled, else the one pair (the inside-block median stays on the one pair; its range is wide).
+    // The cell's reference: live where sampled, else the one pair (the inside-block median and the overall spread stay on the one pair; their ranges are wide).
     const live = f.medianErrorLiveMs !== null && f.maxAbsDevOutsideBlocksLiveMs !== null;
     const median = live ? f.medianErrorLiveMs : f.medianErrorMs;
     const outsideDev = live ? f.maxAbsDevOutsideBlocksLiveMs : f.maxAbsDevOutsideBlocksMs;
@@ -129,8 +129,8 @@ export function classifyEngineCell(
   if (control === null) return { status: "not-judged", detail: "no-control" };
   if (control.status !== "bus-true") return { status: "not-judged", detail: "bus" };
   if (repeats.length === 0) return { status: "investigate", detail: "no repeats" };
-  // The engine arm stamps with Chrome's LIVE clock relation, so it is read against the live pair when the repeat sampled one
-  // (the relation moved by up to 3 ms within a repeat on the first runs); the one pair judges only when nothing was sampled.
+  // The engine arm stamps with Chrome's LIVE clock relation, so it is read against the live pair when every repeat sampled one
+  // (the relation moved by ±3 ms, 6 ms peak to peak, within a repeat on the first runs); the one pair judges otherwise.
   const quantum = quantumMs(ctx.sampleRate);
   const reference = referenceOf(repeats);
   const failure = integrityFailure(repeats) ?? figureFailure(repeats, ctx.delayInMs, quantum / 2, quantum, reference);
@@ -140,3 +140,24 @@ export function classifyEngineCell(
   if (band !== undefined) return { status: "matches-known-defect", detail: `${band.id}: ${band.detail}` };
   return { status: "investigate", detail: failure };
 }
+
+/** The page cell's verdict when some repeats produced no figures: a failed repeat fails the cell, named by count. */
+export function pageCellVerdict(figures: readonly OutputRepeatFigures[], failedRepeats: number): OutputVerdict {
+  if (failedRepeats > 0) return { status: "investigate", detail: `${failedRepeats} of ${figures.length + failedRepeats} page repeats failed` };
+  return classifyPageCell(figures);
+}
+
+/** The engine cell's verdict: the control is checked FIRST (a cell without a true control is never read), then failed repeats, then the figures. */
+export function engineCellVerdict(
+  figures: readonly OutputRepeatFigures[],
+  failedRepeats: number,
+  control: OutputVerdict | null,
+  ctx: OutputBandContext,
+  bands: readonly OutputKnownDefectBand[] = MIDI_OUT_KNOWN_DEFECTS,
+): OutputVerdict {
+  if (control === null) return { status: "not-judged", detail: "no-control" };
+  if (control.status !== "bus-true") return { status: "not-judged", detail: "bus" };
+  if (failedRepeats > 0) return { status: "investigate", detail: `${failedRepeats} of ${figures.length + failedRepeats} engine repeats failed` };
+  return classifyEngineCell(figures, control, ctx, bands);
+}
+

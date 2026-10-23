@@ -1,9 +1,10 @@
 /**
- * The MIDI input alignment audit's loopback: a virtual MIDI bus (the macOS IAC
- * Driver) whose output the page sends on and whose input the SDK's capture, and the
- * page's own listener, receive from. Every note is scheduled ahead with
- * `MIDIOutput.send(data, timestamp)`, so CoreMIDI delivers it on time whatever the
- * main thread is doing; the page's receipt stamps are what the SDK's capture sees too.
+ * The MIDI audits' loopback (input alignment, combined, output timing): a virtual MIDI bus
+ * (the macOS IAC Driver) whose output the page sends on and whose input the SDK's capture,
+ * the SDK's MIDI Output instrument's receipts, and the page's own listener come back on.
+ * Every note is scheduled ahead with `MIDIOutput.send(data, timestamp)`, so CoreMIDI
+ * delivers it on time whatever the main thread is doing; the page's receipt stamps are
+ * what the SDK's capture sees too.
  */
 import { MidiData } from "@opendaw/lib-midi";
 import { classifyMidiStatus } from "./midiOutputParams";

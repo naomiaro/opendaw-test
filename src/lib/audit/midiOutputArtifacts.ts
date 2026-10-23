@@ -25,7 +25,7 @@ export interface OutputCellKey {
 
 export interface OutputRepeatRow extends OutputRepeatFigures {
   repeat: number;
-  /** `<stage>: <message>` when the repeat threw; the figures are then null, not NaN. */
+  /** `<stage>: <message>` when the repeat threw (or `deadline (at <stage>): …` when the outer deadline cut it); the figures are then null, not NaN, and the counts are sentinels (every note missing). */
   error: string | null;
   notes: OutputNoteRow[];
   anchor: RecordingAnchor | null;

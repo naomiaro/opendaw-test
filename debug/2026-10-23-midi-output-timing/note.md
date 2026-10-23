@@ -12,7 +12,7 @@ midioutput gets desynced all the time" (erratic lateness on a fast 303 pattern, 
 something; its phase 5 "closes #356 for input", and no phase names the output path).
 
 **Harness:** unlisted debug demo
-`midi-output-timing-audit-debug-demo.html[?arm=both|engine|page][&bpm=<n|all>][&density=32nd|8th|both][&bars=<1-8>][&repeats=<1-10>][&delay=<0-500>][&jank=none|mid|both][&jankMs=<10-500>][&transport=1|0|both][&origin=<1-8>][&bus=<substring>]`
+`midi-output-timing-audit-debug-demo.html[?arm=both|engine|page][&bpm=<n|all>][&density=32nd|8th|both][&bars=<1-8>][&repeats=<1-10>][&delay=<0-500>][&jank=none|mid|both][&jankMs=<10-500>][&transport=1|0|both][&origin=<2-8>][&bus=<substring>]`
 on the dev server, Chrome on macOS, a real click on "Run audit", the IAC Driver online. The
 summary JSON (`midiout-summary-<runToken>.json`) lands in `.verify-output/` via `/__verify`;
 `node scripts/audit/midi-output-timing/table.ts [runToken]` prints the tables below.
@@ -273,7 +273,12 @@ cell with a late clear note or a stuck note outside the blocks is never swallowe
   `drafts/TO-REVIEW-opendaw-356-comment.md`, waiting for the user's read.
 - The `getOutputTimestamp` drift on its own page (no SDK), then a vendor-register entry if it holds; and a
   decision for the input alignment and combined harnesses (a live pair there too).
-- A start-burst arm (`&origin=1` for the engine arm only, the control skipping what it cannot reach) if
-  the reporter's case points at the first notes after play.
+- **Re-read openDAW#491's jitter sentence before anything new is posted.** #491 states a 7–10 ms jitter and
+  attributes it to the MIDI recorder; it was read against one pair per repeat, and the drift measured here
+  (±3 ms within a repeat) could be part of that spread. The 33 ms constant term is far larger than the
+  drift and stands. If a correction is due, it goes beside the #356 comment so the two public texts agree
+  on what Chrome contributes.
+- A start-burst arm (an engine-only mode starting at bar 1, which the parser refuses today because the
+  control cannot reach it) if the reporter's case points at the first notes after play.
 - A cable-loopback hardware session for delivery time.
 

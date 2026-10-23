@@ -4,7 +4,9 @@ Status: TO-REVIEW. Nothing posted. Target: a comment on https://github.com/andre
 Figures from `debug/2026-10-23-midi-output-timing/note.md` (runs A, B and C, 2026-10-23, SDK 0.0.177, Chrome 155,
 macOS 15.6.1, 44.1 kHz). No suggested-fix section, per repo rule; the mechanism is described, the remedy is the
 maintainer's. The last paragraph is the scope note the user asked for (the rewrite plan's phases name the input
-side only).
+side only). To read together with this: openDAW#491's jitter sentence (7–10 ms, attributed to the recorder) was
+measured against one clock pair per repeat; the drift found here (±3 ms within a repeat) may be part of that
+spread, and a short correction there may be due — the user's call, in the same sitting.
 
 ---
 

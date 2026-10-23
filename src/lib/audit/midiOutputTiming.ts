@@ -13,7 +13,7 @@ import { jankLabelFor, type JankBlock, type JankLabel, type OutputPatternNote } 
 /** The engine rounds a 0..1 velocity float back to a byte, so one byte either way is a match. */
 const VELOCITY_TOLERANCE = 1;
 
-/** The origin must be at least this far ahead of the anchor's arrival for the page arm to schedule every note in the future. */
+/** The origin must be at least this far ahead of the context time at the origin check (after the anchor and the pair) for the page arm to schedule every note in the future. */
 export const ORIGIN_LEAD_MS = 300;
 
 /** One read of `getOutputTimestamp()` and `outputLatency` during the repeat, on the frame it was taken. */
@@ -85,7 +85,7 @@ export interface OutputRepeatFigures {
   p5p95WidthMs: number | null;
   /** p95 − median: the hop's shape is one-sided. */
   lateTailMs: number | null;
-  /** The live-pair figures; null without pair samples. The engine cell is judged on these when present. */
+  /** The live-pair figures; null without pair samples. The engine cell is judged on these when every repeat has them. */
   medianErrorLiveMs: number | null;
   maxAbsDevLiveMs: number | null;
   /** The spread of the notes CLEAR of every block (label `clear` or `first-after`), so a band for janked notes cannot hide a defect beside them. */

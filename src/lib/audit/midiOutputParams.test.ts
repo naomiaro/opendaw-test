@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyMidiStatus, parseMidiOutputParams, repeatDeadlineMs } from "./midiOutputParams";
+import { classifyMidiStatus, parseMidiOutputParams, REPEAT_SLACK_MS, repeatDeadlineMs } from "./midiOutputParams";
 
 describe("parseMidiOutputParams", () => {
   it("defaults to both arms, 140 bpm, 1/32, 3 bars, 2 repeats, delay 10, no jank, transport on, origin bar 2, bus IAC", () => {
@@ -35,7 +35,7 @@ describe("parseMidiOutputParams", () => {
   });
 
   it("refuses out-of-range and unknown values, naming the parameter", () => {
-    for (const q of ["bpm=50", "delay=501", "repeats=0", "jankMs=5", "origin=9", "density=16th", "arm=x", "transport=yes", "bars=0", "jank=late"]) {
+    for (const q of ["bpm=50", "delay=501", "repeats=0", "jankMs=5", "origin=9", "origin=1", "density=16th", "arm=x", "transport=yes", "bars=0", "jank=late"]) {
       expect(() => parseMidiOutputParams(new URLSearchParams(q))).toThrow(new RegExp(q.split("=")[0]));
     }
   });
@@ -56,10 +56,13 @@ describe("repeatDeadlineMs", () => {
   it("covers the origin, the pattern, the trailing bar and the setup, so the longest allowed cell is not cut off", () => {
     // 60 bpm, 8 bars of eighths from bar 8: 28 s to the origin, 32 s of pattern, a 4 s tail = 64 s of transport.
     const longest = repeatDeadlineMs({ bpm: 60, density: "8th", bars: 8, originBar: 8 });
-    expect(longest).toBeGreaterThan(64_000 + 30_000);
-    expect(longest).toBeLessThan(64_000 + 60_000);
-    // The default cell (140 bpm, 3 bars of 1/32 from bar 2) stays near the minute it had.
-    expect(repeatDeadlineMs({ bpm: 140, density: "32nd", bars: 3, originBar: 2 })).toBeLessThan(60_000);
+    // The slack is the sum of the runner's own waits (reset 10 s, position settle 30 s, anchor 30 s, stop 10 s) plus a margin,
+    // so the outer deadline never pre-empts a stage-named error.
+    expect(REPEAT_SLACK_MS).toBeGreaterThanOrEqual(80_000);
+    expect(longest).toBeGreaterThan(64_000 + 80_000);
+    expect(longest).toBeLessThan(64_000 + 120_000);
+    // The default cell (140 bpm, 3 bars of 1/32 from bar 2): under nine seconds of transport plus the slack.
+    expect(repeatDeadlineMs({ bpm: 140, density: "32nd", bars: 3, originBar: 2 })).toBeLessThan(9_000 + REPEAT_SLACK_MS + 1);
     // Density "both" is three bars whatever `bars` says.
     expect(repeatDeadlineMs({ bpm: 60, density: "both", bars: 8, originBar: 1 })).toBeLessThan(repeatDeadlineMs({ bpm: 60, density: "8th", bars: 8, originBar: 1 }));
   });

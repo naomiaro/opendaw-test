@@ -40,15 +40,20 @@ export function buildOutputProject(project: Project, port: { id: string; name: s
 }
 
 /**
- * Replaces the pattern region: the previous one is deleted (cascade), a new one created at `originPpqn`
- * spanning the pattern (`loopDuration` defaults to the duration through `createNoteRegion`), and the
- * events written region-local in the same transaction through the API, as the repo's builders do.
- * Afterwards the region's collection is read back and must hold every note.
+ * Replaces the pattern region: the previous one is re-resolved by uuid and deleted (cascade; a held
+ * instance may be stale after a rollback), a new one created at `originPpqn` spanning the pattern
+ * (`loopDuration` written explicitly equal to the duration; the API would default it the same way), and
+ * the events written region-local in the same transaction through the API, as the repo's builders do.
+ * Afterwards the track must hold exactly one note region, with every note in its collection.
  */
 export function writeOutputPattern(project: Project, state: OutputProjectState, pattern: readonly OutputPatternNote[], originPpqn: number): void {
   const durationPpqn = patternEndPpqnOf(pattern) - originPpqn;
+  const previousUuid = state.regionBox?.address.uuid ?? null;
   const regionBox = project.editing.modify(() => {
-    state.regionBox?.delete();
+    if (previousUuid !== null) {
+      const previous = project.boxGraph.findBox(previousUuid);
+      if (previous.nonEmpty()) previous.unwrap().delete();
+    }
     const box = project.api.createNoteRegion({
       trackBox: state.trackBox,
       position: originPpqn as ppqn,
@@ -70,8 +75,13 @@ export function writeOutputPattern(project: Project, state: OutputProjectState, 
     return box;
   }).unwrap("writeOutputPattern: the transaction returned nothing");
   state.regionBox = regionBox;
-  const adapter = getAllRegions(project).find((r) => r.isNoteRegion() && UUID.equals(r.box.address.uuid, regionBox.address.uuid));
-  const count = adapter !== undefined && adapter.isNoteRegion() && adapter.hasCollection ? adapter.optCollection.unwrap().events.asArray().length : -1;
+  const trackUuid = state.trackBox.address.uuid;
+  const onTrack = getAllRegions(project).filter((r) => r.isNoteRegion() && r.trackBoxAdapter.mapOr((t) => UUID.equals(t.box.address.uuid, trackUuid), false));
+  if (onTrack.length !== 1) throw new Error(`writeOutputPattern: the track holds ${onTrack.length} note regions, expected 1 (a leftover would play beside the pattern)`);
+  const adapter = onTrack[0];
+  if (!adapter.isNoteRegion() || !UUID.equals(adapter.box.address.uuid, regionBox.address.uuid)) throw new Error("writeOutputPattern: the region on the track is not the one just written");
+  if (!adapter.hasCollection) throw new Error("writeOutputPattern: the region has no event collection");
+  const count = adapter.optCollection.unwrap().events.asArray().length;
   if (count !== pattern.length) throw new Error(`writeOutputPattern: the region holds ${count} events, expected ${pattern.length}`);
 }
 
@@ -84,18 +94,20 @@ export function setOutputArm(project: Project, state: OutputProjectState, arm: O
   });
 }
 
-/** Stops a recording still running, resets the engine and rewinds; a warning when the stop did not land in time. */
-export async function resetOutputTransport(project: Project): Promise<string | null> {
-  let warning: string | null = null;
+/**
+ * Stops a recording still running, resets the engine and rewinds. THROWS when the stop does not land:
+ * `project.startRecording` is a silent no-op while a recording is in flight, so nothing after this could
+ * succeed, and the row must name the reset, not a later stage.
+ */
+export async function resetOutputTransport(project: Project): Promise<void> {
   if (project.engine.isRecording.getValue() || project.engine.isCountingIn.getValue()) {
     project.stopRecording();
     try {
       await waitForNotRecording(project, 10_000);
     } catch (err) {
-      warning = `recording did not stop before cleanup: ${String(err)}`;
+      throw new Error(`recording did not stop before cleanup: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
   project.engine.stop(true);
   project.engine.setPosition(0 as ppqn);
-  return warning;
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { OutputRepeatFigures } from "./midiOutputTiming";
 import {
-  classifyEngineCell, classifyPageCell, isClean, MIDI_OUT_KNOWN_DEFECTS, PAGE_ARM_MAX_ABS_MS,
+  classifyEngineCell, classifyPageCell, engineCellVerdict, isClean, MIDI_OUT_KNOWN_DEFECTS, PAGE_ARM_MAX_ABS_MS, pageCellVerdict,
   type OutputBandContext, type OutputKnownDefectBand, type OutputVerdict,
 } from "./midiOutputVerdict";
 
@@ -102,3 +102,18 @@ describe("classifyEngineCell", () => {
     expect(isClean({ ...clean(0, 0), transportMessages: 56 })).toBe(true);
   });
 });
+
+describe("cell verdicts with failed repeats", () => {
+  it("checks the control before the failed-repeat count, so ?arm=engine with a failed repeat still reads no-control", () => {
+    expect(engineCellVerdict([clean(10, 1)], 1, null, ctx)).toEqual({ status: "not-judged", detail: "no-control" });
+    expect(engineCellVerdict([clean(10, 1)], 1, { status: "investigate", detail: "x" }, ctx)).toEqual({ status: "not-judged", detail: "bus" });
+    expect(engineCellVerdict([clean(10, 1)], 1, bus, ctx)).toEqual({ status: "investigate", detail: "1 of 2 engine repeats failed" });
+    expect(engineCellVerdict([clean(10, 1)], 0, bus, ctx).status).toBe("on-time");
+  });
+
+  it("reads a page cell with a failed repeat as investigate naming the count", () => {
+    expect(pageCellVerdict([clean(0, 0)], 1)).toEqual({ status: "investigate", detail: "1 of 2 page repeats failed" });
+    expect(pageCellVerdict([clean(0, 0)], 0).status).toBe("bus-true");
+  });
+});
+
