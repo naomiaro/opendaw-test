@@ -13,7 +13,7 @@ something; its phase 5 "closes #356 for input", and no phase names the output pa
 
 **Posted (2026-10-23):** [Chromium 40726491 comment #16](https://issues.chromium.org/issues/40726491#comment16), the SDK-free signature of the
 `getOutputTimestamp` wander this audit first saw (body: `drafts/posted-chromium-40726491-clock-drift-comment.md`).
-Still waiting for a read: `drafts/TO-REVIEW-opendaw-356-comment.md`.
+Also posted 2026-10-23: [the comment on openDAW#356](https://github.com/andremichelle/openDAW/issues/356#issuecomment-6376276217) (body: `drafts/posted-opendaw-356-comment.md`).
 
 **Harness:** unlisted debug demo
 `midi-output-timing-audit-debug-demo.html[?arm=both|engine|page][&bpm=<n|all>][&density=32nd|8th|both][&bars=<1-8>][&repeats=<1-10>][&delay=<0-500>][&jank=none|mid|both][&jankMs=<10-500>][&transport=1|0|both][&origin=<2-8>][&bus=<substring>]`
@@ -273,8 +273,8 @@ cell with a late clear note or a stuck note outside the blocks is never swallowe
 
 ### What remains
 
-- A draft comment for openDAW#356 with runs A–C and the scope note on `plans/capture.md`:
-  `drafts/TO-REVIEW-opendaw-356-comment.md`, waiting for the user's read.
+- ~~A draft comment for openDAW#356~~ POSTED 2026-10-23 (https://github.com/andremichelle/openDAW/issues/356#issuecomment-6376276217), with runs A–C, the scope note on
+  `plans/capture.md`, and the Chromium 40726491 reference: `drafts/posted-opendaw-356-comment.md`.
 - ~~The `getOutputTimestamp` drift on its own page (no SDK)~~ DONE 2026-10-23, with a caveat: the mechanism is
   Chrome's (open tracker 40726491; 40693959 merged in names it) and shows SDK-free on
   `chromium-watched-issues-debug-demo.html?issue=clock-drift` (a 278-frame sawtooth every 4.5 s on a 48 kHz

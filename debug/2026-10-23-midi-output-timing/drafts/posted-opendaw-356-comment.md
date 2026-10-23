@@ -1,18 +1,15 @@
-# Draft — comment on openDAW#356 (hardware midioutput gets desynced all the time)
+# POSTED — comment on openDAW#356 (hardware midioutput gets desynced all the time)
 
-Status: TO-REVIEW. Nothing posted. Target: a comment on https://github.com/andremichelle/openDAW/issues/356.
-Figures from `debug/2026-10-23-midi-output-timing/note.md` (runs A, B and C, 2026-10-23, SDK 0.0.177, Chrome 155,
-macOS 15.6.1, 44.1 kHz). No suggested-fix section, per repo rule; the mechanism is described, the remedy is the
-maintainer's. The last paragraph is the scope note the user asked for (the rewrite plan's phases name the input
-side only). To read together with this: openDAW#491's jitter sentence (7–10 ms, attributed to the recorder) was
-measured against one clock pair per repeat; the drift found here (±3 ms within a repeat) may be part of that
-spread, and a short correction there may be due — the user's call, in the same sitting.
+Posted 2026-10-23 by the user (`gh issue comment`): https://github.com/andremichelle/openDAW/issues/356#issuecomment-6376276217. Figures from `../note.md` (runs A, B and C, SDK 0.0.177,
+Chrome 155, macOS 15.6.1, 44.1 kHz); the clock-pair paragraph names Chromium 40726491 and its comment #16
+(`posted-chromium-40726491-clock-drift-comment.md`). No suggested-fix section, per repo rule. The body below is as
+posted (the page URL in the tracker's clean form, without `.html`).
 
 ---
 
 I measured where the SDK asks a hardware MIDI output to deliver each note, on the AudioContext clock, with a
 harness that plays a note region through the MIDI Output instrument into the macOS IAC Driver and reads every
-receipt back: https://opendaw-test.pages.dev/midi-output-timing-audit-debug-demo.html (Chrome, the IAC Driver
+receipt back: https://opendaw-test.pages.dev/midi-output-timing-audit-debug-demo (Chrome, the IAC Driver
 online, a real click on Run). Write-up with every envelope:
 https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-10-23-midi-output-timing/note.md
 
