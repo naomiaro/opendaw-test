@@ -19,7 +19,10 @@ first (an SDK regression can look the same), and move the entry up only on a mea
 Grouped by vendor: Chromium (Chrome, Edge, Brave), Firefox, WebKit (Safari, iOS, WKWebView), then the gaps that
 span them, then the hosting and tooling entries. The three browser sections were swept from their trackers on
 2026-10-22 (`node .claude/skills/sdk-upgrade/scripts/bugzilla.cjs <host> search|read …` for the two Bugzillas; the
-Chromium tracker through the browser).
+Chromium tracker through the browser) for Web Audio, worklet, OPFS, `getUserMedia` and `SharedArrayBuffer` issues, and
+on 2026-10-23 for Web MIDI (the Chromium component Blink>WebMIDI's 74 open issues, `WebMIDI` / `MIDI` quicksearches
+on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MIDI sweeps' figures are Chrome's
+`MIDIMessageEvent.timeStamp`.
 
 # Chromium
 
@@ -223,6 +226,9 @@ Chromium tracker through the browser).
   looping demo, playing, entered the cache despite its held Web Lock, came back with no
   `notRestoredReasons` and still "Playing", and its position advanced 1.50 s in 3.00 s of wall clock
   (0.4996); a fresh load of it ran at 0.993. One run, through an injected `pageshow` listener, not swept.
+  A page that has requested MIDI access is never put in the cache ([40635109](https://issues.chromium.org/issues/40635109)
+  below), so the MIDI recording demo, the Nano demo and the two MIDI audit pages that request access are out of its
+  reach once the visitor has enabled MIDI on them; before that click they are cacheable like the rest.
   The dev server's HMR socket and COOP / COEP did not keep the probe page out of the cache either.
 - **Workaround:** in place. Every demo that boots through `initializeOpenDAW` installs
   `installBfcacheReloadGuard` (`src/lib/bfcacheReloadGuard.ts`) before its first await: on `pageshow`
@@ -428,6 +434,65 @@ Chromium tracker through the browser).
   browsers, which this repo does not make. The sentinel: no probe, out of scope; it needs the origin's
   quota exhausted or an incognito profile.
 
+### Chromium [327611574](https://issues.chromium.org/issues/327611574) — the macOS Web MIDI backend was rewritten onto CoreMIDI's UMP API, and the legacy path is gone
+
+- **Tracker:** [issues.chromium.org/issues/327611574](https://issues.chromium.org/issues/327611574), "Mac MIDI code
+  should not use soft-deprecated APIs", **in progress**, P2, assigned to the Web MIDI owner. `MidiManagerMac` left the
+  `MIDIPacketList` / `MIDISend` / `MIDIInputPortCreate` API (deprecated in macOS 14) for the UMP `MIDIEventList` API:
+  the migration landed on main on 2026-07-21, the new path was switched on for Apple platforms behind the
+  `kMidiMacUmp` feature from 152.0.7966.0, and the flag and the legacy code were removed on 2026-10-13. The owner
+  wrote that the change turned out "much [more] complicated than we expect, and beyond a simple API migration", which
+  is why it shipped behind a flag first. No regression is filed against the new path.
+- **Where it bites here:** every MIDI figure in this repo is a figure of the new backend. The three MIDI sweeps
+  (`debug/2026-10-20-midi-input-alignment/`, `debug/2026-10-20-midi-audio-combined/`,
+  `debug/2026-10-21-midi-effect-placement/`) ran on 2026-10-20 and 21 in the user's Chrome (which read 155.0.8059.85
+  two days later; the notes record no version) over the IAC Driver, which the rewritten manager enumerates, stamps and
+  delivers; the legacy backend was never measured here. A MIDI band that moves after a Chrome
+  update (`MIDI_KNOWN_DEFECTS` in `src/lib/audit/midiInputAlignment.ts`) is read against this entry before the SDK:
+  the stamp a `MIDIMessageEvent` carries is what the new path assigns. Nothing attributable to it has been seen: the
+  placement findings ([openDAW#491](https://github.com/andremichelle/openDAW/issues/491),
+  [#492](https://github.com/andremichelle/openDAW/issues/492), [#493](https://github.com/andremichelle/openDAW/issues/493)) are explained by the SDK's own arithmetic (the latency term's sign
+  and a frame-stale position base, `debug/2026-10-20-midi-input-alignment/note.md`). No open Chromium issue concerns `MIDIMessageEvent.timeStamp`, MIDI input latency or jitter
+  (searched 2026-10-23: `midi` with timestamp, latency, jitter, CoreMIDI and IAC), so the campaign's +32 ms has no
+  vendor candidate.
+- **Last checked:** 2026-10-23 (tracker read; no probe — the sweeps are the measurement).
+
+### Chromium [40635109](https://issues.chromium.org/issues/40635109) — a page that has requested MIDI access is not put in the back/forward cache
+
+- **Tracker:** [issues.chromium.org/issues/40635109](https://issues.chromium.org/issues/40635109), the "BFCache
+  Correctness: pages in BFCache should not break platform APIs" umbrella, **in progress**, P2 (demoted from P1 in the
+  2026-06 debt sweep). Among its commits the browser test `WebMidiNotCached` (relanded 2019-12-04), which pins that a
+  document holding a `MIDIAccess` is not cached; Blink's scheduler tracks the request as
+  `WebSchedulerTrackedFeature::kRequestedMIDIPermission` (`web_scheduler_tracked_feature.cc`, read 2026-10-23), which
+  a Back navigation reports in `performance.getEntriesByType("navigation")[0].notRestoredReasons` as
+  `requested midi permission`.
+- **Where it bites here:** it narrows [575891839](https://issues.chromium.org/issues/575891839) above. The MIDI
+  recording demo and the Nano demo call `MidiDevices.requestPermission()` when the visitor enables MIDI, the two MIDI
+  audit pages when Run is clicked; from that moment a visitor who leaves them and comes back with Back gets a fresh load
+  from the browser itself, and the reload guard never fires there. Before that click, and on the audio-only demos, the
+  half-speed clock remains the risk the guard covers. The Neon and Apparat demos only use the SDK's software
+  input, never request access, and are cacheable like the rest. Not measured here (the `?issue=bfcache` probe does not
+  request MIDI).
+- **Last checked:** 2026-10-23 (tracker read).
+
+### Chromium Web MIDI — read and not reaching here
+
+The rest of the component's 74 open issues, read 2026-10-23, do not reach a macOS Chrome page: the Windows WinMM
+backend's deadlocks and missed disconnects ([566965142](https://issues.chromium.org/issues/566965142) Chrome 154 with
+a SysEx buffer queued, [558101305](https://issues.chromium.org/issues/558101305), [41436976](https://issues.chromium.org/issues/41436976),
+[416712838](https://issues.chromium.org/issues/416712838), [505045927](https://issues.chromium.org/issues/505045927));
+Android ([568322991](https://issues.chromium.org/issues/568322991) a USB piano silencing Web Audio) and Linux
+enumeration ([533891244](https://issues.chromium.org/issues/533891244), [40794512](https://issues.chromium.org/issues/40794512));
+the unimplemented `MIDIPort.open()` / `close()` and `MIDIOutput.clear()` backends ([40411676](https://issues.chromium.org/issues/40411676),
+[40411677](https://issues.chromium.org/issues/40411677)) and `send()` backpressure ([40370059](https://issues.chromium.org/issues/40370059)) —
+the SDK calls none of the three: it listens for `midimessage` events, and for a MIDI output it calls
+`send(data, performance.now() + offset)` from `Project.receivedMIDIFromEngine` (a scheduled send that, with no
+`clear()`, cannot be recalled — `MidiDevices.panic()` sends immediate note-offs instead); the
+`PermissionStatus` change event not firing for `midi` ([352700376](https://issues.chromium.org/issues/352700376),
+Chrome 126 regression) — the SDK never queries it; `MIDIAccess` in a worker ([379805727](https://issues.chromium.org/issues/379805727));
+and the feature requests for virtual ports ([41487942](https://issues.chromium.org/issues/41487942)) and MIDI 2.0
+([40671162](https://issues.chromium.org/issues/40671162)).
+
 # Firefox
 
 ## Measured here
@@ -492,6 +557,26 @@ Chromium tracker through the browser).
 - **Tracker:** [bugzilla 2034508](https://bugzilla.mozilla.org/show_bug.cgi?id=2034508), new, 2026-04. The engine assumes the 128-frame quantum everywhere;
   a context constructed with another `renderSizeHint` is not something this repo does, so the gap is harmless here.
 - **Last checked:** 2026-10-22.
+
+### Firefox [1798742](https://bugzilla.mozilla.org/show_bug.cgi?id=1798742) / [1802149](https://bugzilla.mozilla.org/show_bug.cgi?id=1802149) — a virtual MIDI device switched on or off is not seen until the browser restarts; no hot-plug
+
+- **Trackers:** [1798742](https://bugzilla.mozilla.org/show_bug.cgi?id=1798742) (new, P3, 2022): switching a macOS
+  virtual MIDI device online or offline in Audio MIDI Setup changes nothing in Firefox until a restart, where Chrome's
+  enumeration follows the change live; it waits on [1802149](https://bugzilla.mozilla.org/show_bug.cgi?id=1802149)
+  hot-plug support (new, 19 comments; Firefox's `midir` fork gained a `hotplug` branch in 2026-01 — Linux working, the
+  macOS code "to clean up", Windows not started). [1758488](https://bugzilla.mozilla.org/show_bug.cgi?id=1758488) asks
+  whether a device's status survives a reload on macOS (new, P3, no description). Web MIDI itself shipped in Firefox 108
+  behind a site-permission add-on prompt ([1742635](https://bugzilla.mozilla.org/show_bug.cgi?id=1742635), new, P2): a
+  refusal and a missing add-on both reject `requestMIDIAccess` alike.
+- **Where it bites here:** the three MIDI sweeps' recipe "IAC Driver online (Audio MIDI Setup)" (root CLAUDE.md): in
+  Firefox the driver must be online before the browser starts, and a device plugged in
+  during a session is missing until a restart. A rejected request rejects `requestPermission()` with the SDK's "Could
+  not request MIDI" warning, whichever of the two causes it; each demo catches it and reports in its own words. The sweeps run in Chrome; none of this is measured here. Not reaching
+  here: `MIDIOutput.clear()` not cancelling scheduled sends ([1869483](https://bugzilla.mozilla.org/show_bug.cgi?id=1869483)),
+  the unbounded send queue on a closed port ([2031623](https://bugzilla.mozilla.org/show_bug.cgi?id=2031623)),
+  `MIDIAccess` not transferable to a worker ([1937056](https://bugzilla.mozilla.org/show_bug.cgi?id=1937056)), the
+  error-name alignment ([2007071](https://bugzilla.mozilla.org/show_bug.cgi?id=2007071)).
+- **Last checked:** 2026-10-23 (tracker read).
 
 # WebKit
 
@@ -590,6 +675,20 @@ Chromium tracker through the browser).
 - **Where it bites here:** every demo on a Safari with the setting on would fail at `Workers.install`; not measured.
 - **Last checked:** 2026-10-22 (tracker read).
 
+### WebKit [107250](https://bugs.webkit.org/show_bug.cgi?id=107250) — no Web MIDI API
+
+- **Tracker:** [bugs.webkit.org 107250](https://bugs.webkit.org/show_bug.cgi?id=107250), the master bug for a
+  `WebCore/Modules/webmidi` implementation, new, P2, filed 2013-01, unassigned; ten comments, the last two (2024-11,
+  2025-07) asking for it. `navigator.requestMIDIAccess` is undefined in Safari on macOS and iOS and in every WKWebView.
+- **Where it bites here:** `MidiDevices.canRequestMidiAccess()` is false, `requestPermission()` rejects with the SDK's
+  "This browser does not support MIDI" warning, and `inputDevices()` lists the software input alone. The MIDI recording
+  demo, the Nano demo and the two MIDI audit pages have no hardware input in Safari; their on-screen keyboards (the SDK's
+  `softwareMIDIInput`) work. The Neon and Apparat demos only drive the software input and are unaffected. The MIDI
+  recording demo (a callout) and the Nano demo (a "No MIDI in this browser" badge) say so, both gated on
+  `canRequestMidiAccess()`; the two audit pages are Chrome-only debug pages and fail at their MIDI-access step with the
+  SDK's warning instead.
+- **Last checked:** 2026-10-23 (tracker read).
+
 # Across vendors
 
 - **`AudioContext.setSinkId` is Chrome and Edge only.** Firefox: [1942786](https://bugzilla.mozilla.org/show_bug.cgi?id=1942786) (unconfirmed, 2025); WebKit: [280303](https://bugs.webkit.org/show_bug.cgi?id=280303)
@@ -602,6 +701,12 @@ Chromium tracker through the browser).
   SDK's DSP-load meter exists in its spinning-worker form because of this gap
   (`documentation/internals/03-cross-thread-protocols.md`); once the API lands everywhere the worker can go.
 - **No input-latency figure** — Chromium [516995393](https://issues.chromium.org/issues/516995393) above; the other engines have none either.
+- **Web MIDI is Chromium's alone in practice.** Chrome and Edge: full, on a macOS backend rewritten in 2026
+  ([327611574](https://issues.chromium.org/issues/327611574) above). Firefox: since 108, behind a site-permission
+  add-on prompt, with a device list fixed at browser start ([1798742](https://bugzilla.mozilla.org/show_bug.cgi?id=1798742)
+  above). Safari and WKWebView: none ([107250](https://bugs.webkit.org/show_bug.cgi?id=107250) above). The SDK's
+  `MidiDevices.canRequestMidiAccess()` is the gate; its software input (`MidiDevices.softwareMIDIInput`) works
+  everywhere, so a page that offers hardware MIDI should say which browsers have it.
 
 # Hosting and tooling
 

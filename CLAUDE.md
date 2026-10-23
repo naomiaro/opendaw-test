@@ -669,7 +669,8 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   (Chromium, Firefox, WebKit, hosting and tooling: the Chromium worklet clock that stands still
   under graph work, frames stopping on a hidden page, per-node stream delays, Safari's Opus decode
   and iOS suspensions, WebKit's worklet heap outliving the page, Cloudflare's `NODE_VERSION`
-  resolution, …), with open upstream issues read from the trackers under each vendor's "Watched" section. Before debugging a
+  resolution, …), with open upstream issues read from the trackers under each vendor's "Watched" section (Safari's
+  missing Web MIDI, Firefox's device list fixed at browser start, …). Before debugging a
   symptom that matches one, read its entry. The register keeps two kinds apart per vendor: a
   **measured** entry was reproduced here and its workaround is in place where the entry says, so a
   sweep cell explained by it is read against it, not filed; a **watched** entry is an open upstream
