@@ -25,8 +25,12 @@ in audio frames from the first sample). Chrome 155.0.8059.85, macOS 15.6.1, a Ma
   page (−229 frames at 12 s in one run, −997 frames, 22.6 ms, at 9 s in another), otherwise a slope of about 5.7
   ppm, which is the clock skew one expects; nothing from the main-thread blocks, the graph changes, or a worklet
   burning 60 % of every render quantum.
-- `outputLatency` read 28.00 ms on every sample of every run, so a page that corrects a schedule by it cannot see
-  the change.
+- With the output device switched to 48 kHz the two cases swap: the 48 kHz context reads like the native one
+  above, and the 44.1 kHz context gets the sawtooth, 234 frames (again one 256-frame device buffer) every
+  1.58 s, 39 snaps in 60 s, ramp 149 frames per second. The amplitude is one device buffer in both directions;
+  the period and slope depend on the direction of the resampling.
+- `outputLatency` read 28.00 ms (27.00 with the device at 48 kHz) on every sample of every run, so a page that
+  corrects a schedule by it cannot see the change.
 
 Where it shows: anything that bridges the context clock to `performance.now()` through this pair, Web MIDI
 scheduling here. A pair read once drifts away from the output by up to 5.8 ms within five seconds on the

@@ -686,6 +686,14 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   cross-context MediaStream), and each reproduced once the condition was. Give every probe a positive
   control that makes its instrument fire, and never read a round-trip differential as output latency
   unless the capture path is pinned to one clock domain (a `{type: "none"}`-sink capture context).
+- **The Mac's output device rate is part of every audio measurement's footing.** Pages that create their
+  context without a rate take the device's rate; a page that asks for the other rate runs RESAMPLED, which is
+  where `getOutputTimestamp`'s sawtooth lives (Chromium 40726491, vendor register). Every figure in the
+  register and the debug notes up to 2026-10-23 was taken with the device at 44.1 kHz (Audio MIDI Setup →
+  the output device → Format). Run each standing sweep on BOTH device rates (44.1 and 48 kHz), say which in the
+  note, and read a changed row against the device rate before the SDK; leave the device at 44.1 kHz between
+  sessions so an unlabelled figure keeps its footing. The clock-drift probe records `deviceRateHz` in its
+  envelope; the other harnesses do not yet (a follow-up: a bare `new AudioContext().sampleRate` per envelope).
 - After SDK upgrades, re-run the standing sample-rate/quantum-alignment regression sweep:
   `samplerate-audit-debug-demo.html?family=all&bpm=all&rate=all` (calibration in
   `src/lib/audit/auditCalibration.ts`, campaign register in
