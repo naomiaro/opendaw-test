@@ -1,15 +1,17 @@
-# Draft — comment on Chromium 40726491 (WebAudio currentTime and synchronisation issue)
+# POSTED — comment #16 on Chromium 40726491 (WebAudio currentTime and synchronisation issue)
 
-Status: TO-REVIEW. Nothing posted. Target: a comment on https://issues.chromium.org/issues/40726491 (open, P3,
-WebAudio-timeline), into which 40693959 ("getOutputTimestamp doesn't accurately represent the output audio
-stream position") was merged. Figures from `debug/2026-10-22-chromium-watched-issues/note.md`, "clock-drift",
-every number checked against its envelope. A measured signature on current Chrome, not a new report. The user
-decides whether and when it goes.
+Posted 2026-10-23 by the user from their Chrome: https://issues.chromium.org/issues/40726491#comment16. Target: https://issues.chromium.org/issues/40726491
+(open, P3, WebAudio-timeline), into which 40693959 ("getOutputTimestamp doesn't accurately represent the output
+audio stream position") was merged. Filed from this investigation, where the wander was first seen on the MIDI
+output timing audit; measured SDK-free on `chromium-watched-issues-debug-demo.html?issue=clock-drift`
+(`debug/2026-10-22-chromium-watched-issues/note.md`, "clock-drift"); every number checked against its envelope.
+A measured signature on current Chrome, not a new report. The body below is as posted (the page URL without
+`.html`, the tracker's clean form; backticks rendered through the tracker's Markdown mode).
 
 ---
 
 A current-Chrome measurement of the behaviour 40693959 describes, with a page that has no audio library on it:
-https://opendaw-test.pages.dev/chromium-watched-issues-debug-demo.html?issue=clock-drift&rate=48000&hidden=0
+https://opendaw-test.pages.dev/chromium-watched-issues-debug-demo?issue=clock-drift&rate=48000&hidden=0
 (a running context with an AudioWorklet tone and an OscillatorNode; `getOutputTimestamp()` and `outputLatency`
 read on a Worker tick every 10 ms for 20 s per phase; the figure is `(Δ contextTime − Δ performanceTime) × rate`
 in audio frames from the first sample). Chrome 155.0.8059.85, macOS 15.6.1, a MacBook whose output device runs at
