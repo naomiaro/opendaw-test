@@ -160,6 +160,7 @@ export async function runClockDriftProbe(signal: AbortSignal, report: (step: str
   const phaseMs = options.seconds * 1000;
   let hideWaitMs: number | null = null;
   let returnWaitMs: number | null = null;
+  let contextStateAtEnd = "unknown";
   try {
     if (live.context.state !== "running") throw new Error(`the context is ${live.context.state} after resume`);
     report("idle");
@@ -210,10 +211,16 @@ export async function runClockDriftProbe(signal: AbortSignal, report: (step: str
     sub.terminate();
     ticker.terminate();
     cancelAnimationFrame(frameSub);
-    await live.context.close();
+    // The state the run ENDED in: a context that stopped running partway (a device change, an interruption) freezes the pair.
+    contextStateAtEnd = live.context.state;
+    try {
+      await deadline(live.context.close(), DEADLINE_MS, "close");
+    } catch (closeError) {
+      console.warn(`[chromium-watched] clock-drift: the context did not close: ${closeError instanceof Error ? closeError.message : String(closeError)}`);
+    }
   }
   const phases = summarisePhases(samples, options.rate);
-  const judged = judgeClockDrift(phases, { hiddenRequested: options.hidden, contextState: "running" });
+  const judged = judgeClockDrift(phases, { hiddenRequested: options.hidden, contextState: contextStateAtEnd });
   const verdict: Verdict = judged.verdict === "STEPS" || judged.verdict === "STEADY" ? judged.verdict : notChecked(judged.verdict.replace(/^NOT CHECKED /, ""));
   const frameGaps = frameStamps.slice(1).map((t, i) => t - frameStamps[i]);
   return makeEnvelope(head, verdict, {
@@ -231,6 +238,7 @@ export async function runClockDriftProbe(signal: AbortSignal, report: (step: str
     hideWaitMs: hideWaitMs === null ? null : Math.round(hideWaitMs),
     returnWaitMs: returnWaitMs === null ? null : Math.round(returnWaitMs),
     frameGapMaxMs: frameGaps.length === 0 ? null : Math.round(Math.max(...frameGaps)),
+    contextStateAtEnd,
     ...phaseFigures(phases),
   });
 }

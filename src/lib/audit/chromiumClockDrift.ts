@@ -72,7 +72,9 @@ export function latticeFit(stepFrames: readonly number[]): LatticeFit {
 
 /**
  * The slope of the relation BETWEEN steps, in frames per second: the median of the per-sample slopes with the
- * step samples left out, so a sawtooth reads its ramp and a flat series 0. Null with fewer than two samples.
+ * step samples left out, so a sawtooth reads its ramp and a flat series 0. Time is the SNAPSHOT's own
+ * `performanceTime`, not the tick's arrival: ticks queued behind a main-thread block arrive together carrying
+ * one snapshot, and on the snapshot clock they are zero-length and skipped. Null with fewer than two samples.
  */
 export function rampFramesPerSec(samples: readonly ClockSample[], sampleRate: number): number | null {
   if (samples.length < 2) return null;
@@ -82,7 +84,7 @@ export function rampFramesPerSec(samples: readonly ClockSample[], sampleRate: nu
   let previousOffset = offsetFrames(first, first, sampleRate);
   for (let i = 1; i < samples.length; i++) {
     const offset = offsetFrames(samples[i], first, sampleRate);
-    const dt = (samples[i].perfMs - samples[i - 1].perfMs) / 1000;
+    const dt = (samples[i].performanceTime - samples[i - 1].performanceTime) / 1000;
     const delta = offset - previousOffset;
     previousOffset = offset;
     if (dt <= 0 || Math.abs(delta) > stepThreshold) continue;

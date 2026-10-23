@@ -97,6 +97,17 @@ describe("rampFramesPerSec", () => {
     expect(rampFramesPerSec(series([{ t: 0, offset: 0 }]), RATE)).toBeNull();
   });
 
+  it("measures time on the snapshot's own clock, so ticks queued behind a main-thread block (same snapshot, arrival microseconds apart) do not pull the ramp toward zero", () => {
+    // A 50 frames/s ramp sampled every 10 ms; after an 80 ms block eight queued ticks arrive together carrying the SAME snapshot.
+    const points = Array.from({ length: 60 }, (_, i) => ({ t: i * 10, offset: i * 0.5 }));
+    const samples = series(points);
+    const frozen = samples[30];
+    // More queued duplicates than honest samples, so a slope that counted them would read 0.
+    const burst: ClockSample[] = Array.from({ length: 70 }, (_, k) => ({ ...frozen, perfMs: frozen.perfMs + 80 + k * 0.05 }));
+    const withBurst = [...samples.slice(0, 31), ...burst, ...samples.slice(31)];
+    expect(rampFramesPerSec(withBurst, RATE)).toBeCloseTo(50, 0);
+  });
+
   it("is carried per phase by the summary", () => {
     const samples = series(Array.from({ length: 200 }, (_, i) => ({ t: i * 10, offset: i * 0.5, phase: i < 100 ? "idle" : "jank" })));
     const phases = summarisePhases(samples, RATE);
