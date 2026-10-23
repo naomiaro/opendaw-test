@@ -26,7 +26,7 @@ describe("midiOutputArtifacts", () => {
   it("names the file and parses its own schema, refusing another version or token", () => {
     expect(summaryFileName(42)).toBe("midiout-summary-42.json");
     expect(parseMidiOutputSummary(JSON.parse(JSON.stringify(summary)), 42)).toEqual(summary);
-    expect(() => parseMidiOutputSummary({ ...summary, schemaVersion: 2 }, 42)).toThrow(/schemaVersion/);
+    expect(() => parseMidiOutputSummary({ ...summary, schemaVersion: 3 }, 42)).toThrow(/schemaVersion/);
     expect(() => parseMidiOutputSummary(summary, 43)).toThrow(/runToken/);
     expect(() => parseMidiOutputSummary({ ...summary, cells: "none" }, 42)).toThrow(/cells/);
   });
@@ -36,6 +36,22 @@ describe("midiOutputArtifacts", () => {
     expect(lines).toHaveLength(2);
     expect(lines[0]).toMatch(/engine \| 140 \| 32nd \| none \| on \| on-time \| 10\.80 \/ 11\.10 \| 1\.20 \| 1\.10 \| — \| 10\.80 \/ 11\.10 \| 1\.00 \| -0\.30\.\.0\.40 \| 0\/0\/0\/0 \| 56 \| 10 \| 16\.67/);
     expect(lines[1]).toMatch(/^page \| 140 .* bus-true \| 0\.02 \/ -0\.01/);
+  });
+
+  it("reads a schema-1 envelope (before the drift witness) with the live fields mapped to null, and refuses a current one lacking them", () => {
+    const v1Row = (r: OutputRepeatRow): Record<string, unknown> => {
+      const { medianErrorLiveMs: _m, maxAbsDevLiveMs: _d, pairDrift: _p, ...rest } = r;
+      return { ...rest, notes: [{ index: 0, pitch: 36, tag: "thirtysecond", expectedHeardCtxSec: 10, receiptPerfMs: 5000, receiptHeardCtxSec: 10.01, errorMs: 10, durationErrorMs: 0, velocityMatch: true, jankLabel: "clear" }] };
+    };
+    const v1 = { ...summary, schemaVersion: 1, cells: summary.cells.map((c) => ({ ...c, repeats: c.repeats.map(v1Row) })) };
+    const parsed = parseMidiOutputSummary(JSON.parse(JSON.stringify(v1)), 42);
+    expect(parsed.schemaVersion).toBe(1);
+    expect(parsed.cells[0].repeats[0]).toMatchObject({ medianErrorLiveMs: null, maxAbsDevLiveMs: null, pairDrift: null });
+    expect(parsed.cells[0].repeats[0].notes[0].errorLiveMs).toBeNull();
+    expect(cellTableLines(parsed)[0]).toMatch(/\| — \/ — \| — \| — \|/);
+    const current = { ...v1, schemaVersion: MIDI_OUTPUT_SCHEMA_VERSION };
+    expect(() => parseMidiOutputSummary(JSON.parse(JSON.stringify(current)), 42)).toThrow(/medianErrorLiveMs/);
+    expect(MIDI_OUTPUT_SCHEMA_VERSION).toBe(2);
   });
 
   it("prints an error row's stage instead of figures", () => {

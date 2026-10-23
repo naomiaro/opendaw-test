@@ -8,7 +8,9 @@ import type { JankBlock } from "./midiOutputPattern";
 import type { OutputNoteRow, OutputRepeatFigures, PairDriftSummary } from "./midiOutputTiming";
 import type { OutputCellStatus } from "./midiOutputVerdict";
 
-export const MIDI_OUTPUT_SCHEMA_VERSION = 1;
+/** 2 added the drift witness (`medianErrorLiveMs`, `maxAbsDevLiveMs`, `pairDrift`, a note's `errorLiveMs`); a 1 is read with those null. */
+export const MIDI_OUTPUT_SCHEMA_VERSION = 2;
+export const MIDI_OUTPUT_SCHEMA_VERSIONS_READABLE = [1, 2] as const;
 
 export interface OutputCellKey {
   arm: OutputArm;
@@ -47,7 +49,7 @@ export interface OutputCellRecord extends OutputCellKey {
 }
 
 export interface MidiOutputSummary {
-  schemaVersion: typeof MIDI_OUTPUT_SCHEMA_VERSION;
+  schemaVersion: (typeof MIDI_OUTPUT_SCHEMA_VERSIONS_READABLE)[number];
   runToken: number;
   sdkVersion: string;
   chrome: string;
@@ -64,11 +66,32 @@ export function summaryFileName(runToken: number): string {
 export function parseMidiOutputSummary(json: unknown, runToken: number): MidiOutputSummary {
   if (typeof json !== "object" || json === null) throw new Error(`summary ${runToken}: not an object`);
   const summary = json as Record<string, unknown>;
-  if (summary.schemaVersion !== MIDI_OUTPUT_SCHEMA_VERSION) {
-    throw new Error(`summary ${runToken}: schemaVersion ${String(summary.schemaVersion)}, readable: ${MIDI_OUTPUT_SCHEMA_VERSION}`);
+  if (!(MIDI_OUTPUT_SCHEMA_VERSIONS_READABLE as readonly unknown[]).includes(summary.schemaVersion)) {
+    throw new Error(`summary ${runToken}: schemaVersion ${String(summary.schemaVersion)}, readable: ${MIDI_OUTPUT_SCHEMA_VERSIONS_READABLE.join(", ")}`);
   }
   if (summary.runToken !== runToken) throw new Error(`summary ${runToken}: runToken ${String(summary.runToken)} does not match the file`);
   if (!Array.isArray(summary.cells)) throw new Error(`summary ${runToken}: cells is not an array`);
+  const current = summary.schemaVersion === MIDI_OUTPUT_SCHEMA_VERSION;
+  const witnessFields = ["medianErrorLiveMs", "maxAbsDevLiveMs", "pairDrift"] as const;
+  summary.cells.forEach((cell: Record<string, unknown>, c: number) => {
+    if (!Array.isArray(cell.repeats)) throw new Error(`summary ${runToken}: cell ${c} repeats is not an array`);
+    cell.repeats.forEach((row: Record<string, unknown>, i: number) => {
+      for (const field of witnessFields) {
+        if (row[field] === undefined) {
+          if (current) throw new Error(`summary ${runToken}: cell ${c} repeat ${i} lacks ${field}`);
+          row[field] = null;
+        }
+      }
+      if (Array.isArray(row.notes)) {
+        for (const note of row.notes as Record<string, unknown>[]) {
+          if (note.errorLiveMs === undefined) {
+            if (current) throw new Error(`summary ${runToken}: cell ${c} repeat ${i} has a note without errorLiveMs`);
+            note.errorLiveMs = null;
+          }
+        }
+      }
+    });
+  });
   return summary as unknown as MidiOutputSummary;
 }
 
