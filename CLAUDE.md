@@ -676,7 +676,15 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   issue read from the tracker and never reproduced here — a candidate, not an attribution: reproduce
   first (an SDK regression can look the same), then attribute, and move the entry up only on a
   measurement. Add an entry when a vendor behaviour costs a session; mark one fixed only after a
-  re-measurement on the vendor's fix.
+  re-measurement on the vendor's fix. A probe that reads CLEAN on a watched issue has shown nothing
+  until the tracker's own condition is exercised: read the tracker's repro (its page, fiddle or
+  bug report) BEFORE writing "not reproduced" — the Chromium probes
+  (`chromium-watched-issues-debug-demo.html?issue=…`, findings in
+  `debug/2026-10-22-chromium-watched-issues/note.md`) read CLEAN three times on conditions they had
+  not provoked (a render-thread stall before a suspend/resume, 30 s of exactly-zero output, a
+  cross-context MediaStream), and each reproduced once the condition was. Give every probe a positive
+  control that makes its instrument fire, and never read a round-trip differential as output latency
+  unless the capture path is pinned to one clock domain (a `{type: "none"}`-sink capture context).
 - After SDK upgrades, re-run the standing sample-rate/quantum-alignment regression sweep:
   `samplerate-audit-debug-demo.html?family=all&bpm=all&rate=all` (calibration in
   `src/lib/audit/auditCalibration.ts`, campaign register in
@@ -954,6 +962,18 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   handlers on these demos — click by coordinates from a screenshot instead. Also:
   `javascript_tool` results dumping page text can trip the extension's
   "[BLOCKED: Cookie/query string data]" filter — read results via screenshot.
+- Which browser for which probe: the Playwright MCP's Chrome runs with
+  `--disable-back-forward-cache` (read on `chrome://version`), so a back/forward-cache run there
+  always reads not-cached — run those through the user's Chrome (claude-in-chrome). Two agents on
+  the one Playwright browser navigate each other's runs away: hand it over explicitly ("browser
+  free") before a second agent uses it. After the user quits and reopens Chrome (an OPFS restart
+  round), claude-in-chrome can stop answering for the rest of the session; fetch public pages with
+  curl instead. A 30 s probe run is cut by any save under `src/` (Vite reload) — hold edits while a
+  run is on.
+- The harness refuses page-side OPFS deletes (`removeEntry`) and even `localStorage.setItem` as
+  irreversible: hand the user the one-liners to paste into DevTools instead of retrying. A real
+  Chrome restart needs the user (Cmd+Q, the URL typed by hand — session restore carries
+  `sessionStorage` over).
 - Radix Slider in browser tests: click the slider, then send the `End`/`Home` key —
   jumps to max/min through the real onValueChange path (no fragile drag math).
 - After `resize_window`, screenshot pixel coordinates can stop mapping 1:1 to the
