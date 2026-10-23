@@ -10,6 +10,10 @@ import {
   headZerosOf,
   judgeCaptureGaps,
   sinceLastStall,
+  latencyHintFrom,
+  lengthsIn480s,
+  rmsAfterHead,
+  matchInput,
   recorderChunkFrames,
   sourceProblem,
 } from "./chromiumCaptureGaps";
@@ -281,5 +285,52 @@ describe("sinceLastStall", () => {
     expect(sinceLastStall(4000, [1000, 4000])).toBe(0);
     expect(sinceLastStall(500, [1000])).toBeNull();
     expect(sinceLastStall(500, [])).toBeNull();
+  });
+});
+
+describe("latencyHintFrom", () => {
+  it("reads seconds and the three category words; interactive without one", () => {
+    expect(latencyHintFrom(null)).toBe("interactive");
+    expect(latencyHintFrom("0.04")).toBe(0.04);
+    expect(latencyHintFrom("balanced")).toBe("balanced");
+    expect(latencyHintFrom("playback")).toBe("playback");
+  });
+
+  it("throws on anything else", () => {
+    expect(() => latencyHintFrom("0")).toThrow(/latencyHint/);
+    expect(() => latencyHintFrom("-1")).toThrow(/latencyHint/);
+    expect(() => latencyHintFrom("fast")).toThrow(/latencyHint/);
+  });
+});
+
+describe("lengthsIn480s", () => {
+  it("gives each length in tens of milliseconds at 48 kHz, two decimals", () => {
+    expect(lengthsIn480s([480, 1920, 128, 441])).toBe("1 4 0.27 0.92");
+    expect(lengthsIn480s([])).toBe("");
+  });
+});
+
+describe("rmsAfterHead", () => {
+  it("is the RMS of the frames after the head, 0 for an all-zero capture", () => {
+    const frames = new Float32Array([0, 0, 0.5, -0.5, 0.5, -0.5]);
+    expect(rmsAfterHead(frames, 2)).toBeCloseTo(0.5, 6);
+    expect(rmsAfterHead(new Float32Array(4), 4)).toBe(0);
+  });
+});
+
+describe("matchInput", () => {
+  const inputs = [
+    { deviceId: "default", label: "Default - MacBook Pro Microphone (Built-in)" },
+    { deviceId: "a", label: "MacBook Pro Microphone (Built-in)" },
+    { deviceId: "b", label: "USB Audio CODEC (08bb:2902)" },
+  ];
+
+  it("picks the first input whose label holds the text, ignoring case, skipping the default alias", () => {
+    expect(matchInput(inputs, "usb")?.deviceId).toBe("b");
+    expect(matchInput(inputs, "macbook")?.deviceId).toBe("a");
+  });
+
+  it("gives null when none matches", () => {
+    expect(matchInput(inputs, "scarlett")).toBeNull();
   });
 });

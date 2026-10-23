@@ -203,3 +203,39 @@ export function captureVerdict(
   if (judged.verdict === "NOT CHECKED") return notChecked(`${captureSeconds.toFixed(1)}-s`);
   return judged.verdict;
 }
+
+/** The capture context's `latencyHint`: seconds above 0, or a category word. */
+export type LatencyHint = number | "interactive" | "balanced" | "playback";
+
+/** The hint named by `&latencyHint=`; "interactive" without one; throws on anything else. */
+export function latencyHintFrom(value: string | null): LatencyHint {
+  if (value === null) return "interactive";
+  if (value === "interactive" || value === "balanced" || value === "playback") return value;
+  const seconds = Number(value);
+  if (value.trim() !== "" && Number.isFinite(seconds) && seconds > 0) return seconds;
+  throw new Error(`&latencyHint=${value}: expected seconds above 0, interactive, balanced or playback`);
+}
+
+/** Each length in units of 480 frames (10 ms at 48 kHz, the tracker's hole size), two decimals. */
+export function lengthsIn480s(lengths: readonly number[]): string {
+  return lengths.map((length) => String(Number((length / 480).toFixed(2)))).join(" ");
+}
+
+/** The RMS of the frames after the head; 0 when there are none. */
+export function rmsAfterHead(frames: Float32Array, headZeros: number): number {
+  const count = frames.length - headZeros;
+  if (count <= 0) return 0;
+  let sum = 0;
+  for (let i = headZeros; i < frames.length; i++) sum += frames[i] * frames[i];
+  return Math.sqrt(sum / count);
+}
+
+/** The first input whose label holds `text` (any case), the "default" and "communications" aliases skipped. */
+export function matchInput<T extends { deviceId: string; label: string }>(inputs: readonly T[], text: string): T | null {
+  const wanted = text.toLowerCase();
+  return (
+    inputs.find(
+      (input) => input.deviceId !== "default" && input.deviceId !== "communications" && input.label.toLowerCase().includes(wanted),
+    ) ?? null
+  );
+}

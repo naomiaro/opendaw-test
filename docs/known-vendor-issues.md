@@ -326,9 +326,13 @@ Chromium tracker through the browser).
   60 of 60 at 44 100. At 48 000, 21 single-quantum runs also came between stalls, where an unstalled
   microphone minute holds none. There were no duplicates, since the microphone and speakers share a clock.
   The same-context loopback stays clean under the same stalls, because its producer renders on the
-  stalled thread. Without a stall there is no gap after the first 0.1 s of any minute. A stream-start zero run
+  stalled thread. A USB microphone, on its own clock apart from the built-in output, reads the same
+  under stalls (114 of 138, 62 of 62) and also has no duplicates. Without a stall there is no gap after the first 0.1 s of any minute. A stream-start zero run
   does appear in two cells, every run: 441 frames, 441 frames after the tone arrives, on the loopback at
-  44 100, and 128 frames on the microphone at 48 000, all within the first 55 ms.
+  44 100, and 128 frames on the microphone at 48 000, all within the first 55 ms. The tracker's JSFiddle
+  lever, a larger `latencyHint`, gave the USB microphone one 384- or 256-frame run about 0.5 s in at
+  0.1 and 0.2 s (`baseLatency` capped at 92.9 ms), and nothing else. The fiddle's 480-multiple holes
+  (Windows, Chrome 77) were not seen here: every hole is whole render quanta.
 - **Where it bites here:** any recording through a `MediaStreamAudioSourceNode`. Each render-thread stall
   longer than the sink's buffer of about 48 ms costs the take input: a long WASM compile, a large message
   handled on the worklet thread, or a heavy `process()` during a take. The recording-alignment harness
@@ -347,10 +351,13 @@ Chromium tracker through the browser).
   (`&rate=44100`; `&source=loopback` for the clean comparison); stall envelopes
   `chromium-capture-gaps-mvk8sh5j-wdul.json` (mic 48 000), `…-mvk8tv7j-emkw.json` (mic 44 100),
   `…-mvk8ibbw-6u1w.json` and `…-mvk8juge-cjxt.json` (loopback), control `…-mvk8qfyt-uyws.json`;
+  USB microphone (`&input=USB`) `…-mvk95l34-fnpf.json` and `…-mvk96z7f-ftoi.json` (stalls),
+  `…-mvk9469i-pqmu.json` (no stall), `…-mvk8zu9c-3vg1.json`, `…-mvk918b0-8vcw.json`, `…-mvk92m9e-0dhp.json`
+  (`&latencyHint` 0.04 / 0.1 / 0.2), loopback `…-mvk98cij-giwz.json` (`&latencyHint=0.2`);
   unstalled envelopes `…-mvk38gho-fzko.json`, `…-mvk35pnx-czdb.json`, `…-mvk39txh-gxhd.json`,
   `…-mvk37334-0nth.json`.
 - **Last checked:** Chrome 155.0.8059.85, macOS 15.6.1, 2026-10-22: `GAPS`, with the zero runs at stall
-  times, on the microphone at both rates.
+  times, on the built-in and a USB microphone at both rates.
 
 ## Watched — read from the tracker, not reproduced here
 

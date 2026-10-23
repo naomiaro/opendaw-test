@@ -23,6 +23,10 @@
  * long, the render thread falls behind the source, and the frame each stall began at is recorded;
  * a run or duplicate starting in a stall's span (`chromiumCaptureGaps.ts`) counts as at the stall.
  * This provokes the tracker's mechanism, the sink writing zeros on a FIFO underrun.
+ *
+ * `&latencyHint=<seconds|interactive|balanced|playback>` (default interactive) goes to the capture
+ * context's constructor: the tracker's JSFiddle repro ties the holes to it. `&input=<label text>`
+ * picks the microphone whose `enumerateDevices()` label holds the text.
  */
 
 import { withDeadline } from "@/lib/deadline";
@@ -33,7 +37,11 @@ import {
   findZeroRuns,
   headZerosOf,
   judgeCaptureGaps,
+  latencyHintFrom,
+  lengthsIn480s,
+  matchInput,
   recorderChunkFrames,
+  rmsAfterHead,
   sinceLastStall,
   type SourceHealth,
   type ZeroRun,
@@ -148,18 +156,40 @@ function loopbackSource(context: AudioContext): Source {
   return { node, track: stream.getAudioTracks()[0], deviceLabel: "loopback (same-context destination stream, cloned)", streams: [destination.stream, stream] };
 }
 
-async function micSource(context: AudioContext): Promise<Source> {
+const RAW_INPUT = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+
+async function audioInputs(): Promise<MediaDeviceInfo[]> {
+  return (await navigator.mediaDevices.enumerateDevices()).filter((device) => device.kind === "audioinput");
+}
+
+/** The device id of the input whose label holds `text`; opens the default input once first when labels are hidden. */
+async function inputDeviceId(text: string): Promise<string> {
+  let inputs = await audioInputs();
+  if (inputs.every((device) => device.label === "")) {
+    const grant = await withDeadline(navigator.mediaDevices.getUserMedia({ audio: true }), 30000, "getUserMedia-grant");
+    for (const track of grant.getTracks()) track.stop();
+    inputs = await audioInputs();
+  }
+  const match = matchInput(inputs, text);
+  if (match === null) {
+    console.error("[chromium-watched] capture-gaps: no input label holds '" + text + "'; inputs: " + inputs.map((d) => d.label).join(" | "));
+    throw new Error(`no-input-matching-${text}`);
+  }
+  return match.deviceId;
+}
+
+async function micSource(context: AudioContext, input: string | null): Promise<Source> {
+  const deviceId = input === null ? null : await inputDeviceId(input);
   const stream = await withDeadline(
-    navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }),
+    navigator.mediaDevices.getUserMedia({ audio: deviceId === null ? RAW_INPUT : { ...RAW_INPUT, deviceId: { exact: deviceId } } }),
     30000,
     "getUserMedia",
   );
   try {
     const track = stream.getAudioTracks()[0];
     if (track === undefined) throw new Error("no-audio-track");
-    const deviceId = track.getSettings().deviceId;
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const listed = devices.find((device) => device.kind === "audioinput" && device.deviceId === deviceId);
+    const settingsId = track.getSettings().deviceId;
+    const listed = (await audioInputs()).find((device) => device.deviceId === settingsId);
     const oscillator = new OscillatorNode(context, { frequency: TONE_HZ });
     oscillator.connect(new GainNode(context, { gain: SPEAKER_GAIN })).connect(context.destination);
     oscillator.start();
@@ -257,9 +287,11 @@ export async function runCaptureGapsProbe(_signal: AbortSignal, report: (step: s
   const sourceKind = sourceFrom(params);
   const requestedRate = rateFrom(params);
   const { stallMs, stallEveryMs } = stallFrom(params);
+  const latencyHint = latencyHintFrom(params.get("latencyHint"));
+  const input = params.get("input");
   const platform = await platformOf(navigator as PlatformNavigator);
   report("start-audio");
-  const context = new AudioContext({ sampleRate: requestedRate, latencyHint: "interactive" });
+  const context = new AudioContext({ sampleRate: requestedRate, latencyHint });
   let source: Source | null = null;
   try {
     await withDeadline(context.resume(), DEADLINE_MS, "resume");
@@ -278,7 +310,7 @@ export async function runCaptureGapsProbe(_signal: AbortSignal, report: (step: s
     report("open-" + sourceKind);
     let failedStep: string | null = null;
     try {
-      source = sourceKind === "mic" ? await micSource(context) : loopbackSource(context);
+      source = sourceKind === "mic" ? await micSource(context, input) : loopbackSource(context);
     } catch (error) {
       failedStep = `${sourceKind}-${error instanceof Error ? error.name : "error"}-${stepOf(error)}`;
       console.error("[chromium-watched] capture-gaps could not open the " + sourceKind + ": " + String(error));
@@ -365,6 +397,11 @@ export async function runCaptureGapsProbe(_signal: AbortSignal, report: (step: s
       stallDuplicateStarts: joinFirst(judged.stallDuplicates),
       zeroRunFramesSinceStall: joinFirst(judged.zeroRuns.map((run) => sinceLastStall(run.start, stallFrames)), LISTED_OFFSETS),
       zeroRunLengthsAll: joinFirst(judged.zeroRuns.map((run) => run.length), LISTED_OFFSETS),
+      runLengthsIn480s: lengthsIn480s(judged.zeroRuns.slice(0, LISTED_OFFSETS).map((run) => run.length)),
+      startRunLengthsIn480s: lengthsIn480s(judged.startZeroRuns.map((run) => run.length)),
+      captureRms: Number(rmsAfterHead(samples, headZeros).toFixed(6)),
+      latencyHint: String(latencyHint),
+      inputRequested: input,
       emptyInputQuanta: captured.emptyQuanta,
       trackEndedEvents: events.ended,
       trackMuteEvents: events.mute,
