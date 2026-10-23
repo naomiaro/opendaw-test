@@ -443,6 +443,63 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   times, on the built-in and a USB microphone at both rates; one zero run just after 30 s of silent
   output, none with dither, on the built-in microphone.
 
+### Chromium [40726491](https://issues.chromium.org/issues/40726491) — `getOutputTimestamp()`'s context ↔ performance relation wanders: a sawtooth of one device buffer on a context at the other rate than the device's, single early steps at the device's rate
+
+- **Tracker:** [issues.chromium.org/issues/40726491](https://issues.chromium.org/issues/40726491) "WebAudio
+  currentTime and synchronisation issue", **open** (Available), P3, hotlist WebAudio-timeline, filed 2020-10, last
+  touched 2026-05 by an AI-assisted triage (all read 2026-10-23). [40693959](https://issues.chromium.org/issues/40693959)
+  "getOutputTimestamp doesn't accurately represent the output audio stream position" (2020-05, reproduced by Chromium
+  QA on Windows, Mac and Linux from M65) is merged into it and names the mechanism: the position behind
+  `getOutputTimestamp` is updated per render quantum (`HandlePreRenderTasks`) rather than from the device's own
+  output position, so the performance-time side wanders; the reporter's log wanders by 170 ms at a large
+  `latencyHint`, and Firefox reads steady. [41399279](https://issues.chromium.org/issues/41399279) "Clock drift
+  between AudioContext currentTime and getOutputTimestamp when under load" (duplicate) is the same family. No
+  separate report of the resampled case (searched 2026-10-23 through the user's Chrome: `getOutputTimestamp` across
+  all statuses, 15 issues, the two open ones unrelated; `WebAudio sampleRate device timestamp drift`;
+  `AudioContext sampleRate mismatch device currentTime jitter`).
+- **Symptom here:** `getOutputTimestamp()` sampled on a worker tick every 10 ms, 20 s per phase, the relation
+  `contextTime − performanceTime` read in frames from the first sample, `outputLatency` beside it. The SDK-free probe,
+  Chrome 155, this Mac's output device at 44.1 kHz.
+  - A **48 kHz context (Chrome resamples to the device)**: a sawtooth. The relation ramps up at about 62 frames per
+    second (0.13 %) and snaps back by **278 frames every 4.49 s** (one snap of 248 first in one run), 14 of 14 and
+    34 of 35 snaps the same size, in the idle, main-thread-block and graph-change phases alike and unchanged with the
+    window hidden for 32 s (a tab playing audio is not throttled). 278 frames at 48 kHz are 255 frames at 44.1 kHz,
+    one 256-frame device buffer, and 4.49 s × 62 ≈ 278: the snap is the accumulated ramp. `outputLatency` 28.00 ms
+    throughout.
+  - A **44.1 kHz context (the device's rate)**: one early step in each 80 s run (−229 frames at 12.0 s page time in
+    one, −997 frames at 9.3 s in the other, both in the idle phase with nothing happening on the page), then a slope of
+    about +0.25 frames per second (5.7 ppm, a crystal difference, the expected part). No step from an 80 ms main-thread
+    block every 500 ms, none from a silent gain node connected to and disconnected from the destination every 50 ms,
+    none from a worklet burning 60 % of every render quantum. `outputLatency` 28.00 ms throughout.
+  - **The device switched to 48 kHz (Audio MIDI Setup) swaps the two cases**, which pins the resampling reading: the
+    48 kHz context then reads like the native one (one early step, −284 frames at 5.7 s, then the slope; `outputLatency`
+    27.00 ms), and the 44.1 kHz context gets the sawtooth: **234 frames every 1.58 s**, 39 snaps in 60 s, ramp 149
+    frames per second (0.34 %), in every phase. 234 frames at 44.1 kHz are 255 at 48 kHz, again one 256-frame device
+    buffer. The sawtooth's amplitude is one device buffer either way; its period and slope depend on the direction.
+  - **Not reproduced SDK-free:** the MIDI output timing audit (44.1 kHz, the SDK's engine running) saw the relation
+    move by ±3 ms within most 10 s repeats with `outputLatency` constant at 23.00 ms. The probe at the same rate shows
+    the mechanism exists without the SDK (the early steps) but not that frequency, with or without a busy render
+    thread; what the engine's workload adds, if anything, is not measured. The attribution of the audit's wander to
+    Chrome rests on 40693959's mechanism, not on a reproduction.
+- **Where it bites here:** every MIDI harness bridges the AudioContext clock to Web MIDI's performance clock through
+  this pair. Read once per repeat (the input alignment and combined harnesses), the bridge carries this wander into
+  the figure at the 3 ms scale, which is the size of their jitter bands; the output timing audit reads the pair every
+  frame and judges the engine against the live relation for that reason (`debug/2026-10-23-midi-output-timing/note.md`).
+  The SDK itself stamps outgoing MIDI with `performance.now()` plus `outputLatency` and its compensation latency, never
+  with this pair, so a hardware note follows whatever the relation does. A context at a rate other than the device's
+  is the bad case, whichever rate the device is set to: every standing sweep's "other rate" rows are the resampled
+  ones, so the device rate belongs beside every figure (root CLAUDE.md, Build & Verification).
+- **Workaround:** in the harnesses, a live pair (per-frame reads) instead of one per repeat, and a context at the
+  device's rate where the measurement allows it. No demo reads the pair (every user is under `src/lib/audit/`).
+- **Evidence:** `debug/2026-10-22-chromium-watched-issues/note.md`, "clock-drift"; probe
+  `chromium-watched-issues-debug-demo.html?issue=clock-drift&rate=48000|44100&hidden=0|1&load=<percent>`, envelopes
+  `chromium-clock-drift-mvliwl6b-50bw.json` (48 kHz, 14 steps) and `-mvlj1841-ip0c.json` (48 kHz with the hidden phase,
+  35 steps), `-mvlittyz-4k1r.json` (44.1 kHz, one step) and `-mvljhb28-i7ci.json` (44.1 kHz with the load phase, one
+  step); with the device at 48 kHz, `-mvljq6cr-vqrf.json` (48 kHz context, one step) and `-mvljs00m-nk1m.json`
+  (44.1 kHz context, 39 steps). The first three were taken on earlier builds of the probe (no device-rate, ramp or
+  `await` figures); the figures above are unaffected.
+- **Last checked:** Chrome 155.0.8059.85, macOS 15.6.1, the user's Chrome, 2026-10-23.
+
 ## Watched — read from the tracker, not reproduced here
 
 ### Chromium [40909520](https://issues.chromium.org/issues/40909520) / [541725401](https://issues.chromium.org/issues/541725401) / [40068799](https://issues.chromium.org/issues/40068799) — OPFS: slow `flush()` on Mac, and a quota overrun that returns a sentinel

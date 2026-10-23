@@ -19,13 +19,14 @@ import { bfcacheOptionsFrom } from "@/lib/audit/chromiumBfcache";
 import { runRoundTripProbe } from "@/lib/audit/chromiumRoundTripProbe";
 import { runOutputLatencyProbe } from "@/lib/audit/chromiumOutputLatencyProbe";
 import { judgeStoredOpfsUsageOnLoad, runOpfsFlushProbe, runOpfsUsageProbe } from "@/lib/audit/chromiumOpfsProbe";
+import { AWAITING_HIDE, AWAITING_RETURN, clockDriftOptionsFrom, runClockDriftProbe } from "@/lib/audit/chromiumClockDriftProbe";
 import "@radix-ui/themes/styles.css";
 import { Theme, Container, Heading, Text, Flex, Card, Callout, Badge, Button, Code, Table } from "@radix-ui/themes";
 import { InfoCircledIcon, PlayIcon } from "@radix-ui/react-icons";
 
 // Probes for the Chromium issues `docs/known-vendor-issues.md` watches, one per page load:
 //
-//   chromium-watched-issues-debug-demo.html?issue=first-read|bfcache|suspend-resume|capture-gaps|opfs-usage|opfs-flush|output-latency
+//   chromium-watched-issues-debug-demo.html?issue=first-read|bfcache|suspend-resume|capture-gaps|opfs-usage|opfs-flush|output-latency|clock-drift
 //
 // Parameters beyond `?issue=`, each read by its probe:
 //   bfcache         &midi=1 (Chromium 40635109: request Web MIDI access first, and judge whether the page is
@@ -39,6 +40,9 @@ import { InfoCircledIcon, PlayIcon } from "@radix-ui/react-icons";
 //   output-latency  &roundtrip=1 (an acoustic round trip through the built-in microphone), and with it
 //                   &isolate=1 (the capture in a context of its own with no output), &sink=<output label text>,
 //                   &gain=<click amplitude, above 0 and at most 1>
+//   clock-drift     &rate=44100|48000 &seconds=<5-120, per phase> &hidden=1|0 &load=<0-90, percent of each quantum a
+//                   worklet burns in its own phase> (Chromium 40726491, 40693959 merged in: the getOutputTimestamp
+//                   relation wandering; `clockDriftOptionsFrom`)
 //
 // No SDK engine is loaded: a probe says what Chrome does, not what the SDK repairs (the
 // suspend-resume and output-latency round-trip probes import lib-dsp's WAV encoder for their microphone
@@ -85,6 +89,10 @@ const ISSUE_INFO: Record<WatchedIssue, IssueInfo> = {
     tracker: "388871416",
     title: "outputLatency with a Bluetooth headset",
   },
+  "clock-drift": {
+    tracker: "40726491",
+    title: "getOutputTimestamp's context ↔ performance relation wanders while outputLatency stays put",
+  },
 };
 
 /** The bfcache probe's MIDI arm (`&midi=1`) probes another issue under the same page. */
@@ -123,6 +131,8 @@ function probeFor(issue: WatchedIssue): Probe {
       return runOpfsFlushProbe;
     case "output-latency":
       return new URLSearchParams(window.location.search).get("roundtrip") === "1" ? runRoundTripProbe : runOutputLatencyProbe;
+    case "clock-drift":
+      return (signal, report) => runClockDriftProbe(signal, report, clockDriftOptionsFrom(new URLSearchParams(window.location.search)));
   }
 }
 
@@ -348,6 +358,15 @@ const App: React.FC<{ issue: WatchedIssue }> = ({ issue }) => {
           <Text id="verdict" data-verdict={verdictWord} size="3" weight="bold">
             {verdictLine}
           </Text>
+          {state.kind === "running" && state.step === AWAITING_HIDE && (
+            <Text size="2">
+              Three phases sampled. Now hide Chrome by hand: Cmd+H with Chrome frontmost, wait for the phase to pass, then click
+              Chrome in the Dock. The page waits up to two minutes for the window to go hidden.
+            </Text>
+          )}
+          {state.kind === "running" && state.step === AWAITING_RETURN && (
+            <Text size="2">Hidden phase sampled. Bring Chrome back (click it in the Dock); ten more seconds are sampled visible.</Text>
+          )}
           {state.kind === "running" && state.step === AWAITING_NAVIGATION && (
             <Text size="2">
               Baseline stored. <a id="navigate-away" href={BLANK_RETURN_URL}>Navigate away</a>, then press the
