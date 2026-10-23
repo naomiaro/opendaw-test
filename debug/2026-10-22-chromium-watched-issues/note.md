@@ -41,7 +41,8 @@ did with it.
   different clocks) reads the same under stalls (114 of 138, 62 of 62). Without stalls, no gap after the
   first 0.1 s in any unspliced minute, and `START GAPS` in two of four cells (441 zeros at loopback
   44 100, 128 at mic 48 000). The tracker's JSFiddle lever, a larger `latencyHint`, gave the USB
-  microphone one 256- or 384-frame run about 0.5 s in at 0.1 and 0.2 s, never a 480-multiple hole, and no
+  microphone one 384- or 256-frame run about 0.55 s in at 0.1 and 0.2 s (plus a 384-frame start-window
+  run at 0.1), never a 480-multiple hole, and no
   duplicate anywhere. Moved to "Measured here".
 - **436552046 / 401692415, OPFS usage going negative:** `NEGATIVE USAGE` after a real restart of the
   user's Chrome, and a truncate-first delete left the saved figure alone across a second restart. The
@@ -70,7 +71,7 @@ stand), the single-window bfcache runs, and the OPFS stored-readings load before
 | `first-read` | [571344687](https://issues.chromium.org/issues/571344687) — stale first clock read after a slow module load | Builds a worklet node right after `addModule()` resolves (a slow module, a large module, none), five runs each in a running context; the processor reports `currentFrame` from its constructor and first three `process()` calls, judged against the main thread's frame read just before the node was made | `STALE FIRST READ`, `FIRST READ TRUE`, `NOT CHECKED context-not-running`, `NOT CHECKED too-few-runs` | **reproduced**: `STALE FIRST READ` on Chrome 155, 2026-10-22 |
 | `bfcache` | [575891839](https://issues.chromium.org/issues/575891839) — half-speed worklet clock after a back/forward-cache restore | Measures the context clock against `performance.now()` with a worklet tone and an oscillator control playing, navigates away and back; on `pageshow.persisted` re-measures in three one-second windows and judges on the last two, otherwise records the `notRestoredReasons` | `HALF SPEED`, `NORMAL`, `NOT CHECKED` with `not-cached`, `not-back-forward-<type>`, `context-<state>`, `too-few-windows`, `baseline-slow` | **reproduced**: `HALF SPEED` on Chrome 155, 2026-10-22, all three restore windows; a playing demo also restores at half speed (the user's Chrome; Playwright's cannot enter the cache) |
 | `suspend-resume` | [560233271](https://issues.chromium.org/issues/560233271) — distortion after suspend / resume cycles | The tracker's tone (a stateless 440 Hz sine from `currentFrame`, from a module file) into an analyser; a two-second baseline, then `suspend()` / `resume()` cycles, with the tracker's preconditions under `&tracker=1` (44.1 kHz, one restart, an 80 ms worklet-thread stall before each cycle). Each one-second window is judged three ways: the clock witness (context clock against wall clock, `process()` calls per second), the graph's purity, click and dropout rules, and with `&witness=mic` the microphone in a context of its own | `HALF RATE`, `DISTORTED`, `DISTORTED (mic only)`, `CLEAN`, `NOT CHECKED` with `<n>-cycles`, `no-signal`, `no-baseline-purity`, `processor-error-tone`, `processor-error-recorder`, `mic-<error>` or the step that failed | **reproduced**: `HALF RATE` with `&tracker=1` (an 80 ms worklet-thread stall before each cycle) on Chrome 155, 2026-10-22; the render rate halves at cycle 2, 3 or 10 and stays halved (344.5 → 172.3 `process()` calls per second, clock 0.50); without the stall, 20 cycles stay true |
-| `capture-gaps` | [40103985](https://issues.chromium.org/issues/40103985) — zero-filled gaps and duplicated blocks in `getUserMedia` input | Records 60 s of a `MediaStreamAudioSourceNode` (`&source=loopback` or `mic`, `&rate=48000` or `44100`) through a worklet; counts zero runs of 100 frames or more after the head and 128-frame blocks identical to the one before, the first 0.1 s after the head reported apart; `&latencyHint`, `&input=<label>`; `&stallMs` holds the worklet thread every `&stallEvery` ms and reports the runs in each stall's span apart | `GAPS`, `START GAPS`, `CLEAN`, `NOT CHECKED` with `<s>-s`, `no-signal`, `source-ended`, `source-muted`, `source-empty-input`, `mic-<error>` or the step that failed | **reproduced with render-thread stalls**: an 80 ms worklet-thread stall each second leaves a 512–1 792-frame zero run 48–72 ms after each stall on the microphone, at 48 000 (116 of 137 runs at stall times) and 44 100 (60 of 60); the loopback stays clean under the same stalls; without stalls, no gap after the first 0.1 s, `START GAPS` at loopback 44 100 and mic 48 000; a USB microphone the same under stalls (114 of 138, 62 of 62); `latencyHint` 0.1 / 0.2 gave one 256–384-frame run about 0.5 s in, never a 480-multiple hole; no duplicate anywhere; Chrome 155, 2026-10-22 |
+| `capture-gaps` | [40103985](https://issues.chromium.org/issues/40103985) — zero-filled gaps and duplicated blocks in `getUserMedia` input | Records 60 s of a `MediaStreamAudioSourceNode` (`&source=loopback` or `mic`, `&rate=48000` or `44100`) through a worklet; counts zero runs of 100 frames or more after the head and 128-frame blocks identical to the one before, the first 0.1 s after the head reported apart; `&latencyHint`, `&input=<label>`; `&stallMs` holds the worklet thread every `&stallEvery` ms and reports the runs in each stall's span apart | `GAPS`, `START GAPS`, `CLEAN`, `NOT CHECKED` with `<s>-s`, `no-signal`, `source-ended`, `source-muted`, `source-empty-input`, `mic-<error>` or the step that failed | **reproduced with render-thread stalls**: an 80 ms worklet-thread stall each second leaves a 512–1 792-frame zero run 48–72 ms after each stall on the microphone, at 48 000 (116 of 137 runs at stall times) and 44 100 (60 of 60); the loopback stays clean under the same stalls; without stalls, no gap after the first 0.1 s, `START GAPS` at loopback 44 100 and mic 48 000; a USB microphone the same under stalls (114 of 138, 62 of 62); `latencyHint` 0.1 / 0.2 gave one 384- or 256-frame run about 0.55 s in (plus a 384-frame start-window run at 0.1), never a 480-multiple hole; no duplicate anywhere; Chrome 155, 2026-10-22 |
 | `opfs-usage` | [436552046](https://issues.chromium.org/issues/436552046) / [401692415](https://issues.chromium.org/issues/401692415) — OPFS usage not counted for sync-handle writes, negative after a delete | Writes through a sync access handle in a worker, reads `estimate()` before, after the write and after the delete; the user quits and reopens Chrome and the page judges the restart reading on load (`&truncateFirst=1` for the reporter's workaround) | `NOT COUNTED`, `COUNTED`, `NEGATIVE USAGE`, `NOT CHECKED` with `readings-missing`, `write-none`, `write-short`, `write-size-mismatch`, `not-restarted`, `restart-no-estimate`, `opfs-<missing>` | **reproduced**: `NEGATIVE USAGE` after a restart of the user's Chrome 155, 2026-10-22 (saved figure −16.5 MB after a plain run's delete, read back as 4.28 GB; about +50.6 MB before it if the delete took the full 64 MiB, as the off-disk reading and round 2 show); the saved figure read off disk drops by the deleted size on a plain delete, by 0 after a truncate; a truncate-first run and a second restart moved it by the hand-deleted samples' size only (−238 137 857 against −238 135 417 predicted) |
 | `opfs-flush` | [40909520](https://issues.chromium.org/issues/40909520) — slow `flush()` on Mac | Times 20 writes of 1 MiB and 20 of 16 MiB, each followed by `flush()`, in a worker; median, p95 and max per size | `MEASURED` (figures only: the tracker's claim is a comparison with other browsers this repo does not make), `NOT CHECKED opfs-<missing>` | **measured**: flush median 0.53–0.57 ms (1 MiB), 1.44–1.46 ms (16 MiB), Chrome 155, macOS 15.6.1, 2026-10-22 |
 | — | [541725401](https://issues.chromium.org/issues/541725401) / [40068799](https://issues.chromium.org/issues/40068799) — a quota overrun returns a sentinel | No probe: needs the origin's quota exhausted or an incognito profile | — | out of scope, stays watched |
@@ -583,12 +584,15 @@ empty input, in any row. The same-context destination clone does not start muted
 The runs on the microphone fall into three kinds:
 - **One long run per stall.** At 48 000, 56 runs of 512 to 1 792 frames (mean 1 529, 32 ms) start 2 304 to
   3 456 frames (48 to 72 ms) after a stall frame. At 44 100, 56 runs of 530 to 1 589 frames (mean 1 368,
-  31 ms) start 2 175 to 3 149 frames (49 to 71 ms) after one. With 55 stalls, every stall has one.
+  31 ms) start 2 175 to 3 149 frames (49 to 71 ms) after one. Each row has 56 long runs against 55
+  stalls. The envelope gives every run's offset from the stall before it, not which stall that is, so it
+  cannot say which stall has two long runs or whether any stall has none.
 - **Short runs right after it.** At 48 000, 60 runs of 128 or 256 frames start 3 712 to 6 912 frames after
   a stall. At 44 100 there are 4, of 177 frames, 3 516 to 3 769 frames after.
 - **Single quanta between stalls, at 48 000 only.** 21 runs of 128 frames each start 8 320 to 51 328 frames
   after the last stall, outside every span. The four microphone minutes at 48 000 without stalls held
-  none, so the stalls leave the path unsettled between them too.
+  none. Their cause is unexplained: only one stall length and one cadence were run, so nothing here tests
+  whether the stalls produce them.
 
 Three earlier stall runs are kept as data, not quoted. `mvk8l97h-c4vh` (microphone 48 000) was judged on
 the one-quantum rule. `mvk8nohc-3t2j` (microphone 48 000, 114 of 137) and `mvk8p2jh-di4o` (microphone
@@ -598,6 +602,7 @@ What the stall rows show:
 - **The mechanism is reproduced.** A held render thread makes the microphone's sink underrun, and it
   writes zeros. An 80 ms stall costs about 32 ms of input, starting about 48 ms into the catch-up. That
   reads as a FIFO holding about 48 ms: the catch-up drains it, then gets zeros for the rest of the stall.
+  The 48 ms is inferred from where the zeros start, not measured: only 80 ms stalls were run.
   The probe cannot say whether the input that arrived during the stall was dropped or delayed: the tone
   in the room has no reference to align it against.
 - **No duplicates.** The tracker's 128-frame duplications need input and output devices on different
@@ -649,7 +654,7 @@ Chrome 155.0.8059.85 on macOS 15.6.1, 2026-10-22, with a real click and 60 s eac
 |---|---|---|---|---|---|---|---|---|---|
 | `chromium-capture-gaps-mvk9469i-pqmu.json` | USB mic | 48 000 | interactive → 5.8 ms | none | 0 | — | 0 | 0.0074 | `CLEAN` |
 | `chromium-capture-gaps-mvk8zu9c-3vg1.json` | USB mic | 48 000 | 0.04 → 40.8 ms | none | 0 (start window: one 128) | — | 0 | 0.0156 | `START GAPS` |
-| `chromium-capture-gaps-mvk918b0-8vcw.json` | USB mic | 48 000 | 0.1 → 92.9 ms | none | 1 | 384 (0.8 × 480) at frame 26 368 | 0 | 0.0076 | `GAPS` |
+| `chromium-capture-gaps-mvk918b0-8vcw.json` | USB mic | 48 000 | 0.1 → 92.9 ms | none | 1 (start window: one 384 at frame 8 448) | 384 (0.8 × 480) at frame 26 368 | 0 | 0.0076 | `GAPS` |
 | `chromium-capture-gaps-mvk92m9e-0dhp.json` | USB mic | 48 000 | 0.2 → 92.9 ms | none | 1 | 256 (0.53 × 480) at frame 26 496 | 0 | 0.0073 | `GAPS` |
 | `chromium-capture-gaps-mvk95l34-fnpf.json` | USB mic | 48 000 | interactive | 55 × 80 ms | 138 (114) | 55 of 1 280–1 792, 2 304–2 432 after a stall | 0 | 0.0073 | `GAPS` |
 | `chromium-capture-gaps-mvk96z7f-ftoi.json` | USB mic | 44 100 (track 48 000) | interactive | 55 × 80 ms | 62 (62) | 57 of 530–1 706, 2 175–3 001 after a stall | 0 | 0.0074 | `GAPS` |
@@ -660,11 +665,13 @@ is higher only because the room was louder in that minute.
 
 What these rows show:
 - **The stall result holds on a microphone with its own clock.** The USB rows match the built-in ones:
-  one long run 48 ms into each stall's catch-up, short runs right after, and at 48 000, 24 single quanta
-  between stalls.
-- **A larger hint gives one short run about 0.5 s in, not the fiddle's 10 ms holes.** At 0.1 and 0.2 s the
-  run is 384 or 256 frames, 22 to 23 ms after the head. Both lengths are whole render quanta and neither
-  is a multiple of 480. The minute after it is clean. Chrome capped the 0.2 s hint at the same 92.9 ms
+  long runs 48 ms into a stall's catch-up, short runs right after, and at 48 000, 24 single quanta
+  outside every span. Of those 24, one comes before the first stall, at frame 11 648 (the first stall is
+  at 48 000), and 23 come between stalls.
+- **A larger hint gives one short run about 0.55 s in, not the fiddle's 10 ms holes.** At 0.1 s the run is
+  384 frames at frame 26 368, 21 888 frames (456 ms) after the head. That row also has a 384-frame run in
+  the start window, at frame 8 448. At 0.2 s the run is 256 frames at frame 26 496, 17 664 frames (368 ms)
+  after the head. All three lengths are whole render quanta and none is a multiple of 480. The minute after it is clean. Chrome capped the 0.2 s hint at the same 92.9 ms
   `baseLatency` as 0.1. Nothing "went very badly wrong".
 - **No 10 ms hole at about 30 s and no duplicate in any row**, at any hint, on either microphone. The
   fiddle's 480-frame quantisation reads as the Windows capture path's 10 ms buffers. Here every hole is

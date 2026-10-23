@@ -330,12 +330,14 @@ Chromium tracker through the browser).
   under stalls (114 of 138, 62 of 62) and also has no duplicates. Without a stall there is no gap after the first 0.1 s of any minute. A stream-start zero run
   does appear in two cells, every run: 441 frames, 441 frames after the tone arrives, on the loopback at
   44 100, and 128 frames on the microphone at 48 000, all within the first 55 ms. The tracker's JSFiddle
-  lever, a larger `latencyHint`, gave the USB microphone one 384- or 256-frame run about 0.5 s in at
-  0.1 and 0.2 s (`baseLatency` capped at 92.9 ms), and nothing else. The fiddle's 480-multiple holes
+  lever, a larger `latencyHint`, gave the USB microphone one 384- or 256-frame run about 0.55 s in at
+  0.1 and 0.2 s (`baseLatency` capped at 92.9 ms). The 0.1 s row also had a 384-frame run in the start
+  window. The fiddle's 480-multiple holes
   (Windows, Chrome 77) were not seen here: every hole is whole render quanta.
-- **Where it bites here:** any recording through a `MediaStreamAudioSourceNode`. Each render-thread stall
-  longer than the sink's buffer of about 48 ms costs the take input: a long WASM compile, a large message
-  handled on the worklet thread, or a heavy `process()` during a take. The recording-alignment harness
+- **Where it bites here:** any recording through a `MediaStreamAudioSourceNode`. An 80 ms render-thread
+  stall cost about 32 ms of input. The sink's buffer of about 48 ms is inferred from where the zeros
+  start, not measured, since only 80 ms stalls were run. A long WASM compile, a large message handled on
+  the worklet thread, or a heavy `process()` during a take could do it. The recording-alignment harness
   cannot see it, because its loopback producer stalls with the consumer. The stream-start run meets a
   take only when arming and recording start together (`CaptureAudio` opens its stream on arm). The
   loopback's 441-frame stream-start run is the same node path and size as the 441-frame delay step
