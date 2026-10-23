@@ -9,7 +9,8 @@ export type WatchedIssue =
   | "capture-gaps"
   | "opfs-usage"
   | "opfs-flush"
-  | "output-latency";
+  | "output-latency"
+  | "clock-drift";
 
 export const WATCHED_ISSUES: readonly WatchedIssue[] = [
   "first-read",
@@ -19,6 +20,7 @@ export const WATCHED_ISSUES: readonly WatchedIssue[] = [
   "opfs-usage",
   "opfs-flush",
   "output-latency",
+  "clock-drift",
 ];
 
 function isWatchedIssue(value: string): value is WatchedIssue {
@@ -51,6 +53,8 @@ export const VERDICT_WORDS = [
   "COUNTED",
   "NOT COUNTED",
   "MEASURED",
+  "STEPS",
+  "STEADY",
 ] as const;
 
 export type VerdictWord = (typeof VERDICT_WORDS)[number];
