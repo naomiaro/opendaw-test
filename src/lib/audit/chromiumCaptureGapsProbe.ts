@@ -32,6 +32,8 @@
  * output: the tracker reports Chrome dropping an output device after 30 s of complete silence) or,
  * with `&dither=1`, `(n & 1) / 10000` on every frame, the tracker commenter's fix. `&speakerTone=0`
  * turns the microphone rows' speaker tone off, so nothing else reaches the destination.
+ * `&source=crosscontext` mirrors tracker comment 50's graph (`crossContextSource`), with
+ * `&generatorRate=` and `&generatorDither=1`.
  * `&seconds=<n>` (30 to 600, default 60) sets the capture length. A witness reads, once a second,
  * the context's `baseLatency`, `outputLatency` and `sinkId` (a switch to Chrome's fake output device
  * may show there) and the
@@ -48,6 +50,7 @@ import {
   judgeCaptureGaps,
   latencyHintFrom,
   lengthsIn480s,
+  lengthsIn441s,
   matchInput,
   recorderChunkFrames,
   rmsAfterHead,
@@ -82,7 +85,7 @@ const STALL_PROCESSOR_URL = "/chromium-capture-stall.js";
 /** The stall offsets listed: every zero run of a minute with a few runs per one-second stall. */
 const LISTED_OFFSETS = 400;
 
-export type CaptureSource = "loopback" | "mic";
+export type CaptureSource = "loopback" | "mic" | "crosscontext";
 export type CaptureRate = 48000 | 44100;
 
 /** The source named by `&source=`; loopback without one; throws on an unknown one. */
@@ -90,7 +93,8 @@ export function sourceFrom(params: URLSearchParams): CaptureSource {
   const value = params.get("source");
   if (value === null || value === "loopback") return "loopback";
   if (value === "mic") return "mic";
-  throw new Error(`&source=${value}: expected loopback or mic`);
+  if (value === "crosscontext") return "crosscontext";
+  throw new Error(`&source=${value}: expected loopback, mic or crosscontext`);
 }
 
 /** The context rate named by `&rate=`; 48000 without one; throws on any other. */
@@ -165,6 +169,40 @@ interface Source {
   deviceLabel: string;
   /** Every stream opened, stopped at the end. */
   streams: MediaStream[];
+  /** The generator context of `crosscontext`, closed at the end; null for the other sources. */
+  generator: AudioContext | null;
+}
+
+/**
+ * `&source=crosscontext`, tracker 40103985 comment 50's graph: a generator `AudioContext` (device rate,
+ * or `&generatorRate=`) with a default `OscillatorNode` (440 Hz sine) into its own
+ * `MediaStreamAudioDestinationNode`, whose stream (not a clone) the capture context opens. The generator
+ * outputs nothing to its destination unless `generatorDither`: then a looped buffer of `(n & 1) / 10000`
+ * plays there, so its output is never all zeros.
+ */
+async function crossContextSource(context: AudioContext, generatorRate: CaptureRate | null, generatorDither: boolean): Promise<Source> {
+  const generator = generatorRate === null ? new AudioContext() : new AudioContext({ sampleRate: generatorRate });
+  try {
+    await withDeadline(generator.resume(), DEADLINE_MS, "resume-generator");
+    const oscillator = new OscillatorNode(generator);
+    const destination = new MediaStreamAudioDestinationNode(generator);
+    oscillator.connect(destination);
+    oscillator.start();
+    if (generatorDither) {
+      const buffer = new AudioBuffer({ length: QUANTUM, sampleRate: generator.sampleRate });
+      const data = buffer.getChannelData(0);
+      for (let n = 0; n < QUANTUM; n++) data[n] = (n & 1) / 10000;
+      const dither = new AudioBufferSourceNode(generator, { buffer, loop: true });
+      dither.connect(generator.destination);
+      dither.start();
+    }
+    const stream = destination.stream;
+    const node = new MediaStreamAudioSourceNode(context, { mediaStream: stream });
+    return { node, track: stream.getAudioTracks()[0], deviceLabel: "cross-context (generator destination stream)", streams: [stream], generator };
+  } catch (error) {
+    await generator.close();
+    throw error;
+  }
 }
 
 function loopbackSource(context: AudioContext): Source {
@@ -175,7 +213,13 @@ function loopbackSource(context: AudioContext): Source {
   oscillator.start();
   const stream = destination.stream.clone();
   const node = new MediaStreamAudioSourceNode(context, { mediaStream: stream });
-  return { node, track: stream.getAudioTracks()[0], deviceLabel: "loopback (same-context destination stream, cloned)", streams: [destination.stream, stream] };
+  return {
+    node,
+    track: stream.getAudioTracks()[0],
+    deviceLabel: "loopback (same-context destination stream, cloned)",
+    streams: [destination.stream, stream],
+    generator: null,
+  };
 }
 
 const RAW_INPUT = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
@@ -218,7 +262,7 @@ async function micSource(context: AudioContext, input: string | null, speakerTon
       oscillator.start();
     }
     const node = new MediaStreamAudioSourceNode(context, { mediaStream: stream });
-    return { node, track, deviceLabel: listed?.label || track.label, streams: [stream] };
+    return { node, track, deviceLabel: listed?.label || track.label, streams: [stream], generator: null };
   } catch (error) {
     for (const track of stream.getTracks()) track.stop();
     throw error;
@@ -301,9 +345,11 @@ function witnessFigures(prefix: string, readings: readonly WitnessReading[]): Fi
     [named(prefix, "clockDipSeconds")]: clockDipSeconds(ratios).join(" "),
     [named(prefix, "baseLatencyPerSecond")]: readings.map((r) => ms(r.baseLatency)).join(" "),
     [named(prefix, "outputLatencyPerSecond")]: readings.map((r) => ms(r.outputLatency)).join(" "),
-    [named(prefix, "latencyChangedAtSecond")]: firstChangedSecond(readings.map((r) => `${r.baseLatency}|${r.outputLatency}`)),
+    // Baseline at 1 s: `outputLatency` reads 0 the instant after `resume()` (docs/known-vendor-issues.md).
+    [named(prefix, "latencyChangedAtSecond")]: firstChangedSecond(readings.map((r) => `${r.baseLatency}|${r.outputLatency}`), 1),
     [named(prefix, "sinkIdChanged")]: String(firstChangedSecond(readings.map((r) => r.sinkId)) !== null),
     [named(prefix, "sinkId")]: readings.length === 0 ? null : readings[0].sinkId,
+    [named(prefix, "contextSecAtCaptureStart")]: readings.length === 0 ? null : Number(readings[0].contextSec.toFixed(3)),
   };
 }
 
@@ -364,6 +410,8 @@ export async function runCaptureGapsProbe(_signal: AbortSignal, report: (step: s
   const captureSecondsWanted = secondsFrom(params.get("seconds"));
   const dither = params.get("dither") === "1";
   const speakerTone = params.get("speakerTone") !== "0";
+  const generatorRate = params.get("generatorRate") === null ? null : rateFrom(new URLSearchParams({ rate: params.get("generatorRate") ?? "" }));
+  const generatorDither = params.get("generatorDither") === "1";
   const platform = await platformOf(navigator as PlatformNavigator);
   report("start-audio");
   const context = new AudioContext({ sampleRate: requestedRate, latencyHint });
@@ -385,7 +433,10 @@ export async function runCaptureGapsProbe(_signal: AbortSignal, report: (step: s
     report("open-" + sourceKind);
     let failedStep: string | null = null;
     try {
-      source = sourceKind === "mic" ? await micSource(context, input, speakerTone) : loopbackSource(context);
+      source =
+        sourceKind === "mic" ? await micSource(context, input, speakerTone)
+        : sourceKind === "crosscontext" ? await crossContextSource(context, generatorRate, generatorDither)
+        : loopbackSource(context);
     } catch (error) {
       failedStep = `${sourceKind}-${error instanceof Error ? error.name : "error"}-${stepOf(error)}`;
       console.error("[chromium-watched] capture-gaps could not open the " + sourceKind + ": " + String(error));
@@ -393,6 +444,7 @@ export async function runCaptureGapsProbe(_signal: AbortSignal, report: (step: s
     let captured: Captured = { samples: new Float32Array(0), emptyQuanta: 0, firstFrame: 0 };
     let stalls: Stalls = { frames: [], roundTripMs: [], failed: null };
     const clockReadings: WitnessReading[] = [];
+    const generatorReadings: WitnessReading[] = [];
     const events = { ended: 0, mute: 0 };
     let mutedAtStart = false;
     if (source !== null) {
@@ -404,7 +456,11 @@ export async function runCaptureGapsProbe(_signal: AbortSignal, report: (step: s
       const frames = captureSecondsWanted * context.sampleRate;
       let capturing = true;
       const stalling = stallNode === null ? null : stallUntil(stallNode, stallMs, stallEveryMs, () => !capturing);
-      const readClock = () => clockReadings.push(readWitness(context));
+      const generatorContext = source.generator;
+      const readClock = () => {
+        clockReadings.push(readWitness(context));
+        if (generatorContext !== null) generatorReadings.push(readWitness(generatorContext));
+      };
       readClock();
       const witness = setInterval(readClock, 1000);
       try {
@@ -493,6 +549,12 @@ export async function runCaptureGapsProbe(_signal: AbortSignal, report: (step: s
       zeroRunFramesSinceStall: joinFirst(judged.zeroRuns.map((run) => sinceLastStall(run.start, stallFrames)), LISTED_OFFSETS),
       zeroRunLengthsAll: joinFirst(judged.zeroRuns.map((run) => run.length), LISTED_OFFSETS),
       runLengthsIn480s: lengthsIn480s(judged.zeroRuns.slice(0, LISTED_OFFSETS).map((run) => run.length)),
+      runLengthsIn441s: lengthsIn441s(judged.zeroRuns.slice(0, LISTED_OFFSETS).map((run) => run.length)),
+      startRunLengthsIn441s: lengthsIn441s(judged.startZeroRuns.map((run) => run.length)),
+      generatorSampleRate: source?.generator?.sampleRate ?? null,
+      generatorBaseLatency: source?.generator?.baseLatency ?? null,
+      generatorDither: sourceKind === "crosscontext" ? String(generatorDither) : null,
+      ...(sourceKind === "crosscontext" ? witnessFigures("generator", generatorReadings) : {}),
       startRunLengthsIn480s: lengthsIn480s(judged.startZeroRuns.map((run) => run.length)),
       captureRms: Number(rmsAfterHead(samples, headZeros).toFixed(6)),
       latencyHint: String(latencyHint),
@@ -516,6 +578,7 @@ export async function runCaptureGapsProbe(_signal: AbortSignal, report: (step: s
     return makeEnvelope({ issue: "capture-gaps", chrome: browserOf(navigator), date: runDate(), runToken: newRunToken() }, verdict, figures);
   } finally {
     for (const stream of source?.streams ?? []) for (const track of stream.getTracks()) track.stop();
+    if (source?.generator) await source.generator.close();
     await context.close();
   }
 }

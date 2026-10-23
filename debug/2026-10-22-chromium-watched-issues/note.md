@@ -48,7 +48,9 @@ did with it.
   just after the 30 s mark (128 frames, 21 ms after it, twice; 256 frames, 373 ms after it, at
   `latencyHint` 0.1; 4 of 4 silent rows). With the commenter's dither on the output, none (4 of 4). A
   later comment says Chrome then moves the output to a fake software device; the page's latency and
-  sink readings do not change at the switch. Moved to "Measured here".
+  sink readings do not change at the switch. Comment 50's two-context graph, mirrored, gives one
+  441-frame block at the stream's start at 44 100 (3 of 3), and at 48 000 one hole of exactly 480 frames
+  about 32 s in (3 of 3) that the recorder's output dither removes. Moved to "Measured here".
 - **436552046 / 401692415, OPFS usage going negative:** `NEGATIVE USAGE` after a real restart of the
   user's Chrome, and a truncate-first delete left the saved figure alone across a second restart. The
   measured entry's unmeasured half is now measured, and the workaround is confirmed.
@@ -76,7 +78,7 @@ stand), the single-window bfcache runs, and the OPFS stored-readings load before
 | `first-read` | [571344687](https://issues.chromium.org/issues/571344687) — stale first clock read after a slow module load | Builds a worklet node right after `addModule()` resolves (a slow module, a large module, none), five runs each in a running context; the processor reports `currentFrame` from its constructor and first three `process()` calls, judged against the main thread's frame read just before the node was made | `STALE FIRST READ`, `FIRST READ TRUE`, `NOT CHECKED context-not-running`, `NOT CHECKED too-few-runs` | **reproduced**: `STALE FIRST READ` on Chrome 155, 2026-10-22 |
 | `bfcache` | [575891839](https://issues.chromium.org/issues/575891839) — half-speed worklet clock after a back/forward-cache restore | Measures the context clock against `performance.now()` with a worklet tone and an oscillator control playing, navigates away and back; on `pageshow.persisted` re-measures in three one-second windows and judges on the last two, otherwise records the `notRestoredReasons` | `HALF SPEED`, `NORMAL`, `NOT CHECKED` with `not-cached`, `not-back-forward-<type>`, `context-<state>`, `too-few-windows`, `baseline-slow` | **reproduced**: `HALF SPEED` on Chrome 155, 2026-10-22, all three restore windows; a playing demo also restores at half speed (the user's Chrome; Playwright's cannot enter the cache) |
 | `suspend-resume` | [560233271](https://issues.chromium.org/issues/560233271) — distortion after suspend / resume cycles | The tracker's tone (a stateless 440 Hz sine from `currentFrame`, from a module file) into an analyser; a two-second baseline, then `suspend()` / `resume()` cycles, with the tracker's preconditions under `&tracker=1` (44.1 kHz, one restart, an 80 ms worklet-thread stall before each cycle). Each one-second window is judged three ways: the clock witness (context clock against wall clock, `process()` calls per second), the graph's purity, click and dropout rules, and with `&witness=mic` the microphone in a context of its own | `HALF RATE`, `DISTORTED`, `DISTORTED (mic only)`, `CLEAN`, `NOT CHECKED` with `<n>-cycles`, `no-signal`, `no-baseline-purity`, `processor-error-tone`, `processor-error-recorder`, `mic-<error>` or the step that failed | **reproduced**: `HALF RATE` with `&tracker=1` (an 80 ms worklet-thread stall before each cycle) on Chrome 155, 2026-10-22; the render rate halves at cycle 2, 3 or 10 and stays halved (344.5 → 172.3 `process()` calls per second, clock 0.50); without the stall, 20 cycles stay true |
-| `capture-gaps` | [40103985](https://issues.chromium.org/issues/40103985) — zero-filled gaps and duplicated blocks in `getUserMedia` input | Records 60 s of a `MediaStreamAudioSourceNode` (`&source=loopback` or `mic`, `&rate=48000` or `44100`) through a worklet; counts zero runs of 100 frames or more after the head and 128-frame blocks identical to the one before, the first 0.1 s after the head reported apart; `&latencyHint`, `&input=<label>`, `&dither`, `&speakerTone=0`, `&seconds`, a per-second clock witness; `&stallMs` holds the worklet thread every `&stallEvery` ms and reports the runs in each stall's span apart | `GAPS`, `START GAPS`, `CLEAN`, `NOT CHECKED` with `<s>-s`, `no-signal`, `source-ended`, `source-muted`, `source-empty-input`, `mic-<error>` or the step that failed | **reproduced with render-thread stalls**: an 80 ms worklet-thread stall each second leaves a 512–1 792-frame zero run 48–72 ms after each stall on the microphone, at 48 000 (116 of 137 runs at stall times) and 44 100 (60 of 60); the loopback stays clean under the same stalls; without stalls, no gap after the first 0.1 s, `START GAPS` at loopback 44 100 and mic 48 000; a USB microphone the same under stalls (114 of 138, 62 of 62); `latencyHint` 0.1 / 0.2 gave one 384- or 256-frame run about 0.55 s in (plus a 384-frame start-window run at 0.1), never a 480-multiple hole; no duplicate anywhere; with a silent output, one 128- or 256-frame run just after the 30 s mark in 3 of 3 rows, none with the commenter's dither; 4 of 4 silent, 0 of 4 dithered; no latency or sink change at the switch; Chrome 155, 2026-10-22 |
+| `capture-gaps` | [40103985](https://issues.chromium.org/issues/40103985) — zero-filled gaps and duplicated blocks in `getUserMedia` input | Records 60 s of a `MediaStreamAudioSourceNode` (`&source=loopback` or `mic`, `&rate=48000` or `44100`) through a worklet; counts zero runs of 100 frames or more after the head and 128-frame blocks identical to the one before, the first 0.1 s after the head reported apart; `&latencyHint`, `&input=<label>`, `&dither`, `&speakerTone=0`, `&seconds`, a per-second clock, latency and sink witness; `&source=crosscontext` (comment 50's two-context graph), `&generatorRate`, `&generatorDither`; `&stallMs` holds the worklet thread every `&stallEvery` ms and reports the runs in each stall's span apart | `GAPS`, `START GAPS`, `CLEAN`, `NOT CHECKED` with `<s>-s`, `no-signal`, `source-ended`, `source-muted`, `source-empty-input`, `mic-<error>` or the step that failed | **reproduced with render-thread stalls**: an 80 ms worklet-thread stall each second leaves a 512–1 792-frame zero run 48–72 ms after each stall on the microphone, at 48 000 (116 of 137 runs at stall times) and 44 100 (60 of 60); the loopback stays clean under the same stalls; without stalls, no gap after the first 0.1 s, `START GAPS` at loopback 44 100 and mic 48 000; a USB microphone the same under stalls (114 of 138, 62 of 62); `latencyHint` 0.1 / 0.2 gave one 384- or 256-frame run about 0.55 s in (plus a 384-frame start-window run at 0.1), never a 480-multiple hole; no duplicate anywhere; with a silent output, one 128- or 256-frame run just after the 30 s mark in 3 of 3 rows, none with the commenter's dither; 4 of 4 silent, 0 of 4 dithered; no latency or sink change at the switch; cross-context exact mirror (44 100 / 44 100): one 441-frame start block 3 of 3; 48 000 / 48 000: one 480-frame hole about 32 s in 3 of 3, gone with the recorder's dither; Chrome 155, 2026-10-22 |
 | `opfs-usage` | [436552046](https://issues.chromium.org/issues/436552046) / [401692415](https://issues.chromium.org/issues/401692415) — OPFS usage not counted for sync-handle writes, negative after a delete | Writes through a sync access handle in a worker, reads `estimate()` before, after the write and after the delete; the user quits and reopens Chrome and the page judges the restart reading on load (`&truncateFirst=1` for the reporter's workaround) | `NOT COUNTED`, `COUNTED`, `NEGATIVE USAGE`, `NOT CHECKED` with `readings-missing`, `write-none`, `write-short`, `write-size-mismatch`, `not-restarted`, `restart-no-estimate`, `opfs-<missing>` | **reproduced**: `NEGATIVE USAGE` after a restart of the user's Chrome 155, 2026-10-22 (saved figure −16.5 MB after a plain run's delete, read back as 4.28 GB; about +50.6 MB before it if the delete took the full 64 MiB, as the off-disk reading and round 2 show); the saved figure read off disk drops by the deleted size on a plain delete, by 0 after a truncate; a truncate-first run and a second restart moved it by the hand-deleted samples' size only (−238 137 857 against −238 135 417 predicted) |
 | `opfs-flush` | [40909520](https://issues.chromium.org/issues/40909520) — slow `flush()` on Mac | Times 20 writes of 1 MiB and 20 of 16 MiB, each followed by `flush()`, in a worker; median, p95 and max per size | `MEASURED` (figures only: the tracker's claim is a comparison with other browsers this repo does not make), `NOT CHECKED opfs-<missing>` | **measured**: flush median 0.53–0.57 ms (1 MiB), 1.44–1.46 ms (16 MiB), Chrome 155, macOS 15.6.1, 2026-10-22 |
 | — | [541725401](https://issues.chromium.org/issues/541725401) / [40068799](https://issues.chromium.org/issues/40068799) — a quota overrun returns a sentinel | No probe: needs the origin's quota exhausted or an incognito profile | — | out of scope, stays watched |
@@ -100,6 +102,7 @@ stand), the single-window bfcache runs, and the OPFS stored-readings load before
    https://localhost:5173/chromium-watched-issues-debug-demo.html?issue=capture-gaps&source=mic&rate=48000&stallMs=80&stallEvery=1000
    https://localhost:5173/chromium-watched-issues-debug-demo.html?issue=capture-gaps&source=mic&input=USB&rate=48000&latencyHint=0.04
    https://localhost:5173/chromium-watched-issues-debug-demo.html?issue=capture-gaps&source=mic&rate=48000&seconds=90&speakerTone=0&dither=1
+   https://localhost:5173/chromium-watched-issues-debug-demo.html?issue=capture-gaps&source=crosscontext&rate=48000&generatorRate=48000&seconds=90
    https://localhost:5173/chromium-watched-issues-debug-demo.html?issue=opfs-usage
    https://localhost:5173/chromium-watched-issues-debug-demo.html?issue=opfs-flush
    ```
@@ -781,6 +784,82 @@ What it means for the SDK:
 - **The commenter's dither is a workaround.** In these rows it removed the hole that silence produced.
   A dither in the engine output while recording is the obvious remedy. It is an upstream suggestion
   candidate, not drafted.
+
+#### Cross-context MediaStream (comment 50, `&source=crosscontext`)
+
+Comment 50 on the tracker (the author of extendable-media-recorder) reports this with an AudioWorklet
+recorder: "I can see the tests failing because of occasional blocks of zeros. Usually they are multiples
+of 441 samples long. I created a simplified example which uses one AudioContext to generate audio and
+another one to record it. The audio is passed from one AudioContext to the other via a MediaStream. The
+problem doesn't happen consistently which is why the test gets repeated after 40 seconds." The user
+pasted the comment's dev-console script; it is kept at
+`.superpowers/sdd/2026-10-22-chromium-watched-issues-measurement/tracker-40103985-comment-50-script.js`.
+
+`&source=crosscontext` mirrors its graph:
+- **The generator.** It is `new AudioContext()` at the device rate (or `&generatorRate=`), with a default
+  `OscillatorNode`, a 440 Hz sine at full scale, feeding a `MediaStreamAudioDestinationNode`.
+- **The capture.** The capture context opens that node's stream itself, not a clone, through a
+  `MediaStreamAudioSourceNode` into this probe's recorder.
+
+`&generatorDither=1` also plays a looped `(n & 1) / 10000` buffer to the generator's destination.
+
+Three facts about the script, and how the probe treats each:
+- **Neither of its contexts outputs to the speakers, and each attempt lasts 40 s.** The generator feeds
+  only the stream, and the detector node connects to nothing. So both contexts cross Chrome's 30 s
+  silence threshold in every attempt, which makes the fake-device switch a candidate cause of the
+  comment's intermittent zeros. The probe tests it with silent rows, then with `&dither=1` on the
+  recorder output and `&generatorDither=1` on the generator. The per-second witness runs on both
+  contexts (`generator…` figures).
+- **Its detector does not measure run length.** It reports the first all-zero quantum after recording
+  frame 1 024 and stops. The probe's recorder keeps every frame, so the run lengths and their
+  441-multiples (`runLengthsIn441s`) extend it.
+- **The comment says the problem is intermittent.** The silent mirrored row was run three times.
+
+On this machine `new AudioContext()` came up at 44 100: the output device's rate. The exact mirror is
+therefore 44 100 on both contexts. The rows ran in Playwright's Chrome 155.0.8059.85 on macOS 15.6.1,
+2026-10-22, with a real click, 90 s each and no microphone. The capture context's own output was silent
+(the recorder writing zeros) unless `&dither=1`.
+
+| envelope | capture / generator rate | recorder dither | generator dither | start-window run | runs after it | near the 30 s mark | verdict |
+|---|---|---|---|---|---|---|---|
+| `chromium-capture-gaps-mvkacrmf-k8rx.json` | 44 100 / 44 100 (exact mirror) | no | no | 441 at frame 1 010 | 0 | 0 | `START GAPS` |
+| `chromium-capture-gaps-mvkaes9g-srld.json` | 44 100 / 44 100 (exact mirror) | no | no | 441 at frame 1 010 | 0 | 0 | `START GAPS` |
+| `chromium-capture-gaps-mvkagspp-oi2e.json` | 44 100 / 44 100 (exact mirror) | no | no | 441 at frame 1 010 | 0 | 0 | `START GAPS` |
+| `chromium-capture-gaps-mvkaj06l-m0om.json` | 48 000 / 48 000 | no | no | none | 1: 480 at frame 1 534 112 | 1 | `GAPS` |
+| `chromium-capture-gaps-mvkalf9k-bm9r.json` | 48 000 / 48 000 | no | no | none | 1: 480 at frame 1 534 112 | 1 | `GAPS` |
+| `chromium-capture-gaps-mvkannu4-bvse.json` | 48 000 / 48 000 | no | yes | none | 1: 480 at frame 1 534 112 | 1 | `GAPS` |
+| `chromium-capture-gaps-mvkapr64-7nb1.json` | 48 000 / 48 000 | yes | no | none | 0 | 0 | `CLEAN` |
+| `chromium-capture-gaps-mvkart84-a3fm.json` | 48 000 / 48 000 | yes | yes | none | 0 | 0 | `CLEAN` |
+| `chromium-capture-gaps-mvkattvu-a4v5.json` | 44 100 / 48 000 | no | no | none | 1: 383 at frame 22 550 (0.51 s) | 0 | `GAPS` |
+| `chromium-capture-gaps-mvka9y3q-ofr0.json` | 48 000 / 44 100 | no | no | 412 at frame 3 238 | 0 | 0 | `START GAPS` |
+
+The capture read the tone at RMS 0.707, a full-scale sine, in every row. No row had a duplicate, an
+empty input, a muted track, a clock second under 0.92, or a latency or sink change on either context.
+The last row ran before the latency witness took its baseline at the 1 s reading. Its
+`latencyChangedAtSecond` 1 is `outputLatency` reading 0 the instant after `resume()`, not a change.
+
+What these rows show:
+- **The exact mirror gives exactly one 441-frame block at the stream's start, 3 of 3.** This is
+  comment 50's "multiples of 441 samples", at 44 100 on both contexts. It comes 441 frames after the
+  first non-zero frame, as on the same-context loopback at 44 100: one 10 ms chunk of signal, then
+  one chunk of zeros. The script's detector skips recording frames up to 1 024. This run sits at
+  capture frame 1 010 to 1 451, and the capture starts a few hundred context frames into the recording
+  context, so the detector would likely catch it on the first attempt. The probe cannot confirm that
+  from its own frames. The comment's "intermittent" does not match a 3 of 3 here.
+- **At 48 000 on both contexts, a hole of exactly 480 frames (10 ms) comes about 32 s in, 3 of 3.**
+  Every row sits at the same capture frame, 1 534 112, 1.97 s after the capture context's 30 s mark.
+  This is the tracker's 480-sample hole. The recorder's dither removes it, with or without the
+  generator's. The generator's dither alone does not. So the silence that matters is the recording
+  context's output, as with the microphone. Neither context's latencies or sink changed at it.
+- **Mixed rates give no hole near 30 s.** One run each: 44 100 capture with a 48 000 generator has one
+  383-frame run at 0.51 s, and 48 000 capture with a 44 100 generator only a start-window run.
+- **The exact mirror at 44 100 gave no hole near 30 s either,** with a silent output, 3 of 3. Why the
+  48 000 contexts meet the silence hole and the 44 100 ones do not is not established. The device ran
+  at 44 100, so a 48 000 context is resampled to it.
+- **The register's cross-context entry does not hold for this bare path.** The entry says a
+  destination-node stream from another context reads silent. Here the capture read the tone at full
+  scale in every row. That entry was measured through the SDK's capture and a `getUserMedia` override,
+  and this probe uses neither.
 
 ### opfs-usage (436552046 / 401692415)
 

@@ -105,6 +105,9 @@ Chromium tracker through the browser).
   4 s take, 14.9× the threshold) and hand each `getUserMedia` call a `stream.clone()`; see
   `src/lib/audit/loopbackInjection.ts`. The real microphone otherwise.
 - **Evidence:** `src/demos/recording/CLAUDE.md`, "Don't Synthesize Input to Verify Recording".
+  The bare cross-context path without the SDK or a `getUserMedia` override (the Chromium 40103985
+  probe's `&source=crosscontext`) reads the tone at full scale. It carries that issue's 441-frame start
+  block and 30 s silence hole instead; see the 40103985 entry.
 - **Last checked:** 2026-10-22 (every recording-alignment row runs through it).
 
 ### Chromium [436552046](https://issues.chromium.org/issues/436552046) / [401692415](https://issues.chromium.org/issues/401692415) — OPFS usage written through sync access handles is not counted, and a delete drives the saved figure negative
@@ -342,7 +345,12 @@ Chromium tracker through the browser).
   30 s. The context's `baseLatency`, `outputLatency` and `sinkId`, read each second, did not change at
   the switch, and the clock never dipped under 0.92 in any second. Shipped Chrome fills an underrun with
   zeros. "Duplicated blocks" describe a tracker engineer's unshipped prototype that repeats the prior
-  frame, so zero duplicates is the expected reading here.
+  frame, so zero duplicates is the expected reading here. Tracker comment 50's two-context graph (one
+  context generating, another recording the first's `MediaStreamAudioDestinationNode` stream; neither
+  outputs to the speakers), mirrored by `&source=crosscontext`, gives two readings:
+  - **At 44 100 on both contexts:** one block of exactly 441 zeros at the stream's start, 3 of 3.
+  - **At 48 000 on both:** one hole of exactly 480 frames (10 ms) about 32 s in, 3 of 3. The recording
+    context's output dither removes it; the generator's alone does not.
 - **Where it bites here:** any recording through a `MediaStreamAudioSourceNode`. An 80 ms render-thread
   stall cost about 32 ms of input. The sink's buffer of about 48 ms is inferred from where the zeros
   start, not measured, since only 80 ms stalls were run. A long WASM compile, a large message handled on
@@ -374,7 +382,11 @@ Chromium tracker through the browser).
   `…-mvk37334-0nth.json`; silent output against dither over 90 s (`&seconds=90&speakerTone=0`, `&dither=1`)
   `…-mvk9nuuo-s3x1.json`, `…-mvk9wabz-l4w8.json`, `…-mvk9s0lh-u9sp.json` (silent),
   `…-mvka3ha2-0d3j.json` (silent, with the latency and sink witness), `…-mvk9pzn2-83bx.json`,
-  `…-mvk9ybig-f9be.json`, `…-mvk9u1pc-xmca.json`, `…-mvka5n99-y698.json` (dither), loopback
+  `…-mvk9ybig-f9be.json`, `…-mvk9u1pc-xmca.json`, `…-mvka5n99-y698.json` (dither); cross-context (`&source=crosscontext&seconds=90`)
+  `…-mvkacrmf-k8rx.json`, `…-mvkaes9g-srld.json`, `…-mvkagspp-oi2e.json` (44 100 exact mirror),
+  `…-mvkaj06l-m0om.json`, `…-mvkalf9k-bm9r.json`, `…-mvkannu4-bvse.json` (48 000, silent recorder output),
+  `…-mvkapr64-7nb1.json`, `…-mvkart84-a3fm.json` (recorder dither), `…-mvkattvu-a4v5.json`,
+  `…-mvka9y3q-ofr0.json` (mixed rates); loopback
   `…-mvk9lpjr-ddsz.json`.
 - **Last checked:** Chrome 155.0.8059.85, macOS 15.6.1, 2026-10-22: `GAPS`, with the zero runs at stall
   times, on the built-in and a USB microphone at both rates; one zero run just after 30 s of silent

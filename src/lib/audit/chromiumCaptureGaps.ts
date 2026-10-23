@@ -217,9 +217,18 @@ export function latencyHintFrom(value: string | null): LatencyHint {
   throw new Error(`&latencyHint=${value}: expected seconds above 0, interactive, balanced or playback`);
 }
 
+function lengthsInUnits(lengths: readonly number[], unit: number): string {
+  return lengths.map((length) => String(Number((length / unit).toFixed(2)))).join(" ");
+}
+
 /** Each length in units of 480 frames (10 ms at 48 kHz, the tracker's hole size), two decimals. */
 export function lengthsIn480s(lengths: readonly number[]): string {
-  return lengths.map((length) => String(Number((length / 480).toFixed(2)))).join(" ");
+  return lengthsInUnits(lengths, 480);
+}
+
+/** Each length in units of 441 frames (10 ms at 44.1 kHz: comment 50's blocks, the register's delay step), two decimals. */
+export function lengthsIn441s(lengths: readonly number[]): string {
+  return lengthsInUnits(lengths, 441);
 }
 
 /** The RMS of the frames after the head; 0 when there are none. */
@@ -291,8 +300,8 @@ export function secondsFrom(value: string | null): number {
   return seconds;
 }
 
-/** The first reading (counted from 0, one a second) whose value differs from reading 0's; null when none does. */
-export function firstChangedSecond(values: readonly string[]): number | null {
-  for (let i = 1; i < values.length; i++) if (values[i] !== values[0]) return i;
+/** The first reading (counted from 0, one a second) after `baseline` whose value differs from reading `baseline`'s; null when none does. */
+export function firstChangedSecond(values: readonly string[], baseline: number = 0): number | null {
+  for (let i = baseline + 1; i < values.length; i++) if (values[i] !== values[baseline]) return i;
   return null;
 }

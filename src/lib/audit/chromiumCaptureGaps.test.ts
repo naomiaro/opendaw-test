@@ -18,6 +18,7 @@ import {
   firstChangedSecond,
   latencyHintFrom,
   lengthsIn480s,
+  lengthsIn441s,
   rmsAfterHead,
   matchInput,
   recorderChunkFrames,
@@ -396,5 +397,16 @@ describe("firstChangedSecond", () => {
     expect(firstChangedSecond(["0.005|0.028", "0.005|0.028", "0.005|0.04", "0.005|0.028"])).toBe(2);
     expect(firstChangedSecond(["a", "a", "a"])).toBeNull();
     expect(firstChangedSecond([])).toBeNull();
+  });
+
+  it("takes its baseline from a later reading when told to: outputLatency reads 0 the instant after resume()", () => {
+    expect(firstChangedSecond(["0.0058|0", "0.0058|0.028", "0.0058|0.028", "0.0058|0.04"], 1)).toBe(3);
+    expect(firstChangedSecond(["0.0058|0", "0.0058|0.028"], 1)).toBeNull();
+  });
+});
+
+describe("lengthsIn441s", () => {
+  it("gives each length in units of 441 frames (10 ms at 44.1 kHz, the register's delay step), two decimals", () => {
+    expect(lengthsIn441s([441, 882, 128, 480])).toBe("1 2 0.29 1.09");
   });
 });
