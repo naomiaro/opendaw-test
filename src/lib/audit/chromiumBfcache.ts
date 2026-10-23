@@ -3,7 +3,25 @@
  * restored from the back/forward cache, keeps `state: running` but advances `currentTime`
  * at about half wall-clock speed. This file holds the judgement, pure and Node-testable;
  * the browser half is `chromiumBfcacheProbe.ts`.
+ *
+ * The same probe has a MIDI arm (`&midi=1`) for Chromium 40635109: a document that has
+ * requested MIDI access is never put in the cache (`kRequestedMIDIPermission`). The arm
+ * requests access before the baseline and judges on the way back whether the page was
+ * restored, and if not, whether the not-restored reasons name MIDI.
  */
+import { notChecked, type Verdict } from "./chromiumWatched";
+
+export interface BfcacheOptions {
+  /** `&midi=1`: request Web MIDI access before the baseline, and judge the cache on it. */
+  midi: boolean;
+}
+
+/** The probe's parameters beyond `?issue=`; `&midi=` takes `1` only, anything else is refused. */
+export function bfcacheOptionsFrom(params: URLSearchParams): BfcacheOptions {
+  const midi = params.get("midi");
+  if (midi !== null && midi !== "1") throw new Error(`&midi=${midi}: expected &midi=1, or no &midi=`);
+  return { midi: midi === "1" };
+}
 
 /** One measurement window: how far the context clock and the wall clock moved over it. */
 export interface ClockRatioSample {
@@ -74,6 +92,55 @@ export function judgeBfcache(
   return { verdict, ratioBefore, ratioAfter, windowRatios, reason: null };
 }
 
+/** The API reports the feature as `midi` (measured 2026-10-23, Chrome 155, beside `masked`); "requested midi permission" is the tracker's and Blink's prose for `kRequestedMIDIPermission`. The match takes the one word both share. */
+const MIDI_REASON = /midi/i;
+
+/**
+ * The MIDI arm's verdict. Restored from the cache with a `MIDIAccess` held: `CACHED WITH MIDI`,
+ * which would put the MIDI pages within 575891839's reach (whether the clock halved is the
+ * `clockVerdict` figure). Kept out: `MIDI BLOCKS CACHE` when a reason names MIDI; `NOT CHECKED`
+ * when no reasons were reported (the cache may be off, as in Playwright's Chrome), when the text
+ * yielded no reason strings at all (not JSON, or a shape this walker does not know), or when the
+ * reported reasons do not name MIDI, which is the outcome that would mean Chromium changed. Only
+ * the `reasons` entries are searched, never the page URL, which carries `&midi=1` itself.
+ */
+export function judgeMidiArm(persisted: boolean, notRestoredReasons: string | null): Verdict {
+  if (persisted) return "CACHED WITH MIDI";
+  if (notRestoredReasons === null) return notChecked("not-cached-no-reasons-reported");
+  const reasons = reasonEntries(notRestoredReasons);
+  if (reasons === null) return notChecked("not-cached-reasons-unrecognised");
+  return reasons.some((reason) => MIDI_REASON.test(reason))
+    ? "MIDI BLOCKS CACHE"
+    : notChecked("not-cached-without-a-midi-reason");
+}
+
+/**
+ * Every `reason` string in a serialized `NotRestoredReasons`, the frames' children included
+ * (a cross-origin child carries `reasons: null`); null when the text is not JSON or holds no
+ * reason string anywhere, so that nothing read from text the walker did not understand.
+ */
+function reasonEntries(serialized: string): string[] | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(serialized);
+  } catch {
+    return null;
+  }
+  const found: string[] = [];
+  const walk = (node: unknown): void => {
+    if (!isRecord(node)) return;
+    if (Array.isArray(node.reasons)) {
+      for (const entry of node.reasons) {
+        if (typeof entry === "string") found.push(entry);
+        else if (isRecord(entry) && typeof entry.reason === "string") found.push(entry.reason);
+      }
+    }
+    if (Array.isArray(node.children)) node.children.forEach(walk);
+  };
+  walk(value);
+  return found.length === 0 ? null : found;
+}
+
 /** Both tones' pitch as the analysers read them, in Hz. */
 export interface Pitches {
   control: number;
@@ -81,7 +148,7 @@ export interface Pitches {
 }
 
 /** The schema of the stored run: an entry with no version, or another one, is an older page's and is not judged. */
-export const STORED_BFCACHE_RUN_VERSION = 2;
+export const STORED_BFCACHE_RUN_VERSION = 3;
 
 /** What the first document keeps in `sessionStorage` for a later load to judge. */
 export interface StoredBfcacheRun {
@@ -94,6 +161,8 @@ export interface StoredBfcacheRun {
   sampleRate: number;
   /** `Date.now()` when the baseline was stored: the time away is measured from here. */
   startedAt: number;
+  /** The MIDI arm: the document requested Web MIDI access before the baseline. */
+  midiRequested: boolean;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
@@ -112,5 +181,6 @@ export function parseStoredBfcacheRun(raw: string): StoredBfcacheRun | null {
   if (typeof value.runToken !== "string" || typeof value.chrome !== "string" || typeof value.date !== "string") return null;
   if (!numbers(value.before, ["contextAdvanceSec", "wallAdvanceSec"]) || !numbers(value.pitchBefore, ["control", "worklet"])) return null;
   if (typeof value.sampleRate !== "number" || typeof value.startedAt !== "number") return null;
+  if (typeof value.midiRequested !== "boolean") return null;
   return value as unknown as StoredBfcacheRun;
 }

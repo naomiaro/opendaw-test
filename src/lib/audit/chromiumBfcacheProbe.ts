@@ -8,9 +8,15 @@
  *   context and nodes are still alive, the probe measures three one-second windows and judges
  *   on all but the first;
  * - the page was not cached and loads afresh: `judgeStoredBfcacheOnLoad` finds the stored
- *   figures, reads the navigation's `notRestoredReasons`, and judges `NOT CHECKED`. The
- *   promise of the first run never settles in that case; the new document carries the run.
+ *   figures, reads the navigation's `notRestoredReasons`, and judges `NOT CHECKED` (on the MIDI
+ *   arm, `judgeMidiArm`). The promise of the first run never settles in that case; the new
+ *   document carries the run.
  * The judgement is `chromiumBfcache.ts`.
+ *
+ * With `&midi=1` (Chromium 40635109) the click first requests Web MIDI access and holds the
+ * `MIDIAccess` through the navigation; the rest is the same, and the way back is judged by
+ * `judgeMidiArm`: restored from the cache (`CACHED WITH MIDI`, the clock verdict then rides
+ * in the figures), or not, with the reasons naming MIDI or not.
  */
 
 import { browserOf, makeEnvelope, newRunToken, notChecked, runDate, type Figures, type ProbeEnvelope, type Verdict } from "./chromiumWatched";
@@ -20,8 +26,10 @@ import {
   STORED_BFCACHE_RUN_VERSION,
   clockRatio,
   judgeBfcache,
+  judgeMidiArm,
   parseStoredBfcacheRun,
   type BfcacheJudgement,
+  type BfcacheOptions,
   type ClockRatioSample,
   type Pitches,
   type StoredBfcacheRun,
@@ -41,6 +49,8 @@ const BEFORE_SECONDS = 2;
 const OUTPUT_GAIN = 0.02;
 const FFT_SIZE = 32768;
 const DEADLINE_MS = 5000;
+/** The MIDI request may sit behind a permission prompt the operator has to answer (none once the origin has it). */
+const MIDI_REQUEST_DEADLINE_MS = 60_000;
 
 /** The worklet's tone: a sine it renders from its own phase at the context rate. */
 export const BFCACHE_PROCESSOR_SOURCE = `
@@ -70,9 +80,38 @@ interface Live {
   workletAnalyser: AnalyserNode;
 }
 
+/** What the MIDI arm got: the access, or why the arm cannot judge in this browser, by cause. */
+type MidiRequest = { access: MIDIAccess; failed: null } | { access: null; failed: string };
+
+async function requestMidi(): Promise<MidiRequest> {
+  if (typeof navigator.requestMIDIAccess !== "function") return { access: null, failed: "no-web-midi" };
+  try {
+    // The access is held in the run's closure through the navigation, as the MIDI demos hold theirs;
+    // after a restore the figures read its port counts from it.
+    const access = await deadline(navigator.requestMIDIAccess(), MIDI_REQUEST_DEADLINE_MS, "requestMIDIAccess");
+    return { access, failed: null };
+  } catch (error) {
+    if (error instanceof DeadlineError) return { access: null, failed: "midi-timeout: the request was not answered" };
+    if (error instanceof DOMException) return { access: null, failed: `midi-refused: ${error.name}: ${error.message}` };
+    return { access: null, failed: `midi-threw: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
+/** `midiArm`: the run was asked for the arm; `midiRequested`: an access is held (false on a refused request). */
+function midiFigures(arm: boolean, access: MIDIAccess | null): Figures {
+  return {
+    midiArm: arm ? "true" : "false",
+    midiRequested: access === null ? "false" : "true",
+    midiInputs: access === null ? null : access.inputs.size,
+    midiOutputs: access === null ? null : access.outputs.size,
+  };
+}
+
+class DeadlineError extends Error {}
+
 function deadline<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`${what}: no answer in ${ms} ms`)), ms);
+    const timer = setTimeout(() => reject(new DeadlineError(`${what}: no answer in ${ms} ms`)), ms);
     promise.then(
       (value) => {
         clearTimeout(timer);
@@ -192,8 +231,24 @@ function envelopeFrom(
   return makeEnvelope({ issue: "bfcache", chrome: run.chrome, date: run.date, runToken: run.runToken }, verdict, figures);
 }
 
-/** The click: baseline, store, wait for a restore from the cache, re-measure, judge. */
-export async function runBfcacheProbe(signal: AbortSignal, report: (step: string) => void): Promise<ProbeEnvelope> {
+/** The click: baseline, store, wait for a restore from the cache, re-measure, judge. With `&midi=1`, a MIDI access request first. */
+export async function runBfcacheProbe(
+  signal: AbortSignal,
+  report: (step: string) => void,
+  options: BfcacheOptions = { midi: false }
+): Promise<ProbeEnvelope> {
+  sessionStorage.removeItem(STORAGE_KEY);
+  let midiAccess: MIDIAccess | null = null;
+  if (options.midi) {
+    report("request-midi");
+    const midi = await requestMidi();
+    if (midi.failed !== null) {
+      const head = { issue: "bfcache" as const, chrome: browserOf(navigator), date: runDate(), runToken: newRunToken() };
+      return makeEnvelope(head, notChecked(midi.failed), midiFigures(true, null));
+    }
+    midiAccess = midi.access;
+  }
+  const midiRequested = midiAccess !== null;
   report("start-audio");
   const live = await startLive();
   try {
@@ -209,9 +264,10 @@ export async function runBfcacheProbe(signal: AbortSignal, report: (step: string
       pitchBefore: pitchesOf(live),
       sampleRate: live.context.sampleRate,
       startedAt: Date.now(),
+      midiRequested,
     };
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(run));
-    console.log("[chromium-watched] bfcache baseline ratio " + clockRatio(before).toFixed(4) + ", stored; awaiting navigation");
+    console.log("[chromium-watched] bfcache baseline ratio " + clockRatio(before).toFixed(4) + (midiRequested ? ", MIDI access held" : "") + ", stored; awaiting navigation");
     report(AWAITING_NAVIGATION);
     await waitForRestore(signal);
     sessionStorage.removeItem(STORAGE_KEY);
@@ -221,10 +277,16 @@ export async function runBfcacheProbe(signal: AbortSignal, report: (step: string
       persisted: "true",
       notRestoredReasons: null,
       contextStateAfterRestore: stateAfterRestore,
+      ...midiFigures(options.midi, midiAccess),
     };
+    // On the MIDI arm the restore itself is the verdict; the clock's reads as a figure.
+    const armVerdict = (clockVerdict: Verdict): Verdict => (midiRequested ? judgeMidiArm(true, null) : clockVerdict);
+    const withClock = (figures: Figures, clockVerdict: Verdict): Figures =>
+      midiRequested ? { ...figures, clockVerdict } : figures;
     if (stateAfterRestore !== "running") {
       const judged = judgeBfcache(before, null, true, null);
-      return envelopeFrom(run, judged, notChecked(`context-${stateAfterRestore}`), extra);
+      const clockVerdict = notChecked(`context-${stateAfterRestore}`);
+      return envelopeFrom(run, judged, armVerdict(clockVerdict), withClock(extra, clockVerdict));
     }
     const after: ClockRatioSample[] = [];
     for (let window = 0; window < RESTORE_WINDOWS; window++) {
@@ -232,9 +294,9 @@ export async function runBfcacheProbe(signal: AbortSignal, report: (step: string
     }
     const pitchAfter = pitchesOf(live);
     const judged = judgeBfcache(before, after, true, null);
-    const verdict = judged.verdict === "NOT CHECKED" ? notChecked(judged.reason ?? "unjudged") : judged.verdict;
-    return envelopeFrom(run, judged, verdict, {
-      ...extra,
+    const clockVerdict = judged.verdict === "NOT CHECKED" ? notChecked(judged.reason ?? "unjudged") : judged.verdict;
+    return envelopeFrom(run, judged, armVerdict(clockVerdict), {
+      ...withClock(extra, clockVerdict),
       // Each window's advance after the restore, context / wall in seconds, one window per `;`.
       advancesAfterContextWallSec: after
         .map((w) => w.contextAdvanceSec.toFixed(4) + "/" + w.wallAdvanceSec.toFixed(4))
@@ -260,7 +322,8 @@ function notRestoredReasons(entry: PerformanceNavigationTiming | undefined): str
 
 /**
  * On a fresh load: a baseline stored by an earlier document means the page was not
- * restored from the cache. Judges it `NOT CHECKED` with the reasons, and clears it. An entry
+ * restored from the cache. Judges it with the reasons (`NOT CHECKED not-cached` on the plain
+ * run, `judgeMidiArm` on the MIDI arm, where `MIDI BLOCKS CACHE` is the expected word), and clears it. An entry
  * that does not parse as this schema's (corrupt, or an older page's) is cleared with a warning
  * and judged as nothing stored.
  */
@@ -277,9 +340,14 @@ export function judgeStoredBfcacheOnLoad(): ProbeEnvelope | null {
   const reasons = notRestoredReasons(entry);
   const navigationType = entry?.type ?? null;
   const judged = judgeBfcache(run.before, null, false, reasons);
-  const verdict = notChecked(navigationType === "back_forward" ? "not-cached" : `not-back-forward-${navigationType}`);
+  const verdict =
+    navigationType !== "back_forward" ? notChecked(`not-back-forward-${navigationType}`)
+    : run.midiRequested ? judgeMidiArm(false, reasons)
+    : notChecked("not-cached");
   return envelopeFrom(run, judged, verdict, {
     persisted: "false",
+    midiArm: run.midiRequested ? "true" : "false",
+    midiRequested: run.midiRequested ? "true" : "false",
     navigationType,
     notRestoredReasons: reasons,
     secondsAway: round((Date.now() - run.startedAt) / 1000, 1),

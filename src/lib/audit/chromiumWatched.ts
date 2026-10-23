@@ -39,6 +39,8 @@ export const VERDICT_WORDS = [
   "FIRST READ TRUE",
   "HALF SPEED",
   "NORMAL",
+  "MIDI BLOCKS CACHE",
+  "CACHED WITH MIDI",
   "HALF RATE",
   "DISTORTED",
   "DISTORTED (mic only)",

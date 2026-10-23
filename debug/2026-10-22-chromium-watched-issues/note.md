@@ -26,6 +26,9 @@ did with it.
   Chrome (windows 0.48–0.50), and the looping demo restored at 0.4996. Moved to "Measured here".
   Follow-up DONE in PR #177 (2026-10-23): `initializeOpenDAW` reloads a page restored from the cache
   (`installBfcacheReloadGuard`); the reading that verifies it is at the end of the "bfcache" section.
+- **40635109, a page that requested MIDI access is not cached:** `MIDI BLOCKS CACHE` twice on the probe's
+  `&midi=1` arm (2026-10-23; reasons `masked`, `midi`), the plain arm restored at 0.499 in between as the
+  control. Moved to "Measured here": the MIDI demos are out of 575891839's reach once MIDI is enabled.
 - **560233271, distortion after suspend / resume:** reproduced, and the trigger is found. An 80 ms
   synchronous task on the worklet thread right before `suspend()` / `resume()` halves the render rate.
   The processor runs 172.3 calls per second against 344.5 before, the context clock runs at 0.50, and
@@ -81,6 +84,7 @@ stand), the single-window bfcache runs, and the OPFS stored-readings load before
 | `?issue=` | Chromium issue | What the probe does | Verdict words | Status |
 |---|---|---|---|---|
 | `first-read` | [571344687](https://issues.chromium.org/issues/571344687) — stale first clock read after a slow module load | Builds a worklet node right after `addModule()` resolves (a slow module, a large module, none), five runs each in a running context; the processor reports `currentFrame` from its constructor and first three `process()` calls, judged against the main thread's frame read just before the node was made | `STALE FIRST READ`, `FIRST READ TRUE`, `NOT CHECKED context-not-running`, `NOT CHECKED too-few-runs` | **reproduced**: `STALE FIRST READ` on Chrome 155, 2026-10-22 |
+| `bfcache&midi=1` | [40635109](https://issues.chromium.org/issues/40635109) — a page that has requested MIDI access is not put in the back/forward cache | The `bfcache` probe with `navigator.requestMIDIAccess()` first, the access held; on the way back it judges whether the page was restored at all, and if not whether the `notRestoredReasons` entries name MIDI (the page URL, which carries `&midi=1`, is not searched) | `MIDI BLOCKS CACHE`, `CACHED WITH MIDI` (the clock verdict then rides in `clockVerdict`), `NOT CHECKED` with `not-cached-no-reasons-reported`, `not-cached-without-a-midi-reason` (reasons read, none names MIDI: the outcome that would mean Chromium changed), `not-cached-reasons-unrecognised` (no reason string read from the text), `no-web-midi`, `midi-timeout`, `midi-refused: <name>: <message>`, `midi-threw: <message>`, `not-back-forward-<type>` | **reproduced**: `MIDI BLOCKS CACHE` twice on Chrome 155, 2026-10-23, reasons `masked` and `midi`; the plain arm restored (`HALF SPEED`) in the same Chrome a minute apart |
 | `bfcache` | [575891839](https://issues.chromium.org/issues/575891839) — half-speed worklet clock after a back/forward-cache restore | Measures the context clock against `performance.now()` with a worklet tone and an oscillator control playing, navigates away and back; on `pageshow.persisted` re-measures in three one-second windows and judges on the last two, otherwise records the `notRestoredReasons` | `HALF SPEED`, `NORMAL`, `NOT CHECKED` with `not-cached`, `not-back-forward-<type>`, `context-<state>`, `too-few-windows`, `baseline-slow` | **reproduced**: `HALF SPEED` on Chrome 155, 2026-10-22, all three restore windows; a playing demo also restores at half speed (the user's Chrome; Playwright's cannot enter the cache) |
 | `suspend-resume` | [560233271](https://issues.chromium.org/issues/560233271) — distortion after suspend / resume cycles | The tracker's tone (a stateless 440 Hz sine from `currentFrame`, from a module file) into an analyser; a two-second baseline, then `suspend()` / `resume()` cycles, with the tracker's preconditions under `&tracker=1` (44.1 kHz, one restart, an 80 ms worklet-thread stall before each cycle). Each one-second window is judged three ways: the clock witness (context clock against wall clock, `process()` calls per second), the graph's purity, click and dropout rules, and with `&witness=mic` the microphone in a context of its own | `HALF RATE`, `DISTORTED`, `DISTORTED (mic only)`, `CLEAN`, `NOT CHECKED` with `<n>-cycles`, `no-signal`, `no-baseline-purity`, `processor-error-tone`, `processor-error-recorder`, `mic-<error>` or the step that failed | **reproduced**: `HALF RATE` with `&tracker=1` (an 80 ms worklet-thread stall before each cycle) on Chrome 155, 2026-10-22; the render rate halves at cycle 2, 3 or 10 and stays halved (344.5 → 172.3 `process()` calls per second, clock 0.50); without the stall, 20 cycles stay true |
 | `capture-gaps` | [40103985](https://issues.chromium.org/issues/40103985) — zero-filled gaps and duplicated blocks in `getUserMedia` input | Records `&seconds` (default 60 s) of a `MediaStreamAudioSourceNode` (`&source=loopback` or `mic`, `&rate=48000` or `44100`) through a worklet; counts zero runs of 100 frames or more after the head and 128-frame blocks identical to the one before, the first 0.1 s after the head reported apart; `&latencyHint`, `&input=<label>`, `&dither`, `&speakerTone=0`, `&seconds`, a per-second clock, latency and sink witness; `&source=crosscontext` (comment 50's two-context graph), `&generatorRate`, `&generatorDither`; `&stallMs` holds the worklet thread every `&stallEvery` ms and reports the runs in each stall's span apart | `GAPS`, `START GAPS`, `CLEAN`, `NOT CHECKED` with `<s>-s`, `no-signal`, `source-ended`, `source-muted`, `source-empty-input`, `mic-<error>` or the step that failed | **reproduced with render-thread stalls**: an 80 ms worklet-thread stall each second leaves a 512–1 792-frame zero run 48–72 ms after each stall on the microphone, at 48 000 (116 of 137 runs at stall times) and 44 100 (60 of 60); the loopback stays clean under the same stalls; without stalls, no gap after the first 0.1 s, `START GAPS` at loopback 44 100 and mic 48 000; a USB microphone the same under stalls (114 of 138, 62 of 62); `latencyHint` 0.1 / 0.2 gave one 384- or 256-frame run about 0.55 s in (plus a 384-frame start-window run at 0.1), never a 480-multiple hole; no duplicate anywhere; with a silent output, one 128- or 256-frame run just after the 30 s mark in 6 of 6 silent-output microphone rows (4 built-in, 2 fifine USB; the silent loopback row read `CLEAN`), and in 1 of 6 dithered microphone rows (a fifine row, 1.93 s after the mark); no latency or sink change around the 30 s mark; cross-context exact mirror (44 100 / 44 100): one 441-frame start block, 3 of 3; 48 000 / 48 000 with both outputs silent: one 480-frame hole about 32 s in, 3 of 3 (and in the one row with only the generator dithered), gone with the recorder's dither; Chrome 155, 2026-10-22 |
@@ -102,6 +106,7 @@ stand), the single-window bfcache runs, and the OPFS stored-readings load before
    ```
    https://localhost:5173/chromium-watched-issues-debug-demo.html?issue=first-read
    https://localhost:5173/chromium-watched-issues-debug-demo.html?issue=bfcache
+   https://localhost:5173/chromium-watched-issues-debug-demo.html?issue=bfcache&midi=1
    https://localhost:5173/chromium-watched-issues-debug-demo.html?issue=suspend-resume&tracker=1
    https://localhost:5173/chromium-watched-issues-debug-demo.html?issue=capture-gaps&source=loopback&rate=48000
    https://localhost:5173/chromium-watched-issues-debug-demo.html?issue=capture-gaps&source=mic&rate=48000&stallMs=80&stallEvery=1000
@@ -123,7 +128,9 @@ stand), the single-window bfcache runs, and the OPFS stored-readings load before
 
 `bfcache` stops at `running:awaiting-navigation` with a "Navigate away" link to `/blank-return.html`;
 click it, then press Back. Restored from the cache, the page re-measures (three one-second windows) and judges in place. Loaded
-afresh, it judges the stored baseline `NOT CHECKED` with the navigation's `notRestoredReasons`. Run it in a
+afresh, it judges the stored baseline `NOT CHECKED` with the navigation's `notRestoredReasons`. With `&midi=1`
+it requests Web MIDI access before the baseline (no prompt once the origin has the permission) and a fresh
+load is the expected outcome: `MIDI BLOCKS CACHE` when the reasons name MIDI. Run it in a
 Chrome the user launched (claude-in-chrome): Playwright's Chrome runs with `--disable-back-forward-cache`.
 `opfs-usage` judges on a later page load (after the browser restart): the page judges what the earlier
 run stored as soon as it loads, with no click, and saves that envelope. A Run click clears any stored
@@ -309,6 +316,35 @@ on Play, a navigation to `/`, Back. A `pageshow` listener injected into the orig
 `persisted: true` with no `notRestoredReasons` (so the page WAS restored, and the guard fired on the
 restore, not on a miss); the page that then came back had navigation type `reload` and its transport read
 `00:00.00 Stopped`; Play on it advanced 3.00 s in 3.00 s of wall clock, ratio **0.999**. One run.
+
+#### The MIDI arm (40635109): a page that requested MIDI access is not cached
+
+**Reproduced.** Chrome 155.0.8059.85 (macOS 15.6.1, the user's Chrome through claude-in-chrome, window
+visible), 2026-10-23, 44 100 Hz. `&midi=1` calls `navigator.requestMIDIAccess()` before the baseline
+(resolved without a prompt: the origin already has the permission from the MIDI demos) and the run's
+closure holds the `MIDIAccess` through the navigation. The rest of the run is the plain arm's: a real click
+on Run, a two-second baseline, the "Navigate away" link, about ten seconds on `/blank-return.html`, Back.
+
+| envelope | arm | ratio before | persisted | navigation type | notRestoredReasons | verdict |
+|---|---|---|---|---|---|---|
+| `chromium-bfcache-mvle4tqu-7mcs.json` | `&midi=1` | 1.0006 | false | `back_forward` | `masked`, `midi` | `MIDI BLOCKS CACHE` |
+| `chromium-bfcache-mvle5mr7-1e5v.json` | plain (control) | 1.0009 | true | — | — | `HALF SPEED` (0.4811, 0.4989, 0.4990) |
+| `chromium-bfcache-mvle6m6x-hp50.json` | `&midi=1` | 1.0010 | false | `back_forward` | `masked`, `midi` | `MIDI BLOCKS CACHE` |
+
+- **The reason the API reports is `midi`**, beside `masked`; "requested midi permission" is the tracker's
+  and Blink's prose for the same feature (`kRequestedMIDIPermission`). The arm matches the `reasons`
+  entries only, never the page URL, which carries `&midi=1` itself.
+- **The control is the same page a minute later without the request:** restored, context still
+  `running`, clock at half speed. So the cache was on in this Chrome, and the one difference between the
+  arms, the MIDI request, is what kept the page out.
+- **What it says for the demos:** the MIDI recording demo and the Nano demo request access through
+  `MidiDevices.requestPermission()` when the visitor enables MIDI, the two MIDI audit pages when Run is
+  clicked. From that click on, Back gives them a fresh load from the browser itself, and 575891839 cannot
+  reach them; before it they are cacheable like every other demo, and the reload guard covers that. Not
+  swept over the demos: the probe exercises the same API call, with no SDK in the page.
+- **Not reproduced elsewhere:** Playwright's Chrome (`--disable-back-forward-cache`) reports no reasons
+  at all and the arm reads `NOT CHECKED not-cached-no-reasons-reported`; a browser with no Web MIDI reads
+  `NOT CHECKED no-web-midi`.
 
 ### suspend-resume (560233271)
 
