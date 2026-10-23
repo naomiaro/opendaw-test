@@ -730,8 +730,9 @@ A witness reads the context once a second during the capture. It records `baseLa
 `outputLatency` and `sinkId` per second (`baseLatencyPerSecond`, `outputLatencyPerSecond`,
 `latencyChangedAtSecond` for the first second either differs from the reading at 1 s, and
 `sinkIdChanged`, yes or no), since a fake device may report different latencies. The baseline is the
-1 s reading because `outputLatency` reads 0 the instant after `resume()`. So the switch is not
-observable through these readings; the hole in the input is the only evidence of it. It also reads `currentTime`
+1 s reading because `outputLatency` reads 0 the instant after `resume()`. In every row below, neither
+latency nor `sinkId` changed around the 30 s mark, so the switch is not observable through these
+readings; the hole in the input is the only evidence of it. It also reads `currentTime`
 against `performance.now()` and
 records each second's ratio (`clockRatioPerSecond`, `clockRatioMin` and the second it happened, and
 `clockDipSeconds` for any second under 0.75). The detail also names zero runs that start within 2 s of
@@ -789,14 +790,15 @@ What the fifine rows add:
   two extra runs are not attributed. Only the runs just after the mark match the built-in pattern.
 
 No row had a duplicate, an empty input, or a track that started muted or fired `mute`. The microphone
-rows' RMS is room noise alone, with no speaker tone. The `&input=USB` attempt before them read `NOT
-CHECKED mic-Error-no-input-matching-USB` and is not quoted.
+rows' RMS is room noise alone, with no speaker tone. The `&input=USB` attempt before the built-in microphone rows read `NOT CHECKED
+mic-Error-no-input-matching-USB` and is not quoted.
 
 What these rows show:
-- **The lever reproduces, as one render quantum or two.** Every silent-output microphone row (4 of 4) has
-  exactly one zero run after the start window, and it sits just after the 30 s mark of context time:
-  1 024, 1 024 and 1 536 frames after it at the default hint, 17 920 at hint 0.1. Every dithered row
-  (4 of 4) has none.
+- **The lever reproduces, as one render quantum or two.** Every silent-output built-in microphone row
+  (4 of 4) has exactly one zero run after the start window, and it sits just after the 30 s mark of
+  context time: 1 024, 1 024 and 1 536 frames after it at the default hint, 17 920 at hint 0.1. Every
+  dithered built-in row (4 of 4) has none. On the fifine, both silent rows have the hole just after the
+  mark, one of them with a second run 7.4 s later. The dither held in 1 of 2 fifine rows.
 - **The holes are not 10 ms here, and the clock does not "go to hell".** The runs are 128 and 256 frames.
   The lowest per-second ratio in any row is 0.92, at the first second or in rows with a 92.9 ms
   `baseLatency`, where one-second readings are jittery. No second dips under 0.75.
@@ -810,7 +812,8 @@ What it means for the SDK:
   recording (nothing playing, metronome off, monitoring off) would be moved to the fake device after
   30 s, and a take longer than that would get a hole just after the 30 s mark. This is a reading.
   Whether the engine's output is exactly zero then is not measured.
-- **The commenter's dither is a workaround.** In these rows it removed the hole that silence produced.
+- **The commenter's dither is a workaround.** It removed the hole that silence produced on the built-in
+  microphone (4 of 4), and on the fifine in 1 of 2 rows.
   A dither in the engine output while recording is the obvious remedy. It is an upstream suggestion
   candidate, not drafted.
 
@@ -868,7 +871,8 @@ empty input, a muted track, or a latency or sink change on either context. The c
 - **The capture context's lowest second** is 0.910, in `mvkacrmf-k8rx` at second 90.
 - **The generator's lowest** is 0.874, in `mvkb9tol-97v7` at second 91: the last interval, cut short when
   the capture ended. All three 48 000 silent rows have their generator low in that last second.
-- **Away from the first and last second,** every row stays at 0.988 or above.
+- **Away from the first and the last two seconds,** every row stays at 0.988 or above. The exception is
+  `mvkacrmf-k8rx`, whose capture context reads 0.910 at second 90 of 91.
 
 Unlike the script's detector, this probe's recorder is connected to the recording context's
 destination. It writes zeros there, so the recording context's output is silent in both, and the
