@@ -44,7 +44,14 @@ SDK requested, not when the message physically left the Mac. A cable loopback in
 that half. The engine figures above are read against a per-frame `getOutputTimestamp` pair: Chrome's
 context ↔ performance relation moved by up to 6 ms within a single 10 s repeat on this machine, and against
 one pair read at the start the same repeats read up to 12.9 ms (the envelopes carry both); the control's
-0.00 is against the one pair its sends were built from.
+0.00 is against the one pair its sends were built from. That wander is Chrome's, not the SDK's: it is
+Chromium 40726491 (open since 2020, P3), and a measurement with no audio library on the page is on that
+thread as comment #16 (https://issues.chromium.org/issues/40726491#comment16): on a context whose rate is
+not the device's, the pair is a sawtooth of one device buffer, 278 frames every 4.5 s for a 48 kHz context
+over a 44.1 kHz device, with `outputLatency` not moving; at the device's rate, single steps. It bears on
+`plans/capture.md` directly, since the browser `MidiInputPort` there converts `MIDIMessageEvent.timeStamp`
+through `AudioContext.getOutputTimestamp`: a pair read once drifts by up to a device buffer within seconds on
+a resampled context, and a context at the device's rate is the lesser case.
 
 One scope note on `plans/capture.md`: phase 5 says "closes #356 for input" and principle 1 ("the main thread
 never infers timing from when it observed something") covers exactly the mechanism above, but no phase names
