@@ -283,6 +283,38 @@ Chromium tracker through the browser).
 - **Last checked:** Chrome 155.0.8059.85, macOS 15.6.1, 2026-10-22: `HALF RATE` with
   `?issue=suspend-resume&tracker=1`, and by ear on the tracker's repro page.
 
+### Chromium [388871416](https://issues.chromium.org/issues/388871416) — `outputLatency` reports a fixed 161 ms for a Bluetooth headset whose real extra output latency is 200 to 280 ms
+
+- **Tracker:** [issues.chromium.org/issues/388871416](https://issues.chromium.org/issues/388871416).
+  Filed 2025-01 against Chrome Dev 133 on macOS with AirPods (`outputLatency` 33 ms on the speaker,
+  17 ms on the headset); Chromium triage on M142 through M144 (2025-11) reads 200+ ms on the headset with
+  or without the output-buffering flag. Open, needs feedback.
+- **Symptom here:** a Defunc TRUE AUDIO Bluetooth headset reports `outputLatency` 161 ms, fixed, against
+  28 ms for the built-in speaker (base 5.8 ms both): 133 ms more. An acoustic round trip through the
+  built-in mic, with the mic on its own device-free clock (a capture context on a `none` sink), measures
+  68.86 ms for the speaker and 349.47, 272.30 and 270.86 ms for three headset streams: the headset adds
+  202 to 281 ms. Chrome understates the headset's extra output latency by about 70 ms on a typical stream
+  (70.4 and 69.0 ms) and by about 148 ms on the first stream after connecting (147.6 ms). The real figure
+  varies per stream and drifts within one (about ±1 ms per click); the reported figure stays at 161 ms.
+  `outputLatency` also follows the system default device, not the context's sink (161 ms on the speakers'
+  sink while the headset was the default), and reads 0 ms the instant after `resume()` on every output.
+- **Where it bites here:** take placement nets `outputLatency`, so a take recorded with this headset as
+  the output is placed about 70 to 150 ms early, and a context on a sink other than the default is netted
+  with the default device's figure.
+- **Workaround:** the loopback calibration branch or a per-capture input-latency setting, as for any
+  device whose reported latency is wrong; read `audioContext.outputLatency` a second after `resume()`,
+  never at the instant after. The per-stream variation means a figure measured once on a headset is
+  not valid for the next stream.
+- **Evidence:** `debug/2026-10-23-chromium-watched-issues/note.md`, "output-latency"; probe
+  `chromium-watched-issues-debug-demo.html?issue=output-latency&roundtrip=1&isolate=1` (`&sink=<label text>&gain=1`);
+  isolated envelopes `chromium-output-latency-mvk7n65m-w5yf.json` (speaker, 68.86 ms),
+  `…-mvk7p08l-k8r6.json` (349.47 ms), `…-mvk7pwdv-1qu8.json` (272.30 ms), `…-mvk7qhlz-ty15.json`
+  (270.86 ms); readout pair `…-mvk3xjzv-1180.json` (28 ms) / `…-mvk6xq4h-115y.json` (161 ms);
+  single-context runs kept as data, not used for the figure (`…-mvk7f761-cq4x.json` 103 ms,
+  `…-mvk7dex7-o1zq.json` 307 ms, `…-mvk7bppn-2mc0.json` 306 ms: their capture path sat in the output
+  device's clock domain).
+- **Last checked:** Chrome 155.0.8059.85, macOS 15.6.1, 2026-10-22.
+
 ## Watched — read from the tracker, not reproduced here
 
 ### Chromium [40103985](https://issues.chromium.org/issues/40103985) — zero-filled 10 ms gaps and duplicated blocks in `getUserMedia` input under underrun
@@ -344,35 +376,6 @@ Chromium tracker through the browser).
   runs (one 25.65 ms outlier among 40 16 MiB flushes). The tracker's claim is a comparison with other
   browsers, which this repo does not make. The sentinel: no probe, out of scope; it needs the origin's
   quota exhausted or an incognito profile.
-
-### Chromium [388871416](https://issues.chromium.org/issues/388871416) — `outputLatency` and a Bluetooth headset
-
-- **Tracker:** [issues.chromium.org/issues/388871416](https://issues.chromium.org/issues/388871416).
-  Filed 2025-01 against Chrome Dev 133 on macOS with AirPods (`outputLatency` 33 ms on the speaker,
-  17 ms on the headset); Chromium triage on M142 through M144 (2025-11) reads 200+ ms on the headset with
-  or without the output-buffering flag. Open, needs feedback.
-- **Measured here (the understatement is not shown):** `outputLatency` reads 28 ms on the built-in
-  speaker and 161 ms on a Defunc TRUE AUDIO Bluetooth headset (base 5.8 ms both), in line with the
-  triage. An acoustic round trip through the built-in mic read 103 ms (speakers, headset disconnected),
-  307 ms (headset) and 306 ms (speakers through `sinkId`, the headset connected as the system default).
-  The 204 ms round-trip difference includes an input-side change, and the third run is the witness: the
-  same output device as the first, 200 ms later. So the split between output and input is not
-  established, and whether the reported 133 ms is too small is inconclusive; see the note.
-  What is measured: `outputLatency` follows the system default device, not the context's sink
-  (161 ms on the speakers' sink while the headset was the default), and it reads 0 ms the instant
-  after `resume()` on every output.
-- **Where it would bite here:** take placement nets `outputLatency`; a Bluetooth output that reported
-  17 ms instead of 200 ms would place every take about 180 ms early. The reported figure matches the
-  triage here, so no such error is shown, but the round-trip result is inconclusive, not a clean
-  bill. A context on a sink other than the default is netted with the default device's figure. On a
-  Bluetooth recording session, read `audioContext.outputLatency` a second after `resume()`.
-- **Evidence:** `debug/2026-10-23-chromium-watched-issues/note.md`, "output-latency"; probe
-  `chromium-watched-issues-debug-demo.html?issue=output-latency` (readout) and
-  `&roundtrip=1[&sink=<label text>&gain=1]` (acoustic); envelopes `chromium-output-latency-mvk3xjzv-1180.json`
-  (28 ms), `…-mvk6xq4h-115y.json` (161 ms), `…-mvk7f761-cq4x.json` (103 ms), `…-mvk7dex7-o1zq.json`
-  (307 ms), `…-mvk7bppn-2mc0.json` (306 ms).
-- **Last checked:** Chrome 155.0.8059.85, macOS 15.6.1, 2026-10-22: reported 28 / 161 ms, round trips
-  103 / 307 / 306 ms, understatement inconclusive. Stays watched.
 
 # Firefox
 
