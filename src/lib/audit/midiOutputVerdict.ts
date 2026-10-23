@@ -4,7 +4,7 @@
  * says can be read; the ENGINE arm is read against the live pair when the repeat sampled one. The engine arm is `on-time`
  * when it lands on the box delay, `matches-known-defect` when a band this file pins explains every
  * repeat, else `investigate`. Bands classify a raw figure from the row's own context; they never
- * net anything out. The table ships EMPTY and is filled from the first run's rows
+ * net anything out. The table holds the bands the first run's rows pinned
  * (`debug/2026-10-23-midi-output-timing/note.md` says which).
  */
 import { quantumMs } from "./midiInputAlignment";
@@ -35,7 +35,33 @@ export interface OutputKnownDefectBand {
   detail: string;
 }
 
-export const MIDI_OUT_KNOWN_DEFECTS: readonly OutputKnownDefectBand[] = [];
+/**
+ * The main-thread-base shape, pinned on the four engine repeats of run `midiout-summary-1792790180843.json`
+ * (2026-10-23, jank 80 ms every 500 ms, 44.1 kHz; `debug/2026-10-23-midi-output-timing/note.md`, run B): the
+ * notes clear of the blocks sit on the delay, a note rendered inside a block is requested when the block
+ * ends (late by up to the block length), and a note whose on and off both render inside one block comes out
+ * off-before-on (read as one `stuck` plus one `extra`). Every bound is computed from the row's own context.
+ */
+const MAIN_THREAD_BASE: OutputKnownDefectBand = {
+  id: "midi-out-main-thread-base",
+  applies: (ctx) => ctx.jankActive,
+  matches: (f, ctx) => {
+    const quantum = quantumMs(ctx.sampleRate);
+    const median = f.medianErrorLiveMs ?? f.medianErrorMs;
+    if (median === null || f.maxAbsDevMs === null || f.medianErrorInsideBlocksMs === null || f.notesInsideBlocks === 0) return false;
+    return f.missing === 0
+      && f.velocityMismatches === 0
+      && f.stuck === f.extra
+      && f.stuck <= f.notesInsideBlocks
+      && Math.abs(median - ctx.delayInMs) <= quantum
+      && f.medianErrorInsideBlocksMs >= ctx.delayInMs + ctx.jankMs / 4
+      && f.medianErrorInsideBlocksMs <= ctx.delayInMs + ctx.jankMs + quantum
+      && f.maxAbsDevMs <= ctx.jankMs + quantum;
+  },
+  detail: "notes rendered inside a main-thread block are requested when the block ends (the timestamp base is the ring read); a note whose on and off both render in one block comes out off-before-on",
+};
+
+export const MIDI_OUT_KNOWN_DEFECTS: readonly OutputKnownDefectBand[] = [MAIN_THREAD_BASE];
 
 export function isClean(f: OutputRepeatFigures): boolean {
   return f.missing === 0 && f.extra === 0 && f.stuck === 0 && f.velocityMismatches === 0;
@@ -100,6 +126,7 @@ export function classifyEngineCell(
   const reference = referenceOf(repeats);
   const failure = integrityFailure(repeats) ?? figureFailure(repeats, ctx.delayInMs, quantum / 2, quantum, reference);
   if (failure === null) return { status: "on-time", detail: `every repeat clean, on the ${ctx.delayInMs} ms delay within half a quantum (${reference})` };
+  // A band may explain an integrity count too (the off-before-on inversion reads as stuck + extra), so it is tried on any failure.
   const band = bands.find((b) => b.applies(ctx) && repeats.every((f) => b.matches(f, ctx)));
   if (band !== undefined) return { status: "matches-known-defect", detail: `${band.id}: ${band.detail}` };
   return { status: "investigate", detail: failure };

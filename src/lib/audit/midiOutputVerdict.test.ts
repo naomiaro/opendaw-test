@@ -68,8 +68,28 @@ describe("classifyEngineCell", () => {
     expect(classifyEngineCell([clean(40, 30), clean(15, 30)], bus, { ...ctx, jankActive: true }, [band]).status).toBe("investigate");
   });
 
-  it("ships with no bands, and isClean reads the four counts", () => {
-    expect(MIDI_OUT_KNOWN_DEFECTS).toEqual([]);
+  it("pins the main-thread-base band on the rows that measured it (run 1792790180843, jank 80 ms, 44.1 kHz) and not on a clean row", () => {
+    const jank: OutputBandContext = { delayInMs: 10, jankMs: 80, jankActive: true, sampleRate: 44100 }; // quantum 2.90 ms
+    // The four engine repeats of run B: live median on the delay, inside-block median ~60, max dev ~70, two off-before-on notes each.
+    const measured: OutputRepeatFigures[] = [
+      { ...clean(10.18, 71.22), medianErrorLiveMs: 10.19, maxAbsDevLiveMs: 71.23, lateTailMs: 21.06, extra: 2, stuck: 2, notesInsideBlocks: 7, medianErrorInsideBlocksMs: 60.46 },
+      { ...clean(9.57, 70.37), medianErrorLiveMs: 10.15, maxAbsDevLiveMs: 71.69, lateTailMs: 20.57, extra: 2, stuck: 2, notesInsideBlocks: 7, medianErrorInsideBlocksMs: 59.82 },
+      { ...clean(11.92, 68.96), medianErrorLiveMs: 10.32, maxAbsDevLiveMs: 68.62, lateTailMs: 18.89, extra: 2, stuck: 2, notesInsideBlocks: 7, medianErrorInsideBlocksMs: 60.96 },
+      { ...clean(10.70, 69.57), medianErrorLiveMs: 10.23, maxAbsDevLiveMs: 69.65, lateTailMs: 19.48, extra: 2, stuck: 2, notesInsideBlocks: 7, medianErrorInsideBlocksMs: 60.57 },
+    ];
+    const verdict = classifyEngineCell(measured, bus, jank);
+    expect(verdict.status).toBe("matches-known-defect");
+    expect(verdict.detail).toMatch(/midi-out-main-thread-base/);
+    // The band is for a janked cell only, and does not swallow a clean janked cell, a missing note, or an inside median off its range.
+    expect(classifyEngineCell(measured, bus, { ...jank, jankActive: false }).status).toBe("investigate");
+    expect(classifyEngineCell([{ ...clean(10.2, 1.0), medianErrorLiveMs: 10.2, maxAbsDevLiveMs: 1.0, notesInsideBlocks: 7, medianErrorInsideBlocksMs: 10.3 }], bus, jank).status).toBe("on-time");
+    expect(classifyEngineCell([{ ...measured[0], missing: 1 }], bus, jank).status).toBe("investigate");
+    expect(classifyEngineCell([{ ...measured[0], medianErrorInsideBlocksMs: 150 }], bus, jank).status).toBe("investigate");
+    expect(classifyEngineCell([{ ...measured[0], stuck: 3, extra: 2 }], bus, jank).status).toBe("investigate");
+  });
+
+  it("holds one band, and isClean reads the four counts", () => {
+    expect(MIDI_OUT_KNOWN_DEFECTS.map((b) => b.id)).toEqual(["midi-out-main-thread-base"]);
     expect(isClean(clean(0, 0))).toBe(true);
     expect(isClean({ ...clean(0, 0), velocityMismatches: 1 })).toBe(false);
     expect(isClean({ ...clean(0, 0), transportMessages: 56 })).toBe(true);
