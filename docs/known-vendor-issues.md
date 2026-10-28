@@ -889,3 +889,31 @@ upstream tracker, or are by design.
 - **Workaround:** `types/sdk-dom-gaps.d.ts` declares the missing names, empty; add a name there when an
   SDK upgrade brings a new error of that kind (root CLAUDE.md, "Build & Verification").
 - **Last checked:** 2026-10-22 (SDK 0.0.177, no new gap).
+
+### Playwright — Chromium launches with `--mute-audio`, so a real-device spec hears only the room
+
+- **Tracker:** none; Playwright's documented launch defaults (the Chromium default args in playwright-core
+  1.64.1 include `--mute-audio`), not a defect.
+- **Symptom:** a spec that plays through real speakers into a real microphone records only room noise
+  unless it launches with `ignoreDefaultArgs: ['--mute-audio']`. On an MLS calibration the burst search
+  "found" a peak 10.7–16.0 dB over its floor in four muted runs. That is not a weak signal: it is the
+  largest |cross-correlation| over about 24 000 lags of pure noise against the median, which lands around
+  4–6×. A peak-to-floor gate therefore needs clear headroom above ~16 dB to refuse an unheard path (an
+  18 dB gate refused all four muted runs). `test.use({ launchOptions })` replaces the config's
+  `launchOptions` rather than merging, so restate any config `args` there (e.g.
+  `--autoplay-policy=no-user-gesture-required`).
+- **Where it bites here:** any Playwright-driven page that plays to a real speaker and listens on a real
+  microphone. There is no Playwright config or spec suite in this repo, and no script launches Chromium. The
+  pages that play to a speaker (`midi-audio-combined-audit-debug-demo.html`,
+  `input-latency-calibration-debug-demo.html`, the `output-latency` round trip of
+  `chromium-watched-issues-debug-demo.html`) are run by hand in Chrome ("a real click on Run", root
+  CLAUDE.md), so none is known to be hit. A run of one through the Playwright MCP's Chrome would be at risk
+  (that Chrome's flags were not read here beyond `--disable-back-forward-cache`). The combined calibration's gate is
+  `CALIBRATION_MIN_RATIO_DB = 20` (`src/lib/audit/combinedCalibration.ts`), a click's peak over the RMS
+  of the capture's lead: a different statistic from the MLS search's, so the 10.7–16.0 dB figures do not
+  transfer to it.
+- **Workaround:** launch with `ignoreDefaultArgs: ['--mute-audio']`; check `chrome://version` for the flag
+  before trusting a speaker-to-microphone figure.
+- **Evidence:** a probe measurement (2026-10-28, MacBook Pro built-in devices, Chrome stable, 48 kHz): four
+  muted runs, each "finding" a peak 10.7–16.0 dB over its floor.
+- **Last checked:** 2026-10-28.
