@@ -760,6 +760,39 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   measured inside every run and the band is computed from the row's own figures, so read a
   cell against the register, not against a fixed number. The page never writes the engine
   preference `recording.inputLatency` and refuses to run if another page left it non-zero.
+  The cell cannot see `outputLatency`'s error. The clicks (`clickContextTimes` / `playClicks`,
+  `combinedCellRunner.ts:119`) and the IAC notes (`scheduleFor`, `midiInputCellRunner.ts:111`) are
+  both scheduled through `perfMsAtHeardContextSec` from the one `getOutputTimestamp()` pair read at
+  the anchor (`midiInputCellRunner.ts:416`); the MIDI side's stamp is mapped back through that pair,
+  and the audio side is placed by the measured round trip, which contains the real output latency.
+  `expectedAudioMs` and `expectedPartsApartMs` take the reported `outputLatency` as given
+  (`combinedVerdict.ts:25-33`), so a wrong figure moves the measurement and its band together. The
+  parts-apart figure is the pair's own error plus the calibration error, whatever the real `out`
+  is, on a wired sink and on Bluetooth alike: a `together` verdict does not verify `outputLatency`.
+  Only a physical MIDI event does (a key press, or a keyboard driven over USB MIDI, recorded with
+  its audio).
+- `detectOnsets` has no absolute floor: its threshold is `thresholdRatio × maxRise` of the buffer it
+  is given (`onsetDetection.ts:101-103`), and it returns `[]` only when no hop rises at all. On a
+  channel carrying only hiss the largest rise is noise, so it returns noise onsets about every
+  `refractorySec`: a silent or unpatched input reports onsets, not none. The combined calibration
+  gates each click on `CALIBRATION_MIN_RATIO_DB` before detecting (`combinedCalibration.ts:108`); the
+  other callers (`combinedCellRunner.ts:82`, `recordingCellRunner.ts:743`, the hidden-window and
+  recording-alignment pages) have no level gate of their own; in the combined cell a noise onset
+  inside the span reads as `clicksExtra`. A fix that held on a probe: keep an onset
+  only when its peak in the next 10 ms clears the channel's noise floor (10th percentile of 10 ms
+  RMS windows) by 20 dB. Not applied here.
+- `bestLag` (`lagEstimate.ts:24`) on a raw high-band click train loses its score under inter-device
+  clock drift. Two separately clocked inputs (two USB mics, a USB mic and an interface) drift by
+  tens of ppm; a 6 kHz click's period is 0.167 ms, so once the skew varies by about a quarter period
+  across the span the per-click correlations stop adding in phase. Probe figures (19 clicks over
+  5 s, B offset +37 frames, `bestLag` on `bandSplit`'s high band): score 0.830 at 10 ppm, 0.471 at
+  20, 0.199 at 50 (lag misread 47), 0.053 at 100. Correlating the high band's envelope (|x| through
+  a 1 ms moving average) held 1.000 / 1.000 / 0.999 / 0.998, the lags tracking the drift, and 0.957
+  even at 500 ppm. Nothing here is exposed: `bestLag` is called only between two offline renders of
+  one graph (`midiEffectPlacement.ts:53`, `plugin-delay-compensation-debug-demo.tsx:183`), and the
+  multi-mic recording-alignment rows judge per-tape onsets with the source nodes' delays netted
+  (`recordingAlignment.ts`, the multitrack cell verdict), not a correlation score across devices. A
+  row that correlates two separately clocked inputs must use the envelope.
 - After SDK upgrades, also re-run the standing loudness meter sweep:
   `loudness-meter-audit-debug-demo.html?case=all` (then `&rate=44100`) — a real click on Run,
   the tab visible throughout, about twelve minutes, silent unless `&audible=1`. Compare the
