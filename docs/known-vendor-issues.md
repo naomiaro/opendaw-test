@@ -125,7 +125,12 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   calibration branch ([openDAW PR #380](https://github.com/andremichelle/openDAW/pull/380), unreleased; this repo's `input-latency-calibration-debug-demo.html`
   measures it). The browser's own `MediaStreamTrack.getSettings().latency` is nominal: 2.67 ms reported
   against 35–63 ms measured on the built-in microphone.
-- **Last checked:** 2026-10-22 (tracker read).
+- **Evidence:** a probe measurement (2026-10-28, MacBook Pro built-in devices, Chrome stable, 48 kHz): an
+  MLS loopback through the built-in speakers and microphone (`echoCancellation`, `noiseSuppression` and
+  `autoGainControl` off, mono, a 48 kHz context on a 48 kHz device) measured a round trip of 66.42 ms.
+  `outputLatency` read 27.00 ms, so the input part (round trip − `outputLatency`) is 39.42 ms. Across later
+  runs that day the pre-suspend round trips were 63.9–66.2 ms, varying by a millisecond or two between graphs.
+- **Last checked:** 2026-10-22 (tracker read); the input part measured again 2026-10-28.
 
 ### Chromium [571344687](https://issues.chromium.org/issues/571344687) — a worklet processor made right after its module loads reads a stale first clock
 
