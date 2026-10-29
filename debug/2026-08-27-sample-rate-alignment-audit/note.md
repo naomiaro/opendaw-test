@@ -595,3 +595,60 @@ synchronous JS or an occluded tab right at the Stop click) remains untested.
 boundary leak measured via output tap, matching the predicted signature exactly);
 **inconclusive at 48000 Hz** (tooling limitation, not a measurement — see environment
 note above and the Step 2 write-up).
+
+## Audio-region loop-wrap families (2026-10-29, SDK 0.0.179)
+
+SDK 0.0.179 crossfades audio regions over 5 ms at every discontinuous block (a seek, a loop
+wrap, a marker repeat): the read still sounding at the old position is released as a
+fade-out tail, and a region entered partway in fades in; a region entered at its own start
+keeps its hard onset. Before, the jump was a hard cut. None of the nine families above saw
+it: `loop-wrap` plays a note region. Three families now cover it
+(`src/lib/audit/audioWrapFixtures.ts`, tested in Node against a simulated cut and a
+simulated crossfade in `audioWrapFixtures.test.ts`). Shared geometry: one audio region from
+bar 0 to bar 4 over a synthetic four-bar file, the timeline loop from bar 1 to bar 3 (both
+edges inside the region), one bar of pre-roll and four passes, so wraps at bars 3, 5, 7 and
+9 (the last in the render's tail). Pass 1 enters the loop start from bar 0 without a jump
+and is the reference.
+
+| family | file | judged | reported |
+|---|---|---|---|
+| `audio-wrap-click` | a ~110 Hz tone with (n + 1/2) periods per loop: the loop end and start meet at opposite peaks | the largest `maxStepAround` over the four wraps, against `AUDIO_WRAP_STEP_THRESHOLDS` (5x the crossfaded step per rate) | — |
+| `audio-wrap-onsets` | a 60 ms decaying 2 kHz hit on every beat up to the loop end, silence after it | every beat off a wrap, on the usual 2 ms tolerance | each wrapped loop-start hit: peak dB and start shift against the pass-1 hit, and whether the onset detector found it |
+| `audio-wrap-dip` | a ~2 kHz tone seamless across the loop, changing (phase-continuous) to 1.5x its frequency at the loop end | the same step check (loose: the step is the higher tone's own curvature) | the lowest 1 ms RMS in each wrap's first 8 ms, dB against the steady level |
+
+The column-7 "maxDev" figure of the click and dip families is the tone's own onset at 0, not
+judged (the seam family's path).
+
+### Readings, both engines
+
+Every rate (44.1 / 48 / 88.2 / 96 kHz) and every bpm (90, 97.3, 120, 124, 133); the 0.0.177
+rows are the whole 0.0.177 package set swapped into `node_modules/@opendaw` behind a fresh dev
+server (swapping `engine.wasm` alone does not boot: the 0.0.179 glue and device plug-ins do
+not link with it).
+
+| family | SDK 0.0.179 (runs 1793297489988, …503612, …516607) | SDK 0.0.177 (the flip) |
+|---|---|---|
+| `audio-wrap-click` | 20 / 20 pass; largest step 2.33e-3 (44.1 kHz) … 1.07e-3 (96 kHz): the crossfade's ramp corners, 2 x amplitude / (5 ms of samples) | **20 / 20 investigate**; step 0.500 in every cell (peak to opposite peak), 43–47x the threshold |
+| `audio-wrap-onsets` | 20 / 20 pass, 33 / 33 beats, max dev 0.05 ms; wrapped hit **−2.8 to −2.9 dB, +1.00 to +1.07 ms late, missed by the onset detector** in every cell | 20 / 20 pass, 33 / 33 beats; wrapped hit 0.0 dB, within ±0.06 ms, detected |
+| `audio-wrap-dip` | 20 / 20 pass; **dip −3.1 dB at every wrap**, every cell | 20 / 20 pass; dip 0.0 dB |
+
+Full matrix on 0.0.179 (`audit-1793297728864.json`): **240 / 240 cells pass**; the nine older
+families' maxima unchanged to the hundredth.
+
+### Reading
+
+- **No click, and the onsets off the wrap stay put.** The crossfade removes the step a cut
+  makes (0.5 → 0.002 on the worst-case tone) and moves no beat that is not on a wrap.
+- **The loop-start hit is the worst case here, on purpose.** The fixture has silence after the
+  loop end, so the wrapped hit is only faded in: about 3 dB down and 1 ms later, and too
+  gradual for the rising-edge onset detector, which misses it in every cell. When the bar
+  after the loop end starts with the same hit — the usual drum part — the outgoing and
+  incoming fades sum back to the whole hit (the Node test "the same hit right after the loop
+  end gives the whole hit back"), so this is not a general cost of the crossfade.
+- **The dip is the arithmetic of two linear fades:** two unrelated signals of equal level sum
+  to half the power at the midpoint, −3 dB, for about 5 ms. A seamless loop that a hard cut
+  played without a seam now dips at each wrap when what follows the loop end differs.
+- Reference: soundcraft (a clean-room Rust DAW, pre-alpha) cuts hard at a wrap — its transport
+  splits the block at the loop end and resets the position, and its mixer only silences held
+  MIDI notes on the jump (`soundcraft/crates/playback/src/lib.rs:276-283`,
+  `crates/mix/src/lib.rs:615-624`) — the pre-0.0.179 behaviour these families flip on.

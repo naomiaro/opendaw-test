@@ -1,4 +1,5 @@
 import { PPQN } from "@opendaw/lib-dsp";
+import { AUDIO_WRAP_RENDER_BARS, beatOnsets, wrapBeatOnsets } from "./audioWrapFixtures";
 
 export type AuditFamily =
   | "metronome"
@@ -9,7 +10,10 @@ export type AuditFamily =
   | "automation"
   | "tempo-ramp"
   | "signature"
-  | "transport-pos";
+  | "transport-pos"
+  | "audio-wrap-click"
+  | "audio-wrap-onsets"
+  | "audio-wrap-dip";
 
 export const AUDIT_RATES = [44100, 48000, 88200, 96000] as const;
 export const AUDIT_BPMS = [120, 90, 124, 133, 97.3] as const;
@@ -91,6 +95,24 @@ export const AUDIT_SCENARIOS: Record<AuditFamily, AuditScenario> = {
     renderBars: 2,
     description:
       "2 bars rendered after setPosition to 5*960 + 240 PPQN (off-block), metronome quarters from next quarter boundary",
+  },
+  "audio-wrap-click": {
+    family: "audio-wrap-click",
+    renderBars: AUDIO_WRAP_RENDER_BARS,
+    description:
+      "audio region bars 0-4, loop bars 1-3 inside it, a tone half a period out at the wrap (opposite peaks); no click at any wrap",
+  },
+  "audio-wrap-onsets": {
+    family: "audio-wrap-onsets",
+    renderBars: AUDIO_WRAP_RENDER_BARS,
+    description:
+      "same loop, a burst on every beat and silence after the loop end; beats off the wrap judged, the wrapped loop-start hit reported",
+  },
+  "audio-wrap-dip": {
+    family: "audio-wrap-dip",
+    renderBars: AUDIO_WRAP_RENDER_BARS,
+    description:
+      "same loop, a tone seamless across the wrap that changes to another tone after the loop end; no click judged, the crossfade's level dip reported",
   },
 };
 
@@ -196,6 +218,17 @@ export function expectedOnsets(family: AuditFamily, bpm: number): number[] {
         onsets.push(k * beat);
       }
       return onsets;
+    }
+
+    case "audio-wrap-click":
+    case "audio-wrap-dip":
+      // Continuity families, judged on the step at each wrap: the tone's own onset only.
+      return [0];
+
+    case "audio-wrap-onsets": {
+      // Every beat but the ones a wrap lands on (reported, not judged).
+      const wraps = wrapBeatOnsets(bpm);
+      return beatOnsets(bpm).filter((t) => !wraps.some((w) => Math.abs(w - t) < 1e-9));
     }
 
     case "transport-pos": {

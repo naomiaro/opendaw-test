@@ -3,7 +3,7 @@
 // (`.superpowers/sdd/2026-08-27-samplerate-alignment-audit/`). Runs the
 // selected AuditFamily x bpm x rate cells sequentially:
 //   buildAuditScenario -> renderOfflineSlice -> detectOnsets (+ maxStepAround
-//   for seam) -> judgeCell -> per-cell WAV upload (if investigate, deadline-bounded) ->
+//   for seam and at every wrap of the audio-wrap families) -> judgeCell -> per-cell WAV upload (if investigate, deadline-bounded) ->
 //   table row.
 // Completes even if individual cells error; at run end uploads a JSON summary
 // (all rows including errors) to the dev server's /__verify sink.
@@ -45,7 +45,21 @@ import {
 import { buildAuditScenario } from "@/lib/audit/auditBuilders";
 import { detectOnsets, maxStepAround, type OnsetOptions } from "@/lib/audit/onsetDetection";
 import { judgeCell, type CellMeasurement, type CellVerdict } from "@/lib/audit/auditVerdict";
-import { AUDIT_CALIBRATION, AUDIT_TOLERANCES, SEAM_THRESHOLDS } from "@/lib/audit/auditCalibration";
+import {
+  AUDIT_CALIBRATION,
+  AUDIT_TOLERANCES,
+  AUDIO_WRAP_STEP_THRESHOLDS,
+  SEAM_THRESHOLDS,
+} from "@/lib/audit/auditCalibration";
+import {
+  dipDbAround,
+  readWrapBeats,
+  referenceBeatOnset,
+  splitWrapOnsets,
+  wrapBeatOnsets,
+  wrapTimes,
+  type WrapBeatReading,
+} from "@/lib/audit/audioWrapFixtures";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
@@ -88,6 +102,14 @@ const TAIL_ARTIFACT_FAMILIES: ReadonlySet<AuditFamily> = new Set([
   "signature",
   "transport-pos",
   "loop-wrap",
+  "audio-wrap-onsets",
+]);
+/** Families whose timeline loop stays on through the render. */
+const LOOPING_FAMILIES: ReadonlySet<AuditFamily> = new Set([
+  "loop-wrap",
+  "audio-wrap-click",
+  "audio-wrap-onsets",
+  "audio-wrap-dip",
 ]);
 const TAIL_GUARD_SEC = 0.15;
 
@@ -155,6 +177,14 @@ interface AuditRow {
   verdict?: CellVerdict;
   /** Signature family only — recorded for future use, not judged (design ruling). */
   downbeatIndices?: number[];
+  /** audio-wrap-click / -dip: `maxStepAround` at each wrap (the judged figure is their max). */
+  wrapSteps?: number[];
+  /** audio-wrap-dip: the level dip at each wrap, dB against the steady level. Reported. */
+  dipDb?: number[];
+  /** audio-wrap-onsets: each wrapped loop-start hit against the pass-1 hit. Reported. */
+  wrapBeats?: WrapBeatReading[];
+  /** One line of what the audio-wrap families report but do not judge. */
+  report?: string;
   /** Error message if status === "error". */
   errorMessage?: string;
   /** True if this cell's WAV was successfully uploaded (investigate cells only). */
@@ -233,7 +263,7 @@ async function runCell(
 
     const rendered = await renderOfflineSlice(scenarioProject, 0, built.renderSeconds, rate, {
       exportConfig,
-      keepLoopEnabled: family === "loop-wrap",
+      keepLoopEnabled: LOOPING_FAMILIES.has(family),
       startPositionPpqn: built.startPositionPpqn,
     });
 
@@ -244,11 +274,29 @@ async function runCell(
     // Drop the tail-padding event for TAIL_ARTIFACT_FAMILIES — see comment
     // above. Bound is the unshifted schedule so the shiftExpectedMs
     // validation knob can't move the cutoff.
-    const onsets = TAIL_ARTIFACT_FAMILIES.has(family)
+    const inRender = TAIL_ARTIFACT_FAMILIES.has(family)
       ? detected.filter((t) => t <= Math.max(...rawExpected) + TAIL_GUARD_SEC)
       : detected;
     const expected = rawExpected.map((t) => t + shiftExpectedMs / 1000);
     const calibrationSec = calibrationMap[family] ?? 0;
+
+    // audio-wrap-onsets: the hits a wrap lands on are reported, the rest judged.
+    let onsets = inRender;
+    let wrapBeats: WrapBeatReading[] | undefined;
+    let wrapSteps: number[] | undefined;
+    let dipDb: number[] | undefined;
+    let report: string | undefined;
+    if (family === "audio-wrap-onsets") {
+      const wraps = wrapBeatOnsets(bpm);
+      const split = splitWrapOnsets(inRender, wraps, calibrationSec);
+      onsets = split.judged;
+      wrapBeats = readWrapBeats(channel0, rendered.sampleRate, split.nearWrap, wraps, referenceBeatOnset(bpm), calibrationSec);
+      report =
+        "wrapped loop-start hit: " +
+        wrapBeats
+          .map((w) => `${w.levelDb.toFixed(1)} dB, ${w.shiftMs >= 0 ? "+" : ""}${w.shiftMs.toFixed(2)} ms${w.detected ? "" : ", missed by the detector"}`)
+          .join(" · ");
+    }
 
     let seamStep: number | undefined;
     let toleranceSec: number;
@@ -257,6 +305,16 @@ async function runCell(
       const seamTimeSec = (4 * 60) / bpm;
       seamStep = maxStepAround(channel0, rendered.sampleRate, seamTimeSec);
       toleranceSec = SEAM_THRESHOLDS[rate] ?? SEAM_THRESHOLD_FALLBACK;
+    } else if (family === "audio-wrap-click" || family === "audio-wrap-dip") {
+      // Judged like the seam, on the largest step over every wrap.
+      wrapSteps = wrapTimes(bpm).map((t) => maxStepAround(channel0, rendered.sampleRate, t));
+      seamStep = Math.max(...wrapSteps);
+      toleranceSec = AUDIO_WRAP_STEP_THRESHOLDS[family][rate] ?? SEAM_THRESHOLD_FALLBACK;
+      report = `largest step ${seamStep.toExponential(2)} (limit ${toleranceSec.toExponential(2)})`;
+      if (family === "audio-wrap-dip") {
+        dipDb = wrapTimes(bpm).map((t) => dipDbAround(channel0, rendered.sampleRate, t));
+        report += `; dip ${dipDb.map((d) => d.toFixed(1)).join(" / ")} dB`;
+      }
     } else {
       toleranceSec = AUDIT_TOLERANCES[family];
     }
@@ -277,6 +335,10 @@ async function runCell(
       toleranceSec,
       verdict,
       downbeatIndices,
+      wrapSteps,
+      dipDb,
+      wrapBeats,
+      report,
     };
 
     // Return rendered channels for investigate cells so caller can upload WAV
@@ -474,6 +536,7 @@ function AuditHarness() {
                     <Table.ColumnHeaderCell>extra</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>maxDev (ms)</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>status</Table.ColumnHeaderCell>
+                    <Table.ColumnHeaderCell>report</Table.ColumnHeaderCell>
                   </Table.Row>
                 </Table.Header>
                 <Table.Body>
@@ -497,6 +560,7 @@ function AuditHarness() {
                           <Badge color={row.verdict?.status === "pass" ? "green" : "amber"}>{row.verdict?.status}</Badge>
                         )}
                       </Table.Cell>
+                      <Table.Cell>{row.report ?? ""}</Table.Cell>
                     </Table.Row>
                   ))}
                 </Table.Body>

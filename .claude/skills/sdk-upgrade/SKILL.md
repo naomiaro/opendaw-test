@@ -105,7 +105,7 @@ async () => { const t0 = Date.now(); while (Date.now() - t0 < 95000) { const s =
 
 | page | start | hardware | reads |
 |---|---|---|---|
-| `samplerate-audit-debug-demo.html?family=all&bpm=all&rate=all` | auto-runs on load | none | header "180 cells — 180 pass"; per-family maxima from the table (evaluate: max of column 7 per family) |
+| `samplerate-audit-debug-demo.html?family=all&bpm=all&rate=all` | auto-runs on load | none | header "240 cells — 240 pass"; per-family maxima from the table (evaluate: max of column 7 per family; for `audio-wrap-click` / `-dip` that column is unjudged, read their report column: the dip −3.1 dB, the wrapped hit −2.8 dB / +1.05 ms) |
 | `recording-alignment-audit-debug-demo.html?scenario=all&bpm=all&rate=48000`, then `&rate=44100`, then `?scenario=multitrack-all&bpm=120&rate=48000`, then THREE `?scenario=multitrack-start&bpm=120&rate=48000&graphChurn=on` | `button:has-text("Run audit")` | none — a synthetic in-context loopback, no microphone, the room does not matter | `node .claude/skills/sdk-upgrade/scripts/recsum.cjs .verify-output/recaudit-summary-<run>.json`; `mtsum.cjs` for `recaudit-mt-summary-<run>.json`; then `node scripts/audit/recording-alignment/one-quantum-events.ts` (the `| <new> |` rows) |
 | `param-write-enabled-flip-debug-demo.html` | `button "Run"`, once per load | none | the FIXED line |
 | `plugin-delay-compensation-debug-demo.html` | `button "Run"`, disabled until the engine booted | none | every row "lag 0 frames" (read `document.body.innerText` from "Step 1"; there is no table) |

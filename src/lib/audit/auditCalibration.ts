@@ -79,6 +79,7 @@ export const AUDIT_CALIBRATION: Partial<Record<AuditFamily, number>> = {
   "tempo-ramp": -0.0007328430372989456, // signed mean, measured 2026-08-27, run 1787877588459
   signature: 0.0013205128205128502, // signed mean, measured 2026-08-27, run 1787877588459 (single-sign, 26 matched pairs)
   "transport-pos": 0.001320312499999976, // signed mean, measured 2026-08-27, run 1787877588459 (single-sign, 8 matched pairs)
+  "audio-wrap-onsets": -0.000005681818182088314, // signed mean, measured 2026-10-29 on SDK 0.0.179, run 1793297516607 (33 matched pairs, max abs 0.042 ms)
 };
 
 /**
@@ -122,6 +123,9 @@ export const AUDIT_TOLERANCES: Record<AuditFamily, number> = {
   "tempo-ramp": 0.004236180536734316, // 2x post-signed-cal max abs residual (0.002118090268367158s); residual grows toward the ramp's end, consistent with the engine applying the continuous tempo curve at finite block granularity rather than a bug
   signature: 0.002, // post-cal max dev 0.0000705s -> floor
   "transport-pos": 0.002, // post-cal max dev 0.0000703s -> floor
+  "audio-wrap-click": 0.002, // unused: judged on AUDIO_WRAP_STEP_THRESHOLDS, like seam
+  "audio-wrap-onsets": 0.002, // max dev over all 20 cells 0.053 ms (run 1793297516607) -> floor
+  "audio-wrap-dip": 0.002, // unused: judged on AUDIO_WRAP_STEP_THRESHOLDS, like seam
 };
 
 /**
@@ -142,4 +146,28 @@ export const SEAM_THRESHOLDS: Partial<Record<number, number>> = {
   48000: 0.0022414326667785645, // measured 2026-08-27, run 1787877750412: seamStep=0.0004482865333557129 x5
   88200: 0.001227855682373047, // measured 2026-08-27, run 1787877750412: seamStep=0.0002455711364746094 x5
   96000: 0.0011201202869415283, // measured 2026-08-27, run 1787877750412: seamStep=0.00022402405738830566 x5
+};
+
+/**
+ * The audio loop-wrap continuity families' threshold on the largest `maxStepAround` over their
+ * wraps, keyed by family and rate — amplitude thresholds like `SEAM_THRESHOLDS`, set at 5x the
+ * clean (crossfaded) step measured on the SDK the family was written against.
+ */
+export const AUDIO_WRAP_STEP_THRESHOLDS: Record<"audio-wrap-click" | "audio-wrap-dip", Partial<Record<number, number>>> = {
+  // The crossfade's ramp corners: about 2 x amplitude / (5 ms of samples), halving at the doubled
+  // rates. A hard cut on this tone steps from one peak to the opposite one (about 0.5).
+  "audio-wrap-click": {
+    44100: 0.011643767356872559, // measured 2026-10-29, SDK 0.0.179, run 1793297489988: largest step 0.0023287534713745117 x5
+    48000: 0.010673925280570984, // run 1793297489988: 0.0021347850561141968 x5
+    88200: 0.005821734666824341, // run 1793297489988: 0.0011643469333648682 x5
+    96000: 0.0053481757640838625, // run 1793297489988: 0.0010696351528167725 x5
+  },
+  // The dip family's step is its higher tone's own curvature, so this guard is loose: it catches a
+  // cut that steps by most of the tone's range, not a small one.
+  "audio-wrap-dip": {
+    44100: 0.21934494376182556, // measured 2026-10-29, SDK 0.0.179, run 1793297503612: largest step 0.04386898875236511 x5
+    48000: 0.1898013800382614, // run 1793297503612: 0.03796027600765228 x5
+    88200: 0.10967500507831573, // run 1793297503612: 0.021935001015663147 x5
+    96000: 0.09480945765972137, // run 1793297503612: 0.018961891531944275 x5
+  },
 };

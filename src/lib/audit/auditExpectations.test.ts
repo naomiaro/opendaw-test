@@ -14,6 +14,9 @@ describe("audit matrix axes", () => {
   });
   it("has a scenario per family", () => {
     expect(Object.keys(AUDIT_SCENARIOS).sort()).toEqual([
+      "audio-wrap-click",
+      "audio-wrap-dip",
+      "audio-wrap-onsets",
       "automation",
       "loop-wrap",
       "metronome",
