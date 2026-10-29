@@ -20,7 +20,7 @@ import { runRoundTripProbe } from "@/lib/audit/chromiumRoundTripProbe";
 import { runOutputLatencyProbe } from "@/lib/audit/chromiumOutputLatencyProbe";
 import { judgeStoredOpfsUsageOnLoad, runOpfsFlushProbe, runOpfsUsageProbe } from "@/lib/audit/chromiumOpfsProbe";
 import { AWAITING_HIDE, AWAITING_RETURN, clockDriftOptionsFrom, runClockDriftProbe } from "@/lib/audit/chromiumClockDriftProbe";
-import { AWAITING_FREEZE, runFreezeProbe } from "@/lib/audit/chromiumFreezeProbe";
+import { AWAITING_FREEZE, judgeStoredFreezeOnLoad, runFreezeProbe } from "@/lib/audit/chromiumFreezeProbe";
 import "@radix-ui/themes/styles.css";
 import { Theme, Container, Heading, Text, Flex, Card, Callout, Badge, Button, Code, Table } from "@radix-ui/themes";
 import { InfoCircledIcon, PlayIcon } from "@radix-ui/react-icons";
@@ -157,6 +157,10 @@ function judgeStoredOnLoad(issue: WatchedIssue): Promise<ProbeEnvelope> | null {
     }
     case "opfs-usage":
       return judgeStoredOpfsUsageOnLoad();
+    case "freeze": {
+      const envelope = judgeStoredFreezeOnLoad();
+      return envelope === null ? null : Promise.resolve(envelope);
+    }
     default:
       return null;
   }
@@ -376,11 +380,12 @@ const App: React.FC<{ issue: WatchedIssue }> = ({ issue }) => {
           )}
           {state.kind === "running" && state.step === AWAITING_FREEZE && (
             <Text size="2">
-              Baseline measured. Freeze this page, then resume it: switch to another tab, open{" "}
-              <Code>chrome://discards</Code>, use this tab's Freeze action, wait a few seconds, then come back to this
-              tab. The page waits up to two minutes for the freeze. (The DevTools protocol's{" "}
-              <Code>Page.setWebLifecycleState</Code> did not freeze a visible page in Playwright's Chrome: that run reads
-              NOT CHECKED no-freeze.)
+              Baseline measured. Freeze this page, then resume it: in this tab's DevTools, ⋮ → More tools → Protocol
+              monitor, send <Code>Page.setWebLifecycleState</Code> with <Code>{'{"state":"frozen"}'}</Code>, wait a few
+              seconds, then send it with <Code>{'{"state":"active"}'}</Code>. The page waits up to two minutes. Not{" "}
+              <Code>chrome://discards</Code>' Discard: a discarded tab reloads on return, which this page records as NOT
+              CHECKED discarded-not-frozen. (In Playwright's Chrome the protocol call froze nothing: NOT CHECKED
+              no-freeze.)
             </Text>
           )}
           {state.kind === "running" && state.step === AWAITING_NAVIGATION && (

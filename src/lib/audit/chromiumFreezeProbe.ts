@@ -11,12 +11,14 @@
  */
 import { browserOf, makeEnvelope, newRunToken, notChecked, platformOf, runDate, type ProbeEnvelope } from "./chromiumWatched";
 import { RESTORE_WINDOW_SECONDS, RESTORE_WINDOWS, type ClockRatioSample } from "./chromiumBfcache";
-import { judgeFreeze } from "./chromiumFreeze";
+import { judgeFreeze, judgeInterruptedRun, parsePendingFreezeRun } from "./chromiumFreeze";
 
 /** The step the page shows the freeze instructions on. */
 export const AWAITING_FREEZE = "awaiting-freeze";
 
 const PROCESSOR_NAME = "chromium-freeze-pass";
+/** The waiting run's note: a later load of the same tab finds it and says the run was discarded or reloaded. */
+const PENDING_KEY = "chromium-watched:freeze-pending";
 const BEFORE_SECONDS = 2;
 const DEADLINE_MS = 5000;
 /** How long the page waits for a freeze it cannot cause itself. */
@@ -167,7 +169,19 @@ export async function runFreezeProbe(signal: AbortSignal, report: (step: string)
     report("measure-before");
     const before = await measureBoth(worklet, control, BEFORE_SECONDS, signal);
     report(AWAITING_FREEZE);
-    const freeze = await waitForFreezeAndResume(signal);
+    sessionStorage.setItem(PENDING_KEY, JSON.stringify({
+      runToken: head.runToken,
+      chrome: head.chrome,
+      date: head.date,
+      workletRatioBefore: before.worklet.contextAdvanceSec / before.worklet.wallAdvanceSec,
+      controlRatioBefore: before.control.contextAdvanceSec / before.control.wallAdvanceSec,
+    }));
+    let freeze: Awaited<ReturnType<typeof waitForFreezeAndResume>>;
+    try {
+      freeze = await waitForFreezeAndResume(signal);
+    } finally {
+      sessionStorage.removeItem(PENDING_KEY);
+    }
     const states = `${worklet.state}/${control.state}`;
     const workletAfter: ClockRatioSample[] = [];
     const controlAfter: ClockRatioSample[] = [];
@@ -226,4 +240,28 @@ export async function runFreezeProbe(signal: AbortSignal, report: (step: string)
     await closeSafely(worklet, "worklet context");
     if (control !== null) await closeSafely(control, "control context");
   }
+}
+
+/**
+ * Called when the page mounts: a run that was waiting for the freeze when the tab was discarded or
+ * reloaded left its note; judge it `NOT CHECKED` with what happened instead, so the attempt is on
+ * record. Null when no run was waiting.
+ */
+export function judgeStoredFreezeOnLoad(): ProbeEnvelope | null {
+  const raw = sessionStorage.getItem(PENDING_KEY);
+  if (raw === null) return null;
+  sessionStorage.removeItem(PENDING_KEY);
+  const pending = parsePendingFreezeRun(raw);
+  if (pending === null) {
+    console.warn("[chromium-watched] freeze: the waiting run's note did not parse and was cleared");
+    return null;
+  }
+  const wasDiscarded = (document as Document & { wasDiscarded?: boolean }).wasDiscarded === true;
+  const navigation = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+  return makeEnvelope({ issue: "freeze", chrome: pending.chrome, date: pending.date, runToken: pending.runToken }, judgeInterruptedRun(wasDiscarded), {
+    workletRatioBefore: round(pending.workletRatioBefore, 4),
+    controlRatioBefore: round(pending.controlRatioBefore, 4),
+    wasDiscarded: wasDiscarded ? "true" : "false",
+    navigationType: navigation?.type ?? null,
+  });
 }

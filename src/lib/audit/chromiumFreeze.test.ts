@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { judgeFreeze, type FreezeRun } from "./chromiumFreeze";
+import { judgeFreeze, judgeInterruptedRun, parsePendingFreezeRun, type FreezeRun } from "./chromiumFreeze";
 import type { ClockRatioSample } from "./chromiumBfcache";
 
 const at = (ratio: number, seconds = 1): ClockRatioSample => ({ contextAdvanceSec: ratio * seconds, wallAdvanceSec: seconds });
@@ -43,5 +43,18 @@ describe("judgeFreeze", () => {
     expect(judgeFreeze({ ...halfSpeed, workletAfter: windows(0.5), controlAfter: windows(1) }).verdict).toBe(
       "NOT CHECKED too-few-windows"
     );
+  });
+});
+
+describe("a run the page loaded again under", () => {
+  it("names a discard as a discard, not a freeze", () => {
+    expect(judgeInterruptedRun(true)).toBe("NOT CHECKED discarded-not-frozen");
+    expect(judgeInterruptedRun(false)).toBe("NOT CHECKED reloaded-before-resume");
+  });
+  it("reads back what the waiting run stored, and nothing else", () => {
+    const pending = { runToken: "abc-1234", chrome: "Google Chrome 156", date: "2026-10-29", workletRatioBefore: 0.98, controlRatioBefore: 0.98 };
+    expect(parsePendingFreezeRun(JSON.stringify(pending))).toEqual(pending);
+    expect(parsePendingFreezeRun("not json")).toBeNull();
+    expect(parsePendingFreezeRun(JSON.stringify({ runToken: "x" }))).toBeNull();
   });
 });

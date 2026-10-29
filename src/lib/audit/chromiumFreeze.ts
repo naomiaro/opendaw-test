@@ -57,3 +57,34 @@ export function judgeFreeze(run: FreezeRun): FreezeJudgement {
   if (figures.controlRatioAfter < BASELINE_MIN_RATIO) return notChecked("control-slow");
   return { verdict: figures.workletRatioAfter < HALF_SPEED_MAX_RATIO ? "HALF SPEED" : "NORMAL", ...figures };
 }
+
+/**
+ * A run that was waiting for the freeze when the page loaded again: the tab was discarded (Chrome
+ * drops it and reloads it on return, `document.wasDiscarded`; `chrome://discards`' Discard action
+ * does this) or reloaded. Neither is a freeze, so neither judges the clock.
+ */
+export function judgeInterruptedRun(wasDiscarded: boolean): `NOT CHECKED ${string}` {
+  return wasDiscarded ? "NOT CHECKED discarded-not-frozen" : "NOT CHECKED reloaded-before-resume";
+}
+
+/** What a waiting run leaves in `sessionStorage`, so a later load of the same tab can say what became of it. */
+export interface PendingFreezeRun {
+  runToken: string;
+  chrome: string;
+  date: string;
+  workletRatioBefore: number;
+  controlRatioBefore: number;
+}
+
+export function parsePendingFreezeRun(raw: string): PendingFreezeRun | null {
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (typeof value !== "object" || value === null) return null;
+    const v = value as Record<string, unknown>;
+    if (typeof v.runToken !== "string" || typeof v.chrome !== "string" || typeof v.date !== "string") return null;
+    if (typeof v.workletRatioBefore !== "number" || typeof v.controlRatioBefore !== "number") return null;
+    return v as unknown as PendingFreezeRun;
+  } catch {
+    return null;
+  }
+}

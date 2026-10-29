@@ -186,8 +186,10 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   measured before and after the document's `freeze` → `resume`; `NOT CHECKED no-freeze` when no freeze
   arrives). In Playwright's Chrome the protocol's `Page.setWebLifecycleState` is accepted but delivers no
   `freeze` event to a visible page (2026-10-29, run `mvtwaa9y-vgfv`, `NOT CHECKED no-freeze`, both clocks
-  0.98 at baseline); the reading needs the user's Chrome and `chrome://discards`' Freeze action on the
-  backgrounded tab.
+  0.98 at baseline); the reading needs the user's Chrome, with the same call sent from DevTools' Protocol
+  monitor. `chrome://discards`' Discard is no substitute: the tab reloads on return (`document.wasDiscarded`),
+  which the probe records as `NOT CHECKED discarded-not-frozen` (a first attempt that way, 2026-10-29, came
+  back reloaded, before the probe recorded it).
 - **Symptom here:** a page with a running context and a worklet node, restored from the cache
   (`pageshow.persisted` true), keeps `state: running` and runs its clock at half the wall clock in every
   window measured. Three one-second windows after the restore read 0.4867 / 0.4988 / 0.4986 and

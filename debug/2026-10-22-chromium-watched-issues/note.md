@@ -1362,8 +1362,13 @@ control at 0.9 or more, `NORMAL` when it does not, `NOT CHECKED no-freeze` when 
 with `frozen`, then `active`, was accepted (no error) and delivered nothing to the visible page: no
 `freeze`, no `resume`, no `visibilitychange` (a listener on each, checked directly). The probe run
 around it (`chromium-freeze-mvtwaa9y-vgfv.json`) read `NOT CHECKED no-freeze`, both clocks 0.9833 at
-baseline. The reading needs the user's Chrome: background the tab, `chrome://discards`, the tab's
-Freeze action, back to the tab. Not measured yet.
+baseline. The reading needs the user's Chrome. A first attempt there through `chrome://discards`
+(2026-10-29) came back with the probe in its idle state and nothing saved: the tab had been discarded
+and reloaded, not frozen. The probe now leaves a note in `sessionStorage` while it waits, and a later
+load of the tab saves `NOT CHECKED discarded-not-frozen` (`document.wasDiscarded`) or
+`reloaded-before-resume` (checked in Playwright with a reload). The way to freeze it is the tracker's
+own: DevTools' Protocol monitor in the user's Chrome, `Page.setWebLifecycleState` frozen, then active.
+Not measured yet.
 
 **The repair in the demos is a check, not a reload.** A frozen page keeps what the visitor had on it
 (an unexported take), so `initializeOpenDAW` installs `installFreezeClockCheck`: on `resume` (once the
