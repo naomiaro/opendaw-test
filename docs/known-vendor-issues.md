@@ -15,9 +15,15 @@ which a matching sweep cell is read against instead of filed — and **Watched**
 issues read from the tracker and never reproduced here, whose "Where it bites here" says what a
 matching symptom would look like. A watched entry is a candidate, not an attribution: reproduce
 first (an SDK regression can look the same), and move the entry up only on a measurement.
+**Observations** is a chapter of its own: measured platform behaviour that is not, or not known to
+be, a defect — things a recording or timing harness must account for, each with what it costs and how
+it is accounted for. Its entries have no upstream tracker ("none; measured behaviour, not reported")
+or are by design, and are grouped by vendor with the same entry format. They are kept apart so that the
+vendor sections hold only what could be filed or is filed. An observation that turns out to be a
+defect is filed, and its entry moves to the vendor section with the tracker.
 
 Grouped by vendor: Chromium (Chrome, Edge, Brave), Firefox, WebKit (Safari, iOS, WKWebView), then the gaps that
-span them, then the hosting and tooling entries. The three browser sections were swept from their trackers on
+span them, then the observations, then the hosting and tooling entries. The three browser sections were swept from their trackers on
 2026-10-22 (`node .claude/skills/sdk-upgrade/scripts/bugzilla.cjs <host> search|read …` for the two Bugzillas; the
 Chromium tracker through the browser) for Web Audio, worklet, OPFS, `getUserMedia` and `SharedArrayBuffer` issues, and
 on 2026-10-23 for Web MIDI (the Chromium component Blink>WebMIDI's 74 open issues, `WebMIDI` / `MIDI` quicksearches
@@ -58,60 +64,6 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
 - **Last checked:** 2026-10-22 (SDK 0.0.177 sweep: 0 events in 76 repeats, forced 48 / 48). The
   browser is unchanged; re-read the tracker at each SDK upgrade and retire the repairs only on a
   Chrome that reads true under the probe.
-
-### Chrome — animation frames stop for a hidden document and a fully covered window
-
-- **Tracker:** none; documented behaviour (page visibility, and occlusion on macOS), not a bug.
-- **Symptom:** `requestAnimationFrame` stops, so everything the SDK runs on it freezes: the main-thread
-  sync (`SyncStream` reads, position and `isPlaying` observables, `RecordAudio` take management).
-  The engine keeps rendering on the audio thread; the page just never observes it. A harness deadline
-  acting on the frozen view then fails a run that the recorder completed.
-- **Where it bites here:** browser-automation runs with an occluded Chrome window; recording demos
-  hidden mid-take. `resize_window` does not unhide a fully occluded window.
-- **Workaround:** keep the window visible for sweeps; `?frameDriver=hidden-safe` on any demo URL (or
-  `initializeOpenDAW`'s `frameDriver` option) pumps the SDK's `AnimationFrame` from a worker tick while
-  the document is hidden and the transport is active (`src/lib/hiddenSafeFrameDriver.ts`). The page's
-  own `alert()` blocks frames and worker messages alike; nothing helps there, and nothing needs to:
-  the take stays intact and finalization waits for the dialog.
-- **Evidence:** `debug/2026-10-21-hidden-page-recording/note.md`; page
-  `recording-hidden-window-debug-demo.html`.
-- **Last checked:** the hidden-page behaviour and the driver on 2026-10-21 (`cover` rows on SDK 0.0.176:
-  the window driver's three rows intact, hidden-safe `start` intact, hidden-safe `mid` / `stop` not yet
-  measured by hand); the three `modal` rows, which block frames by other means, re-run intact on 0.0.177
-  on 2026-10-22.
-
-### Chrome — each `MediaStreamAudioSourceNode` delivers its stream with a delay of its own
-
-- **Tracker:** none; measured behaviour, not reported (a node's delay is set when it starts).
-- **Symptom:** two source nodes on the same stream clone, created in one task, are a render quantum
-  apart in a third to a half of the pairs; nodes started at different moments differ by up to 12 ms; at
-  44.1 kHz a node's delay can step by 441 frames (10 ms) in its first second. Two tapes recorded together
-  therefore carry a raw skew of 0 to 4 quanta that is the browser's, not the SDK's.
-- **Where it bites here:** the multi-mic recording-alignment rows; any two-input recording.
-- **Workaround:** none in the SDK: it cannot see a node's delay, and two takes recorded together sit
-  apart on the timeline by the two nodes' delay difference (0 to 4 quanta measured). The harness nets it
-  out: it listens to the SDK's own source nodes (`nodeTaps` in
-  `src/lib/audit/loopbackInjection.ts`, `measureNodeDelay` in `src/lib/audit/nodeTap.ts`) and judges the
-  netted skew; a raw multi-mic skew is never quoted as an SDK finding. A worklet module must be loaded
-  before the first take (a load still running delays that take's first frame, 117 ms measured).
-- **Evidence:** `debug/2026-09-02-recording-start-alignment/note.md` (stream-tap measurement, repo PRs [#136](https://github.com/naomiaro/opendaw-test/pull/136) and [#138](https://github.com/naomiaro/opendaw-test/pull/138)).
-- **Last checked:** 2026-10-22 (32 multi-mic rows, raw skew accounted for by the node delays on every repeat).
-
-### A `MediaStreamAudioDestinationNode` stream from another `AudioContext` reads silent when captured
-
-- **Tracker:** none; measured in Chrome, not tried elsewhere.
-- **Symptom:** a `getUserMedia` override returning a destination-node stream made in a different
-  AudioContext than the engine's gives flat peaks (the oscillator taps fine directly); and a shared
-  stream dies for every consumer once one of them calls `track.stop()` (a tape disarm or remove).
-- **Where it bites here:** synthetic input for recording tests.
-- **Workaround:** build the loopback in the SAME AudioContext the engine captures into (rms 0.0745 on a
-  4 s take, 14.9× the threshold) and hand each `getUserMedia` call a `stream.clone()`; see
-  `src/lib/audit/loopbackInjection.ts`. The real microphone otherwise.
-- **Evidence:** `src/demos/recording/CLAUDE.md`, "Don't Synthesize Input to Verify Recording".
-  The bare cross-context path without the SDK or a `getUserMedia` override (the Chromium 40103985
-  probe's `&source=crosscontext`) reads the tone at full scale. It carries that issue's 441-frame start
-  block and 30 s silence hole instead; see the 40103985 entry.
-- **Last checked:** 2026-10-22 (every recording-alignment row runs through it).
 
 ### Chromium [436552046](https://issues.chromium.org/issues/436552046) / [401692415](https://issues.chromium.org/issues/401692415) — OPFS usage written through sync access handles is not counted, and a delete drives the saved figure negative
 
@@ -173,7 +125,12 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   calibration branch ([openDAW PR #380](https://github.com/andremichelle/openDAW/pull/380), unreleased; this repo's `input-latency-calibration-debug-demo.html`
   measures it). The browser's own `MediaStreamTrack.getSettings().latency` is nominal: 2.67 ms reported
   against 35–63 ms measured on the built-in microphone.
-- **Last checked:** 2026-10-22 (tracker read).
+- **Evidence:** a probe measurement (2026-10-28, MacBook Pro built-in devices, Chrome stable, 48 kHz): an
+  MLS loopback through the built-in speakers and microphone (`echoCancellation`, `noiseSuppression` and
+  `autoGainControl` off, mono, a 48 kHz context on a 48 kHz device) measured a round trip of 66.42 ms.
+  `outputLatency` read 27.00 ms, so the input part (round trip − `outputLatency`) is 39.42 ms. Across later
+  runs that day the pre-suspend round trips were 63.9–66.2 ms, varying by a millisecond or two between graphs.
+- **Last checked:** 2026-10-22 (tracker read); the input part measured again 2026-10-28.
 
 ### Chromium [571344687](https://issues.chromium.org/issues/571344687) — a worklet processor made right after its module loads reads a stale first clock
 
@@ -782,6 +739,128 @@ and the feature requests for virtual ports ([41487942](https://issues.chromium.o
   `MidiDevices.canRequestMidiAccess()` is the gate; its software input (`MidiDevices.softwareMIDIInput`) works
   everywhere, so a page that offers hardware MIDI should say which browsers have it.
 
+# Observations
+
+Measured platform behaviour that is not, or not known to be, a defect. A recording or timing harness
+must account for each, and each entry says what it costs and how it is accounted for. They have no
+upstream tracker, or are by design.
+
+## Chromium
+
+### Chrome — animation frames stop for a hidden document and a fully covered window
+
+- **Tracker:** by design; documented behaviour (page visibility, and occlusion on macOS), not a bug.
+- **Symptom:** `requestAnimationFrame` stops, so everything the SDK runs on it freezes: the main-thread
+  sync (`SyncStream` reads, position and `isPlaying` observables, `RecordAudio` take management).
+  The engine keeps rendering on the audio thread; the page just never observes it. A harness deadline
+  acting on the frozen view then fails a run that the recorder completed.
+- **Where it bites here:** browser-automation runs with an occluded Chrome window; recording demos
+  hidden mid-take. `resize_window` does not unhide a fully occluded window.
+- **Workaround:** keep the window visible for sweeps; `?frameDriver=hidden-safe` on any demo URL (or
+  `initializeOpenDAW`'s `frameDriver` option) pumps the SDK's `AnimationFrame` from a worker tick while
+  the document is hidden and the transport is active (`src/lib/hiddenSafeFrameDriver.ts`). The page's
+  own `alert()` blocks frames and worker messages alike; nothing helps there, and nothing needs to:
+  the take stays intact and finalization waits for the dialog.
+- **Evidence:** `debug/2026-10-21-hidden-page-recording/note.md`; page
+  `recording-hidden-window-debug-demo.html`.
+- **Last checked:** the hidden-page behaviour and the driver on 2026-10-21 (`cover` rows on SDK 0.0.176:
+  the window driver's three rows intact, hidden-safe `start` intact, hidden-safe `mid` / `stop` not yet
+  measured by hand); the three `modal` rows, which block frames by other means, re-run intact on 0.0.177
+  on 2026-10-22.
+
+### Chrome — each `MediaStreamAudioSourceNode` delivers its stream with a delay of its own
+
+- **Tracker:** none; measured behaviour, not reported (a node's delay is set when it starts).
+- **Symptom:** two source nodes on the same stream clone, created in one task, are a render quantum
+  apart in a third to a half of the pairs; nodes started at different moments differ by up to 12 ms; at
+  44.1 kHz a node's delay can step by 441 frames (10 ms) in its first second. Two tapes recorded together
+  therefore carry a raw skew of 0 to 4 quanta that is the browser's, not the SDK's.
+- **Where it bites here:** the multi-mic recording-alignment rows; any two-input recording.
+- **Workaround:** none in the SDK: it cannot see a node's delay, and two takes recorded together sit
+  apart on the timeline by the two nodes' delay difference (0 to 4 quanta measured). The harness nets it
+  out: it listens to the SDK's own source nodes (`nodeTaps` in
+  `src/lib/audit/loopbackInjection.ts`, `measureNodeDelay` in `src/lib/audit/nodeTap.ts`) and judges the
+  netted skew; a raw multi-mic skew is never quoted as an SDK finding. A worklet module must be loaded
+  before the first take (a load still running delays that take's first frame, 117 ms measured).
+- **Evidence:** `debug/2026-09-02-recording-start-alignment/note.md` (stream-tap measurement, repo PRs [#136](https://github.com/naomiaro/opendaw-test/pull/136) and [#138](https://github.com/naomiaro/opendaw-test/pull/138)).
+- **Last checked:** 2026-10-22 (32 multi-mic rows, raw skew accounted for by the node delays on every repeat).
+
+### Chrome — a `MediaStreamAudioDestinationNode` stream is re-timed once every source feeding it has ended
+
+- **Tracker:** none; measured behaviour, not reported.
+- **Symptom:** the delay from a sound scheduled into a destination node to its arrival in a worklet that
+  captures the node's stream is constant while something is connected and playing into the node, and
+  steps whenever every source into it has ended and a new one starts. Measured on a loopback probe
+  (three MLS bursts scheduled into the destination node, captured through a `MediaStreamAudioSourceNode`
+  on the same stream and cross-correlated; one measurement per set of bursts, each set spread 0 frames):
+  four sets back to back, each started after the previous one's sources had ended, read 992, 864, 704 and
+  576 frames at 48 kHz; a 16-click take afterwards sat at 865 frames on every click; the next set read 832.
+  The steps are 128 and 160 frames, whole or near-whole render quanta. With a silent `ConstantSourceNode`
+  kept connected to the destination node for the stream's lifetime, four sets read 992, 992, 992 and 992,
+  the 16 clicks sat at 993, and the next set read 992. Under the idle stream the captured buffer also
+  opened with a spurious onset 18 ms in, absent with the keep-alive. Chrome 156.0.8078.48, headless,
+  48 kHz, 2026-10-23.
+- **Where it bites here:** not in this repo's rows: `installLoopbackCapture`
+  (`src/lib/audit/loopbackInjection.ts`) feeds the destination node from the engine tap, which never
+  ends, so the stream never goes idle between a calibration and a take. It bites any probe or demo that
+  feeds a destination node with scheduled sources alone (an oscillator click schedule, a one-shot buffer)
+  and measures or records across the gap after they end: the loopback delay it was calibrated with no
+  longer holds, by one quantum or more. A microphone's stream never goes idle like this.
+- **Workaround:** keep a silent source connected to the destination node for as long as its stream is
+  captured (`new ConstantSourceNode(ctx, { offset: 0 })`, started once, stopped on teardown); it
+  contributes exact zeros, so onset detection and RMS are unchanged. Or feed the node continuously, as
+  the engine tap does.
+- **Evidence:** the figures above; no row in this repo's campaigns, since the harness path is not idle.
+- **Last checked:** 2026-10-23 (probe measurement; not reproduced on this repo's own pages).
+
+### A `MediaStreamAudioDestinationNode` stream from another `AudioContext` reads silent when captured
+
+- **Tracker:** none; measured behaviour, not reported (measured in Chrome, not tried elsewhere).
+- **Symptom:** a `getUserMedia` override returning a destination-node stream made in a different
+  AudioContext than the engine's gives flat peaks (the oscillator taps fine directly); and a shared
+  stream dies for every consumer once one of them calls `track.stop()` (a tape disarm or remove).
+- **Where it bites here:** synthetic input for recording tests.
+- **Workaround:** build the loopback in the SAME AudioContext the engine captures into (rms 0.0745 on a
+  4 s take, 14.9× the threshold) and hand each `getUserMedia` call a `stream.clone()`; see
+  `src/lib/audit/loopbackInjection.ts`. The real microphone otherwise.
+- **Evidence:** `src/demos/recording/CLAUDE.md`, "Don't Synthesize Input to Verify Recording".
+  The bare cross-context path without the SDK or a `getUserMedia` override (the Chromium 40103985
+  probe's `&source=crosscontext`) reads the tone at full scale. It carries that issue's 441-frame start
+  block and 30 s silence hole instead; see the 40103985 entry.
+- **Last checked:** 2026-10-22 (every recording-alignment row runs through it).
+
+### Chrome — after an `AudioContext` suspend / resume, the physical input-to-output round trip is about 42 ms longer
+
+- **Tracker:** none; measured behaviour, not reported. It is not known whether Chrome or CoreAudio adds
+  the delay, or whether the input or the output side moves.
+- **Symptom:** a loopback calibration (MLS) through the MacBook Pro's built-in speakers and microphone
+  (`echoCancellation`, `noiseSuppression` and `autoGainControl` all false, mono, a 48 kHz context on a
+  48 kHz device) is measured; the context is `suspend()`ed for 2 s and `resume()`d; a take placed with the
+  earlier calibration lands late by the step, and a calibration after the take confirms it. Four runs:
+
+  | round trip before (frames) | after (frames) | step | take's audio offset |
+  |---|---|---|---|
+  | 3068.95 | 5112.02 | +2043 | +42.6 ms |
+  | 3131.94 | 5170.04 | +2038 | +42.50 ms |
+  | 3127.04 | 5238.96 | +2112 | +43.58 ms |
+  | 3175.92 | 5175.94 | +2000 | +41.25 ms |
+
+  The step is 41.7 to 44.0 ms, not an exact multiple of a render quantum or of 2048 frames, and it persists
+  through a take of about 10 s. MIDI stamped through `getOutputTimestamp()` in the same take is unaffected.
+  `outputLatency` reads 27 ms before and after (0 on the `'running'` event, 27 ms a moment later: the
+  reading-0-after-`resume()` note in the Chromium 388871416 entry above). A digital loopback (destination
+  node to source node, no physical device) shows 0 frames of change across the same suspend / resume, so the
+  step is in the physical device path.
+- **Where it bites here:** any measurement or recording that calibrates a round trip before a suspend and
+  records after it. This repo's demos and the SDK never call `suspend()` (see the Chromium 560233271 entry
+  above), so it bites only a page that adds a suspend / resume cycle, or the browser's own suspensions (iOS
+  backgrounding, an autoplay-policy resume) if they behave the same; not measured.
+- **Workaround:** recalibrate after every resume; treat a calibration taken before a suspend as stale. A
+  recording paused without suspending the context is unaffected.
+- **Evidence:** probe measurement on Chrome (stable), 2026-10-28, MacBook Pro built-in devices; not
+  reproduced on this repo's own pages.
+- **Last checked:** 2026-10-28.
+
 # Hosting and tooling
 
 ## Measured here
@@ -810,3 +889,31 @@ and the feature requests for virtual ports ([41487942](https://issues.chromium.o
 - **Workaround:** `types/sdk-dom-gaps.d.ts` declares the missing names, empty; add a name there when an
   SDK upgrade brings a new error of that kind (root CLAUDE.md, "Build & Verification").
 - **Last checked:** 2026-10-22 (SDK 0.0.177, no new gap).
+
+### Playwright — Chromium launches with `--mute-audio`, so a real-device spec hears only the room
+
+- **Tracker:** none; Playwright's documented launch defaults (the Chromium default args in playwright-core
+  1.64.1 include `--mute-audio`), not a defect.
+- **Symptom:** a spec that plays through real speakers into a real microphone records only room noise
+  unless it launches with `ignoreDefaultArgs: ['--mute-audio']`. On an MLS calibration the burst search
+  "found" a peak 10.7–16.0 dB over its floor in four muted runs. That is not a weak signal: it is the
+  largest |cross-correlation| over about 24 000 lags of pure noise against the median, which lands around
+  4–6×. A peak-to-floor gate therefore needs clear headroom above ~16 dB to refuse an unheard path (an
+  18 dB gate refused all four muted runs). `test.use({ launchOptions })` replaces the config's
+  `launchOptions` rather than merging, so restate any config `args` there (e.g.
+  `--autoplay-policy=no-user-gesture-required`).
+- **Where it bites here:** any Playwright-driven page that plays to a real speaker and listens on a real
+  microphone. There is no Playwright config or spec suite in this repo, and no script launches Chromium. The
+  pages that play to a speaker (`midi-audio-combined-audit-debug-demo.html`,
+  `input-latency-calibration-debug-demo.html`, the `output-latency` round trip of
+  `chromium-watched-issues-debug-demo.html`) are run by hand in Chrome ("a real click on Run", root
+  CLAUDE.md), so none is known to be hit. A run of one through the Playwright MCP's Chrome would be at risk
+  (that Chrome's flags were not read here beyond `--disable-back-forward-cache`). The combined calibration's gate is
+  `CALIBRATION_MIN_RATIO_DB = 20` (`src/lib/audit/combinedCalibration.ts`), a click's peak over the RMS
+  of the capture's lead: a different statistic from the MLS search's, so the 10.7–16.0 dB figures do not
+  transfer to it.
+- **Workaround:** launch with `ignoreDefaultArgs: ['--mute-audio']`; check `chrome://version` for the flag
+  before trusting a speaker-to-microphone figure.
+- **Evidence:** a probe measurement (2026-10-28, MacBook Pro built-in devices, Chrome stable, 48 kHz): four
+  muted runs, each "finding" a peak 10.7–16.0 dB over its floor.
+- **Last checked:** 2026-10-28.
