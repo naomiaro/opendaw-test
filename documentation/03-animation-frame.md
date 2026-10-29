@@ -88,7 +88,7 @@ const sub = AnimationFrame.add(() => {
 sub.terminate();
 ```
 
-Don't subscribe to position via `observable.subscribe()` — it fires too frequently. `AnimationFrame.add()` naturally throttles to 60fps.
+Don't subscribe to position via `observable.subscribe()` — it fires too frequently. `AnimationFrame.add()` naturally throttles to 60fps: the loop skips a display frame that comes less than 16 ms after the last one it ran. `AnimationFrame.clampTo60fps` (a writable flag, `true` by default) holds that rule; set it to `false` to run at the display's refresh rate (120 Hz on a ProMotion screen), which also runs the engine's position and state sync that often.
 
 ### Putting It Together
 

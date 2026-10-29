@@ -343,6 +343,7 @@ The box graph lives on the main thread; the audio thread needs a copy. Every com
 export type UpdateTask<M> =
     | { type: "new", name: keyof M, uuid: UUID.Bytes, buffer: ArrayBufferLike }
     | { type: "update-primitive", address: AddressLayout, primitiveType: PrimitiveType, value: unknown }
+    | { type: "update-bytes", address: AddressLayout, offset: int, deleteCount: int, bytes: Int8Array }
     | { type: "update-pointer", address: AddressLayout, target: Maybe<AddressLayout> }
     | { type: "delete", uuid: UUID.Bytes }
 
@@ -352,9 +353,17 @@ export interface Synchronization<M> {
 }
 ```
 
+A `ByteArrayField` change travels as `update-bytes` when that is smaller than the whole
+value: `UpdateTasks.of(update)` (`packages/lib/box/src/sync-source.ts`) reduces the old and
+new value to one splice by their common prefix and suffix (`BytesSplice.of`,
+`packages/lib/box/src/bytes-splice.ts`) and sends only the replaced range. `setValue`,
+`setBytes`, `setByte`, `setLength`, undo and redo all take that path. The Rust mirror
+resolves the splice inside the transaction into an ordinary primitive update, so observers
+and the checksum see whole values.
+
 Each task is the minimum information needed to replay a graph mutation. The `address` field is a flattened `AddressLayout` (UUID + integer field keys), not a `Vertex` reference, so it survives serialization.
 
-These four tag strings are a **wire contract with the Rust engine**, decoded by `decode_forward` in `crates/boxgraph/src/updates.rs`. `sync.ts` says so in a comment for a reason: renaming one is a silent cross-language break that TypeScript cannot catch.
+These five tag strings are a **wire contract with the Rust engine**, decoded by `decode_forward` in `crates/boxgraph/src/updates.rs`. `sync.ts` says so in a comment for a reason: renaming one is a silent cross-language break that TypeScript cannot catch.
 
 `primitiveType` exists for the same reason: it carries the field's codec captured at emission time, so a batch stays self-contained even when a later task in it deletes the box an earlier task wrote to.
 

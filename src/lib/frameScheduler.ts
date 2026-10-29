@@ -101,8 +101,9 @@ export function createFrameScheduler(deps: FrameSchedulerDeps): FrameScheduler {
 
 /**
  * Every Nth real frame, for a sweep that wants a slower engine sync than the display gives: the
- * SDK's loop already drops frames under 16 ms apart, so a faster display changes nothing, and
- * the question worth asking is what a slower one does. `?frameDriver=throttled&frameEvery=N`.
+ * SDK's loop already drops frames under 16 ms apart (while `AnimationFrame.clampTo60fps` stays at
+ * its default, true, which nothing here changes), so a faster display changes nothing, and the
+ * question worth asking is what a slower one does. `?frameDriver=throttled&frameEvery=N`.
  */
 export function createThrottledFrames(
   every: number,

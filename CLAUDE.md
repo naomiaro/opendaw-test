@@ -50,10 +50,13 @@ subs.push(trackSub);
 
 ### Stored Samples Are Swept at Page Load
 - The SDK's loader writes every sample it fetches to OPFS (`samples/v2/<uuid>/`), and
-  `SampleService` writes every finished recording there. Nothing removes them unless the
-  project was told the sample is user-created (`project.trackUserCreatedSample`). The
-  demos make fresh uuids on every load, so without a sweep the folder only grows
-  (measured: 1,138 samples, 8.7 GB in one browser profile).
+  `SampleService` writes every finished recording there. The SDK never deletes a valid one
+  by itself (listing the catalogue purges zero-length ones): a user-created sample (`project.trackUserCreatedSample`; `RecordAudio` tracks every
+  saved take) whose last box is deleted is only marked in `samples/v2/garbage.json`
+  (`SampleGarbage`, undo unmarks; the recording audits mark one per deleted take), and
+  only `SampleGarbage.purge(inUse?)` deletes. The demos make fresh uuids on every load and
+  never purge, so without a sweep the folder only grows (measured: 1,138 samples, 8.7 GB
+  in one browser profile). The sweep removes `garbage.json` with the folder.
 - `initializeOpenDAW` calls `clearStoredSamples()` (`src/lib/storedSamples.ts`) right
   after `Workers.install`: it deletes `SampleStorage.Folder` unless another page of the
   site is open. Pages announce themselves with a shared Web Lock

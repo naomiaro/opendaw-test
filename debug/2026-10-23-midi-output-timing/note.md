@@ -213,6 +213,68 @@ Run with `&frameDriver=hidden-safe` (see "Harness notes"). Columns as in run A.
   the SDK: the page arm of the 140 bpm cell saw a −5.91 ms excursion in the same run with the engine arm
   `on-time` beside it.
 
+### SDK 0.0.179 (2026-10-29): Run A again (`1793293547491`)
+
+The release rewrote the engine's MIDI Output wiring (a MIDI Output can be an Instrument Composite
+layer; a unit's node hands its held notes over on a rebuild, or ends them when its MIDI chain
+changed). Same page and recipe as Run A (`?bpm=140&density=32nd&transport=both&repeats=2&frameDriver=hidden-safe`),
+Chrome 156, 44.1 kHz, the IAC bus, a real click by the user.
+
+| arm | transport | status | median ms (r1 / r2) | max dev | late tail | live median (r1 / r2) | live max dev | pair drift ms | miss/extra/stuck/vel | transport msgs |
+|---|---|---|---|---|---|---|---|---|---|---|
+| page | on | `bus-true` | −0.00 / −0.00 | 0.00 | 0.00 | 0.03 / 0.02 | 0.02 | −0.00..0.05 | 0/0/0/0 | 3 |
+| engine | on | `investigate` | 10.10 / 13.83 | 6.20 | 0.60 | 10.14 / 10.41 | 3.03 | −4.11..2.71 | 0/0/0/0 | 485 |
+| page | off | `bus-true` | −0.00 / −0.00 | 0.00 | 0.00 | −0.05 / 0.04 | 0.52 | −0.23..0.57 | 0/0/0/0 | 3 |
+| engine | off | `on-time` | 10.25 / 10.22 | 0.90 | 0.47 | 10.34 / 10.29 | 0.96 | −2.95..0.59 | 0/0/0/0 | 0 |
+
+- **The idle-thread hop is the 0.0.177 hop.** Live medians 10.14–10.41 ms against the 10 ms delay, every
+  note delivered once at its velocity, 485 transport messages per repeat as before.
+- The one `investigate` (`maxAbsDevLiveMs 3.03 > 2.9` on repeat 2 of the transport-on cell) is the
+  one-off this register already reads as the clock relation: it sits in the widest drift range of the
+  run (−4.11..2.71 ms), its one-pair median (13.83) is the same excursion read the other way, and its
+  live median stays on the delay. Run A on 0.0.177 read that cell's live spread at 2.90 ms, the limit
+  itself. Not a change in the SDK.
+
+### SDK 0.0.179 (2026-10-29): Run B again (`1793294347876`)
+
+`…&jank=mid`, 80 ms blocks every 500 ms from the pattern's midpoint, otherwise as Run A.
+
+| arm | transport | status | median ms (r1 / r2) | max dev | late tail | inside-block median | live median (r1 / r2) | pair drift ms | miss/extra/stuck/vel | transport msgs |
+|---|---|---|---|---|---|---|---|---|---|---|
+| page | on | `bus-true` | −0.00 / −0.00 | 0.00 | 0.00 | −0.00 | 0.02 / 0.02 | −0.01..0.05 | 0/0/0/0 | 2 |
+| engine | on | `matches-known-defect` | 10.12 / 10.49 | 69.64 | 20.56 | 61.10 | 10.15 / 10.21 | −0.86..2.82 | 0/4/4/0 | 486 |
+| page | off | `bus-true` | −0.00 / −0.00 | 0.00 | 0.00 | −0.00 | 0.00 / −3.09 | −11.81..0.56 | 0/0/0/0 | 2 |
+| engine | off | `matches-known-defect` | 10.13 / 10.14 | 71.07 | 20.84 | 60.85 | 10.28 / 10.24 | −2.86..0.64 | 0/4/4/0 | 0 |
+
+- **`midi-out-main-thread-base` as on 0.0.177, to the note.** Inside-block medians 61.10 / 60.85 ms
+  (0.0.177: 60.46 / 60.96), max deviation 69.64 / 71.07 (71.22 / 69.57), late tail 20.56 / 20.84
+  (21.06 / 19.48), the same four off-before-on inversions per cell (extra = stuck = 4), live medians on
+  the delay between blocks. The rewritten wiring did not move the timestamp base: it is still the ring
+  read on the main thread.
+
+### SDK 0.0.179 (2026-10-29): Run C again (`1793294955242`)
+
+`?bpm=all&density=both&repeats=2&frameDriver=hidden-safe`, transport on, no jank.
+
+| bpm | arm | status | median ms (r1 / r2) | max dev | late tail | live median (r1 / r2) | live max dev | pair drift ms | miss/extra/stuck/vel | transport msgs |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 90 | page | `bus-true` | −0.00 / −0.00 | 0.01 | 0.00 | 0.05 / −8.92 | 8.94 | −15.47..2.23 | 0/0/0/0 | 2 |
+| 90 | engine | `on-time` | 10.11 / 10.13 | 0.65 | 0.48 | 10.16 / 10.23 | 0.84 | −0.19..0.61 | 0/0/0/0 | 485 |
+| 120 | page | `bus-true` | −0.00 / −0.00 | 0.01 | 0.01 | −0.03 / 0.01 | 0.52 | −0.24..0.54 | 0/0/0/0 | 1 |
+| 120 | engine | `on-time` | 10.17 / 10.25 | 0.78 | 0.46 | 10.18 / 10.25 | 0.82 | −5.87..0.56 | 0/0/0/0 | 486 |
+| 140 | page | `bus-true` | −0.00 / −0.00 | 0.00 | 0.00 | 0.04 / −0.00 | 0.52 | −0.26..0.57 | 0/0/0/0 | 3 |
+| 140 | engine | `on-time` | 13.49 / 10.17 | 3.33 | 0.61 | 10.34 / 10.22 | 0.97 | −4.87..0.54 | 0/0/0/0 | 486 |
+
+- Every engine cell `on-time`, live medians 10.16–10.34 ms at every tempo and both densities (0.0.177:
+  10.03–10.29, with one drift-driven `investigate` at 120 bpm). The 140 bpm one-pair median 13.49 on
+  repeat 1 is a −4.87 ms drift excursion read on the one pair; the live median is 10.34. The 90 bpm page
+  arm's −8.92 live figure is the drift witness itself (a −15.47 ms excursion), the page's one-pair figure
+  0.00.
+
+**Reading on 0.0.179, all three runs:** the rewritten MIDI Output wiring sends every note on the
+`delayInMs` within half a quantum on an idle main thread, and the main-thread timestamp base
+(`midi-out-main-thread-base`) is unchanged under jank. Nothing in this register moved.
+
 ## Findings
 
 1. **Confirmed, SDK: a note rendered during a main-thread block is requested late by the rest of the

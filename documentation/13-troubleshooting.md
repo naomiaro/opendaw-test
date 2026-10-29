@@ -253,12 +253,20 @@ samples/v2/{uuid}/
 ### Stored samples pile up
 
 The SDK writes every sample its loader fetches to `samples/v2/`, and every finished
-recording too. It may remove a stored sample when the project was told the sample is
-user-created (`project.trackUserCreatedSample(uuid)`) and the last box pointing at it is
-deleted; whether it does depends on the `auto-delete-orphaned-samples` preference or the
-user's answer to a prompt. A sample you hand the loader from memory under a fresh uuid is stored and never
-removed, so an app that makes new uuids on every page load grows its storage on every
-page load.
+recording too. It never deletes a valid one on its own (listing the sample catalogue purges
+zero-length ones). When the project was told a sample is
+user-created (`project.trackUserCreatedSample(uuid)`, which the recorder does for every take
+it saves) and the last box pointing at it is
+deleted, the project only MARKS it: the uuid goes on a list in `samples/v2/garbage.json`
+(`SampleGarbage.mark`), and an undo that brings the box back takes it off again
+(`SampleGarbage.unmark`). Deleting happens when the app calls `SampleGarbage.purge(inUse?)`
+from `@opendaw/studio-core`: it deletes every marked sample that no saved project, template
+or preset uses and that is not in `inUse`, and returns the uuids it deleted. The list keeps
+only the uuids it failed to delete: one kept because it was in use leaves the list, and is
+marked again only when its last box is deleted again. The studio
+purges at its next start. A sample you hand the loader from memory under a fresh uuid is
+stored and never marked, so an app that makes new uuids on every page load grows its
+storage on every page load.
 
 If your app never reads a stored sample back, clear the folder when the page loads,
 before the project exists:
