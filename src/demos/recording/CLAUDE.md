@@ -304,15 +304,16 @@ past the loop boundary. The FINAL take (teardown-finalized at stop) keeps the la
 live duration write (`numberOfFrames / sampleRate - waveformOffset`), which is
 RenderQuantum-granular — expect up to one audio block of extra tail on that take only.
 
-**20ms voice crossfade at loop boundaries:** When the loop action proceeds (i.e.
+**5 ms crossfade at loop boundaries:** When the loop action proceeds (i.e.
 `playback.pauseOnLoopDisabled` is off — with it enabled the engine pauses at the wrap
-and no crossfade occurs), the engine sets `BlockFlag.discontinuous`, which fades out
-old voices over `VOICE_FADE_DURATION = 0.020s`
-(20ms) and fades in new voices when the read offset is non-zero (typical loop-wrap takes
-have `waveformOffset > 0`, so the 20 ms voice fade-in applies; since SDK 0.0.165 the
-guard also consults `loopOffset`, so mid-source region starts fade in too). During this window, both the
-outgoing and incoming take audio overlap briefly. The fade-out starts from the current
-amplitude level, making these transitions smooth and click-free.
+and no crossfade occurs), the engine flags the block discontinuous: every native or pitch
+read still sounding is released as a fade-out tail over `JUMP_FADE_DURATION` (5 ms), and a
+region the wrap enters partway in (the loop start after the region's position) fades in
+over the same 5 ms. A loop-recording take starts AT the loop start, so a wrap enters it at
+its own start: it keeps its hard onset (its `waveformOffset` does not matter), and only the
+outgoing take fades. The fade-out starts from the read's current level. The sample-rate audit's `audio-wrap-*`
+families measure it (no step at the wrap; about 3 dB of dip, and a hit on the loop start
+about 3 dB softer and 1 ms later, when what follows the loop end differs).
 
 **Playback audio read formula** (engine audio-region playback — Rust `render_region`
 in `crates/engine/src/audio_region_player.rs`):

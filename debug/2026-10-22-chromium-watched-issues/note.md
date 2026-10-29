@@ -1341,6 +1341,37 @@ is open), so a run does not depend on the system's default; `&gain=` sets the cl
   are missed (`NOT CHECKED n-of-10-clicks-found-missed-...`), raise the system volume or the earbud
   nearer, not the detector.
 
+### freeze (575891839, comment #3)
+
+Comment #3 on the bfcache tracker (2026-10-27, Chrome and Edge 156 on macOS 26) reports the same
+half-speed worklet clock after a plain Page Lifecycle freeze → resume, forced with the DevTools
+protocol's `Page.setWebLifecycleState` (frozen for about 3 s, then active), in a visible or a
+background tab: a ConstantSource → AudioWorkletNode → destination context reads 1.000 → 0.500, the
+same graph with a GainNode instead of the worklet 1.000 → 1.000, both 1.000 with
+`--disable-features=WebAudioBypassOutputBuffering`.
+
+**Probe** `?issue=freeze` (`src/lib/audit/chromiumFreezeProbe.ts`, judgement `chromiumFreeze.ts`):
+the tracker's two silent contexts, both clocks measured against the wall clock for 2 s, then the
+page waits up to two minutes for the document's `freeze` and `resume` events, then three one-second
+windows judged on all but the first. `HALF SPEED` when the worklet clock settles under 0.75 with the
+control at 0.9 or more, `NORMAL` when it does not, `NOT CHECKED no-freeze` when no `freeze` arrived
+(the positive control: the condition was not exercised), `control-slow` when both slowed,
+`context-<state>` when a context was not running after the resume.
+
+**Playwright's Chrome cannot exercise it (2026-10-29, Chrome 156.0.8078.49).** `Page.setWebLifecycleState`
+with `frozen`, then `active`, was accepted (no error) and delivered nothing to the visible page: no
+`freeze`, no `resume`, no `visibilitychange` (a listener on each, checked directly). The probe run
+around it (`chromium-freeze-mvtwaa9y-vgfv.json`) read `NOT CHECKED no-freeze`, both clocks 0.9833 at
+baseline. The reading needs the user's Chrome: background the tab, `chrome://discards`, the tab's
+Freeze action, back to the tab. Not measured yet.
+
+**The repair in the demos is a check, not a reload.** A frozen page keeps what the visitor had on it
+(an unexported take), so `initializeOpenDAW` installs `installFreezeClockCheck`: on `resume`, if the
+context is running, it waits 500 ms, measures the clock for 1 s, and below 0.75 of the wall clock
+calls `showClockSlowNotice`, a fixed bar with Reload and Dismiss (`#clock-slow-notice`). Node tests
+drive the check with a fake clock (slow, true, suspended, one check at a time); jsdom tests the bar
+(shown, reload only on Reload, dismissed, one bar). The bfcache reload guard is unchanged.
+
 ### Out of scope: the quota sentinel (541725401 / 40068799)
 
 The other half of the watched OPFS entry is `write()` returning an error sentinel instead of throwing

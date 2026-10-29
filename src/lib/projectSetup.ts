@@ -20,6 +20,8 @@ import { AnimationFrame } from "@opendaw/lib-dom";
 import { createHiddenSafeFrameDriver } from "./hiddenSafeFrameDriver";
 import { resolveFrameDriver, resolveFrameEvery, type FrameDriverKind } from "./frameDriverParams";
 import { installBfcacheReloadGuard } from "./bfcacheReloadGuard";
+import { installFreezeClockCheck } from "./freezeClockCheck";
+import { showClockSlowNotice } from "./clockSlowNotice";
 import { createThrottledFrames } from "./frameScheduler";
 import { testFeatures } from "../features";
 import { installWasmEngine, ensureWasmReady } from "./wasmEngine";
@@ -186,6 +188,9 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
       : { latencyHint: 0 }
   );
   console.debug(`AudioContext state: ${audioContext.state}, sampleRate: ${audioContext.sampleRate}`);
+  // A page Chrome froze and resumed can come back with the worklet clock at half speed (Chromium
+  // 575891839, comment #3). The page keeps what the visitor had on it, so this only tells them.
+  installFreezeClockCheck(document, audioContext, (ratio) => showClockSlowNotice(document, ratio, () => window.location.reload()));
 
   onStatusUpdate?.("Installing audio worklets...");
 
