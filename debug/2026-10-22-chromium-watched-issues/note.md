@@ -1368,7 +1368,14 @@ and reloaded, not frozen. The probe now leaves a note in `sessionStorage` while 
 load of the tab saves `NOT CHECKED discarded-not-frozen` (`document.wasDiscarded`) or
 `reloaded-before-resume` (checked in Playwright with a reload). The way to freeze it is the tracker's
 own: DevTools' Protocol monitor in the user's Chrome, `Page.setWebLifecycleState` frozen, then active.
-Not measured yet.
+
+Attempts in the user's Chrome 155.0.8059.85 (macOS 15.6.1, 44.1 kHz), all on a visible tab, none
+judging the clock: `mvtwx2vs-0lje` and `mvtx2jkh-3gab` `NOT CHECKED reloaded-before-resume` (navigation
+type `reload`, not discarded: the run restarted, once around reopening DevTools for the Protocol Monitor
+experiment); `mvtx4obn-ql5g` `NOT CHECKED no-freeze` after the Protocol monitor call (no `freeze` in two
+minutes, both clocks 0.980 at baseline) — the Playwright result again. The reporter froze on Chrome and
+Edge 156; the next attempt is on Chrome 156 (and, if that also reads no-freeze, with the tab hidden and
+DevTools undocked). Not measured yet.
 
 **The repair in the demos is a check, not a reload.** A frozen page keeps what the visitor had on it
 (an unexported take), so `initializeOpenDAW` installs `installFreezeClockCheck`: on `resume` (once the
