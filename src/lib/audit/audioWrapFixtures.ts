@@ -7,8 +7,8 @@
  * four-bar file, the timeline loop from bar 1 to bar 3, rendered from bar 0 for one bar of
  * pre-roll and AUDIO_WRAP_PASSES passes. Both loop edges sit inside the region, so every wrap
  * jumps from the middle of the file back to the middle of the file — the case the engine
- * crossfades over 5 ms at a discontinuous block (a hard cut before SDK 0.0.179). Pass 1 enters
- * the loop start from bar 0 without a jump, so its loop-start beat is the reference.
+ * crossfades over 5 ms at a discontinuous block; a hard cut there is what these families catch.
+ * Pass 1 enters the loop start from bar 0 without a jump, so its loop-start beat is the reference.
  */
 
 export const AUDIO_WRAP_LOOP_START_BARS = 1;
@@ -20,6 +20,8 @@ export const AUDIO_WRAP_RENDER_BARS =
   AUDIO_WRAP_LOOP_START_BARS + AUDIO_WRAP_PASSES * (AUDIO_WRAP_LOOP_END_BARS - AUDIO_WRAP_LOOP_START_BARS);
 
 const AMPLITUDE = 0.25;
+/** The RMS of a fixture tone, the level `toneLevelDbBefore` reads a wrap's lead-in against. */
+export const FIXTURE_TONE_RMS = AMPLITUDE / Math.SQRT2;
 /** The click family's tone: low, so its own sample-to-sample curvature is tiny next to a cut. */
 const CLICK_TONE_HZ = 110;
 /** The dip family's tones: high enough that a 1 ms window holds whole periods of either. */
@@ -154,7 +156,7 @@ export function dipDbAround(channel: Float32Array, sampleRate: number, atSec: nu
   const at = Math.round(atSec * sampleRate);
   const ms = sampleRate / 1000;
   const steady = rms(channel, at - Math.round(30 * ms), at - Math.round(20 * ms));
-  if (steady === 0) return 0;
+  if (steady === 0) return NaN;
   const window = Math.max(1, Math.round(ms));
   const hop = Math.max(1, Math.round(ms / 10));
   let lowest = Infinity;
@@ -164,11 +166,24 @@ export function dipDbAround(channel: Float32Array, sampleRate: number, atSec: nu
   return 20 * Math.log10(Math.max(lowest, 1e-12) / steady);
 }
 
+/**
+ * The positive control of the continuity families: the tone's level in the 10 ms ending 20 ms
+ * before a wrap, in dB against the fixture's own level. A render that went silent, or played
+ * past the file's end because the loop never wrapped, reads far below 0 here, where a missing
+ * step alone would read as a pass.
+ */
+export function toneLevelDbBefore(channel: Float32Array, sampleRate: number, atSec: number): number {
+  const at = Math.round(atSec * sampleRate);
+  const ms = sampleRate / 1000;
+  const level = rms(channel, at - Math.round(30 * ms), at - Math.round(20 * ms));
+  return level > 0 ? 20 * Math.log10(level / FIXTURE_TONE_RMS) : -Infinity;
+}
+
 export interface WrapBeatReading {
   /** Render seconds the beat is expected at. */
   expectedSec: number;
   /**
-   * When the hit starts, against the pass-1 hit, in ms: the first sample above 25% of the hit's
+   * When the hit starts, against the pass-1 hit, in ms (NaN when either hit is silent): the first sample above 25% of the hit's
    * own peak (the onset detector's refinement rule), read the same way on both hits. Read
    * directly because a 5 ms fade-in spreads the attack over several detector hops and the
    * detector, which looks for one sharp rise, can miss the hit entirely.
@@ -205,6 +220,7 @@ function readHit(channel: Float32Array, sampleRate: number, expectedSec: number)
   const from = Math.round((expectedSec - HIT_LEAD_SEC) * sampleRate);
   const to = Math.round((expectedSec + HIT_SPAN_SEC) * sampleRate);
   const peak = peakAbs(channel, from, to);
+  if (peak === 0) return { peak, startSec: NaN };
   let start = to;
   for (let i = Math.max(0, from); i < Math.min(channel.length, to); i++) {
     if (Math.abs(channel[i]) >= START_RATIO * peak) {

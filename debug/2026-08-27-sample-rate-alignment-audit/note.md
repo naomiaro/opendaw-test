@@ -617,7 +617,13 @@ and is the reference.
 | `audio-wrap-dip` | a ~2 kHz tone seamless across the loop, changing (phase-continuous) to 1.5x its frequency at the loop end | the same step check (loose: the step is the higher tone's own curvature) | the lowest 1 ms RMS in each wrap's first 8 ms, dB against the steady level |
 
 The column-7 "maxDev" figure of the click and dip families is the tone's own onset at 0, not
-judged (the seam family's path).
+judged (the seam family's path). Their positive control: the tone must read within 3 dB of the
+fixture level in the 10 ms ending 20 ms before every wrap (`toneLevelDbBefore`), else the cell
+reads `investigate` "no tone before wrap N" whatever its step — a silent render, or one whose
+loop never wrapped (the file plays out and goes silent), has no steps and would otherwise pass.
+A render rate with no calibrated threshold reads `investigate` "no step threshold calibrated"
+(at 32 kHz the dip family's step is 0.087, its tone's own curvature). Thresholds were measured
+with the device, and so the fixtures, at 44.1 kHz.
 
 ### Readings, both engines
 

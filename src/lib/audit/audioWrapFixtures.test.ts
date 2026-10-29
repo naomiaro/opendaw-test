@@ -14,6 +14,7 @@ import {
   readWrapBeats,
   referenceBeatOnset,
   splitWrapOnsets,
+  toneLevelDbBefore,
   wrapBeatOnsets,
   wrapTimes,
 } from "./audioWrapFixtures";
@@ -26,8 +27,8 @@ const FADE_SEC = 0.005;
 
 /**
  * What the engine plays for the fixture's loop, without the engine: the file up to the loop end,
- * then the loop over and over. `fade` mimics the 0.0.179 jump crossfade (the old read released as
- * a linear fade-out tail, the new one faded in); without it, the pre-0.0.179 hard cut.
+ * then the loop over and over. `fade` mimics the engine's jump crossfade (the old read released
+ * as a linear fade-out tail, the new one faded in); without it, a hard cut.
  */
 function renderLoop(file: Float32Array, fade: boolean): Float32Array {
   const bar = barSeconds(BPM) * SR;
@@ -162,5 +163,33 @@ describe("audio-wrap-onsets: the wrapped loop-start hit", () => {
       expect(b.levelDb).toBeCloseTo(0, 1);
       expect(Math.abs(b.shiftMs)).toBeLessThan(0.05);
     }
+  });
+});
+
+describe("positive control: a render with no tone, or no wrap, cannot pass as clean", () => {
+  const silent = new Float32Array(Math.round(AUDIO_WRAP_RENDER_BARS * barSeconds(BPM) * SR));
+
+  it("reads a silent render as no tone, no dip reading and no hit", () => {
+    for (const t of wrapTimes(BPM).slice(0, 3)) {
+      expect(toneLevelDbBefore(silent, SR, t)).toBe(-Infinity);
+      expect(dipDbAround(silent, SR, t)).toBeNaN();
+    }
+    const beats = readWrapBeats(silent, SR, [], wrapBeatOnsets(BPM), referenceBeatOnset(BPM), 0);
+    for (const b of beats) expect(b.shiftMs).toBeNaN();
+  });
+
+  it("reads a render that never wraps as no tone from the second wrap on", () => {
+    // The file played straight through and then silence: what an ignored loop sounds like.
+    const file = clickToneFile(SR, BPM);
+    const straight = new Float32Array(silent.length);
+    straight.set(file);
+    const levels = judgedWraps().map((t) => toneLevelDbBefore(straight, SR, t));
+    expect(Math.abs(levels[0])).toBeLessThan(1); // a 10 ms window is not whole periods of the tone
+    expect(levels[1]).toBe(-Infinity);
+  });
+
+  it("reads the fixture's own tone within 1 dB before every wrap of a looped render", () => {
+    const out = renderLoop(clickToneFile(SR, BPM), true);
+    for (const t of judgedWraps()) expect(Math.abs(toneLevelDbBefore(out, SR, t))).toBeLessThan(1);
   });
 });

@@ -56,6 +56,7 @@ import {
   readWrapBeats,
   referenceBeatOnset,
   splitWrapOnsets,
+  toneLevelDbBefore,
   wrapBeatOnsets,
   wrapTimes,
   type WrapBeatReading,
@@ -294,12 +295,18 @@ async function runCell(
       report =
         "wrapped loop-start hit: " +
         wrapBeats
-          .map((w) => `${w.levelDb.toFixed(1)} dB, ${w.shiftMs >= 0 ? "+" : ""}${w.shiftMs.toFixed(2)} ms${w.detected ? "" : ", missed by the detector"}`)
+          .map((w) =>
+            Number.isNaN(w.shiftMs)
+              ? "no hit"
+              : `${w.levelDb.toFixed(1)} dB, ${w.shiftMs >= 0 ? "+" : ""}${w.shiftMs.toFixed(2)} ms${w.detected ? "" : ", missed by the detector"}`
+          )
           .join(" · ");
     }
 
     let seamStep: number | undefined;
     let toleranceSec: number;
+    /** Why an audio-wrap continuity cell cannot pass whatever its step reads. */
+    let notJudgeable: string | undefined;
     if (family === "seam") {
       // The seam sits at bar 1 — the region A/B boundary, 4 quarters at this bpm.
       const seamTimeSec = (4 * 60) / bpm;
@@ -307,20 +314,28 @@ async function runCell(
       toleranceSec = SEAM_THRESHOLDS[rate] ?? SEAM_THRESHOLD_FALLBACK;
     } else if (family === "audio-wrap-click" || family === "audio-wrap-dip") {
       // Judged like the seam, on the largest step over every wrap.
+      // Positive control: the tone must be there before every wrap, else "no step" means nothing.
+      const levels = wrapTimes(bpm).map((t) => toneLevelDbBefore(channel0, rendered.sampleRate, t));
+      const quiet = levels.findIndex((l) => l < -3);
+      const threshold = AUDIO_WRAP_STEP_THRESHOLDS[family][rate];
       wrapSteps = wrapTimes(bpm).map((t) => maxStepAround(channel0, rendered.sampleRate, t));
       seamStep = Math.max(...wrapSteps);
-      toleranceSec = AUDIO_WRAP_STEP_THRESHOLDS[family][rate] ?? SEAM_THRESHOLD_FALLBACK;
-      report = `largest step ${seamStep.toExponential(2)} (limit ${toleranceSec.toExponential(2)})`;
+      toleranceSec = threshold ?? SEAM_THRESHOLD_FALLBACK;
+      if (quiet >= 0) notJudgeable = `no tone before wrap ${quiet + 1} (${levels[quiet].toFixed(1)} dB)`;
+      else if (threshold === undefined) notJudgeable = `no step threshold calibrated for ${rate} Hz`;
+      report = `largest step ${seamStep.toExponential(2)} (limit ${threshold === undefined ? "none" : threshold.toExponential(2)})`;
       if (family === "audio-wrap-dip") {
         dipDb = wrapTimes(bpm).map((t) => dipDbAround(channel0, rendered.sampleRate, t));
-        report += `; dip ${dipDb.map((d) => d.toFixed(1)).join(" / ")} dB`;
+        report += `; dip ${dipDb.map((d) => (Number.isNaN(d) ? "no signal" : d.toFixed(1))).join(" / ")} dB`;
       }
+      if (notJudgeable !== undefined) report = `${notJudgeable}; ${report}`;
     } else {
       toleranceSec = AUDIT_TOLERANCES[family];
     }
 
     const measurement: CellMeasurement = { family, bpm, rate, onsets, expected, seamStep, calibrationSec };
-    const verdict = judgeCell(measurement, toleranceSec);
+    const judged = judgeCell(measurement, toleranceSec);
+    const verdict: CellVerdict = notJudgeable === undefined ? judged : { ...judged, status: "investigate" };
     const downbeatIndices = family === "signature" ? expectedDownbeatIndices("signature") : undefined;
 
     const row: AuditRow = {

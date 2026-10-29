@@ -150,8 +150,11 @@ export const SEAM_THRESHOLDS: Partial<Record<number, number>> = {
 
 /**
  * The audio loop-wrap continuity families' threshold on the largest `maxStepAround` over their
- * wraps, keyed by family and rate — amplitude thresholds like `SEAM_THRESHOLDS`, set at 5x the
- * clean (crossfaded) step measured on the SDK the family was written against.
+ * wraps, keyed by RENDER rate — amplitude thresholds like `SEAM_THRESHOLDS`, set at 5x the clean
+ * (crossfaded) step. Measured with the device (and so the live context the fixtures are built
+ * at) at 44.1 kHz: renders at 88.2 / 96 kHz read a 44.1 kHz source through the engine's linear
+ * interpolation, whose kinks set the dip family's step there. A rate with no entry is reported
+ * as not judgeable, not judged on a borrowed threshold.
  */
 export const AUDIO_WRAP_STEP_THRESHOLDS: Record<"audio-wrap-click" | "audio-wrap-dip", Partial<Record<number, number>>> = {
   // The crossfade's ramp corners: about 2 x amplitude / (5 ms of samples), halving at the doubled
@@ -162,8 +165,9 @@ export const AUDIO_WRAP_STEP_THRESHOLDS: Record<"audio-wrap-click" | "audio-wrap
     88200: 0.005821734666824341, // run 1793297489988: 0.0011643469333648682 x5
     96000: 0.0053481757640838625, // run 1793297489988: 0.0010696351528167725 x5
   },
-  // The dip family's step is its higher tone's own curvature, so this guard is loose: it catches a
-  // cut that steps by most of the tone's range, not a small one.
+  // The dip family's step is its higher tone's own curvature (at 44.1 / 48 kHz; the interpolation
+  // kinks at 88.2 / 96 kHz), so this guard is loose: it catches a cut that steps by most of the
+  // tone's range, not a small one.
   "audio-wrap-dip": {
     44100: 0.21934494376182556, // measured 2026-10-29, SDK 0.0.179, run 1793297503612: largest step 0.04386898875236511 x5
     48000: 0.1898013800382614, // run 1793297503612: 0.03796027600765228 x5
