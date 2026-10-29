@@ -175,7 +175,7 @@ Available instrument adapters (each implements `InstrumentDeviceBoxAdapter`):
   layer sends its notes and CCs exactly as a MIDI Output unit does, through the track's MIDI
   effects and its own); Tape cannot. `project.api.wrapEffectsIntoComposite(effects)` puts
   audio effects of one chain into the first entry of a new `AudioEffectCompositeBox` at the
-  first one's place (`Attempt<AudioEffectCompositeBox, string>`)
+  lowest index among them (`Attempt<AudioEffectCompositeBox, string>`)
 - `PlayfieldDeviceBoxAdapter` — drum pad sampler with `Gate` triggers
 - `WclapInstrumentBoxAdapter` — a CLAP plugin compiled to WebAssembly (`InstrumentFactories.Wclap`;
   the factory writes label, icon and host only — a headless consumer sets `box.url` (the
@@ -187,9 +187,10 @@ Available instrument adapters (each implements `InstrumentDeviceBoxAdapter`):
 - `ApparatDeviceBoxAdapter` — scriptable instrument (JavaScript DSP)
 - `MIDIOutputDeviceBoxAdapter` — routes to external MIDI hardware
 - `KorpusDeviceBoxAdapter` — physical-modelling instrument (`InstrumentFactories.Korpus`:
-  an `exciter` — Strike, Breath, Bow, Pick, Wind — playing a modelled object A, coupled to an
-  object B (Marimba, Vibraphone, Bell, Membrane, Plate, Piano Wire; under Pick or Wind object
-  A is a string or a pipe); 16 voices; no built-in presets — the SDK's preset system saves
+  an `exciter` — Strike, Breath, Bow, Pick, Wind — playing a modelled object A (Marimba,
+  Vibraphone, Bell, Membrane, Plate, Piano Wire; under Pick or Wind a string or a pipe), and an
+  optional object B (the same, or Off, the default) routed parallel or serial with a `couple`
+  amount that defaults to 0; 16 voices; no built-in presets — the SDK's preset system saves
   and loads them)
 
 ### Diagnosing "keyboard plays but no sound"

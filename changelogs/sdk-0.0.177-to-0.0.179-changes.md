@@ -10,13 +10,14 @@ instrument. What matters for this repo:
 1. **A position jump crossfades audio regions over 5 ms** — at a seek, a loop wrap or a marker
    jump, every native or pitch read still sounding at the old position is released as a
    fade-out tail, and a region entered partway in fades in over the same 5 ms; a region entered
-   at its own start keeps its hard onset. A loop over audio used to hard-cut at every wrap. **This
+   at its own start keeps its hard onset (native, pitch and Signalsmith regions; a granular
+   region is reset as before). Audio sounding across a wrap, mid-region, used to hard-cut. **This
    changes what the demos play** at every loop wrap and seek over an audio region (no click
    now); no demo reads a value from it, and the standing sweeps do not measure it (their
    loop-wrap family plays a note region) — see follow-ups.
-2. **A change to an instrument's MIDI effect chain drops its sounding voices** — bypassing,
-   removing or adding a MIDI effect while a note sounds used to leave the note hanging (the new
-   chain never ended a note the old one started). Now the instrument resets its voices and a
+2. **A change to an instrument's MIDI effect chain drops its sounding voices** — bypassing or
+   removing a MIDI effect while a note sounds used to leave the note hanging (the new chain
+   never ended a note the old one started); adding one now drops the voices too. Now the instrument resets its voices and a
    MIDI Output sends note offs for the notes it holds; a change that leaves the MIDI effects as
    they were (an audio effect added) keeps the notes. No demo toggles a MIDI effect while
    notes sound (the placement audit sets `enabled` before an offline render).
@@ -24,8 +25,13 @@ instrument. What matters for this repo:
    to ask "Keep Sample?" (or follow the `auto-delete-orphaned-samples` preference, now removed)
    and delete it from storage. Now it MARKS it in `samples/v2/garbage.json`
    (`SampleGarbage.mark`; an undo that brings the box back unmarks it), and only
-   `SampleGarbage.purge(inUse?)` deletes. The demos never call `trackUserCreatedSample` and
-   sweep the whole folder at page load, so nothing changes for them; the troubleshooting chapter
+   `SampleGarbage.purge(inUse?)` deletes. `RecordAudio` tracks every saved take as user-created
+   (as do `AudioConsolidation`, `AudioBounce` and `AudioMonoConversion`), so the recording
+   audits, which delete each repeat's take file box (`recordingCellRunner.ts`, the alignment
+   page, `combinedCellRunner.ts`), now write one mark to `garbage.json` per delete; before, the
+   prompt went to `RuntimeNotifier.approve`, which resolves "Keep" with no notifier installed, so
+   the sample stayed. Neither version deletes, no demo purges, and the page-load sweep removes
+   the folder with the list in it, so the demos keep what they had. The troubleshooting chapter
    and root CLAUDE.md described the old rule and are rewritten.
 4. **MIDI Output can be a layer of an Instrument Composite** — `InstrumentFactories.isLayerInstrument`
    accepts every notes instrument now (the MIDI Output exclusion is gone), and the engine wires
@@ -42,8 +48,9 @@ instrument. What matters for this repo:
 6. **`BoxEditing.checkpoint()` and boxes outside the history** — a checkpoint folds everything
    edited after it into ONE undo step on `commit()`, or reverts it on `rollback()`; the
    constructor takes an `outsideHistory` predicate, and `Project` passes
-   `box => box instanceof WclapParameterBox` so an undo that removes a WebCLAP device takes the
-   parameter boxes the engine created along.
+   `box => box instanceof WclapParameterBox` (its default editing) so an undo that removes a
+   WebCLAP device takes along the parameter boxes `WclapParameters.reconcile` created from the
+   engine's report.
 7. **A live key release no longer cancels other pitches' pending note-ons** — the note
    sequencer's raw note-off used to drop every never-started note it walked past, so a
    staccato key released in the same event batch as a chord strum silenced the chord. It now
@@ -96,9 +103,12 @@ installed `studio-sdk` reads `"0.0.179"`.
 whose ramp starts at the read's last envelope level (`level`), so a jump inside a fade does not
 pop back to full gain; `render_release_tails(jump_tails, …)` renders them. A read entered at
 `from > region.position` gets `fade_in = jump_window` samples and its envelope is the minimum of
-the region envelope and the fade-in ramp. Pitch reads go through `begin_crossfade`; a
-Signalsmith read blends its already synthesized output into the restarted stream
-(`crates/signalsmith/src/stretch.rs`, +34); `release_jumped_out` rings out a granular or
+the region envelope and the fade-in ramp. Native and pitch reads share `render_region`'s cursor
+(the tail and the `fade_in`); a Signalsmith read goes through `begin_crossfade`, which blends
+its already synthesized output into the restarted stream (`crates/signalsmith/src/stretch.rs`,
++34); a granular (time-stretch) region the jump stays in or lands in is reset as before
+(`TimeStretchSequencer::process` on a discontinuous block) with no fade-in, and one the jump
+leaves rings out over the 20 ms voice fade, not 5 ms; `release_jumped_out` rings out a granular or
 Signalsmith region the jump left. The transport flags the first block after a seek, a loop wrap
 (`Action::Loop`) and a marker repeat as discontinuous, so all three crossfade. Upstream test
 `core-wasm/test/audio-region-jump-declick.test.ts` (85 lines: a 220 Hz sine region, a jump at
@@ -147,8 +157,8 @@ the effects into its first entry in order, automation follows the moved boxes). 
 `UpdateTasks.of(update)` emits `update-bytes` when the splice is smaller than the value;
 `SyncTarget` applies it; `serializeUpdateTasks` writes it; `crates/boxgraph` resolves it inside
 the transaction into a primitive update (observers and the checksum see whole values). In a Yjs
-room a value over 16 KB is a map of chunks with generation tags (`YBytes`). `WclapDeviceBox` /
-`WclapInstrumentBox` field 14 `pluginState` (`ByteArrayField`); field 12 (base64) is read only
+room a value over 16 KB is a map of chunks with generation tags (`YBytes`). `WclapDeviceBox`,
+`WclapInstrumentBox` and the new `WclapMidiEffectBox` field 14 `pluginState` (`ByteArrayField`); field 12 (base64) is read only
 while 14 is empty; `MigrateWclapState` converts on load. Upstream tests `bytes.test.ts` (370),
 `YBytes.test.ts` (424), `core-wasm/test/bytes-range-mirror.test.ts` (177),
 `crates/boxgraph/tests/bytes_splice.rs` (164), `MigrateWclapState.test.ts` (90).
@@ -173,13 +183,16 @@ figures do not depend on it; live monitoring of a chord with a fast key in the s
 
 ## Korpus (`aee804e6a` … `bdcb7c481`)
 
-`KorpusDeviceBox` (fields 1 host … 31; an `exciter` Strike / Breath / Bow / Pick / Wind,
-`objectA` / `objectB` among Marimba, Vibraphone, Bell, Membrane, Plate, Piano Wire — under Pick
-or Wind object A is a string or a pipe — couple, damping, stroke, level A, tune B and more),
+`KorpusDeviceBox` (field keys 1 host to 31 with gaps: 6–9 reserved, 20, 21, 27 unused; an
+`exciter` Strike / Breath / Bow / Pick / Wind, `objectA` among Marimba, Vibraphone, Bell,
+Membrane, Plate, Piano Wire — under Pick or Wind object A is a string or a pipe — and an
+`objectB` among the same or Off, the default; a Parallel / Serial `routing`, a `couple` amount
+defaulting to 0, damping, stroke, level A, a float `tune-b` (29, ±24 semitones) and more),
 `KorpusDeviceBoxAdapter` with its `namedParameter`s, `InstrumentFactories.Korpus` (a notes
 instrument), the engine crate `device-korpus` (16 voices; a stolen voice fades out over a few
-milliseconds). The development-only Tune B / Detune B fields, their migration and the factory
-presets were removed before the release (`8152b1a39`, `2e72aa1ba`): presets go through the
+milliseconds). The deprecated int Tune B (20) and Detune B (21) fields the float `tune-b` replaced during
+development, their migration, and the factory presets were removed before the release
+(`8152b1a39`, `2e72aa1ba`): presets go through the
 SDK's preset system. Upstream tests `crates/stock-devices/device-korpus/tests/render.rs`,
 `core-wasm/test/korpus-render.test.ts`, `korpus-chords.test.ts`.
 
@@ -287,6 +300,6 @@ device panel, audio ports), `korpus-render.test.ts`, `korpus-chords.test.ts`;
   `EffectFactories`, `WclapMidiEffectBox` in `EffectBox`; `wrapEffectsIntoComposite` on
   `ProjectApi`; `restart()` on `EngineFacade`; `wclapOpenPanel` on `Engine` / `EngineFacade` /
   `EngineWorklet`; `SampleEffect` on `Workers`; `AudioMonoConversion`; `pluginState` (14) on the
-  two WebCLAP boxes; `ColorScheme` / `setColorScheme(value)` in `studio-enums`; `host_block_at`
+  three WebCLAP boxes (`WclapMidiEffectBox` too); `ColorScheme` / `setColorScheme(value)` in `studio-enums`; `host_block_at`
   in `engine-exports`; the 18 changed or new and 18 byte-identical wasm binaries (compared with
   `cmp` against the 0.0.177 copy).

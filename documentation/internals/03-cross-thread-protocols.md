@@ -363,7 +363,7 @@ and the checksum see whole values.
 
 Each task is the minimum information needed to replay a graph mutation. The `address` field is a flattened `AddressLayout` (UUID + integer field keys), not a `Vertex` reference, so it survives serialization.
 
-These four tag strings are a **wire contract with the Rust engine**, decoded by `decode_forward` in `crates/boxgraph/src/updates.rs`. `sync.ts` says so in a comment for a reason: renaming one is a silent cross-language break that TypeScript cannot catch.
+These five tag strings are a **wire contract with the Rust engine**, decoded by `decode_forward` in `crates/boxgraph/src/updates.rs`. `sync.ts` says so in a comment for a reason: renaming one is a silent cross-language break that TypeScript cannot catch.
 
 `primitiveType` exists for the same reason: it carries the field's codec captured at emission time, so a batch stays self-contained even when a later task in it deletes the box an earlier task wrote to.
 

@@ -50,9 +50,10 @@ subs.push(trackSub);
 
 ### Stored Samples Are Swept at Page Load
 - The SDK's loader writes every sample it fetches to OPFS (`samples/v2/<uuid>/`), and
-  `SampleService` writes every finished recording there. The SDK never removes one by
-  itself: a user-created sample (`project.trackUserCreatedSample`) whose last box is
-  deleted is only marked in `samples/v2/garbage.json` (`SampleGarbage`, undo unmarks), and
+  `SampleService` writes every finished recording there. The SDK never deletes a valid one
+  by itself (listing the catalogue purges zero-length ones): a user-created sample (`project.trackUserCreatedSample`; `RecordAudio` tracks every
+  saved take) whose last box is deleted is only marked in `samples/v2/garbage.json`
+  (`SampleGarbage`, undo unmarks; the recording audits mark one per deleted take), and
   only `SampleGarbage.purge(inUse?)` deletes. The demos make fresh uuids on every load and
   never purge, so without a sweep the folder only grows (measured: 1,138 samples, 8.7 GB
   in one browser profile). The sweep removes `garbage.json` with the folder.
