@@ -37,8 +37,8 @@ instrument. What matters for this repo:
    accepts every notes instrument now (the MIDI Output exclusion is gone), and the engine wires
    a layer's MIDI Output through the track's MIDI effects and its own. The engine's MIDI Output
    wiring (`crates/engine/src/audio_unit/wiring.rs`, `midi_output.rs`) was rewritten for it —
-   the path the MIDI output timing audit measures, which needs the IAC Driver and was not run
-   in this session (follow-ups).
+   the path the MIDI output timing audit measures. Its no-jank run on the release reads as on
+   0.0.177: live medians 10.14–10.41 ms on the 10 ms delay, every note delivered (follow-ups).
 5. **Byte fields sync the range that changed** — a `ByteArrayField` change travels as a new
    `update-bytes` task (`{address, offset, deleteCount, bytes}`) when that is smaller than the
    value; `ByteArrayField` gains `setBytes`, `setByte`, `setLength`; `BytesSplice` in
@@ -280,9 +280,16 @@ device panel, audio ports), `korpus-render.test.ts`, `korpus-chords.test.ts`;
   takes `intact` on every row** (31 / 31 beats, median 1.15 ms; the stop row's finalization waited
   the 14.8 s the dialog was up; rows in `debug/2026-10-21-hidden-page-recording/note.md`). Not run
   this time (they need the IAC Driver, a quiet room with the built-in microphone, or a hand): the
-  MIDI input sweeps, **the MIDI output timing audit (the release rewrote the MIDI Output wiring it
-  measures)**, the combined MIDI + audio sweep, the hidden-page `cover` rows, and the Chromium
+  MIDI input sweeps, the MIDI output timing audit's janked and three-tempo runs, the combined
+  MIDI + audio sweep, the hidden-page `cover` rows, and the Chromium
   probe's bfcache, OPFS-restart, microphone and Bluetooth rows.
+- **MIDI output timing, no jank** (`midiout-summary-1793293547491.json`, the user's real click,
+  the IAC bus, Chrome 156, 44.1 kHz): page cells `bus-true`; engine without transport messages
+  `on-time` (live 10.34 / 10.29 ms); engine with them `investigate` on one figure, a live spread
+  of 3.03 ms against the 2.90 ms quantum on repeat 2, inside a −4.11..2.71 ms drift of the
+  context ↔ performance relation, live medians 10.14 / 10.41 ms, 0 missing / extra / stuck — the
+  one-off the register reads as the clock relation (Chromium 40726491), not the SDK; on 0.0.177 the
+  same cell read 2.90 ms. Rows in `debug/2026-10-23-midi-output-timing/note.md`.
 - **Not measured here**: the audio-region jump crossfade (no standing harness plays an audio
   region across a wrap or a seek; the loop-wrap family is a note region) — pinned by the
   upstream test only.
