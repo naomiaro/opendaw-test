@@ -126,30 +126,60 @@ async function startControlContext(): Promise<AudioContext> {
   }
 }
 
-/** Resolves on `resume` after a `freeze`; `froze` false when the wait ran out without one. */
-function waitForFreezeAndResume(signal: AbortSignal): Promise<{ froze: boolean; resumed: boolean; frozenMs: number | null }> {
+/**
+ * What the wait saw. A freeze is observed two ways: the document's `freeze` → `resume` events, or a
+ * gap in a 250 ms heartbeat (a frozen page runs no timers): a freeze forced from the DevTools
+ * protocol was seen to stop the page without the events reaching it. `signal` names which one
+ * ended the wait.
+ */
+interface FreezeWait {
+  froze: boolean;
+  resumed: boolean;
+  frozenMs: number | null;
+  signal: "events" | "timer-gap" | null;
+  /** The longest gap between two heartbeat ticks over the wait, in ms. */
+  maxGapMs: number;
+  visibilityAtResume: string | null;
+}
+
+const HEARTBEAT_MS = 250;
+/** A gap this long is a stopped page: a hidden tab's timers still run once a second (until five minutes hidden). */
+const GAP_MS = 3000;
+
+function waitForFreezeAndResume(signal: AbortSignal): Promise<FreezeWait> {
   return new Promise((resolve, reject) => {
     let frozeAt: number | null = null;
-    const finish = (value: { froze: boolean; resumed: boolean; frozenMs: number | null }) => {
+    let lastTick = performance.now();
+    let maxGapMs = 0;
+    const cleanup = () => {
       clearTimeout(timer);
+      clearInterval(heartbeat);
       document.removeEventListener("freeze", onFreeze);
       document.removeEventListener("resume", onResume);
-      resolve(value);
+    };
+    const finish = (value: Omit<FreezeWait, "maxGapMs" | "visibilityAtResume">) => {
+      cleanup();
+      resolve({ ...value, maxGapMs, visibilityAtResume: value.resumed ? document.visibilityState : null });
     };
     const onFreeze = () => {
       frozeAt = performance.now();
     };
     const onResume = () => {
       if (frozeAt === null) return;
-      finish({ froze: true, resumed: true, frozenMs: performance.now() - frozeAt });
+      finish({ froze: true, resumed: true, frozenMs: performance.now() - frozeAt, signal: "events" });
     };
-    const timer = setTimeout(() => finish({ froze: frozeAt !== null, resumed: false, frozenMs: null }), FREEZE_WAIT_MS);
+    const heartbeat = setInterval(() => {
+      const now = performance.now();
+      const gap = now - lastTick;
+      lastTick = now;
+      maxGapMs = Math.max(maxGapMs, gap);
+      if (gap >= GAP_MS && frozeAt === null) finish({ froze: true, resumed: true, frozenMs: gap, signal: "timer-gap" });
+    }, HEARTBEAT_MS);
+    const timer = setTimeout(() => finish({ froze: frozeAt !== null, resumed: false, frozenMs: null, signal: null }), FREEZE_WAIT_MS);
     document.addEventListener("freeze", onFreeze);
     document.addEventListener("resume", onResume);
     signal.addEventListener("abort", () => {
-      clearTimeout(timer);
-      document.removeEventListener("freeze", onFreeze);
-      document.removeEventListener("resume", onResume);
+      cleanup();
       reject(new Error("aborted"));
     }, { once: true });
   });
@@ -229,6 +259,9 @@ export async function runFreezeProbe(signal: AbortSignal, report: (step: string)
       froze: freeze.froze ? "true" : "false",
       resumed: freeze.resumed ? "true" : "false",
       frozenMs: round(freeze.frozenMs, 0),
+      freezeSignal: freeze.signal,
+      maxTimerGapMs: round(freeze.maxGapMs, 0),
+      visibilityAtResume: freeze.visibilityAtResume,
       statesAfterResume: states,
       statesAfterWindows,
       refrozeDuringWindows: refroze ? "true" : "false",

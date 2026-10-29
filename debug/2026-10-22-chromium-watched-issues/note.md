@@ -1374,8 +1374,15 @@ judging the clock: `mvtwx2vs-0lje` and `mvtx2jkh-3gab` `NOT CHECKED reloaded-bef
 type `reload`, not discarded: the run restarted, once around reopening DevTools for the Protocol Monitor
 experiment); `mvtx4obn-ql5g` `NOT CHECKED no-freeze` after the Protocol monitor call (no `freeze` in two
 minutes, both clocks 0.980 at baseline) — the Playwright result again. The reporter froze on Chrome and
-Edge 156; the next attempt is on Chrome 156 (and, if that also reads no-freeze, with the tab hidden and
-DevTools undocked). Not measured yet.
+Edge 156. On Chrome 156.0.8078.74 (`mvtxcv5z-nb14`): the Protocol monitor first answered
+"'Page.setWebLifecycleState' wasn't found" (the command sent to the tab target, which has no Page
+domain); sent to the page target it was accepted, and DevTools reported the page in the back/forward
+cache, but the probe saw no `freeze` event and read `NOT CHECKED no-freeze`. So the probe now also
+watches a 250 ms heartbeat: a gap of 3 s or more is a stopped page whatever events arrived
+(`freezeSignal: timer-gap`, `maxTimerGapMs`). Checked in Playwright with a 4 s main-thread block, which
+is a stop but no freeze: `timer-gap` 4007 ms, then both clocks true, `NORMAL` (`mvtxjp5o-sifv`). A long
+synchronous task is the one thing the gap cannot tell from a freeze; nothing else runs on the page. Not
+measured yet.
 
 **The repair in the demos is a check, not a reload.** A frozen page keeps what the visitor had on it
 (an unexported take), so `initializeOpenDAW` installs `installFreezeClockCheck`: on `resume` (once the

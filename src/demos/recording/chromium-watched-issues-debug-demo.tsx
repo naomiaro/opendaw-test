@@ -380,9 +380,11 @@ const App: React.FC<{ issue: WatchedIssue }> = ({ issue }) => {
           )}
           {state.kind === "running" && state.step === AWAITING_FREEZE && (
             <Text size="2">
-              Baseline measured. Freeze this page, then resume it: in this tab's DevTools, ⋮ → More tools → Protocol
-              monitor, send <Code>Page.setWebLifecycleState</Code> with <Code>{'{"state":"frozen"}'}</Code>, wait a few
-              seconds, then send it with <Code>{'{"state":"active"}'}</Code>. The page waits up to two minutes. Not{" "}
+              Baseline measured. Freeze this page, then resume it: in this tab's DevTools (Settings → Experiments →
+              Protocol Monitor, once), Cmd+Shift+P → Protocol monitor, target set to this page (not the tab), send{" "}
+              <Code>Page.setWebLifecycleState</Code> with <Code>{'{"state":"frozen"}'}</Code>, wait a few seconds, then
+              send it with <Code>{'{"state":"active"}'}</Code>. The page waits up to two minutes; it sees the freeze by
+              its events or by its own timers stopping for three seconds or more. Not{" "}
               <Code>chrome://discards</Code>' Discard: a discarded tab reloads on return, which this page records as NOT
               CHECKED discarded-not-frozen. (In Playwright's Chrome the protocol call froze nothing: NOT CHECKED
               no-freeze.)
