@@ -189,7 +189,10 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   0.98 at baseline); the reading needs the user's Chrome, with the same call sent from DevTools' Protocol
   monitor. `chrome://discards`' Discard is no substitute: the tab reloads on return (`document.wasDiscarded`),
   which the probe records as `NOT CHECKED discarded-not-frozen` (a first attempt that way, 2026-10-29, came
-  back reloaded, before the probe recorded it).
+  back reloaded, before the probe recorded it). Tried 2026-10-29 in the user's Chrome 155 and 156 (macOS
+  15.6.1) and stopped, not reproduced: a protocol freeze delivered no `freeze` event (the probe's heartbeat
+  now also catches a stopped page), and "active" did not reliably bring the page back (once frozen through a
+  reload, once blank). Not tried: a hidden tab, or a freeze Chrome makes on its own.
 - **Symptom here:** a page with a running context and a worklet node, restored from the cache
   (`pageshow.persisted` true), keeps `state: running` and runs its clock at half the wall clock in every
   window measured. Three one-second windows after the restore read 0.4867 / 0.4988 / 0.4986 and

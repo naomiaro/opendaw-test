@@ -1381,8 +1381,16 @@ cache, but the probe saw no `freeze` event and read `NOT CHECKED no-freeze`. So 
 watches a 250 ms heartbeat: a gap of 3 s or more is a stopped page whatever events arrived
 (`freezeSignal: timer-gap`, `maxTimerGapMs`). Checked in Playwright with a 4 s main-thread block, which
 is a stop but no freeze: `timer-gap` 4007 ms, then both clocks true, `NORMAL` (`mvtxjp5o-sifv`). A long
-synchronous task is the one thing the gap cannot tell from a freeze; nothing else runs on the page. Not
-measured yet.
+synchronous task is the one thing the gap cannot tell from a freeze; nothing else runs on the page.
+
+Then two more attempts in the user's Chrome 156 with the heartbeat probe, neither measured: the frozen tab
+stayed frozen through "active" AND a reload (the page did not load until opened in a new tab); in the
+new tab, "active" refreshed the DevTools console and left the page blank, and nothing was saved. So on
+this Mac (Chrome 155 and 156, macOS 15.6.1) a page frozen through `Page.setWebLifecycleState` gets no
+`freeze` event and does not reliably come back on "active". The reporter's half-speed result cannot be
+reproduced by this route here. **Stopped 2026-10-29: not reproduced, the entry stays a candidate.** Not
+tried: the tab hidden behind another tab while frozen from undocked DevTools; a freeze Chrome makes on its
+own (a background tab under Energy Saver). The demos' check stands either way.
 
 **The repair in the demos is a check, not a reload.** A frozen page keeps what the visitor had on it
 (an unexported take), so `initializeOpenDAW` installs `installFreezeClockCheck`: on `resume` (once the
