@@ -343,6 +343,7 @@ The box graph lives on the main thread; the audio thread needs a copy. Every com
 export type UpdateTask<M> =
     | { type: "new", name: keyof M, uuid: UUID.Bytes, buffer: ArrayBufferLike }
     | { type: "update-primitive", address: AddressLayout, primitiveType: PrimitiveType, value: unknown }
+    | { type: "update-bytes", address: AddressLayout, offset: int, deleteCount: int, bytes: Int8Array }
     | { type: "update-pointer", address: AddressLayout, target: Maybe<AddressLayout> }
     | { type: "delete", uuid: UUID.Bytes }
 
@@ -351,6 +352,14 @@ export interface Synchronization<M> {
     checksum(value: Int8Array): Promise<void>
 }
 ```
+
+A `ByteArrayField` change travels as `update-bytes` when that is smaller than the whole
+value: `UpdateTasks.of(update)` (`packages/lib/box/src/sync-source.ts`) reduces the old and
+new value to one splice by their common prefix and suffix (`BytesSplice.of`,
+`packages/lib/box/src/bytes-splice.ts`) and sends only the replaced range. `setValue`,
+`setBytes`, `setByte`, `setLength`, undo and redo all take that path. The Rust mirror
+resolves the splice inside the transaction into an ordinary primitive update, so observers
+and the checksum see whole values.
 
 Each task is the minimum information needed to replay a graph mutation. The `address` field is a flattened `AddressLayout` (UUID + integer field keys), not a `Vertex` reference, so it survives serialization.
 

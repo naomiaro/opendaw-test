@@ -61,7 +61,7 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   three natural events, forced churn); SDK-free probe `worklet-clock-debug-demo.html`; forced with
   `&graphChurn=on` on the recording-alignment harness (48 of 48 rows at 0 / 0 quanta since the
   workaround); natural tally `node scripts/audit/recording-alignment/one-quantum-events.ts`.
-- **Last checked:** 2026-10-22 (SDK 0.0.177 sweep: 0 events in 76 repeats, forced 48 / 48). The
+- **Last checked:** 2026-10-29 (SDK 0.0.179 sweep: 0 events in 76 repeats, forced 48 / 48). The
   browser is unchanged; re-read the tracker at each SDK upgrade and retire the repairs only on a
   Chrome that reads true under the probe.
 
@@ -107,7 +107,9 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   (truncate-first), in-session runs `mvk4ksbd-jmyd`, `mvk4yy1c-cddi`, `mvk3l4wh-mr7j`, `mvk3ldkp-0zna`.
 - **Last checked:** Chrome 155.0.8059.85, macOS 15.6.1, 2026-10-22: `NEGATIVE USAGE` after a restart of
   the user's Chrome, probe `?issue=opfs-usage`; the truncate-first workaround confirmed on the saved
-  figure across a second restart.
+  figure across a second restart. In-session half on Chrome 156.0.8078.49, 2026-10-29 (SDK 0.0.179
+  sweep, Playwright's Chrome): `COUNTED` (+67 109 044 of 67 108 864 bytes, 0 left after the delete;
+  `chromium-opfs-usage-mvtrnspq-5x1m.json`); the restart half not run on 156.
 
 ### Chromium [516995393](https://issues.chromium.org/issues/516995393) — no input-latency figure in the Web Audio API (a spec gap)
 
@@ -162,8 +164,9 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
 - **Evidence:** `debug/2026-10-22-chromium-watched-issues/note.md`, "first-read"; probe
   `chromium-watched-issues-debug-demo.html?issue=first-read`, envelope
   `chromium-first-read-mvk1dr2x-2os8.json` (each run's raw frames).
-- **Last checked:** Chrome 155, macOS, Playwright's Chrome, 2026-10-22: `STALE FIRST READ`, 14 of 15
-  runs, probe `?issue=first-read`.
+- **Last checked:** Chrome 156.0.8078.49, macOS, Playwright's Chrome, 2026-10-29 (SDK 0.0.179 sweep):
+  `STALE FIRST READ`, 14 of 15 runs (none 4, large 5, slow 5; `chromium-first-read-mvtrhq4m-4ncj.json`),
+  as on Chrome 155 (2026-10-22, 14 of 15).
 
 ### Chromium [575891839](https://issues.chromium.org/issues/575891839) — the worklet clock runs at half speed after a back/forward-cache restore
 
@@ -173,7 +176,13 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   The reporter's symptom: a running context with a worklet node, restored from the cache, keeps
   `running` but advances at half speed, its output lower-pitched and distorted; a context with a plain
   OscillatorNode is unaffected. `suspend()` / `resume()` does not repair it, a reload does; it disappears with
-  `--disable-features=WebAudioBypassOutputBuffering` (the reporter's isolation).
+  `--disable-features=WebAudioBypassOutputBuffering` (the reporter's isolation). Comment #3 (2026-10-27,
+  read 2026-10-29), not reproduced here: the same half speed follows a plain page FREEZE → resume (Page
+  Lifecycle, `Page.setWebLifecycleState` frozen → active for about 3 s), visible or background tab, Chrome
+  and Edge 156 on macOS 26, a worklet context 1.000 → 0.500, a worklet-free context unaffected, gone with
+  the same flag. A tab Chrome freezes in the background would come back at half speed with no navigation,
+  which `pageshow` with `persisted` never sees: the guard below does not cover it. A candidate until a
+  probe freezes a page here.
 - **Symptom here:** a page with a running context and a worklet node, restored from the cache
   (`pageshow.persisted` true), keeps `state: running` and runs its clock at half the wall clock in every
   window measured. Three one-second windows after the restore read 0.4867 / 0.4988 / 0.4986 and
@@ -281,8 +290,13 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   `HALF RATE`); controls `…-mvk67nwz-e5jp.json` (no stall, `CLEAN`), `…-mvk66w4s-yjmr.json` (Blob
   module), `…-mvk69i2k-w85k.json` (500 ms gap), `…-mvk66fux-d534.json` (5 cycles, `NOT CHECKED`);
   microphone-only candidates `…-mvk5pda3-2kmc.json`, `…-mvk5rajg-qii2.json`, `…-mvk68gjz-2bwp.json`.
-- **Last checked:** Chrome 155.0.8059.85, macOS 15.6.1, 2026-10-22: `HALF RATE` with
-  `?issue=suspend-resume&tracker=1`, and by ear on the tracker's repro page.
+- **Last checked:** Chrome 156.0.8078.49, macOS 15.6.1, 2026-10-29 (SDK 0.0.179 sweep): `HALF RATE` on
+  two of three `?issue=suspend-resume&tracker=1` runs (`…-mvtripnh-mnvz.json`, `…-mvtrje1q-c5dz.json`:
+  172.3 calls per second after, clock ratio down to 0.48, the second from cycle 7), and `CLEAN` on the
+  first (`…-mvtrhtvp-5auq.json`: 20 cycles at 344.4 calls per second, purity 66.5 dB throughout). The
+  race does not fire on every run, so one `CLEAN` row on a new Chrome is not a fix: run the row three
+  times and call it fixed only on three clean runs. Before: Chrome 155.0.8059.85, 2026-10-22, `HALF RATE`,
+  and by ear on the tracker's repro page.
 
 ### Chromium [388871416](https://issues.chromium.org/issues/388871416) — `outputLatency` reports a fixed 161 ms for a Bluetooth headset whose real extra output latency is 200 to 280 ms
 
@@ -398,7 +412,10 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   `…-mvk9lpjr-ddsz.json`.
 - **Last checked:** Chrome 155.0.8059.85, macOS 15.6.1, 2026-10-22: `GAPS`, with the zero runs at stall
   times, on the built-in and a USB microphone at both rates; one zero run just after 30 s of silent
-  output, none with dither, on the built-in microphone.
+  output, none with dither, on the built-in microphone. The loopback rows again on Chrome 156.0.8078.49,
+  2026-10-29 (SDK 0.0.179 sweep): `CLEAN` at 48 000, `START GAPS` at 44 100 with the one 441-frame run
+  441 frames after the tone (`chromium-capture-gaps-mvtrn8ia-fvqb.json`); the microphone rows were not
+  run on 156.
 
 ### Chromium [40726491](https://issues.chromium.org/issues/40726491) — `getOutputTimestamp()`'s context ↔ performance relation wanders: a sawtooth of one device buffer on a context at the other rate than the device's, single early steps at the device's rate
 
@@ -477,7 +494,9 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   `chromium-opfs-flush-mvk3i5ql-rcug.json`, `chromium-opfs-flush-mvk3ibtu-y9rp.json`.
 - **Last checked:** the flush: not slow on Chrome 155.0.8059.85 / macOS 15.6.1, 2026-10-22, probe
   `?issue=opfs-flush`, `MEASURED`: median 0.53–0.57 ms per 1 MiB flush, 1.44–1.46 ms per 16 MiB, in two
-  runs (one 25.65 ms outlier among 40 16 MiB flushes). The tracker's claim is a comparison with other
+  runs (one 25.65 ms outlier among 40 16 MiB flushes); Chrome 156.0.8078.49, 2026-10-29 (SDK 0.0.179
+  sweep): median 0.63 ms per 1 MiB (max 1.16), 1.53 ms per 16 MiB (max 1.60), one run
+  (`chromium-opfs-flush-mvtrnk3s-cf8v.json`). The tracker's claim is a comparison with other
   browsers, which this repo does not make. The sentinel: no probe, out of scope; it needs the origin's
   quota exhausted or an incognito profile.
 
@@ -508,7 +527,8 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
 
 The rest of the component's 74 open issues, read 2026-10-23, do not reach a macOS Chrome page: the Windows WinMM
 backend's deadlocks and missed disconnects ([566965142](https://issues.chromium.org/issues/566965142) Chrome 154 with
-a SysEx buffer queued, [558101305](https://issues.chromium.org/issues/558101305), [41436976](https://issues.chromium.org/issues/41436976),
+a SysEx buffer queued — still on Chrome 156 per comment #3, 2026-10-22, where a page that only requested access with
+`sysex: true` deadlocks when a device powers off; the SDK requests `sysex: false`, [558101305](https://issues.chromium.org/issues/558101305), [41436976](https://issues.chromium.org/issues/41436976),
 [416712838](https://issues.chromium.org/issues/416712838), [505045927](https://issues.chromium.org/issues/505045927));
 Android ([568322991](https://issues.chromium.org/issues/568322991) a USB piano silencing Web Audio) and Linux
 enumeration ([533891244](https://issues.chromium.org/issues/533891244), [40794512](https://issues.chromium.org/issues/40794512));
@@ -583,9 +603,10 @@ and the feature requests for virtual ports ([41487942](https://issues.chromium.o
 
 ### Firefox [2034508](https://bugzilla.mozilla.org/show_bug.cgi?id=2034508) — `renderQuantumSize` not implemented
 
-- **Tracker:** [bugzilla 2034508](https://bugzilla.mozilla.org/show_bug.cgi?id=2034508), new, 2026-04. The engine assumes the 128-frame quantum everywhere;
+- **Tracker:** [bugzilla 2034508](https://bugzilla.mozilla.org/show_bug.cgi?id=2034508), assigned, 2026-04; patches in review (a WPT for the HRTF
+  panner at a non-default quantum, 2026-10-26). The engine assumes the 128-frame quantum everywhere;
   a context constructed with another `renderSizeHint` is not something this repo does, so the gap is harmless here.
-- **Last checked:** 2026-10-22.
+- **Last checked:** 2026-10-29 (tracker read).
 
 ### Firefox [1798742](https://bugzilla.mozilla.org/show_bug.cgi?id=1798742) / [1802149](https://bugzilla.mozilla.org/show_bug.cgi?id=1802149) — a virtual MIDI device switched on or off is not seen until the browser restarts; no hot-plug
 
@@ -596,7 +617,9 @@ and the feature requests for virtual ports ([41487942](https://issues.chromium.o
   macOS code "to clean up", Windows not started). [1758488](https://bugzilla.mozilla.org/show_bug.cgi?id=1758488) asks
   whether a device's status survives a reload on macOS (new, P3, no description). Web MIDI itself shipped in Firefox 108
   behind a site-permission add-on prompt ([1742635](https://bugzilla.mozilla.org/show_bug.cgi?id=1742635), new, P2): a
-  refusal and a missing add-on both reject `requestMIDIAccess` alike.
+  refusal and a missing add-on both reject `requestMIDIAccess` alike. A site report waits on the same hot-plug gap
+  ([2082870](https://bugzilla.mozilla.org/show_bug.cgi?id=2082870) "WebMIDI not working on Novation Components",
+  unconfirmed, 2026-10: no `MIDIConnectionEvent`; read 2026-10-29).
 - **Where it bites here:** the three MIDI sweeps' recipe "IAC Driver online (Audio MIDI Setup)" (root CLAUDE.md): in
   Firefox the driver must be online before the browser starts, and a device plugged in
   during a session is missing until a restart. A rejected request rejects `requestPermission()` with the SDK's "Could
@@ -689,13 +712,17 @@ and the feature requests for virtual ports ([41487942](https://issues.chromium.o
   "increase the `FileSystemSyncAccessHandle` per-origin limit beyond 256" (open handles fail past about 252; Chromium
   and Firefox allow thousands); [279739](https://bugs.webkit.org/show_bug.cgi?id=279739) "OPFS can deadlock the browser and inspector" (P2 Critical, 2024,
   Emscripten users reproduce it); plus [327929](https://bugs.webkit.org/show_bug.cgi?id=327929), [326347](https://bugs.webkit.org/show_bug.cgi?id=326347), [326135](https://bugs.webkit.org/show_bug.cgi?id=326135) (`InvalidStateError` where a disk-full or
-  a lock error is meant; 326135 has pull request [76510](https://github.com/WebKit/WebKit/pull/76510) open).
+  a lock error is meant; 326135 has pull request [76510](https://github.com/WebKit/WebKit/pull/76510) open); and
+  [328618](https://bugs.webkit.org/show_bug.cgi?id=328618) "`Worker.terminate()` does not stop a running WebAssembly
+  function" (2026-10-23, Safari Technology Preview 255: the worker's Web Locks and `FileSystemSyncAccessHandle`s stay
+  held until the function returns; Chrome stops it — the demos' page-presence lock is the page's own, not a
+  worker's; whether the SDK's OPFS or offline-render worker could be caught by it is not measured).
 - **Where they would bite here:** the SDK's OPFS worker is a dedicated worker; on Safari its sample writes and the
   page sweep wait on the page's main thread, which is exactly what a long synchronous task or a blocked frame driver
   stalls — the "[OPFS] … runs for <n>s" warnings could fire for the browser's reason; tell the two apart
   (a blocked main thread on Safari, a slow write anywhere) before attributing. A sample library
   with more than about 250 handles open at once cannot exist on Safari. None measured here.
-- **Last checked:** 2026-10-22 (descriptions read).
+- **Last checked:** 2026-10-29 (descriptions read; 327929 and the others unchanged but for a Radar link).
 
 ### WebKit [328462](https://bugs.webkit.org/show_bug.cgi?id=328462) — "Enhanced Security" disables `SharedArrayBuffer`
 
@@ -722,7 +749,7 @@ and the feature requests for virtual ports ([41487942](https://issues.chromium.o
 
 # Across vendors
 
-- **`AudioContext.setSinkId` is Chrome and Edge only.** Firefox: [1942786](https://bugzilla.mozilla.org/show_bug.cgi?id=1942786) (unconfirmed, 2025); WebKit: [280303](https://bugs.webkit.org/show_bug.cgi?id=280303)
+- **`AudioContext.setSinkId` is Chrome and Edge only.** Firefox: [1942786](https://bugzilla.mozilla.org/show_bug.cgi?id=1942786) (assigned, 2025; an `AudioContext.setSinkId` patch in review since 2026-10-26, read 2026-10-29); WebKit: [280303](https://bugs.webkit.org/show_bug.cgi?id=280303)
   (filed 2024-09, pull request [74675](https://github.com/WebKit/WebKit/pull/74675) open since 2026-09). Gate on `"setSinkId" in AudioContext.prototype`; enumerate outputs through
   `navigator.mediaDevices.enumerateDevices()` filtering `kind === "audiooutput"` (root CLAUDE.md, "Output Device
   Enumeration"; `src/lib/audioUtils.ts`); `AudioDevices` handles inputs only.
@@ -783,7 +810,7 @@ upstream tracker, or are by design.
   netted skew; a raw multi-mic skew is never quoted as an SDK finding. A worklet module must be loaded
   before the first take (a load still running delays that take's first frame, 117 ms measured).
 - **Evidence:** `debug/2026-09-02-recording-start-alignment/note.md` (stream-tap measurement, repo PRs [#136](https://github.com/naomiaro/opendaw-test/pull/136) and [#138](https://github.com/naomiaro/opendaw-test/pull/138)).
-- **Last checked:** 2026-10-22 (32 multi-mic rows, raw skew accounted for by the node delays on every repeat).
+- **Last checked:** 2026-10-29 (SDK 0.0.179 sweep: 32 multi-mic rows, raw skew accounted for by the node delays on every repeat; one janked repeat read −9.33 ms raw, 0.00 left over).
 
 ### Chrome — a `MediaStreamAudioDestinationNode` stream is re-timed once every source feeding it has ended
 

@@ -98,7 +98,7 @@ Primitive subclasses:
 
 - `Float32Field`, `Int32Field` — bounded numerics with `constraints`.
 - `BooleanField`, `StringField` — straightforward.
-- `ByteArrayField` — `Int8Array` payload.
+- `ByteArrayField` — `Int8Array` payload. Besides `setValue`, `setBytes(offset, bytes)` writes a range (growing the value, zero filled, when it reaches past the end), `setByte(index, value)` one byte, `setLength(length)` cuts or zero extends it; every change syncs as the range that changed.
 
 All fields implement `Vertex`, the address-resolving interface. That means you can `refer()` a pointer at a *field inside a box*, not just at the box itself. This is how, e.g., `AudioRegionBox.regions.refer(trackBox.regions)` works — both sides are fields, addressable independently.
 
@@ -245,6 +245,14 @@ Each has `forward(graph)` and `inverse(graph)` methods. Undo applies `inverse()`
 - `mark: false` — fold into the previous pending change. Use this for incremental edits like drag operations where the user thinks of the whole drag as one action.
 
 `append()` is the explicit "fold into the previous" version.
+
+### Checkpoints
+
+`checkpoint(): EditingCheckpoint` (not callable inside a `modify`) opens a span: everything edited after it — marked, appended or pending — ends as ONE undo step on `commit()`, or is reverted on `rollback()` (a failed inverse aborts the transaction and re-throws). Only the first of the two counts, and neither does anything after `clear()` emptied the history. Use it for a multi-step operation the user may cancel (a dialog that edits while it is open).
+
+### Boxes outside the history
+
+`new BoxEditing(graph, outsideHistory?)` takes a `Predicate<Box>` naming boxes that other code creates outside the user's undo history. When an undo or a rollback removes a box that one of them points at, those boxes are deleted first, else the box could not be unstaged. `Project` passes `box => box instanceof WclapParameterBox`: the engine reports a WebCLAP plugin's parameters and `WclapParameters.reconcile` creates their boxes whenever the plugin loads, so an undo of the step that created the device must take them along.
 
 ## Pointers and PointerHub
 

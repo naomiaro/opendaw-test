@@ -170,7 +170,12 @@ Available instrument adapters (each implements `InstrumentDeviceBoxAdapter`):
   each layer is an `InstrumentCompositeCellBoxAdapter` with its own instrument, MIDI and audio
   chains and a gain / pan / mute / solo strip. Layers are managed through `project.api`
   (`createCompositeLayer`, `setLayerInstrument`, `moveCompositeLayer`, `duplicateCompositeLayer`,
-  `deleteCompositeLayer`, `wrapInstrumentIntoComposite`)
+  `deleteCompositeLayer`, `wrapInstrumentIntoComposite`, which moves the unit's MIDI and audio
+  effects into the new layer). Any notes instrument can be a layer, `MIDIOutput` included (a
+  layer sends its notes and CCs exactly as a MIDI Output unit does, through the track's MIDI
+  effects and its own); Tape cannot. `project.api.wrapEffectsIntoComposite(effects)` puts
+  audio effects of one chain into the first entry of a new `AudioEffectCompositeBox` at the
+  first one's place (`Attempt<AudioEffectCompositeBox, string>`)
 - `PlayfieldDeviceBoxAdapter` — drum pad sampler with `Gate` triggers
 - `WclapInstrumentBoxAdapter` — a CLAP plugin compiled to WebAssembly (`InstrumentFactories.Wclap`;
   the factory writes label, icon and host only — a headless consumer sets `box.url` (the
@@ -181,6 +186,11 @@ Available instrument adapters (each implements `InstrumentDeviceBoxAdapter`):
   exposed through `adapter.parameters`)
 - `ApparatDeviceBoxAdapter` — scriptable instrument (JavaScript DSP)
 - `MIDIOutputDeviceBoxAdapter` — routes to external MIDI hardware
+- `KorpusDeviceBoxAdapter` — physical-modelling instrument (`InstrumentFactories.Korpus`:
+  an `exciter` — Strike, Breath, Bow, Pick, Wind — playing a modelled object A, coupled to an
+  object B (Marimba, Vibraphone, Bell, Membrane, Plate, Piano Wire; under Pick or Wind object
+  A is a string or a pipe); 16 voices; no built-in presets — the SDK's preset system saves
+  and loads them)
 
 ### Diagnosing "keyboard plays but no sound"
 `capture.captureNoteOnCount` (observable) increments when an armed capture receives a note-on outside recording — read it before/after a key press to prove MIDI reached the capture without any audio tap. If it increments but output RMS is 0, the fault is engine-side rendering, not MIDI routing.
@@ -344,7 +354,11 @@ table `node scripts/audit/midi-effect-placement/table.ts`.
   range and each effect pulls its upstream and returns transformed events; everything is in
   pulses, and the instrument resolves them to sample offsets. A live key is pushed into the
   same sequencer that plays the regions, so one offline render covers live playing and
-  playback. A disabled effect is left out of the chain.
+  playback. A disabled effect is left out of the chain. A change to an instrument's MIDI
+  chain (an effect bypassed, removed or added) drops the instrument's sounding voices, and a
+  MIDI Output sends note offs for the notes it holds, so no note hangs; a change that leaves
+  the MIDI effects as they were (an audio effect added) keeps them. The audit sets
+  `enabled` before it renders, so a row never sees the drop.
 - **Two judgements.** A device meant to pass timing through (Pitch, Velocity, a Spielwerk that
   forwards or re-yields, every device disabled) is read by cross-correlation against the dry
   render of the same run: expected lag 0. A device meant to move notes (Arpeggio, Zeitgeist,

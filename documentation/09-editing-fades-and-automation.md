@@ -1411,7 +1411,10 @@ the `shared-source-double-process` regression page confirms no sample-step
 discontinuity at touching seams). Cross-file
 splices get a genuine ~20 ms crossfade instead of a step. Transport stop seeds the
 same release for every live voice, so pausing rings out cleanly instead of
-hard-cutting. Zero-crossing snapping is not provided — and is no longer needed for
+hard-cutting. A position jump (a seek, a loop wrap, a marker jump) crossfades over
+5 ms: what was sounding at the old position fades out while the region at the new
+position fades in, unless the new position is that region's own start, which keeps its
+hard onset. Zero-crossing snapping is not provided — and is no longer needed for
 click-free cuts.
 
 ### Non-Overlapping Fades Make It Worse
