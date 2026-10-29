@@ -29,6 +29,15 @@ import {
   expectedOnsets,
   type AuditFamily,
 } from "./auditExpectations";
+import {
+  AUDIO_WRAP_FILE_BARS,
+  AUDIO_WRAP_LOOP_END_BARS,
+  AUDIO_WRAP_LOOP_START_BARS,
+  AUDIO_WRAP_RENDER_BARS,
+  beatBurstFile,
+  clickToneFile,
+  dipToneFile,
+} from "./audioWrapFixtures";
 
 /** Mutates a FRESH project (caller creates it) to hold the family's scenario at
  *  the given bpm. Returns what the renderer needs. */
@@ -385,6 +394,40 @@ function buildTransportPos(bpm: number): BuiltScenario {
   };
 }
 
+/** The three audio loop-wrap families: one region over a four-bar file, the timeline loop inside it. */
+function buildAudioWrap(
+  project: Project,
+  family: "audio-wrap-click" | "audio-wrap-onsets" | "audio-wrap-dip",
+  bpm: number,
+  localAudioBuffers: Map<string, AudioBuffer>,
+  audioContext: AudioContext
+): BuiltScenario {
+  const sr = audioContext.sampleRate;
+  const samples =
+    family === "audio-wrap-click" ? clickToneFile(sr, bpm) : family === "audio-wrap-dip" ? dipToneFile(sr, bpm) : beatBurstFile(sr, bpm);
+  const buffer = audioContext.createBuffer(1, samples.length, sr);
+  buffer.copyToChannel(samples, 0);
+  const filePpqn = AUDIO_WRAP_FILE_BARS * BAR_PPQN;
+
+  const { trackBox } = project.editing
+    .modify(() => project.api.createInstrument(InstrumentFactories.Tape))
+    .unwrap();
+
+  project.editing.modify(() => {
+    const fileBox = registerAudioFile(project, localAudioBuffers, buffer, `${family}.wav`);
+    createTapeRegion(project, trackBox, fileBox, 0, filePpqn, 0, filePpqn, family);
+    project.timelineBox.loopArea.from.setValue(AUDIO_WRAP_LOOP_START_BARS * BAR_PPQN);
+    project.timelineBox.loopArea.to.setValue(AUDIO_WRAP_LOOP_END_BARS * BAR_PPQN);
+    project.timelineBox.loopArea.enabled.setValue(true);
+  });
+
+  return {
+    renderSeconds: quartersToSeconds(AUDIO_WRAP_RENDER_BARS * 4, bpm) + TAIL_PADDING_SEC,
+    startPositionPpqn: 0,
+    needsMetronome: false,
+  };
+}
+
 // ─── Entry point ─────────────────────────────────────────────────────────
 
 export function buildAuditScenario(
@@ -417,5 +460,9 @@ export function buildAuditScenario(
       return buildSignature(project, bpm);
     case "transport-pos":
       return buildTransportPos(bpm);
+    case "audio-wrap-click":
+    case "audio-wrap-onsets":
+    case "audio-wrap-dip":
+      return buildAudioWrap(project, family, bpm, localAudioBuffers, audioContext);
   }
 }
