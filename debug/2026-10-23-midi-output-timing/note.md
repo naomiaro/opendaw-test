@@ -233,7 +233,24 @@ Chrome 156, 44.1 kHz, the IAC bus, a real click by the user.
   one-off this register already reads as the clock relation: it sits in the widest drift range of the
   run (−4.11..2.71 ms), its one-pair median (13.83) is the same excursion read the other way, and its
   live median stays on the delay. Run A on 0.0.177 read that cell's live spread at 2.90 ms, the limit
-  itself. Not a change in the SDK. The janked and three-tempo runs (B, C) were not repeated yet.
+  itself. Not a change in the SDK.
+
+### SDK 0.0.179 (2026-10-29): Run B again (`1793294347876`)
+
+`…&jank=mid`, 80 ms blocks every 500 ms from the pattern's midpoint, otherwise as Run A.
+
+| arm | transport | status | median ms (r1 / r2) | max dev | late tail | inside-block median | live median (r1 / r2) | pair drift ms | miss/extra/stuck/vel | transport msgs |
+|---|---|---|---|---|---|---|---|---|---|---|
+| page | on | `bus-true` | −0.00 / −0.00 | 0.00 | 0.00 | −0.00 | 0.02 / 0.02 | −0.01..0.05 | 0/0/0/0 | 2 |
+| engine | on | `matches-known-defect` | 10.12 / 10.49 | 69.64 | 20.56 | 61.10 | 10.15 / 10.21 | −0.86..2.82 | 0/4/4/0 | 486 |
+| page | off | `bus-true` | −0.00 / −0.00 | 0.00 | 0.00 | −0.00 | 0.00 / −3.09 | −11.81..0.56 | 0/0/0/0 | 2 |
+| engine | off | `matches-known-defect` | 10.13 / 10.14 | 71.07 | 20.84 | 60.85 | 10.28 / 10.24 | −2.86..0.64 | 0/4/4/0 | 0 |
+
+- **`midi-out-main-thread-base` as on 0.0.177, to the note.** Inside-block medians 61.10 / 60.85 ms
+  (0.0.177: 60.46 / 60.96), max deviation 69.64 / 71.07 (71.22 / 69.57), late tail 20.56 / 20.84
+  (21.06 / 19.48), the same four off-before-on inversions per cell (extra = stuck = 4), live medians on
+  the delay between blocks. The rewritten wiring did not move the timestamp base: it is still the ring
+  read on the main thread. The three-tempo run (C) was not repeated yet.
 
 ## Findings
 
