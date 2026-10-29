@@ -1414,7 +1414,8 @@ same release for every live voice, so pausing rings out cleanly instead of
 hard-cutting. A position jump (a seek, a loop wrap, a marker jump) crossfades a plain,
 pitch-shifted or Signalsmith-stretched region over 5 ms: what was sounding at the old
 position fades out while the region at the new position fades in, unless the new position
-is that region's own start, which keeps its hard onset. Measured on synthetic loops: the step
+is that region's own start: then it starts as it always does (hard when it plays its file from
+the first frame, otherwise with the engine's 20 ms boundary declick). Measured on synthetic loops: the step
 a cut makes is gone; when what follows the loop end differs from the loop start, the level
 dips by about 3 dB for those 5 ms, and a hit sitting on the loop start comes out about 3 dB
 softer and 1 ms later on every repeat (when the bar after the loop end starts with the same

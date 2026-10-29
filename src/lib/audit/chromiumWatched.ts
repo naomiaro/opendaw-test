@@ -10,7 +10,8 @@ export type WatchedIssue =
   | "opfs-usage"
   | "opfs-flush"
   | "output-latency"
-  | "clock-drift";
+  | "clock-drift"
+  | "freeze";
 
 export const WATCHED_ISSUES: readonly WatchedIssue[] = [
   "first-read",
@@ -21,6 +22,7 @@ export const WATCHED_ISSUES: readonly WatchedIssue[] = [
   "opfs-flush",
   "output-latency",
   "clock-drift",
+  "freeze",
 ];
 
 function isWatchedIssue(value: string): value is WatchedIssue {

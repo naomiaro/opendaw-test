@@ -20,13 +20,14 @@ import { runRoundTripProbe } from "@/lib/audit/chromiumRoundTripProbe";
 import { runOutputLatencyProbe } from "@/lib/audit/chromiumOutputLatencyProbe";
 import { judgeStoredOpfsUsageOnLoad, runOpfsFlushProbe, runOpfsUsageProbe } from "@/lib/audit/chromiumOpfsProbe";
 import { AWAITING_HIDE, AWAITING_RETURN, clockDriftOptionsFrom, runClockDriftProbe } from "@/lib/audit/chromiumClockDriftProbe";
+import { AWAITING_FREEZE, judgeStoredFreezeOnLoad, runFreezeProbe } from "@/lib/audit/chromiumFreezeProbe";
 import "@radix-ui/themes/styles.css";
 import { Theme, Container, Heading, Text, Flex, Card, Callout, Badge, Button, Code, Table } from "@radix-ui/themes";
 import { InfoCircledIcon, PlayIcon } from "@radix-ui/react-icons";
 
 // Probes for the Chromium issues `docs/known-vendor-issues.md` watches, one per page load:
 //
-//   chromium-watched-issues-debug-demo.html?issue=first-read|bfcache|suspend-resume|capture-gaps|opfs-usage|opfs-flush|output-latency|clock-drift
+//   chromium-watched-issues-debug-demo.html?issue=first-read|bfcache|suspend-resume|capture-gaps|opfs-usage|opfs-flush|output-latency|clock-drift|freeze
 //
 // Parameters beyond `?issue=`, each read by its probe:
 //   bfcache         &midi=1 (Chromium 40635109: request Web MIDI access first, and judge whether the page is
@@ -93,6 +94,10 @@ const ISSUE_INFO: Record<WatchedIssue, IssueInfo> = {
     tracker: "40726491",
     title: "getOutputTimestamp's context ↔ performance relation wanders while outputLatency stays put",
   },
+  freeze: {
+    tracker: "575891839",
+    title: "AudioWorklet clock slows to ~0.5× after a page freeze → resume (comment #3)",
+  },
 };
 
 /** The bfcache probe's MIDI arm (`&midi=1`) probes another issue under the same page. */
@@ -133,6 +138,8 @@ function probeFor(issue: WatchedIssue): Probe {
       return new URLSearchParams(window.location.search).get("roundtrip") === "1" ? runRoundTripProbe : runOutputLatencyProbe;
     case "clock-drift":
       return (signal, report) => runClockDriftProbe(signal, report, clockDriftOptionsFrom(new URLSearchParams(window.location.search)));
+    case "freeze":
+      return runFreezeProbe;
   }
 }
 
@@ -150,6 +157,10 @@ function judgeStoredOnLoad(issue: WatchedIssue): Promise<ProbeEnvelope> | null {
     }
     case "opfs-usage":
       return judgeStoredOpfsUsageOnLoad();
+    case "freeze": {
+      const envelope = judgeStoredFreezeOnLoad();
+      return envelope === null ? null : Promise.resolve(envelope);
+    }
     default:
       return null;
   }
@@ -366,6 +377,18 @@ const App: React.FC<{ issue: WatchedIssue }> = ({ issue }) => {
           )}
           {state.kind === "running" && state.step === AWAITING_RETURN && (
             <Text size="2">Hidden phase sampled. Bring Chrome back (click it in the Dock); ten more seconds are sampled visible.</Text>
+          )}
+          {state.kind === "running" && state.step === AWAITING_FREEZE && (
+            <Text size="2">
+              Baseline measured. Freeze this page, then resume it: in this tab's DevTools (Settings → Experiments →
+              Protocol Monitor, once), Cmd+Shift+P → Protocol monitor, target set to this page (not the tab), send{" "}
+              <Code>Page.setWebLifecycleState</Code> with <Code>{'{"state":"frozen"}'}</Code>, wait a few seconds, then
+              send it with <Code>{'{"state":"active"}'}</Code>. The page waits up to two minutes; it sees the freeze by
+              its events or by its own timers stopping for three seconds or more. Not{" "}
+              <Code>chrome://discards</Code>' Discard: a discarded tab reloads on return, which this page records as NOT
+              CHECKED discarded-not-frozen. (In Playwright's Chrome the protocol call froze nothing: NOT CHECKED
+              no-freeze.)
+            </Text>
           )}
           {state.kind === "running" && state.step === AWAITING_NAVIGATION && (
             <Text size="2">

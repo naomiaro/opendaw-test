@@ -181,8 +181,18 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   Lifecycle, `Page.setWebLifecycleState` frozen → active for about 3 s), visible or background tab, Chrome
   and Edge 156 on macOS 26, a worklet context 1.000 → 0.500, a worklet-free context unaffected, gone with
   the same flag. A tab Chrome freezes in the background would come back at half speed with no navigation,
-  which `pageshow` with `persisted` never sees: the guard below does not cover it. A candidate until a
-  probe freezes a page here.
+  which `pageshow` with `persisted` never sees: the reload guard below does not cover it. A candidate until a
+  probe freezes a page here: `?issue=freeze` (two silent contexts, a worklet one and a worklet-free control,
+  measured before and after the document's `freeze` → `resume`; `NOT CHECKED no-freeze` when no freeze
+  arrives). In Playwright's Chrome the protocol's `Page.setWebLifecycleState` is accepted but delivers no
+  `freeze` event to a visible page (2026-10-29, run `mvtwaa9y-vgfv`, `NOT CHECKED no-freeze`, both clocks
+  0.98 at baseline); the reading needs the user's Chrome, with the same call sent from DevTools' Protocol
+  monitor. `chrome://discards`' Discard is no substitute: the tab reloads on return (`document.wasDiscarded`),
+  which the probe records as `NOT CHECKED discarded-not-frozen` (a first attempt that way, 2026-10-29, came
+  back reloaded, before the probe recorded it). Tried 2026-10-29 in the user's Chrome 155 and 156 (macOS
+  15.6.1) and stopped, not reproduced: a protocol freeze delivered no `freeze` event (the probe's heartbeat
+  now also catches a stopped page), and "active" did not reliably bring the page back (once frozen through a
+  reload, once blank). Not tried: a hidden tab, or a freeze Chrome makes on its own.
 - **Symptom here:** a page with a running context and a worklet node, restored from the cache
   (`pageshow.persisted` true), keeps `state: running` and runs its clock at half the wall clock in every
   window measured. Three one-second windows after the restore read 0.4867 / 0.4988 / 0.4986 and
@@ -209,6 +219,14 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   is deprecating that, and `Cache-Control: no-store` is no longer an absolute block in Chrome either.)
   Run the probe in a Chrome the user launched: Playwright's Chrome runs with
   `--disable-back-forward-cache` and reads `NOT CHECKED not-cached`.
+  For a freeze → resume the page keeps what the visitor had on it (an unexported take, say), so the
+  repair is the visitor's to choose: `initializeOpenDAW` also installs `installFreezeClockCheck`
+  (`src/lib/freezeClockCheck.ts`): on `resume` (once the context runs, if it was suspended) it lets the
+  clock settle for half a second, measures two one-second windows and, when both read under 0.75 of the
+  wall clock, shows a notice offering a reload and saying what a reload discards
+  (`src/lib/clockSlowNotice.ts`) instead of reloading. A `freeze` cancels a check in progress, so no window
+  spans frozen time; every outcome logs one `[freeze-clock-check]` debug line. Scope: `resume` only; a
+  renderer stopped and restarted without Page Lifecycle events (system sleep) is not checked.
 - **Evidence:** `debug/2026-10-22-chromium-watched-issues/note.md`, "bfcache"; probe
   `chromium-watched-issues-debug-demo.html?issue=bfcache`, envelopes `chromium-bfcache-mvk1sddg-wilz.json`
   and `chromium-bfcache-mvk1suit-b7ru.json`.

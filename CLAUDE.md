@@ -992,6 +992,14 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   resumed one: in-memory state (project, transport, React state) does not survive it; storage
   does. The SDK-free probe `chromium-watched-issues-debug-demo.html?issue=bfcache` does not boot
   through init and keeps measuring the raw behaviour.
+- A page Chrome FROZE and resumed (a background tab) is reported to come back at half speed too
+  (575891839 comment #3; a candidate, `?issue=freeze` is the probe). It keeps its state, so
+  `initializeOpenDAW` does NOT reload it: `installFreezeClockCheck` (`src/lib/freezeClockCheck.ts`)
+  measures two windows after `resume` (a `freeze` cancels a check in progress) and, when both run
+  under 0.75 of real time, shows a notice with a Reload button (`#clock-slow-notice`,
+  `src/lib/clockSlowNotice.ts`); each outcome logs a `[freeze-clock-check]` debug line. Playwright's Chrome does not
+  freeze a visible page through `Page.setWebLifecycleState`; freeze by hand in the user's Chrome from
+  DevTools' Protocol monitor (the same call). `chrome://discards`' Discard is not a freeze: the tab reloads.
 - Verify in-browser AUDIO demos by measuring the actual OUTPUT SIGNAL, not `isPlaying`/a
   disabled Play button — a transport reports "playing" while the engine renders silence
   (e.g. a note region with `loopDuration:0`). Tap output: monkeypatch

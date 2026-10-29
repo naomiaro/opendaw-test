@@ -1341,6 +1341,71 @@ is open), so a run does not depend on the system's default; `&gain=` sets the cl
   are missed (`NOT CHECKED n-of-10-clicks-found-missed-...`), raise the system volume or the earbud
   nearer, not the detector.
 
+### freeze (575891839, comment #3)
+
+Comment #3 on the bfcache tracker (2026-10-27, Chrome and Edge 156 on macOS 26) reports the same
+half-speed worklet clock after a plain Page Lifecycle freeze → resume, forced with the DevTools
+protocol's `Page.setWebLifecycleState` (frozen for about 3 s, then active), in a visible or a
+background tab: a ConstantSource → AudioWorkletNode → destination context reads 1.000 → 0.500, the
+same graph with a GainNode instead of the worklet 1.000 → 1.000, both 1.000 with
+`--disable-features=WebAudioBypassOutputBuffering`.
+
+**Probe** `?issue=freeze` (`src/lib/audit/chromiumFreezeProbe.ts`, judgement `chromiumFreeze.ts`):
+the tracker's two silent contexts, both clocks measured against the wall clock for 2 s, then the
+page waits up to two minutes for the document's `freeze` and `resume` events, then three one-second
+windows judged on all but the first. `HALF SPEED` when the worklet clock settles under 0.75 with the
+control at 0.9 or more, `NORMAL` when it does not, `NOT CHECKED no-freeze` when no `freeze` arrived
+(the positive control: the condition was not exercised), `control-slow` when both slowed,
+`context-<state>` when a context was not running after the resume.
+
+**Playwright's Chrome cannot exercise it (2026-10-29, Chrome 156.0.8078.49).** `Page.setWebLifecycleState`
+with `frozen`, then `active`, was accepted (no error) and delivered nothing to the visible page: no
+`freeze`, no `resume`, no `visibilitychange` (a listener on each, checked directly). The probe run
+around it (`chromium-freeze-mvtwaa9y-vgfv.json`) read `NOT CHECKED no-freeze`, both clocks 0.9833 at
+baseline. The reading needs the user's Chrome. A first attempt there through `chrome://discards`
+(2026-10-29) came back with the probe in its idle state and nothing saved: the tab had been discarded
+and reloaded, not frozen. The probe now leaves a note in `sessionStorage` while it waits, and a later
+load of the tab saves `NOT CHECKED discarded-not-frozen` (`document.wasDiscarded`) or
+`reloaded-before-resume` (checked in Playwright with a reload). The way to freeze it is the tracker's
+own: DevTools' Protocol monitor in the user's Chrome, `Page.setWebLifecycleState` frozen, then active.
+
+Attempts in the user's Chrome 155.0.8059.85 (macOS 15.6.1, 44.1 kHz), all on a visible tab, none
+judging the clock: `mvtwx2vs-0lje` and `mvtx2jkh-3gab` `NOT CHECKED reloaded-before-resume` (navigation
+type `reload`, not discarded: the run restarted, once around reopening DevTools for the Protocol Monitor
+experiment); `mvtx4obn-ql5g` `NOT CHECKED no-freeze` after the Protocol monitor call (no `freeze` in two
+minutes, both clocks 0.980 at baseline) — the Playwright result again. The reporter froze on Chrome and
+Edge 156. On Chrome 156.0.8078.74 (`mvtxcv5z-nb14`): the Protocol monitor first answered
+"'Page.setWebLifecycleState' wasn't found" (the command sent to the tab target, which has no Page
+domain); sent to the page target it was accepted, and DevTools reported the page in the back/forward
+cache, but the probe saw no `freeze` event and read `NOT CHECKED no-freeze`. So the probe now also
+watches a 250 ms heartbeat: a gap of 3 s or more is a stopped page whatever events arrived
+(`freezeSignal: timer-gap`, `maxTimerGapMs`). Checked in Playwright with a 4 s main-thread block, which
+is a stop but no freeze: `timer-gap` 4007 ms, then both clocks true, `NORMAL` (`mvtxjp5o-sifv`). A long
+synchronous task is the one thing the gap cannot tell from a freeze; nothing else runs on the page.
+
+Then two more attempts in the user's Chrome 156 with the heartbeat probe, neither measured: the frozen tab
+stayed frozen through "active" AND a reload (the page did not load until opened in a new tab); in the
+new tab, "active" refreshed the DevTools console and left the page blank, and nothing was saved. So on
+this Mac (Chrome 155 and 156, macOS 15.6.1) a page frozen through `Page.setWebLifecycleState` gets no
+`freeze` event and does not reliably come back on "active". The reporter's half-speed result cannot be
+reproduced by this route here. **Stopped 2026-10-29: not reproduced, the entry stays a candidate.** Not
+tried: the tab hidden behind another tab while frozen from undocked DevTools; a freeze Chrome makes on its
+own (a background tab under Energy Saver). The demos' check stands either way.
+
+**The repair in the demos is a check, not a reload.** A frozen page keeps what the visitor had on it
+(an unexported take), so `initializeOpenDAW` installs `installFreezeClockCheck`: on `resume` (once the
+context runs, if it was suspended) it waits 500 ms, measures two one-second windows, and when both read
+below 0.75 of the wall clock calls `showClockSlowNotice`, a fixed bar with Reload and Dismiss
+(`#clock-slow-notice`) that says a reload discards anything not exported. A `freeze` cancels a check in
+progress (its windows would span the freeze: with the clock rendering through it a slow clock reads
+true, with it paused a true clock reads slow), and every outcome logs one debug line. Node tests drive
+the check with a fake clock: slow, true, a one-window stall, suspended then running, a window the
+context left `running` in, and a freeze inside the window followed by a resume, with the clock running
+or standing still through it (the second fails on a check without the cancel). jsdom tests the bar.
+The probe refuses a run whose contexts left `running` during the windows or that froze again
+(`refrozen-during-windows`), and closes its contexts under a deadline. The bfcache reload guard is
+unchanged.
+
 ### Out of scope: the quota sentinel (541725401 / 40068799)
 
 The other half of the watched OPFS entry is `write()` returning an error sentinel instead of throwing
