@@ -52,6 +52,15 @@ function deadline<T>(promise: Promise<T>, ms: number, what: string): Promise<T> 
   });
 }
 
+/** Close a context without letting a close that hangs or throws hide what happened before it. */
+async function closeSafely(context: AudioContext, what: string): Promise<void> {
+  try {
+    await deadline(context.close(), DEADLINE_MS, `close (${what})`);
+  } catch (error) {
+    console.warn(`[freeze-probe] ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 function wait(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal.aborted) return reject(new Error("aborted"));
@@ -96,7 +105,7 @@ async function startWorkletContext(): Promise<AudioContext> {
     source.start();
     return context;
   } catch (error) {
-    await context.close();
+    await closeSafely(context, "worklet context");
     throw error;
   }
 }
@@ -110,7 +119,7 @@ async function startControlContext(): Promise<AudioContext> {
     source.start();
     return context;
   } catch (error) {
-    await context.close();
+    await closeSafely(context, "control context");
     throw error;
   }
 }
@@ -162,13 +171,25 @@ export async function runFreezeProbe(signal: AbortSignal, report: (step: string)
     const states = `${worklet.state}/${control.state}`;
     const workletAfter: ClockRatioSample[] = [];
     const controlAfter: ClockRatioSample[] = [];
-    if (freeze.resumed && worklet.state === "running" && control.state === "running") {
+    // A second freeze during the windows would put frozen time in them; a context leaving `running` would read as slow.
+    let refroze = false;
+    const onRefreeze = () => {
+      refroze = true;
+    };
+    let statesAfterWindows = states;
+    if (freeze.resumed && states === "running/running") {
       report("measure-after");
-      for (let i = 0; i < RESTORE_WINDOWS; i++) {
-        const pair = await measureBoth(worklet, control, RESTORE_WINDOW_SECONDS, signal);
-        workletAfter.push(pair.worklet);
-        controlAfter.push(pair.control);
+      document.addEventListener("freeze", onRefreeze);
+      try {
+        for (let i = 0; i < RESTORE_WINDOWS; i++) {
+          const pair = await measureBoth(worklet, control, RESTORE_WINDOW_SECONDS, signal);
+          workletAfter.push(pair.worklet);
+          controlAfter.push(pair.control);
+        }
+      } finally {
+        document.removeEventListener("freeze", onRefreeze);
       }
+      statesAfterWindows = `${worklet.state}/${control.state}`;
     }
     const judged = judgeFreeze({
       workletBefore: before.worklet,
@@ -178,8 +199,12 @@ export async function runFreezeProbe(signal: AbortSignal, report: (step: string)
       workletAfter,
       controlAfter,
     });
-    const notRunning = freeze.resumed && states !== "running/running";
-    const verdict = notRunning ? notChecked(`context-${states.replace("/", "-")}`) : judged.verdict;
+    const notRunning = freeze.resumed && (states !== "running/running" || statesAfterWindows !== "running/running");
+    const verdict = refroze
+      ? notChecked("refrozen-during-windows")
+      : notRunning
+        ? notChecked(`context-${(states !== "running/running" ? states : statesAfterWindows).replace("/", "-")}`)
+        : judged.verdict;
     return makeEnvelope(head, verdict, {
       workletRatioBefore: round(judged.workletRatioBefore, 4),
       controlRatioBefore: round(judged.controlRatioBefore, 4),
@@ -191,12 +216,14 @@ export async function runFreezeProbe(signal: AbortSignal, report: (step: string)
       resumed: freeze.resumed ? "true" : "false",
       frozenMs: round(freeze.frozenMs, 0),
       statesAfterResume: states,
+      statesAfterWindows,
+      refrozeDuringWindows: refroze ? "true" : "false",
       sampleRate: worklet.sampleRate,
       chromeFullVersion: platform.uaFullVersion,
       osVersion: platform.platformVersion,
     });
   } finally {
-    await worklet.close();
-    if (control !== null) await control.close();
+    await closeSafely(worklet, "worklet context");
+    if (control !== null) await closeSafely(control, "control context");
   }
 }

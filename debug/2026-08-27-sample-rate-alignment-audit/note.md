@@ -601,7 +601,8 @@ note above and the Step 2 write-up).
 SDK 0.0.179 crossfades audio regions over 5 ms at every discontinuous block (a seek, a loop
 wrap, a marker repeat): the read still sounding at the old position is released as a
 fade-out tail, and a region entered partway in fades in; a region entered at its own start
-keeps its hard onset. Before, the jump was a hard cut. None of the nine families above saw
+gets no jump fade-in (it starts as before: hard from the file's first frame, with the 20 ms
+boundary declick from anywhere later). Before, the jump was a hard cut. None of the nine families above saw
 it: `loop-wrap` plays a note region. Three families now cover it
 (`src/lib/audit/audioWrapFixtures.ts`, tested in Node against a simulated cut and a
 simulated crossfade in `audioWrapFixtures.test.ts`). Shared geometry: one audio region from

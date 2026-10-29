@@ -216,9 +216,12 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   `--disable-back-forward-cache` and reads `NOT CHECKED not-cached`.
   For a freeze → resume the page keeps what the visitor had on it (an unexported take, say), so the
   repair is the visitor's to choose: `initializeOpenDAW` also installs `installFreezeClockCheck`
-  (`src/lib/freezeClockCheck.ts`), which on `resume` measures the running context's clock for a second
-  after half a second's settle and, under 0.75 of the wall clock, shows a notice offering a reload
-  (`src/lib/clockSlowNotice.ts`) instead of reloading.
+  (`src/lib/freezeClockCheck.ts`): on `resume` (once the context runs, if it was suspended) it lets the
+  clock settle for half a second, measures two one-second windows and, when both read under 0.75 of the
+  wall clock, shows a notice offering a reload and saying what a reload discards
+  (`src/lib/clockSlowNotice.ts`) instead of reloading. A `freeze` cancels a check in progress, so no window
+  spans frozen time; every outcome logs one `[freeze-clock-check]` debug line. Scope: `resume` only; a
+  renderer stopped and restarted without Page Lifecycle events (system sleep) is not checked.
 - **Evidence:** `debug/2026-10-22-chromium-watched-issues/note.md`, "bfcache"; probe
   `chromium-watched-issues-debug-demo.html?issue=bfcache`, envelopes `chromium-bfcache-mvk1sddg-wilz.json`
   and `chromium-bfcache-mvk1suit-b7ru.json`.

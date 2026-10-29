@@ -9,8 +9,9 @@ export const CLOCK_SLOW_NOTICE_ID = "clock-slow-notice";
 
 export function clockSlowMessage(ratio: number): string {
   return (
-    `Chrome slowed this page's audio after the tab was frozen in the background: it is running at ` +
-    `${Math.round(ratio * 100)}% speed, lower and distorted. Reload the page to fix it.`
+    `Your browser slowed this page's audio after the tab was frozen in the background: it is running at ` +
+    `${Math.round(ratio * 100)}% speed, lower and distorted. Reload the page to fix it — a reload discards ` +
+    `anything you have not exported.`
   );
 }
 
@@ -63,6 +64,6 @@ export function showClockSlowNotice(doc: Document, ratio: number, reload: () => 
     return element;
   };
   bar.append(text, button("Reload", true, reload), button("Dismiss", false, () => bar.remove()));
-  doc.body.append(bar);
+  (doc.body ?? doc.documentElement).append(bar);
   return bar;
 }

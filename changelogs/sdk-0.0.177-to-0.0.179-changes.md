@@ -10,8 +10,9 @@ instrument. What matters for this repo:
 1. **A position jump crossfades audio regions over 5 ms** — at a seek, a loop wrap or a marker
    jump, every native or pitch read still sounding at the old position is released as a
    fade-out tail, and a region entered partway in fades in over the same 5 ms; a region entered
-   at its own start keeps its hard onset (native, pitch and Signalsmith regions; a granular
-   region is reset as before). Audio sounding across a wrap, mid-region, used to hard-cut. **This
+   at its own start gets no jump fade-in and starts as before (hard from the file's first frame,
+   the 20 ms boundary declick from anywhere later; native, pitch and Signalsmith regions; a
+   granular region is reset as before). Audio sounding across a wrap, mid-region, used to hard-cut. **This
    changes what the demos play** at every loop wrap and seek over an audio region (no click
    now); no demo reads a value from it, and the standing sweeps do not measure it (their
    loop-wrap family plays a note region) — see follow-ups.

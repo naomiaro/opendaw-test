@@ -995,8 +995,9 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
 - A page Chrome FROZE and resumed (a background tab) is reported to come back at half speed too
   (575891839 comment #3; a candidate, `?issue=freeze` is the probe). It keeps its state, so
   `initializeOpenDAW` does NOT reload it: `installFreezeClockCheck` (`src/lib/freezeClockCheck.ts`)
-  measures the clock on `resume` and, when it runs under 0.75 of real time, shows a notice with a
-  Reload button (`#clock-slow-notice`, `src/lib/clockSlowNotice.ts`). Playwright's Chrome does not
+  measures two windows after `resume` (a `freeze` cancels a check in progress) and, when both run
+  under 0.75 of real time, shows a notice with a Reload button (`#clock-slow-notice`,
+  `src/lib/clockSlowNotice.ts`); each outcome logs a `[freeze-clock-check]` debug line. Playwright's Chrome does not
   freeze a visible page through `Page.setWebLifecycleState`; freeze by hand from `chrome://discards`.
 - Verify in-browser AUDIO demos by measuring the actual OUTPUT SIGNAL, not `isPlaying`/a
   disabled Play button — a transport reports "playing" while the engine renders silence

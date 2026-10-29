@@ -1366,11 +1366,18 @@ baseline. The reading needs the user's Chrome: background the tab, `chrome://dis
 Freeze action, back to the tab. Not measured yet.
 
 **The repair in the demos is a check, not a reload.** A frozen page keeps what the visitor had on it
-(an unexported take), so `initializeOpenDAW` installs `installFreezeClockCheck`: on `resume`, if the
-context is running, it waits 500 ms, measures the clock for 1 s, and below 0.75 of the wall clock
-calls `showClockSlowNotice`, a fixed bar with Reload and Dismiss (`#clock-slow-notice`). Node tests
-drive the check with a fake clock (slow, true, suspended, one check at a time); jsdom tests the bar
-(shown, reload only on Reload, dismissed, one bar). The bfcache reload guard is unchanged.
+(an unexported take), so `initializeOpenDAW` installs `installFreezeClockCheck`: on `resume` (once the
+context runs, if it was suspended) it waits 500 ms, measures two one-second windows, and when both read
+below 0.75 of the wall clock calls `showClockSlowNotice`, a fixed bar with Reload and Dismiss
+(`#clock-slow-notice`) that says a reload discards anything not exported. A `freeze` cancels a check in
+progress (its windows would span the freeze: with the clock rendering through it a slow clock reads
+true, with it paused a true clock reads slow), and every outcome logs one debug line. Node tests drive
+the check with a fake clock: slow, true, a one-window stall, suspended then running, a window the
+context left `running` in, and a freeze inside the window followed by a resume, with the clock running
+or standing still through it (the second fails on a check without the cancel). jsdom tests the bar.
+The probe refuses a run whose contexts left `running` during the windows or that froze again
+(`refrozen-during-windows`), and closes its contexts under a deadline. The bfcache reload guard is
+unchanged.
 
 ### Out of scope: the quota sentinel (541725401 / 40068799)
 

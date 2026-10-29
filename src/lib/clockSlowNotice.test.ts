@@ -19,6 +19,7 @@ describe("showClockSlowNotice", () => {
     expect(bar.getAttribute("role")).toBe("alert");
     expect(bar.textContent).toContain("50% speed");
     expect(bar.textContent).toContain("Reload the page");
+    expect(bar.textContent).toContain("discards anything you have not exported");
     expect(warn).toHaveBeenCalledOnce();
   });
 
