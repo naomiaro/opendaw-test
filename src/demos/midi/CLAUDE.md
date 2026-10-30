@@ -197,14 +197,17 @@ Available instrument adapters (each implements `InstrumentDeviceBoxAdapter`):
 `capture.captureNoteOnCount` (observable) increments when an armed capture receives a note-on outside recording — read it before/after a key press to prove MIDI reached the capture without any audio tap. If it increments but output RMS is 0, the fault is engine-side rendering, not MIDI routing.
 
 ### Where a Recorded Note Lands
-`RecordMidi` places a key at its MIDI event's `timeStamp` (carried on `NoteSignalOn` /
-`NoteSignalOff`; a stamp in the future counts as now), extrapolating the engine position
-between two playhead updates at the engine's live BPM — never across an enabled loop end
-while takes are allowed, where the engine wraps — plus the output-latency term (converted to
-pulses once at arm time, at that moment's BPM), and writes the note's duration at key-up — so
-a late handler (GC, main-thread jank) does not delay a note and a tap shorter than one
-playhead update keeps its real length. An audition signal, or a hand-built `noteSignal`
-without a stamp, is placed at `performance.now()`.
+`RecordMidi` places a key at the HEARD context time of its MIDI event's `timeStamp`
+(carried on `NoteSignalOn` / `NoteSignalOff`; a stamp in the future counts as now):
+`CaptureMidi`'s clock maps the stamp through `audioContext.getOutputTimestamp()`
+(`BrowserContextClock.audibleTimeAt`) and subtracts `engine.compensationLatency`, and the
+position is what a `TransportLog` of the engine's transport anchors (start, every jump, stop,
+in context time) extrapolates for that time. A release is written from its own stamp
+(`transport.advance(on, off)`, jumps excluded), so a late handler (GC, main-thread jank)
+moves neither the note nor its length. A key heard past the loop end before the wrap's anchor
+arrived waits and is replayed into the new take. Firefox stamps on a clock of its own
+(`MidiClock` converts it). An audition signal, or a hand-built `noteSignal` without a stamp,
+is placed at `performance.now()`.
 
 ### Loop Switch on the MIDI Recording Demo
 `useTimelineLoop(project, { from: 0, to: 4 bars, enabled: false })`. Off: a recording is one
@@ -252,7 +255,10 @@ picks another). Register: `debug/2026-10-20-midi-input-alignment/note.md`.
   lead opens a third take; the note ON the loop end is
   `wrapAdjacent` and reported, not judged — the SDK writes a key pressed between the loop end
   and the wrap update into the old take).
-- **What the recorder does, as measured.** `RecordMidi` writes the extrapolated RENDERED
+- **What the recorder did, as measured before the capture rewrite** (openDAW#491 / #492
+  CLOSED with it; the IAC sweep has not re-run since, so the bands below describe the old
+  recorder — a cell reading `aligned`, or `investigate` on a median near 0, is the fix
+  arriving, and the register then needs a new reading). `RecordMidi` wrote the extrapolated RENDERED
   position plus the output latency, from a per-frame position read that is a frame old
   (single-slot handoff refilled after each read), so every note lands about
   `2 × outputLatency − (frame − quantum)` past the heard beat, the same at every tempo;

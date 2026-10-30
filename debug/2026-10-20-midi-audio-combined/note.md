@@ -4,6 +4,13 @@
 
 **SDK Pin:** `@opendaw/studio-sdk@0.0.176` (installed npm package; WASM engine only)
 
+**SDK 0.0.180 (2026-10-30):** the MIDI side's +33 ms (openDAW#491) is closed by the capture rewrite;
+the MIDI recorder now places a key at its stamp's heard context time. Not re-measured: expect the
+calibrated cell's key to land near the sound instead of 33 ms after it, and the uncalibrated cell
+to read about the input part apart (the audio late, the key on the beat), not 31 ms the other way.
+The page's guard against a stored round trip is not needed: it sets the Tape's own `inputLatency`,
+which wins over one.
+
 **Harness:** unlisted debug demo
 `midi-audio-combined-audit-debug-demo.html?scenario=<nominal-start|countin-start|janked-mid|all>&bpm=<n>[&repeats=<n>][&state=<default|calibrated|both>][&bus=<substring>][&input=<substring>][&output=<substring>][&audible=1]`
 on the dev server, Chrome on macOS, a real click on "Run audit" (microphone permission, MIDI

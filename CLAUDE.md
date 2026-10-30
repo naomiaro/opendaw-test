@@ -104,10 +104,26 @@ project.engine.countInBeatsRemaining.catchupAndSubscribe(obs => {
   const beats = Math.ceil(obs.getValue());
 });
 // Every observable above refreshes once per animation frame with the first quantum the engine
-// wrote after the previous read — never older than a frame. RecordMidi extrapolates between
-// frames from the MIDI event's timeStamp; RecordAudio ends a take at the engine's stop stamp
-// (`engine.recordingStop`, netted by the start's latencies) and waits for the input in flight.
+// wrote after the previous read — never older than a frame. The recorders do not wait for a
+// frame: `engine.subscribeTransportAnchors` reports every start, jump (loop wrap, seek) and stop
+// in context time as the engine rendered it. RecordAudio cuts a loop take at the wrap anchor and
+// ends at the engine's stop stamp (`engine.recordingStop`, netted by the start's latencies),
+// waiting for the input in flight; RecordMidi maps a MIDI event's timeStamp to the heard context
+// time (`getOutputTimestamp`) and places it on that anchor log. A recording finishes on the stop
+// anchor even on a hidden page (`project.recordingSession`, one per project).
 ```
+
+### Measured Round Trip Replaces Reported Latencies
+`CaptureAudio.measureRoundTrip()` plays three noise bursts, finds them in the input and, on a
+steady result, saves the delay in `localStorage["opendaw:round-trips"]`, one entry per output
+device name + input label + sample rate (`roundTrip`, `forgetRoundTrip()`,
+`subscribeRoundTrip()`; `project.captureDevices.audio(uuid)` returns the `Option<CaptureAudio>`).
+From then on every Tape whose own `captureBox.inputLatency` is Inherit (−2, the default) records
+with that figure as the output latency and 0 as the input latency — the engine preference
+`recording.inputLatency` is not read. A track's own value (0 included) wins over the entry. The
+entry is shared by every page on the origin, so an audit that leaves its Tapes on Inherit must
+refuse to run while any entry is stored (`src/lib/audit/storedRoundTrips.ts`; measured: a 50 ms
+entry moved a loopback take from +1.15 to −25.85 ms netted).
 
 ### Engine Preferences (SDK 0.0.87+)
 ```typescript

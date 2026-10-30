@@ -61,7 +61,8 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   three natural events, forced churn); SDK-free probe `worklet-clock-debug-demo.html`; forced with
   `&graphChurn=on` on the recording-alignment harness (48 of 48 rows at 0 / 0 quanta since the
   workaround); natural tally `node scripts/audit/recording-alignment/one-quantum-events.ts`.
-- **Last checked:** 2026-10-29 (SDK 0.0.179 sweep: 0 events in 76 repeats, forced 48 / 48). The
+- **Last checked:** 2026-10-30 (SDK 0.0.180 sweep, Chrome 156.0.8078.74: 0 events in 76 repeats, forced
+  48 / 48, as on 0.0.179). The
   browser is unchanged; re-read the tracker at each SDK upgrade and retire the repairs only on a
   Chrome that reads true under the probe.
 
@@ -164,8 +165,9 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
 - **Evidence:** `debug/2026-10-22-chromium-watched-issues/note.md`, "first-read"; probe
   `chromium-watched-issues-debug-demo.html?issue=first-read`, envelope
   `chromium-first-read-mvk1dr2x-2os8.json` (each run's raw frames).
-- **Last checked:** Chrome 156.0.8078.49, macOS, Playwright's Chrome, 2026-10-29 (SDK 0.0.179 sweep):
-  `STALE FIRST READ`, 14 of 15 runs (none 4, large 5, slow 5; `chromium-first-read-mvtrhq4m-4ncj.json`),
+- **Last checked:** Chrome 156.0.8078.74, macOS, Playwright's Chrome, 2026-10-30 (SDK 0.0.180 sweep):
+  `STALE FIRST READ`, 15 of 15 runs (none 5, large 5, slow 5; `chromium-first-read-mvvenof5-os3b.json`).
+  Chrome 156.0.8078.49, 2026-10-29 (SDK 0.0.179 sweep): `STALE FIRST READ`, 14 of 15 runs (none 4, large 5, slow 5; `chromium-first-read-mvtrhq4m-4ncj.json`),
   as on Chrome 155 (2026-10-22, 14 of 15).
 
 ### Chromium [575891839](https://issues.chromium.org/issues/575891839) — the worklet clock runs at half speed after a back/forward-cache restore
@@ -308,8 +310,10 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   `HALF RATE`); controls `…-mvk67nwz-e5jp.json` (no stall, `CLEAN`), `…-mvk66w4s-yjmr.json` (Blob
   module), `…-mvk69i2k-w85k.json` (500 ms gap), `…-mvk66fux-d534.json` (5 cycles, `NOT CHECKED`);
   microphone-only candidates `…-mvk5pda3-2kmc.json`, `…-mvk5rajg-qii2.json`, `…-mvk68gjz-2bwp.json`.
-- **Last checked:** Chrome 156.0.8078.49, macOS 15.6.1, 2026-10-29 (SDK 0.0.179 sweep): `HALF RATE` on
-  two of three `?issue=suspend-resume&tracker=1` runs (`…-mvtripnh-mnvz.json`, `…-mvtrje1q-c5dz.json`:
+- **Last checked:** Chrome 156.0.8078.74, macOS 15.6.1, 2026-10-30 (SDK 0.0.180 sweep): `HALF RATE` on the
+  first run (`chromium-suspend-resume-mvvenrus-8onb.json`: clock ratio 0.487 from cycle 4, 172.3 calls per
+  second after against 345 before, baseline purity 66.5 dB). Chrome 156.0.8078.49, 2026-10-29 (SDK 0.0.179
+  sweep): `HALF RATE` on two of three `?issue=suspend-resume&tracker=1` runs (`…-mvtripnh-mnvz.json`, `…-mvtrje1q-c5dz.json`:
   172.3 calls per second after, clock ratio down to 0.48, the second from cycle 7), and `CLEAN` on the
   first (`…-mvtrhtvp-5auq.json`: 20 cycles at 344.4 calls per second, purity 66.5 dB throughout). The
   race does not fire on every run, so one `CLEAN` row on a new Chrome is not a fix: run the row three
@@ -432,8 +436,9 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   times, on the built-in and a USB microphone at both rates; one zero run just after 30 s of silent
   output, none with dither, on the built-in microphone. The loopback rows again on Chrome 156.0.8078.49,
   2026-10-29 (SDK 0.0.179 sweep): `CLEAN` at 48 000, `START GAPS` at 44 100 with the one 441-frame run
-  441 frames after the tone (`chromium-capture-gaps-mvtrn8ia-fvqb.json`); the microphone rows were not
-  run on 156.
+  441 frames after the tone (`chromium-capture-gaps-mvtrn8ia-fvqb.json`); again on Chrome 156.0.8078.74,
+  2026-10-30 (SDK 0.0.180 sweep): `CLEAN` at 48 000, `START GAPS` with one 441-frame start run at 44 100.
+  The microphone rows were not run on 156.
 
 ### Chromium [40726491](https://issues.chromium.org/issues/40726491) — `getOutputTimestamp()`'s context ↔ performance relation wanders: a sawtooth of one device buffer on a context at the other rate than the device's, single early steps at the device's rate
 
@@ -513,7 +518,9 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
 - **Last checked:** the flush: not slow on Chrome 155.0.8059.85 / macOS 15.6.1, 2026-10-22, probe
   `?issue=opfs-flush`, `MEASURED`: median 0.53–0.57 ms per 1 MiB flush, 1.44–1.46 ms per 16 MiB, in two
   runs (one 25.65 ms outlier among 40 16 MiB flushes); Chrome 156.0.8078.49, 2026-10-29 (SDK 0.0.179
-  sweep): median 0.63 ms per 1 MiB (max 1.16), 1.53 ms per 16 MiB (max 1.60), one run
+  sweep): median 0.63 ms per 1 MiB (max 1.16), 1.53 ms per 16 MiB (max 1.60), one run; Chrome
+  156.0.8078.74, 2026-10-30 (SDK 0.0.180 sweep): median 0.80 ms per 1 MiB (max 1.55), 1.66 ms per 16 MiB
+  (max 1.88), one run (`chromium-opfs-flush-mvver78d-6u51.json`), the in-session `opfs-usage` `COUNTED`
   (`chromium-opfs-flush-mvtrnk3s-cf8v.json`). The tracker's claim is a comparison with other
   browsers, which this repo does not make. The sentinel: no probe, out of scope; it needs the origin's
   quota exhausted or an incognito profile.
@@ -536,7 +543,9 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   the stamp a `MIDIMessageEvent` carries is what the new path assigns. Nothing attributable to it has been seen: the
   placement findings ([openDAW#491](https://github.com/andremichelle/openDAW/issues/491),
   [#492](https://github.com/andremichelle/openDAW/issues/492), [#493](https://github.com/andremichelle/openDAW/issues/493)) are explained by the SDK's own arithmetic (the latency term's sign
-  and a frame-stale position base, `debug/2026-10-20-midi-input-alignment/note.md`). No open Chromium issue concerns `MIDIMessageEvent.timeStamp`, MIDI input latency or jitter
+  and a frame-stale position base, `debug/2026-10-20-midi-input-alignment/note.md`); #491 and #492 closed with the
+  SDK's capture rewrite (0.0.180), whose recorder maps the stamp through `getOutputTimestamp()` — the stamp is now the
+  only input, so a band that moves on the next IAC sweep reads against this entry first. No open Chromium issue concerns `MIDIMessageEvent.timeStamp`, MIDI input latency or jitter
   (searched 2026-10-23: `midi` with timestamp, latency, jitter, CoreMIDI and IAC), so the campaign's +32 ms has no
   vendor candidate.
 - **Last checked:** 2026-10-23 (tracker read; no probe — the sweeps are the measurement).
@@ -683,19 +692,23 @@ and the feature requests for virtual ports ([41487942](https://issues.chromium.o
   with an analysis that it is not Wasm-specific: an AudioWorklet's thread and heap outlive the page, so whatever the
   processor references (a `WebAssembly.Memory`, a `SharedArrayBuffer`) stays resident after each reload, and even an
   empty processor leaks its thread; the eighth load of a page with a 256 MB memory in its processor fails with
-  "Out of memory". Pull request [77672](https://github.com/WebKit/WebKit/pull/77672) open (2026-10-20). See also [272813](https://bugs.webkit.org/show_bug.cgi?id=272813).
+  "Out of memory". Pull request [77672](https://github.com/WebKit/WebKit/pull/77672) landed on WebKit trunk as 325251@main and the bug
+  was RESOLVED FIXED on 2026-10-30; no shipping Safari carries it yet. See also [272813](https://bugs.webkit.org/show_bug.cgi?id=272813).
 - **Where it bites here:** the engine runs in a worklet with its Wasm memory; a demo reloaded many times in one Safari
   tab would eventually fail to boot. Not measured here (the reload cases measured so far are Chrome's).
 - **Workaround:** none in the SDK; open the page in a new tab instead of reloading, until the fix ships.
-- **Last checked:** 2026-10-22 (tracker read).
+- **Last checked:** 2026-10-30 (tracker read: fixed on trunk). Stays watched until a Safari release with 325251@main is
+  measured here.
 
 ### WebKit [327552](https://bugs.webkit.org/show_bug.cgi?id=327552) — previously played audio is heard when resuming a context that has a worklet
 
 - **Tracker:** [bugs.webkit.org 327552](https://bugs.webkit.org/show_bug.cgi?id=327552), new, 2026-10-14, macOS 26 nightly: after `suspend()` then
   `resume()` a stretch of the pre-suspend audio plays, the worklet's `process()` is then called rapidly as the clock
-  catches up, and the audio clock has a discontinuity; Chromium resumes smoothly. Pull request [77683](https://github.com/WebKit/WebKit/pull/77683) open.
+  catches up, and the audio clock has a discontinuity; Chromium resumes smoothly. Pull request [77683](https://github.com/WebKit/WebKit/pull/77683) landed
+  on WebKit trunk as 325183@main and the bug was RESOLVED FIXED on 2026-10-29; no shipping Safari carries it yet.
 - **Where it bites here:** nothing here suspends a context; the browser's own iOS suspension and resume would.
-- **Last checked:** 2026-10-22 (tracker read).
+- **Last checked:** 2026-10-30 (tracker read: fixed on trunk). Stays watched until a Safari release with 325183@main is
+  measured here.
 
 ### WebKit [327275](https://bugs.webkit.org/show_bug.cgi?id=327275) — a background tab holding a Web Audio context glitches audio system-wide (macOS 27)
 
@@ -811,7 +824,9 @@ upstream tracker, or are by design.
 - **Last checked:** the hidden-page behaviour and the driver on 2026-10-21 (`cover` rows on SDK 0.0.176:
   the window driver's three rows intact, hidden-safe `start` intact, hidden-safe `mid` / `stop` not yet
   measured by hand); the three `modal` rows, which block frames by other means, re-run intact on 0.0.177
-  on 2026-10-22.
+  on 2026-10-22, on 0.0.179 and on 0.0.180 (2026-10-30: alerts up 13.0 / 5.0 / 10.9 s, every take intact; 0.0.180
+  finalizes on the engine's stop anchor, and the `stop` row still waited the dialog out, 10 955 ms, the anchor's handler
+  being main-thread too).
 
 ### Chrome — each `MediaStreamAudioSourceNode` delivers its stream with a delay of its own
 
@@ -828,7 +843,9 @@ upstream tracker, or are by design.
   netted skew; a raw multi-mic skew is never quoted as an SDK finding. A worklet module must be loaded
   before the first take (a load still running delays that take's first frame, 117 ms measured).
 - **Evidence:** `debug/2026-09-02-recording-start-alignment/note.md` (stream-tap measurement, repo PRs [#136](https://github.com/naomiaro/opendaw-test/pull/136) and [#138](https://github.com/naomiaro/opendaw-test/pull/138)).
-- **Last checked:** 2026-10-29 (SDK 0.0.179 sweep: 32 multi-mic rows, raw skew accounted for by the node delays on every repeat; one janked repeat read −9.33 ms raw, 0.00 left over).
+- **Last checked:** 2026-10-30 (SDK 0.0.180 sweep: 32 multi-mic rows, raw skew 0.00 on all 16 repeats, node delays 12.0–21.3 ms;
+  the SDK now rebuilds a live input's source node 250 ms after another stream opens, and the taps saw one node per tape per
+  repeat on 29 of 32 tapes, as on 0.0.179). 2026-10-29 (SDK 0.0.179 sweep: one janked repeat read −9.33 ms raw, 0.00 left over).
 
 ### Chrome — a `MediaStreamAudioDestinationNode` stream is re-timed once every source feeding it has ended
 

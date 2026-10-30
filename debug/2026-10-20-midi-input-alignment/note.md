@@ -11,6 +11,14 @@ main-thread block is written far too short;
 [openDAW#493](https://github.com/andremichelle/openDAW/issues/493) count-in pickup notes dropped
 or snapped to the downbeat. Bodies as filed under `drafts/posted-openDAW-49x-*.md`.
 
+**Closed (2026-10-30):** #491 and #492 are CLOSED by the maintainer's capture rewrite, shipped in
+SDK 0.0.180 (`RecordMidi` places a key at its stamp's heard context time on the engine's
+transport anchors; the release is written from its own stamp). Not yet re-measured here: the
+sweep needs the IAC bus and a real click. Expect the `midi-late` / `midi-late-release-lost` bands
+to stop matching — a cell that reads `aligned`, or `investigate` on a median near 0, is the fix,
+not a regression; the bands then describe 0.0.179 and earlier. #493 stays open (the recorder still
+holds a pre-downbeat key and writes it at position 0).
+
 **Harness:** unlisted debug demo
 `midi-input-alignment-audit-debug-demo.html?scenario=<name|all>&bpm=<n|all>[&repeats=<n>][&bus=<substring>][&audible=1]`
 on the dev server, Chrome on macOS, a real click on "Run audit". The loopback is a virtual

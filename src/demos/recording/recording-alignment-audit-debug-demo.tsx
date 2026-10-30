@@ -122,6 +122,7 @@ import {
   formatMilliseconds,
 } from "@/lib/audit/recordingAuditArtifacts";
 import { BAR_PPQN } from "@/lib/audit/auditExpectations";
+import { assertNoStoredRoundTrip } from "@/lib/audit/storedRoundTrips";
 // Single-tape per-repeat runner and its waits, shared with the input-latency
 // calibration page (src/demos/recording/input-latency-calibration-debug-demo.tsx)
 // so both measure and classify a cell exactly the same way.
@@ -1160,6 +1161,7 @@ async function runMultitrackCellRepeat(
   settings.recording.allowTakes = true;
   settings.recording.olderTakeAction = "mute-region";
   settings.recording.inputLatency = 0;
+  assertNoStoredRoundTrip();
   const { loopArea } = project.timelineBox;
   project.editing.modify(() => {
     loopArea.from.setValue(0);

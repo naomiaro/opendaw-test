@@ -43,6 +43,7 @@ import {
 import { ALIGNED_TOLERANCE_MS } from "@/lib/audit/recordingAuditCalibration";
 import { FrameWatch } from "@/lib/audit/midiInputCellRunner";
 import { BAR_PPQN } from "@/lib/audit/auditExpectations";
+import { assertNoStoredRoundTrip } from "@/lib/audit/storedRoundTrips";
 import { classifyRow, classifyTake, frameBlockedMs, positionFrozenMs, syncResumeMs, type PositionSample, type TakeFigures } from "@/lib/audit/hiddenRecordingVerdict";
 import {
   HIDDEN_RECORDING_SCHEMA_VERSION, summaryFileName, type HiddenRecordingDriver, type HiddenRecordingHideAt, type HiddenRecordingInterrupt,
@@ -229,6 +230,7 @@ async function runTake({ ctx, params, label, interrupt, setState, setHideNow, on
     // The hide wait comes first for a `start` cover: the reference clicks that anchor the buffer run
     // about a minute, and a hand that takes longer than that would leave the take without an anchor.
     if (params.hideAt === "start" && params.interrupt === "cover") await doInterrupt();
+    assertNoStoredRoundTrip();
     schedule = buildReferenceSchedule(audioContext.currentTime + 0.2, 120, 0.25, 0.005);
     loopback.scheduleReferenceClicks(schedule.times);
     recordRequestContextTime = audioContext.currentTime;

@@ -1285,7 +1285,7 @@ Automation recording is controlled by a recording preference (default: `true`):
 project.engine.preferences.settings.recording.automationEnabled = true;
 ```
 
-When enabled, `Recording.start()` subscribes `RecordAutomation` to parameter write events. Every parameter write during recording is captured — there is no per-parameter arming step.
+When enabled, the recording session (`project.recordingSession.start()`, which `Recording.start()` and `project.startRecording()` call) subscribes `RecordAutomation` to parameter write events. Every parameter write during recording is captured — there is no per-parameter arming step.
 
 #### Programmatic API
 
