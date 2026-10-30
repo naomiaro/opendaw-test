@@ -13,6 +13,9 @@ describe("storedRoundTripRefusal", () => {
     expect(storedRoundTripRefusal("[]")).toBeNull();
     expect(storedRoundTripRefusal("not json")).toBeNull();
     expect(storedRoundTripRefusal(JSON.stringify([{ output: "x" }]))).toBeNull();
+    // The SDK ignores an entry without `measuredAt`, so the page must not refuse on one.
+    const { measuredAt: _measuredAt, ...withoutMeasuredAt } = entry;
+    expect(storedRoundTripRefusal(JSON.stringify([withoutMeasuredAt]))).toBeNull();
     expect(() => assertNoStoredRoundTrip(storageWith(null))).not.toThrow();
   });
 

@@ -43,7 +43,6 @@ import {
 } from "@/lib/audit/recordingAuditCalibration";
 import type { AuditRow, FinalizeProbe } from "@/lib/audit/recordingAuditArtifacts";
 import { BAR_PPQN } from "@/lib/audit/auditExpectations";
-import { assertNoStoredRoundTrip } from "@/lib/audit/storedRoundTrips";
 
 /** Finalization barrier deadline, shared by every take-finalizing wait on both pages. */
 export const FINALIZE_DEADLINE_MS = 30_000;
@@ -583,7 +582,6 @@ export async function runCellRepeat(options: CellRepeatOptions): Promise<CellRep
   settings.recording.allowTakes = true;
   settings.recording.olderTakeAction = "mute-region";
   settings.recording.inputLatency = 0;
-  assertNoStoredRoundTrip();
 
   // Loop area only for loop-wrap; disabled otherwise (same editing.modify).
   const { loopArea } = project.timelineBox;

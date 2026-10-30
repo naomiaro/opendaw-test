@@ -46,7 +46,7 @@ project.startRecording(countIn)
 ```
 
 Key classes in the pipeline:
-- **`RecordingSession`** — `project.recordingSession`, one per project: arms the captures, drives the engine and finalizes when the engine reports its stop (`engine.subscribeTransportAnchors`), so a recording on a hidden page still finishes. `isRecording`, `wasCountingIn`, `startPosition`
+- **`RecordingSession`** — `project.recordingSession`, one per project: prepares and records the armed captures, drives the engine and finalizes when the engine reports its stop (`engine.subscribeTransportAnchors`), so a recording on a hidden page still finishes. `isRecording`, `wasCountingIn`, `startPosition`
 - **`Recording`** — Static facade kept for SDK consumers (`Recording.start`, `Recording.isRecording` = any project records)
 - **`CaptureDevices`** — Manages collection of capture devices on the project
 - **`CaptureAudio`** — Audio-specific capture (microphone, line input)
@@ -466,7 +466,9 @@ project.editing.modify(() => {
    not three regions called "Take 1". `RecordMidi` numbers the same way.
 2. When the engine wraps at the loop end, a new take is created. The engine reports the wrap
    itself (a `"jump"` anchor from `engine.subscribeTransportAnchors`, stamped in context time
-   at the sample it rendered), so every lap becomes a take even when no animation frame runs:
+   at the sample it rendered), so every lap becomes a take even when no animation frame runs.
+   Any jump while recording with takes allowed does the same — a seek or a marker jump mid-take
+   ends the take, and the next begins at the jump's target:
    - `RecordTrack.findOrCreate()` finds an empty track or creates a new one
    - A new `AudioRegionBox` is created (labeled "Take 2", "Take 3", etc.)
    - The previous take is muted/disabled based on preferences
@@ -700,7 +702,12 @@ This becomes the `inputLatency` the recorder reads (a stored round trip, when it
 ```
 waveformOffset = (recordingStart.contextTime − firstQuantumTime)
                + outputLatency + inputLatency + compensationLatency
+               − tempoMap.intervalToSeconds(floor(position), position)
 ```
+
+The last term moves the fraction of a pulse the integer region `position` drops into the
+offset; when the sum comes out negative (the first captured frame postdates the start), the
+take begins instead at the first whole pulse the audio covers.
 
 `outputLatency` is read when the take is placed; a zero read (the output not running yet) keeps the last non-zero one.
 

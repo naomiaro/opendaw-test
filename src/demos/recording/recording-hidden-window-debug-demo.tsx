@@ -230,7 +230,6 @@ async function runTake({ ctx, params, label, interrupt, setState, setHideNow, on
     // The hide wait comes first for a `start` cover: the reference clicks that anchor the buffer run
     // about a minute, and a hand that takes longer than that would leave the take without an anchor.
     if (params.hideAt === "start" && params.interrupt === "cover") await doInterrupt();
-    assertNoStoredRoundTrip();
     schedule = buildReferenceSchedule(audioContext.currentTime + 0.2, 120, 0.25, 0.005);
     loopback.scheduleReferenceClicks(schedule.times);
     recordRequestContextTime = audioContext.currentTime;
@@ -318,6 +317,7 @@ async function runTake({ ctx, params, label, interrupt, setState, setHideNow, on
 
 async function runAudit(params: Params, setState: (s: string) => void, setHideNow: (on: boolean) => void, onRow: (row: HiddenRecordingRow) => void): Promise<void> {
   setState("setup");
+  assertNoStoredRoundTrip();
   const ctx = await getContext(params);
   const runToken = Date.now();
   // A second click on Run must not judge the previous run's region.

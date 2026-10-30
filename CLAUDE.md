@@ -118,7 +118,8 @@ project.engine.countInBeatsRemaining.catchupAndSubscribe(obs => {
 steady result, saves the delay in `localStorage["opendaw:round-trips"]`, one entry per output
 device name + input label + sample rate (`roundTrip`, `forgetRoundTrip()`,
 `subscribeRoundTrip()`; `project.captureDevices.audio(uuid)` returns the `Option<CaptureAudio>`).
-From then on every Tape whose own `captureBox.inputLatency` is Inherit (−2, the default) records
+From then on every Tape on that output device name, input label and sample rate whose own
+`captureBox.inputLatency` is Inherit (−2, the default) records
 with that figure as the output latency and 0 as the input latency — the engine preference
 `recording.inputLatency` is not read. A track's own value (0 included) wins over the entry. The
 entry is shared by every page on the origin, so an audit that leaves its Tapes on Inherit must

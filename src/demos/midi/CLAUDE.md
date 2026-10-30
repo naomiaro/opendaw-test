@@ -200,8 +200,8 @@ Available instrument adapters (each implements `InstrumentDeviceBoxAdapter`):
 `RecordMidi` places a key at the HEARD context time of its MIDI event's `timeStamp`
 (carried on `NoteSignalOn` / `NoteSignalOff`; a stamp in the future counts as now):
 `CaptureMidi`'s clock maps the stamp through `audioContext.getOutputTimestamp()`
-(`BrowserContextClock.audibleTimeAt`) and subtracts `engine.compensationLatency`, and the
-position is what a `TransportLog` of the engine's transport anchors (start, every jump, stop,
+(`BrowserContextClock.audibleTimeAt`; `currentTime − outputLatency` while the output stamp still
+reads zero), `RecordMidi` subtracts `engine.compensationLatency`, and the position is what a `TransportLog` of the engine's transport anchors (start, every jump, stop,
 in context time) extrapolates for that time. A release is written from its own stamp
 (`transport.advance(on, off)`, jumps excluded), so a late handler (GC, main-thread jank)
 moves neither the note nor its length. A key heard past the loop end before the wrap's anchor

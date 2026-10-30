@@ -4,21 +4,23 @@
  * `captureBox.inputLatency` is Inherit. The recording audits leave their Tapes on Inherit and set
  * the engine preference to 0, so an entry for a run's devices moves every take by the difference
  * and reads as an SDK change (measured: a 50 ms entry against a 23 ms `outputLatency` put a
- * loopback take at −25.85 ms netted instead of +1.15). They refuse to run while ANY entry is
- * stored: which entry applies is known only once the SDK has opened the stream inside
- * `prepareRecording`, after the last moment a page can refuse.
+ * loopback take at −25.85 ms netted instead of +1.15). The recording-alignment and hidden-page
+ * pages refuse a run before it starts while ANY entry is stored: which entry applies is known only
+ * once the capture's stream is open (arming starts it, `prepareRecording` awaits it), after the
+ * last moment these pages can refuse. The calibration page, which shares the cell runner but runs against an override build
+ * without round trips, does not check.
  */
 
-/** `BrowserRoundTrips`' localStorage key in studio-core (not exported). */
+/** `BrowserRoundTrips`' localStorage key in studio-core (not exported); its entry check below is the SDK's. */
 export const ROUND_TRIPS_KEY = "opendaw:round-trips";
 
-type StoredEntry = { output: string; input: string; sampleRate: number; seconds: number };
+type StoredEntry = { output: string; input: string; sampleRate: number; seconds: number; measuredAt: number };
 
 function isEntry(value: unknown): value is StoredEntry {
   if (typeof value !== "object" || value === null) return false;
-  const { output, input, sampleRate, seconds } = value as Record<string, unknown>;
+  const { output, input, sampleRate, seconds, measuredAt } = value as Record<string, unknown>;
   return typeof output === "string" && typeof input === "string" && typeof sampleRate === "number"
-    && typeof seconds === "number" && Number.isFinite(seconds);
+    && typeof seconds === "number" && Number.isFinite(seconds) && typeof measuredAt === "number";
 }
 
 /** Why a run must not go on, naming every stored entry; null when none is stored (or the value is

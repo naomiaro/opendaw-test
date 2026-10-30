@@ -6037,8 +6037,8 @@ every Tape left on Inherit, as this harness's are. Positive control, `nominal-st
 (Built-in)", input "MediaStreamAudioDestinationNode", 48 000 Hz) put the take at **−25.85 ms
 netted** (waveform offset 0.0526 s against 0.0256 s), against +1.15 without it: the 27 ms
 between the entry and the 23 ms `outputLatency` the context reported, to the hundredth. The
-harness now refuses a repeat while any entry is stored (`src/lib/audit/storedRoundTrips.ts`; a
-check on the capture's own `roundTrip` missed the first repeat, whose stream the SDK opens only
-inside `prepareRecording`); with the entry, all three repeats refused, without it, +1.15 on all
-three. The four control envelopes are in `.verify-output/round-trip-guard-controls/`, out of the
-one-quantum tally.
+harness now refuses a run at its start while any entry is stored (`src/lib/audit/storedRoundTrips.ts`;
+a check on the capture's own `roundTrip` missed the first repeat, whose stream was still opening —
+arming starts it, `prepareRecording` awaits it): with the entry the run ends `error:<the refusal>` at setup, without it
++1.15 on all three repeats. The control envelopes are in `.verify-output/round-trip-guard-controls/`,
+out of the one-quantum tally.

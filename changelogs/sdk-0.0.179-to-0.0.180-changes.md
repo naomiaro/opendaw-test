@@ -21,9 +21,9 @@ captures can measure and store their real round trip. It closes two issues this 
    `wasCountingIn()`, `wasStartingAt()`); its instance fields `countIn` / `startPosition` are gone
    (no demo read them).
 3. **MIDI notes land where they were heard** — openDAW#491, filed from this repo, CLOSED.
-   `CaptureMidi` maps a key's `timeStamp` to the heard context time through
-   `getOutputTimestamp()` (`BrowserContextClock.audibleTimeAt`), less
-   `engine.compensationLatency`, and `RecordMidi` places it on a `TransportLog` of the engine's
+   `CaptureMidi`'s clock (`BrowserContextClock.audibleTimeAt`) maps a key's `timeStamp` to the
+   heard context time through `getOutputTimestamp()`, `RecordMidi` subtracts
+   `engine.compensationLatency` and places it on a `TransportLog` of the engine's
    anchors instead of extrapolating the frame-stale position plus the output latency (the +32 ms
    this repo measured). Firefox's MIDI stamps, on a clock of their own, are converted
    (`MidiClock`). A key between the loop end and the wrap's arrival is held and replayed into the
@@ -36,7 +36,8 @@ captures can measure and store their real round trip. It closes two issues this 
 5. **A measured round trip replaces both reported latencies.** `CaptureAudio.measureRoundTrip()`
    plays three maximum-length-sequence noise bursts and finds them in the input; a steady result
    (all three heard, spread ≤ 1.5 ms) is stored in `localStorage["opendaw:round-trips"]` per output
-   device name, input label and sample rate. While an entry exists, a capture whose own
+   device name, input label and sample rate. While an entry exists for a capture's output device
+   name, input label and sample rate, and the capture's own
    `captureBox.inputLatency` is Inherit records with `outputLatency = roundTrip`, `inputLatency = 0`,
    and the preference `recording.inputLatency` is not read. `roundTrip`, `forgetRoundTrip()`,
    `subscribeRoundTrip()`; `project.captureDevices.audio(uuid)` returns `Option<CaptureAudio>`.
@@ -56,7 +57,9 @@ captures can measure and store their real round trip. It closes two issues this 
    on `Engine` / `EngineFacade` / `EngineWorklet` and `TransportAnchor` in `studio-adapters`;
    `TakePolicy.applyOlderTakeAction` and `TransportLog` (exported from `capture`); the `io` module
    exported from `studio-core` (`AudioInputPort`, `MidiInputPort`, `MonitorPort`, `ContextClock`,
-   `RecordingLatency`, `RecordingSink`, `RoundTrip`, and their `Browser*` implementations);
+   `RecordingLatency`, `RecordingSink`, `RoundTrip`, and `BrowserAudioInput`, `BrowserContextClock`,
+   `BrowserMidiInput`, `BrowserRecordingLatency`, `BrowserRoundTrips`, `MidiClock`; `BrowserMonitor`
+   is not exported);
    `RecordingWorklet.capturedFrames`; `CaptureAudio.input`; optional constructor parameters on
    `CaptureAudio` (an `InputFactory`) and `CaptureMidi` (an input port and a clock) for tests.
    `RecordAudio.start` takes a `sink: RecordingSink` instead of `recordingWorklet` + `sourceNode`
@@ -165,15 +168,20 @@ unless a parameter is hovered; the note editor's "No CaptureMidi available" erro
   Nothing in `src/` read `Recording`'s removed instance fields, called `RecordAudio.start`, or
   constructed a `CaptureAudio` / `CaptureMidi`.
 - **A guard against a stored round trip** (`src/lib/audit/storedRoundTrips.ts`, with a Node test
-  shown to fail when the guard is broken): the recording-alignment page (single tape through
-  `recordingCellRunner.ts`, and multi-mic) and the hidden-page page refuse a repeat while any entry
-  is stored in `localStorage["opendaw:round-trips"]`. They leave their Tapes on Inherit and write the
+  shown to fail when the guard is broken): the recording-alignment page (single tape and multi-mic)
+  and the hidden-page page refuse a run at its start, before the engine boots, while any entry is
+  stored in `localStorage["opendaw:round-trips"]`; `#audit-state` then reads `error:<the refusal>`. They leave their Tapes on Inherit and write the
   preference `recording.inputLatency = 0`, which an entry overrides. Positive control on the page:
   a 50 ms entry for the run's own devices put a loopback take at −25.85 ms netted instead of +1.15
   (the 27 ms between the entry and the reported 23 ms); a guard reading the capture's own
-  `roundTrip` missed the first repeat (the SDK opens that stream only inside `prepareRecording`), so
-  the guard refuses on any stored entry. With it, all three repeats refused; without the entry, +1.15
-  on all three. The combined MIDI + audio page needs no guard: it sets the Tape's own value.
+  `roundTrip` missed the first repeat (the stream that arming opens is still opening when the page
+  checks; `prepareRecording` waits for it), so
+  the guard refuses on any stored entry the SDK would read (its own entry check). A first per-repeat
+  version left every repeat an error row and the run `done`; the review moved it to the run's start.
+  With the entry the run ends `error:…` at setup; without it, +1.15 on all three repeats. The
+  combined MIDI + audio page needs no guard: it sets the Tape's own value. The input-latency
+  calibration page, which shares `recordingCellRunner.ts` but runs against an override build without
+  round trips, is left unchecked.
 - **Docs for what changed**: `documentation/08-recording.md` (the session, takes cut at the engine's
   wrap, the first-take formula without the count-in estimate, a new "Measuring the round trip with
   the SDK" section, the `roundTrip` field of the latency report),
@@ -227,7 +235,7 @@ unless a parameter is hovered; the note editor's "No CaptureMidi available" erro
   `recordingSession: RecordingSession` on `Project`; `RecordingSession`, `TakePolicy`, `TransportLog`
   exported from `capture`; `export * from "./io"` in `studio-core`'s index (`AudioInputPort`,
   `ContextClock`, `MidiInputPort`, `MonitorPort`, `RecordingLatency`, `RecordingSink`, `RoundTrip`, the
-  `Browser*` ports, `MidiClock`); `roundTrip`, `forgetRoundTrip`, `subscribeRoundTrip`,
+  `Browser*` ports but `BrowserMonitor`, `MidiClock`); `roundTrip`, `forgetRoundTrip`, `subscribeRoundTrip`,
   `measureRoundTrip`, `input` and the `InputFactory` parameter on `CaptureAudio`; the `input` / `clock`
   parameters on `CaptureMidi`; `audio(uuid): Option<CaptureAudio>` on `CaptureDevices`;
   `subscribeTransportAnchors` on `Engine` / `EngineFacade` / `EngineWorklet`; `TransportAnchor` and

@@ -116,8 +116,9 @@ When `allowTakes` is true AND `loopArea.enabled` is true, each time playback wra
 - The wrap is the engine's own report: a `"jump"` anchor with `recording: true` from
   `engine.subscribeTransportAnchors`, stamped in context time at the sample it rendered. The
   take ends there and the next begins at the anchor's position (the loop start), with no
-  animation frame needed — every lap becomes a take on a hidden page too. A seek flagged in
-  the recording's first quantum is not a wrap.
+  animation frame needed — every lap becomes a take on a hidden page too. Any recorded jump
+  does the same (a seek or a marker jump ends the take; the next begins at its target); a seek
+  flagged in the recording's first quantum does not.
 - Zero-duration takes are deleted at the wrap instead of being finalized.
 
 ### Input Latency Compensation
@@ -163,11 +164,12 @@ any of those. A node a page tapped earlier can therefore be replaced without a r
 sample rate in `localStorage["opendaw:round-trips"]`; while one exists for a Tape's devices
 and the Tape's own `captureBox.inputLatency` is Inherit, its takes use that figure as the
 output latency and 0 as the input latency (the engine preference is not read). The recording
-audits leave their Tapes on Inherit, so `assertNoStoredRoundTrip` in
-`src/lib/audit/storedRoundTrips.ts` refuses a run while ANY entry is stored (which one applies
-is known only after the SDK opens the stream; a 50 ms entry measured −25.85 ms netted against
-+1.15). The SDK readme's
-"Latency calibration" section and `documentation/08-recording.md` describe the API.
+audits leave their Tapes on Inherit, so the recording-alignment and hidden-page pages call
+`assertNoStoredRoundTrip` (`src/lib/audit/storedRoundTrips.ts`) at a run's start and end
+`error:<the refusal>` while ANY entry is stored (which one applies is known only after the SDK
+opens the stream; a 50 ms entry measured −25.85 ms netted against +1.15). The calibration page,
+served against an override build without round trips, does not check. The SDK readme's "Latency
+calibration" section and `documentation/08-recording.md` describe the API.
 
 ### Never Call stop(true) During Recording Finalization
 `stopRecording()` stops transport; the SDK then finalizes asynchronously on the main
@@ -311,7 +313,9 @@ below use that case); subsequent takes inherit it transitively through accumulat
 Buffer: [count-in frames | Take 1 audio | Take 2 audio | Take 3 audio ...]
 
 Take 1: waveformOffset = (recordingStart.contextTime − firstQuantumTime) + outputLatency
-        + inputLatency + compensationLatency (set by SDK; the first term holds the count-in)
+        + inputLatency + compensationLatency − intervalToSeconds(floor(position), position)
+        (set by SDK; the first term holds the count-in, the last the pulse fraction the
+        integer region position drops)
 Take 2: waveformOffset = take1.waveformOffset + take1.duration
 Take 3: waveformOffset = take2.waveformOffset + take2.duration
 ```
@@ -321,7 +325,7 @@ skips past them. Each take's `waveformOffset` is set once at creation time in
 
 **Take durations:** a wrap-finalized take's duration is the time the engine rendered
 between its start and the wrap (`jump.contextTime + ringOffset − waveformOffset`), not the
-loop's musical length — the two differ by about a frame a lap, which used to make each later
+loop's musical length — the two differ by under one sample a lap, which used to make each later
 take of a recording sit about 0.02 ms earlier (the recording register's standing-sweep
 sections). The FINAL take ends at the engine's stop stamp, netted like the start.
 
@@ -383,8 +387,10 @@ rms=0.074515 (14.9x the 0.005 pass threshold) on a 4s take recorded through it. 
 out `stream.clone()` per `getUserMedia` call so a consumer's `track.stop()` (tape
 disarm/remove) can't kill the source stream — see `src/lib/audit/loopbackInjection.ts`.
 Note: the SDK creates the first take once BOTH `engine.recordingStart` and the recording
-worklet's first-quantum time have arrived (checked on each of them, on every transport anchor
-and on every `engine.position` update) and never estimates them — a recording whose engine
+worklet's first-quantum time have arrived (checked when `engine.recordingStart` arrives, on
+every transport anchor and on every `engine.position` update while recording — the worklet's
+time is read, not subscribed; it is normally in first, the worklet being connected in
+`prepareRecording` before the engine starts) and never estimates them — a recording whose engine
 never reports a start produces no take; poll `engine.recordingStart` / `isRecording` if a
 recording produces none.
 
@@ -682,7 +688,8 @@ at the chosen moment, reads the take with the harness's reader, then records a s
 uninterrupted take. Register: `debug/2026-10-21-hidden-page-recording/note.md`.
 
 - **What still waits for a frame.** The take's file and first region are made when the
-  engine's recording start arrives, and the stop finalizes on the engine's stop anchor —
+  engine's recording start arrives (the recording worklet's first-quantum time is normally in
+  by then; if not, the next anchor or frame makes them), and the stop finalizes on the engine's stop anchor —
   neither waits for a frame. The live region length is still written per frame, and the
   engine's main-thread sync (position, the flags) runs on animation frames, which Chrome
   stops for a hidden document and a fully covered window. Measured: the recorder survives a
