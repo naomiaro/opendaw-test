@@ -122,6 +122,7 @@ import {
   formatMilliseconds,
 } from "@/lib/audit/recordingAuditArtifacts";
 import { BAR_PPQN } from "@/lib/audit/auditExpectations";
+import { assertNoStoredRoundTrip } from "@/lib/audit/storedRoundTrips";
 // Single-tape per-repeat runner and its waits, shared with the input-latency
 // calibration page (src/demos/recording/input-latency-calibration-debug-demo.tsx)
 // so both measure and classify a cell exactly the same way.
@@ -704,6 +705,7 @@ async function runAudit(
   const rate = resolveRate(params.get("rate"));
   assertStopLeadParam();
   if (graphChurnFrom(GRAPH_CHURN_PARAM)) throw new Error("?graphChurn=on is for the multitrack scenarios");
+  assertNoStoredRoundTrip();
   // One token per run, stamped into BOTH the summary name and every capture
   // WAV name, so a summary row and the audio it was measured from can always be
   // joined without guessing (Task 7c fix round 1, review M12).
@@ -1618,6 +1620,7 @@ async function runMultitrackAudit(
   // combination is re-run under a different build later in the same session.
   const runToken = Date.now();
 
+  assertNoStoredRoundTrip();
   const { project, audioContext, tapes, sdkBuildProbe, buildFeatures, bias } = await getMultitrackContext(rate, confirmCollision);
   onBuildProbe(sdkBuildProbe);
   console.log("[recording-alignment-audit] multitrack confirmCollision=" + String(confirmCollision));

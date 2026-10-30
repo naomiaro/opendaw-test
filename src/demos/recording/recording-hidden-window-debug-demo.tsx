@@ -43,6 +43,7 @@ import {
 import { ALIGNED_TOLERANCE_MS } from "@/lib/audit/recordingAuditCalibration";
 import { FrameWatch } from "@/lib/audit/midiInputCellRunner";
 import { BAR_PPQN } from "@/lib/audit/auditExpectations";
+import { assertNoStoredRoundTrip } from "@/lib/audit/storedRoundTrips";
 import { classifyRow, classifyTake, frameBlockedMs, positionFrozenMs, syncResumeMs, type PositionSample, type TakeFigures } from "@/lib/audit/hiddenRecordingVerdict";
 import {
   HIDDEN_RECORDING_SCHEMA_VERSION, summaryFileName, type HiddenRecordingDriver, type HiddenRecordingHideAt, type HiddenRecordingInterrupt,
@@ -316,6 +317,7 @@ async function runTake({ ctx, params, label, interrupt, setState, setHideNow, on
 
 async function runAudit(params: Params, setState: (s: string) => void, setHideNow: (on: boolean) => void, onRow: (row: HiddenRecordingRow) => void): Promise<void> {
   setState("setup");
+  assertNoStoredRoundTrip();
   const ctx = await getContext(params);
   const runToken = Date.now();
   // A second click on Run must not judge the previous run's region.

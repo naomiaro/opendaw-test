@@ -349,7 +349,7 @@ function Harness() {
         <Flex direction="column" gap="4">
           <Heading size="7" align="center">MIDI Input Alignment Audit</Heading>
           <Text size="1" color="gray" align="center">
-            Judged against the heard beat; nothing netted. Expect a known-defect band, not <code>aligned</code>, until the recorder changes.
+            Judged against the heard beat; nothing netted. Expect <code>aligned</code>: the recorder places a key at its heard time (openDAW#491, #492 fixed). A known-defect band describes the recorder before that fix.
             {params.get("effect") !== null && params.get("effect") !== "none"
               ? ` Effect: ${params.get("effect")} on the recorded unit — the recorder reads before the chain, so every figure is expected unchanged.`
               : ""}

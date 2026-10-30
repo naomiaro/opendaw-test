@@ -53,6 +53,8 @@ export interface CombinedSummary {
   userAgent: string;
   sdkVersion: string;
   buildFeatures: AuditBuildFeature[];
+  /** Absent on envelopes written before the field (every one of them on the earlier MIDI recorder). */
+  midiPlacesAtHeardTime?: boolean;
   busName: string;
   inputDevice: string;
   outputDevice: string;

@@ -275,6 +275,39 @@ Chrome 156, 44.1 kHz, the IAC bus, a real click by the user.
 `delayInMs` within half a quantum on an idle main thread, and the main-thread timestamp base
 (`midi-out-main-thread-base`) is unchanged under jank. Nothing in this register moved.
 
+### SDK 0.0.180 (2026-10-30): Runs A, B and C again
+
+The release does not touch the MIDI Output device or its wiring (it reworks the capture side and adds
+transport-jump reports to the engine, which do not change rendering). Same recipes, Chrome 156, 44.1 kHz
+context, the IAC bus, the user's real clicks.
+
+**Run A** (`1793397071386`, `?bpm=140&density=32nd&transport=both&repeats=2&frameDriver=hidden-safe`):
+
+| arm | transport | status | median ms (r1 / r2) | max dev | late tail | live median (r1 / r2) | live max dev | pair drift ms | miss/extra/stuck/vel | transport msgs |
+|---|---|---|---|---|---|---|---|---|---|---|
+| page | on | `bus-true` | −0.00 / −0.00 | 0.00 | 0.00 | 0.02 / 0.02 | 0.02 | −0.01..0.05 | 0/0/0/0 | 2 |
+| engine | on | `investigate` | 10.08 / 10.50 | 2.29 | 0.79 | 10.10 / 10.16 | 3.53 | −1.58..2.26 | 0/0/0/0 | 486 |
+| page | off | `bus-true` | −0.00 / −0.00 | 0.00 | 0.00 | −0.09 / −0.12 | 5.91 | −6.17..0.45 | 0/0/0/0 | 3 |
+| engine | off | `on-time` | 10.34 / 10.20 | 1.00 | 0.49 | 10.21 / 10.22 | 1.01 | −8.87..0.54 | 0/0/0/0 | 0 |
+
+The transport-on cell's `investigate` is the same one-off as on 0.0.179 (`maxAbsDevLiveMs 3.53 > 2.9` on
+repeat 2): live medians on the delay (10.10 / 10.16), the live spread no wider than that repeat's drift
+range (−1.58..2.26 ms, 3.84 ms) — the clock relation (Chromium 40726491), not the SDK.
+
+**Run B** (`1793397163901`, `…&jank=mid`): both engine cells `matches-known-defect`
+(`midi-out-main-thread-base`), inside-block medians 60.38 / 60.76 ms (0.0.179: 61.10 / 60.85), max
+deviation 70.73 / 70.05, late tail 20.58 / 20.15, the same four off-before-on inversions per cell (extra
+= stuck = 4), live medians on the delay between blocks (10.08–10.21); page cells `bus-true`.
+
+**Run C** (`1793397256863`, `?bpm=all&density=both&repeats=2&frameDriver=hidden-safe`): every engine cell
+`on-time`, live medians 10.10–10.28 ms (0.0.179: 10.16–10.34); every page cell `bus-true`. The 140 bpm
+cell's one-pair median 13.02 on repeat 1 is a −3.00 ms drift excursion read on the one pair; its live
+median is 10.28.
+
+**Reading on 0.0.180, all three runs:** unchanged from 0.0.179 to within the run-to-run spread. Every note
+on the `delayInMs` within half a quantum on an idle main thread; the main-thread timestamp base under jank
+as before.
+
 ## Findings
 
 1. **Confirmed, SDK: a note rendered during a main-thread block is requested late by the rest of the

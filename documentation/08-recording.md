@@ -35,16 +35,19 @@ OpenDAW's recording pipeline follows this flow:
 
 ```
 project.startRecording(countIn)
-  → Recording.start(project, countIn)
-    → captureDevices.filterArmed()     // find all armed capture devices
-    → for each armed capture:
-        → capture.prepareRecording()   // set up media stream / MIDI listener
-        → capture.startRecording()     // begin capturing data
-    → engine starts playback (with optional count-in)
+  → Recording.start(project, countIn)  // facade over project.recordingSession
+    → project.recordingSession.start(countIn)
+      → captureDevices.filterArmed()   // find all armed capture devices
+      → for each armed capture:
+          → capture.prepareRecording() // set up media stream / MIDI listener
+          → capture.startRecording()   // begin capturing data
+      → engine starts playback (with optional count-in)
+      → finishes on the engine's stop anchor (no animation frame needed)
 ```
 
 Key classes in the pipeline:
-- **`Recording`** — Static orchestrator that coordinates all armed captures
+- **`RecordingSession`** — `project.recordingSession`, one per project: prepares and records the armed captures, drives the engine and finalizes when the engine reports its stop (`engine.subscribeTransportAnchors`), so a recording on a hidden page still finishes. `isRecording`, `wasCountingIn`, `startPosition`
+- **`Recording`** — Static facade kept for SDK consumers (`Recording.start`, `Recording.isRecording` = any project records)
 - **`CaptureDevices`** — Manages collection of capture devices on the project
 - **`CaptureAudio`** — Audio-specific capture (microphone, line input)
 - **`CaptureMidi`** — MIDI-specific capture (controllers, software keyboard)
@@ -461,14 +464,21 @@ project.editing.modify(() => {
    "Take N" among its regions (`RecordTrack.lastTakeNumber`, read once at record start; regions
    renamed by the user drop out of the count), so three recordings give Take 1, Take 2, Take 3,
    not three regions called "Take 1". `RecordMidi` numbers the same way.
-2. When the engine position wraps past the loop end, a new take is created:
+2. When the engine wraps at the loop end, a new take is created. The engine reports the wrap
+   itself (a `"jump"` anchor from `engine.subscribeTransportAnchors`, stamped in context time
+   at the sample it rendered), so every lap becomes a take even when no animation frame runs.
+   Any jump while recording with takes allowed does the same — a seek or a marker jump mid-take
+   ends the take, and the next begins at the jump's target:
    - `RecordTrack.findOrCreate()` finds an empty track or creates a new one
    - A new `AudioRegionBox` is created (labeled "Take 2", "Take 3", etc.)
    - The previous take is muted/disabled based on preferences
 3. All takes share the same underlying `AudioFileBox` (the continuous recording buffer)
-4. Each take's `position` and `duration` correspond to the loop boundaries
+4. Each take's `position` is where its lap began (the loop start after a wrap), and its
+   `duration` is the time the engine rendered between that lap's start and the next wrap — not
+   the loop length converted to seconds, so a later take does not drift against the buffer
+   where the rendered lap and the musical loop length differ by a fraction of a millisecond
 5. Each take's `waveformOffset` (seconds) indicates where its audio starts in the shared buffer:
-   - Take 1: `waveformOffset` = count-in + `outputLatency` + `inputLatency` + worklet head-start *(see RecordAudio.ts for exact formula)*
+   - Take 1: `waveformOffset` = (`engine.recordingStart.contextTime` − the recording worklet's first-quantum time) + `outputLatency` + `inputLatency` + `engine.compensationLatency`, less the fraction of a pulse the integer region `position` drops. The take waits for both stamps; there is no estimate in their place
    - Take 2: `waveformOffset` = Take 1's offset + Take 1 duration
    - Take N: `waveformOffset` = previous take's offset + previous take's duration
 
@@ -576,7 +586,24 @@ Other related preferences:
 
 ## Measuring and Applying Input Latency
 
-`audioContext.outputLatency` (engine→speaker) is compensated automatically by `RecordAudio`. The mic→engine portion is *not* — `MediaStreamTrack.getSettings().latency` is reported by the browser at recording start (logged as `inputLatencyReported` in `[CaptureAudio] latency report`), but the SDK does not auto-apply it. You set the compensation explicitly via the engine preference or a per-tape override.
+`audioContext.outputLatency` (engine→speaker) is compensated automatically by `RecordAudio`. The mic→engine portion is *not* — `MediaStreamTrack.getSettings().latency` is reported by the browser at recording start (logged as `inputLatencyReported` in `[CaptureAudio] latency report`), but the SDK does not auto-apply it. You set the compensation explicitly via the engine preference or a per-tape override — or let the SDK measure the whole round trip of the devices in use ([below](#measuring-the-round-trip-with-the-sdk)), which replaces both reported figures.
+
+### Measuring the round trip with the SDK
+
+`CaptureAudio.measureRoundTrip()` plays three short noise bursts (a maximum-length sequence, the paper's method below) out of the context's destination, finds them in what the input captured and returns a `RoundTrip.Result`: `verdict` (`"ok"` when every burst was heard within 1.5 ms of each other, `"unsteady"`, `"no-signal"`), `seconds` (the median round trip), `spreadSeconds`, `heard` / `bursts`. It rejects while the transport plays or records, and arms the capture if it is not armed. An `"ok"` result is stored in the browser's `localStorage` under `opendaw:round-trips`, one entry per output device name, input label and sample rate:
+
+```typescript
+const capture = project.captureDevices.audio(audioUnitBox.address.uuid).unwrap(); // Option<CaptureAudio>
+const result = await capture.measureRoundTrip();
+if (result.verdict === "ok") {
+  console.log(`round trip ${(result.seconds * 1000).toFixed(1)} ms`);
+}
+capture.roundTrip;          // Option<RoundTrip.Entry> for the devices in use
+capture.forgetRoundTrip();  // drop it: recordings fall back to the reported latencies
+const sub = capture.subscribeRoundTrip(() => { /* an entry was stored or dropped */ });
+```
+
+While an entry exists for the devices in use, every take on a capture whose `captureBox.inputLatency` is `InputLatency.Inherit` records with `outputLatency = roundTrip.seconds` and `inputLatency = 0`; the engine preference `recording.inputLatency` is not read. A per-tape value (any value other than Inherit, `0` included) wins over the entry. The entry is shared by every page on the origin. Bluetooth outputs, whose reported `outputLatency` is far off, are the case it is for; the measurement needs the output audible to the input (speakers, or an earbud held to the mic).
 
 ### Why measurement matters
 
@@ -670,11 +697,19 @@ const inputLatency = value === InputLatency.EqualsOutput
   : Math.max(0, value);
 ```
 
-This becomes the `inputLatency` field on `RecordAudioContext` and feeds the take-1 `waveformOffset` formula:
+This becomes the `inputLatency` the recorder reads (a stored round trip, when it applies, replaces both figures) and feeds the take-1 `waveformOffset` formula:
 
 ```
-waveformOffset = countInSeconds + outputLatency + inputLatency + workletHeadStart
+waveformOffset = (recordingStart.contextTime − firstQuantumTime)
+               + outputLatency + inputLatency + compensationLatency
+               − tempoMap.intervalToSeconds(floor(position), position)
 ```
+
+The last term moves the fraction of a pulse the integer region `position` drops into the
+offset; when the sum comes out negative (the first captured frame postdates the start), the
+take begins instead at the first whole pulse the audio covers.
+
+`outputLatency` is read when the take is placed; a zero read (the output not running yet) keeps the last non-zero one.
 
 ### Verifying
 
@@ -685,13 +720,15 @@ After starting a recording, the `[CaptureAudio] latency report` debug line in th
   outputLatency:        0.0107,         // browser-reported engine→speaker
   baseLatency:          0.0058,
   inputLatencyReported: 0.005,          // browser-reported per-track (not applied automatically)
-  inputLatencyApplied:  0.0054,         // resolved from per-tape override or engine pref
+  inputLatencyApplied:  0.0054,         // resolved from per-tape override or engine pref (0 under a round trip)
+  roundTrip:            null,           // the stored round trip applied, in seconds, or null
+  output:               "MacBook Pro Speakers",
   deviceId:             "...",
   deviceLabel:          "MacBook Pro Microphone"
 }
 ```
 
-If `inputLatencyApplied` doesn't match what you set, the per-tape `captureBox.inputLatency` is overriding the engine preference. Set it to `InputLatency.Inherit` (`-2`) to fall through.
+If `inputLatencyApplied` doesn't match what you set, either the per-tape `captureBox.inputLatency` is overriding the engine preference (set it to `InputLatency.Inherit`, `-2`, to fall through) or `roundTrip` is not null and a stored measurement replaced both figures (`capture.forgetRoundTrip()`).
 
 ### Try it in the demo
 

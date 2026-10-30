@@ -215,19 +215,24 @@ export interface EngineToClient {
     fetchNamWasm(): Promise<ArrayBuffer>
     fetchWclapBundle(url: string): Promise<WclapBundle>
     wclapSend(uuid: string, bytes: ArrayBuffer): void
-    wclapState(uuid: string, bytes: ArrayBuffer): void
+    wclapState(uuid: string, bytes: ArrayBuffer, url: string, clapId: string): void
     wclapParams(uuid: string, params: ReadonlyArray<WclapParamInfo>): void
     wclapParam(uuid: string, paramId: number, value: number, gesture: WclapParamGesture): void
     wclapHovered(uuid: string, paramId: number): void
     wclapResizeGui(uuid: string, width: number, height: number): void
+    wclapShowGui(uuid: string): void
+    wclapHideGui(uuid: string): void
     wclapStatus(uuid: string, status: WclapStatus): void
     wclapRequestSave(uuid: string): void
     notifyClipSequenceChanges(changes: ClipSequencingUpdates): void
     switchMarkerState(state: Nullable<[UUID.Bytes, int]>): void
     recordingStarted(contextTime: number, position: ppqn, generation: int): void
+    transportAnchors(anchors: ReadonlyArray<TransportAnchor>): void
     ready(): void
 }
 ```
+
+`transportAnchors` carries `TransportAnchor`s — `{kind: "start" | "jump" | "stop", contextTime, position, recording}` — stamped in audio-context time: a jump and a `pauseOnLoopDisabled` pause at the sample the engine rendered them, a start at the end of its quantum, a stop at the start of the first quantum not played (a stop command between renders at the end of the last rendered quantum). A jump is every discontinuous block of the quantum (loop wrap, seek, marker jump), read after each quantum through `transport_jump_count` / `transport_jump_sample(i)` / `transport_jump_position(i)` in `crates/engine/src/lib.rs`; `transport_pause_sample` reports where `pauseOnLoopDisabled` paused. The processor derives the start and stop edges from the transport flags (`packages/studio/core-wasm/src/transport-anchor-edges.ts`). The main thread re-publishes them as `engine.subscribeTransportAnchors(observer)`, which the recorders and `RecordingSession` read alongside the per-frame position (still the source of a take's live length, a MIDI note's growth and the session's `isRecording` / `isCountingIn` flags): a loop take ends at the wrap anchor and a recording finishes on the stop anchor whether or not an animation frame runs. `RecordMidi` keeps them in a `TransportLog` (`packages/studio/core/src/capture/TransportLog.ts`) and places a key at the position the log extrapolates for its heard context time.
 
 The `fetchWclapBundle` / `wclap*` members (the `wclap*` ones take the device uuid as a string, the form the bridge keys its slots by) are the worklet's side of a WebCLAP plugin: the bridge in `packages/studio/core-wasm/src/wclap/wclap-bridge.ts` asks the main thread for the bundle (a `.tar.gz` holding `module.wasm` and the GUI files, or a bare `.wasm` module) and reports the plugin's parameter list once per load, its own parameter changes and state blobs, the hovered control, a GUI resize request and its load status (`WclapStatus`: the state and message, the plugin's audio input ports once ready, and whether it offers a window of its own).
 

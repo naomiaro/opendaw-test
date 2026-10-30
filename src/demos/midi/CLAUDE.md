@@ -197,14 +197,17 @@ Available instrument adapters (each implements `InstrumentDeviceBoxAdapter`):
 `capture.captureNoteOnCount` (observable) increments when an armed capture receives a note-on outside recording — read it before/after a key press to prove MIDI reached the capture without any audio tap. If it increments but output RMS is 0, the fault is engine-side rendering, not MIDI routing.
 
 ### Where a Recorded Note Lands
-`RecordMidi` places a key at its MIDI event's `timeStamp` (carried on `NoteSignalOn` /
-`NoteSignalOff`; a stamp in the future counts as now), extrapolating the engine position
-between two playhead updates at the engine's live BPM — never across an enabled loop end
-while takes are allowed, where the engine wraps — plus the output-latency term (converted to
-pulses once at arm time, at that moment's BPM), and writes the note's duration at key-up — so
-a late handler (GC, main-thread jank) does not delay a note and a tap shorter than one
-playhead update keeps its real length. An audition signal, or a hand-built `noteSignal`
-without a stamp, is placed at `performance.now()`.
+`RecordMidi` places a key at the HEARD context time of its MIDI event's `timeStamp`
+(carried on `NoteSignalOn` / `NoteSignalOff`; a stamp in the future counts as now):
+`CaptureMidi`'s clock maps the stamp through `audioContext.getOutputTimestamp()`
+(`BrowserContextClock.audibleTimeAt`; `currentTime − outputLatency` while the output stamp still
+reads zero), `RecordMidi` subtracts `engine.compensationLatency`, and the position is what a `TransportLog` of the engine's transport anchors (start, every jump, stop,
+in context time) extrapolates for that time. A release is written from its own stamp
+(`transport.advance(on, off)`, jumps excluded), so a late handler (GC, main-thread jank)
+moves neither the note nor its length. A key heard past the loop end before the wrap's anchor
+arrived waits and is replayed into the new take. Firefox stamps on a clock of its own
+(`MidiClock` converts it). An audition signal, or a hand-built `noteSignal` without a stamp,
+is placed at `performance.now()`.
 
 ### Loop Switch on the MIDI Recording Demo
 `useTimelineLoop(project, { from: 0, to: 4 bars, enabled: false })`. Off: a recording is one
@@ -241,8 +244,9 @@ picks another). Register: `debug/2026-10-20-midi-input-alignment/note.md`.
   within ±5 ms of `2 × (output + compensation latency) − (frame − quantum)`, jitter and
   duration within a frame plus a quantum), so it holds on any device or display and a
   median that does not track the formula is a finding; else `investigate` names the first
-  failing figure. The on-page copy says it: expect `investigate` or a band, not
-  `aligned`, until the recorder changes.
+  failing figure. Expect `aligned` (measured: 36 of 36 rows, medians 0.00–0.01 ms, release
+  lengths exact under the 150 ms blocks); the bands describe the recorder before the capture
+  rewrite and now only catch a regression back to it.
 - **Scenarios.** `nominal-start`, `janked-start` (the audio harness's 150 ms block on the
   `isRecording` flip), `janked-mid` (the same block fired from a timer task in the middle of
   the pattern's bar two, between frames), `countin-start` (one-bar count-in; three unanchored
@@ -250,9 +254,14 @@ picks another). Register: `debug/2026-10-20-midi-input-alignment/note.md`.
   the downbeat the SDK writes at position 0), `midtimeline-start` (record from bar
   three), `loop-wrap` (two-bar loop, takes allowed; the notes span two passes and the stop
   lead opens a third take; the note ON the loop end is
-  `wrapAdjacent` and reported, not judged — the SDK writes a key pressed between the loop end
-  and the wrap update into the old take).
-- **What the recorder does, as measured.** `RecordMidi` writes the extrapolated RENDERED
+  `wrapAdjacent` and reported, not judged — the recorder holds a key heard past the loop end
+  until the wrap's anchor arrives and writes it into the new take; measured matched there,
+  0.007 ms off, on every repeat).
+- **What the recorder does now, as measured** (the IAC sweep after the capture rewrite, 36 rows):
+  every note within 0.01 ms of the heard beat at 90 / 120 / 140 bpm, nothing missing, no release
+  shortened by a 150 ms main-thread block (duration error 0.00 ms), the note on the loop end
+  matched in the new take. Count-in pickups are still dropped or snapped (2 of 6 kept,
+  openDAW#493). **What it did before** (openDAW#491 / #492, closed by the rewrite): `RecordMidi` wrote the extrapolated RENDERED
   position plus the output latency, from a per-frame position read that is a frame old
   (single-slot handoff refilled after each read), so every note lands about
   `2 × outputLatency − (frame − quantum)` past the heard beat, the same at every tempo;
@@ -409,14 +418,18 @@ MIDI capture and the clicks through a Tape pinned to the microphone, and reports
   audio side reads 64 ms late, a whole step), re-matches the eighths around the anchor so a
   stray onset cannot take a pair, then matches the 1/32 bar around it and reports every error
   raw; a lost click stays lost.
-- **What it measured:** uncalibrated, the key lands 31 ms BEFORE the sound (the audio late by
-  exactly the input part); calibrated, the sound is on its calibrated position to 0.00 ms and
-  the key 33 ms late. The parts-apart figure is safe against a constant the chain hides (key
+- **What it measures now:** calibrated, the key and the sound land together, both on the heard
+  beat (0.00 ms apart, max deviation 0.01 ms); uncalibrated, the key is on the beat and the sound
+  late by exactly the input part (63.80 ms on the built-in microphone). Before the capture
+  rewrite the key landed 33 ms after the sound calibrated and 31 ms before it uncalibrated, with
+  7–10 ms of MIDI jitter. The parts-apart figure is safe against a constant the chain hides (key
   and click share one clock pair); the audio side's 0.00 is a consistency check through one
-  chain, not an absolute truth (a cable loopback is that). The jitter (7–10 ms) is all the
-  MIDI recorder's.
-- `together` is the player's wish (within a quantum); every cell measured so far reads the
-  band computed from the row's own figures.
+  chain, not an absolute truth (a cable loopback is that).
+- `together` is the player's wish (within a quantum). The band (`matches-known-defect`) follows the
+  build: `CombinedContext.midiPlacesAtHeardTime` (the served engine reports transport anchors —
+  deliberately not a `buildFeatures` entry, whose exact shape the one-quantum tally keys on) sets
+  the MIDI term to 0, so an uncalibrated cell reads the band as "audio late by the microphone
+  latency the SDK was not told"; on the earlier recorder the term is `expectedLateMedianMs`.
 
 ## Cross-References
 - For recording preferences (takes, count-in), see `src/demos/recording/CLAUDE.md`

@@ -5940,3 +5940,138 @@ on 0.0.174, 6 in 788 on 0.0.173 and 1 in 416 on 0.0.172. The forced runs stay ou
 
 Every reading is the 0.0.177 reading: placement, finalization, the stamp repair, the netted stop,
 the netted inter-tape skew. The one raw skew is the browser's node delay, netted out as designed.
+
+## Standing sweep on 0.0.180 (2026-10-30)
+
+`@opendaw/studio-sdk@0.0.180` (build probe `upstream`, `buildFeatures: ["recordingStart"]` →
+`release` profile; PRs #378 / #380 still open). The release is the maintainer's capture rewrite:
+capture IO behind ports (`studio-core/src/io`), a `RecordingSession` per project, and the
+engine now reports every transport start, jump and stop in context time
+(`engine.subscribeTransportAnchors`). On this harness's path that changes three things:
+a loop take ends at the engine's wrap anchor instead of at `tempoMap.intervalToSeconds(position,
+loopTo)` computed when the main-thread position went backwards; the recording finishes on the
+engine's stop anchor; and a live input's source node is rebuilt 250 ms after another stream
+opens, the device list changes or the context resumes, instead of the old per-recording
+open. The first-take formula (`recordingStart.contextTime − firstQuantumTime + output + input +
+compensation latency`) is unchanged; the count-in fallback for a late anchor is gone. A stored
+round trip (`localStorage["opendaw:round-trips"]`, new) would replace both latencies on a Tape
+left on Inherit, as this harness's are: none existed in the browser (read before the first run).
+Details in `changelogs/sdk-0.0.179-to-0.0.180-changes.md`. Chrome 156, the Playwright browser,
+the tab visible throughout, a fresh `node_modules` and dev server, **the Mac's output device at
+44.1 kHz** (read off a bare `new AudioContext().sampleRate`).
+
+### Single tape
+
+| file | rate | rows | error rows | cells `aligned` | finalized | netted medians |
+|---|---|---|---|---|---|---|
+| `recaudit-summary-1793387813664.json` | 48000 | 60 | 0 | 10 of 10 | 60 of 60 | +1.10…+1.17 ms |
+| `recaudit-summary-1793388244953.json` | 44100 | 60 | 0 | 10 of 10 | 60 of 60 | +1.09…+1.19 ms |
+
+**Every scenario but `loop-wrap` is the 0.0.179 placement to the row** (48 kHz +1.15 on all 24
+start rows; 44.1 kHz +1.16…+1.19, one `midtimeline-start/120` row 1.18 against 1.19).
+
+**`loop-wrap` takes no longer drift.** On 0.0.179 each later take of a repeat sat a little earlier
+than the one before — 44.1 kHz 120 bpm 1.13 / 1.11 / 1.09 / 1.07 / 0.98, 97.3 bpm 1.14 / 1.12 /
+1.10 / 1.08 / 0.98; 48 kHz 97.3 bpm 1.15 / 1.15 / 1.14 / 1.13 / 1.07 (48 kHz 120 bpm, a loop of
+whole frames, never drifted). On 0.0.180: 44.1 kHz 120 bpm 1.16 ×4 / 1.09, 97.3 bpm 1.16–1.18 ×4 /
+1.09–1.10; 48 kHz 97.3 bpm 1.16 ×4 / 1.10; 48 kHz 120 bpm unchanged (1.17 ×4 / 1.10). The old
+split cut every take at the loop's musical length in seconds (`tempoMap.intervalToSeconds`), and
+the lap the engine rendered was about a frame (0.02 ms) off that length at three of the four
+rate / tempo pairs — 44.1 kHz at 120 bpm too, a loop of exactly 176 400 frames, so it is not only
+a fractional loop length; where the engine places its wrap inside a block was not read for this.
+Each take's offset then accumulated the difference. The take now ends at the engine's own wrap
+stamp. The fifth take of each
+repeat (the one the stop lead cuts) reads about 0.07 ms under the others on both releases. The 48 kHz
+tally is 1.15 ×27, 1.17 ×15, 1.16 ×12, 1.10 ×6 (0.0.179: 1.15 ×33, 1.17 ×15, 1.07 / 1.10 / 1.13 /
+1.14 ×3 each).
+
+**Tail deficit: 0 of 60 rows at 48 kHz; at 44.1 kHz one repeat, `loop-wrap/120` r2, 0.04 ms** on
+its six takes (one file: the deficit is the recording's, not six events), under two frames — the
+frame rounding the 0.0.179 sweep read at 0.14 ms on a `nominal-start` row.
+
+**Head deficit: none.** The cold-start event every sweep since 0.0.173 recorded on the first
+recording of a fresh dev server (0.0.179: 129.0 ms on `nominal-start/120` r1) did not occur, on
+a fresh `node_modules` and dev server as before. One run is no evidence it is gone; the next
+sweeps say whether it was the old per-recording input open.
+
+### Multi-mic (`multitrack-all`, 120 BPM, 48000 Hz), 8 repeats per cell
+
+| file | rows | error rows | finalized | node delays read | netted, every row | cells | raw inter-tape skew |
+|---|---|---|---|---|---|---|---|
+| `recaudit-mt-summary-1793388667334.json` | 32 | 0 | 32 of 32 | 32 of 32 | +1.146 | both `aligned` | 0.00 on all 16 repeats |
+
+Netted skew 0.00, first-frame check 0.00 on every row, no tail deficit. 34 `getUserMedia` opens and
+one source node per tape per repeat on 29 of 32 tapes, two on three (0.0.179: 34; 30 and 2): the
+new rebuild after another stream opens did not add nodes the taps missed. Node delays 12.0 / 20.0 /
+20.7 / 21.3 ms, the vendor register's per-node stream delay.
+
+### Forced: the SDK's stamps under graph work (three runs)
+
+`scenario=multitrack-start&graphChurn=on` (`…1793388817176`, `…1793388885763`,
+`…1793388953248`), 48 rows, 0 error rows, a node delay on every one, 242 / 243 / 199 clock
+discontinuities per run (131 / 131 / 109 stalls), 62 874 to 77 537 connect / disconnect pairs per
+repeat, `nodeTapMissingQuanta` 0 to 2.
+
+| netted / first-frame check, in quanta off the usual | rows |
+|---|---|
+| 0 / 0 | 48 |
+
+As on 0.0.174 through 0.0.179. Netted +1.146 on every row. No tail deficit.
+
+### The one-quantum event, counted
+
+`one-quantum-events.ts` after these runs: 0.0.180 **0 in 76** repeats (30 single-tape at 48 kHz,
+30 at 44.1 kHz, 16 multi-mic), as on 0.0.179, 0.0.177, 0.0.176 and 0.0.175 (forced runs left out: 27).
+
+### Reading
+
+Placement, finalization, the stamp repair, the netted stop and the netted inter-tape skew read as
+on 0.0.179, except where the release meant to change them: loop takes are now cut where the engine
+wrapped, and the per-take drift of about 0.02 ms a lap is gone.
+
+### A stored round trip, measured on this harness (2026-10-30)
+
+0.0.180 stores a measured round trip in `localStorage["opendaw:round-trips"]` and applies it to
+every Tape left on Inherit, as this harness's are. Positive control, `nominal-start/120` at
+48 kHz: an entry of 50 ms for the run's own devices (output "Default - MacBook Pro Speakers
+(Built-in)", input "MediaStreamAudioDestinationNode", 48 000 Hz) put the take at **−25.85 ms
+netted** (waveform offset 0.0526 s against 0.0256 s), against +1.15 without it: the 27 ms
+between the entry and the 23 ms `outputLatency` the context reported, to the hundredth. The
+harness now refuses a run at its start while any entry is stored (`src/lib/audit/storedRoundTrips.ts`;
+a check on the capture's own `roundTrip` missed the first repeat, whose stream was still opening —
+arming starts it, `prepareRecording` awaits it): with the entry the run ends `error:<the refusal>` at setup, without it
++1.15 on all three repeats. The control envelopes are in `.verify-output/round-trip-guard-controls/`,
+out of the one-quantum tally.
+
+### Device at 48 kHz (2026-10-30)
+
+The same release with the Mac's output device switched to 48 kHz (read off a bare
+`new AudioContext().sampleRate`), so a 48 000 Hz context runs at the device's rate and a 44 100 Hz
+context is resampled — the first time this harness ran on that footing.
+
+| file | context rate | rows | error rows | cells `aligned` | netted medians | tail deficit rows |
+|---|---|---|---|---|---|---|
+| `recaudit-summary-1793391880114.json` | 48000 (native) | 60 | 0 | 10 of 10 | +1.10…+1.17 ms | 0 |
+| `recaudit-summary-1793392305390.json` | 44100 (resampled) | 60 | 0 | **6 of 10** | −0.84…+2.18 ms | 1 (0.16 ms) |
+| `recaudit-summary-1793393245510.json` | 44100 (resampled), repeat | 60 | 0 | 10 of 10 | +1.09…+1.19 ms | 25 (up to 1.08 ms, median 0.39) |
+| `sdk-0179-resampled-ab/recaudit-summary-1793392754489.json` | 44100 (resampled), **0.0.179** | 60 | 0 | 10 of 10 | +0.98…+1.19 ms | 15 (up to 1.02 ms, median 0.25) |
+| `recaudit-mt-summary-1793393678096.json` | 48000 multi-mic | 32 | 0 | 2 of 2 | +1.146 every row | 0 |
+
+**48 000 on the 48 kHz device reads as on the 44.1 kHz device, row for row** (tally 1.15 ×27, 1.17
+×15, 1.16 ×12, 1.10 ×6); the multi-mic run too (+1.146, raw skew 0.00 on every repeat). The context
+reported `outputLatency` 0.022 s here, 0.023 s on the 44.1 kHz device.
+
+**The first resampled 0.0.180 run moved by whole milliseconds.** Its netted medians sat at −0.84, 0.16,
+1.16 or 2.16 ms from one repeat to the next (`nominal-start/120`: 0.16, 1.16, −0.84), and four cells read
+`investigate`. Every step is in the take's own `waveformOffset` (26.604 / 25.604 / 27.604 ms on the
+three `nominal-start/120` repeats, exactly 1 ms apart, while the loopback delay moves smoothly) — the
+`outputLatency` the SDK read at placement stepping through 0.022–0.025 s. A/B on the same device and
+context: the installed 0.0.179 packages swapped back in (the byte-exact pre-upgrade copy, dev server
+restarted, `.vite` cleared) read every cell `aligned` with the offset steady; a repeat of the 0.0.180
+sweep read every cell `aligned` too, the recorder logging 0.022 s on every take it logged. Both releases
+read `outputLatency` at placement, so one stepping run in three is the browser's report moving, not
+something the release introduced; recorded as an observation in `docs/known-vendor-issues.md`.
+
+**Tail deficits appear on the resampled context only, on both releases** (0.0.179 15 of 60 rows, up to
+1.02 ms; 0.0.180 1 and 25 of 60, up to 1.08 ms; none at 48 000 on either device). Sub-millisecond, as
+the 44.1 kHz device's frame-rounding rows, but more of them; not an SDK finding on this evidence.

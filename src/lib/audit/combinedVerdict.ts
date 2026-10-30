@@ -1,8 +1,8 @@
 /**
  * The verdict of a combined MIDI + audio cell. `together` is the player's wish: key and
  * sound within a quantum. The band is the two recorders' known shapes computed from the
- * row's own figures: the MIDI recorder's late term minus whatever microphone latency the
- * SDK was not told about. Before any band, in either state, a row whose audio median disagrees
+ * row's own figures: the MIDI recorder's late term (zero on a build that places a key at its
+ * heard time) minus whatever microphone latency the SDK was not told about. Before any band, in either state, a row whose audio median disagrees
  * with the run's own calibration names the microphone path, not the SDK.
  */
 import {
@@ -20,6 +20,15 @@ export interface CombinedContext extends BandContext {
   micRoundTripMs: number;
   micInputPartMs: number;
   inputLatencyAppliedMs: number;
+  /** The MIDI recorder places a key at its stamp's heard time (the capture rewrite: the engine
+   *  reports transport anchors), so it has no late term; false on the earlier recorder, which wrote
+   *  the frame-stale rendered position plus its latency term (`expectedLateMedianMs`). */
+  midiPlacesAtHeardTime: boolean;
+}
+
+/** Where the MIDI recorder lands a key against the heard beat, by the build's rule. */
+export function expectedMidiMs(ctx: CombinedContext): number {
+  return ctx.midiPlacesAtHeardTime ? 0 : expectedLateMedianMs(ctx);
 }
 
 /** Where the SDK should land the sound: the round trip less what the audio recorder subtracts — the output latency of
@@ -30,7 +39,7 @@ export function expectedAudioMs(ctx: CombinedContext): number {
 
 /** Where the key lands relative to the sound on this machine, by the two recorders' rules. */
 export function expectedPartsApartMs(ctx: CombinedContext): number {
-  return expectedLateMedianMs(ctx) - expectedAudioMs(ctx);
+  return expectedMidiMs(ctx) - expectedAudioMs(ctx);
 }
 
 export interface CombinedRepeatInput {
@@ -90,7 +99,9 @@ export function classifyCombinedCell(
     return {
       status: "matches-known-defect",
       detail: `the two recorders' known shapes: medians ${medians.map(fmt).join(", ")} ms against expected ${expected.map(fmt).join(", ")} ms `
-        + "(MIDI late by 2 × latency − a stale frame, audio late by the microphone latency the SDK was not told)",
+        + ((repeats[0].context as CombinedContext).midiPlacesAtHeardTime
+          ? "(MIDI on the heard beat, audio late by the microphone latency the SDK was not told)"
+          : "(MIDI late by 2 × latency − a stale frame, audio late by the microphone latency the SDK was not told)"),
     };
   }
   const offender = repeats.findIndex((r, i) => Math.abs(medians[i] - expected[i]) > LATE_MEDIAN_MARGIN_MS || devs[i] > jitterBound(r));

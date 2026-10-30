@@ -113,8 +113,12 @@ When `allowTakes` is true AND `loopArea.enabled` is true, each time playback wra
   (`loopFrom` → `loopTo`).
 - With `loopArea.enabled = false`, `allowTakes` has no effect — recording produces a
   single continuous region regardless of the setting.
-- Loop-wrap detection uses `currentPosition < lastPosition` (position jumped backward),
-  then calls `startNewTake(loopFrom)` to begin the next take at the loop start.
+- The wrap is the engine's own report: a `"jump"` anchor with `recording: true` from
+  `engine.subscribeTransportAnchors`, stamped in context time at the sample it rendered. The
+  take ends there and the next begins at the anchor's position (the loop start), with no
+  animation frame needed — every lap becomes a take on a hidden page too. Any recorded jump
+  does the same (a seek or a marker jump ends the take; the next begins at its target); a seek
+  flagged in the recording's first quantum does not.
 - Zero-duration takes are deleted at the wrap instead of being finalized.
 
 ### Input Latency Compensation
@@ -138,7 +142,14 @@ control of recording level vs monitoring level:
 ```
 sourceNode → monitorGainNode → monitorPanNode → destination (or custom output device)
          ↘ recordGainNode → RecordingWorklet (recording path)
+         ↘ keep-alive gain (0) → destination (keeps the source pulled)
 ```
+The nodes live in the SDK's `BrowserAudioInput` / `BrowserMonitor` (`CaptureAudio.input`);
+`CaptureAudio`'s getters read through them. The source node is REBUILT on the same stream
+250 ms after another stream opens or closes, the device list changes or the context resumes
+(deferred while a take records from it): a live source reads about 24 ms late for good after
+any of those. A node a page tapped earlier can therefore be replaced without a re-arm.
+
 - `monitorVolumeDb`, `monitorPan`, `monitorMuted` are direct property setters (no transaction)
 - `setMonitorOutputDevice(Option<string>)` routes monitor audio to a specific output device
   via `HTMLAudioElement.setSinkId()` and `MediaStreamAudioDestinationNode`
@@ -147,6 +158,18 @@ sourceNode → monitorGainNode → monitorPanNode → destination (or custom out
   through `monitorGainNode` → `monitorPanNode` → destination
 - Output device enumeration: use `navigator.mediaDevices.enumerateDevices()` filtering
   for `kind === "audiooutput"` (not handled by `AudioDevices` class)
+
+### Stored Round Trip Overrides the Reported Latencies
+`capture.measureRoundTrip()` stores a steady round trip per output device, input label and
+sample rate in `localStorage["opendaw:round-trips"]`; while one exists for a Tape's devices
+and the Tape's own `captureBox.inputLatency` is Inherit, its takes use that figure as the
+output latency and 0 as the input latency (the engine preference is not read). The recording
+audits leave their Tapes on Inherit, so the recording-alignment and hidden-page pages call
+`assertNoStoredRoundTrip` (`src/lib/audit/storedRoundTrips.ts`) at a run's start and end
+`error:<the refusal>` while ANY entry is stored (which one applies is known only after the SDK
+opens the stream; a 50 ms entry measured −25.85 ms netted against +1.15). The calibration page,
+served against an override build without round trips, does not check. The SDK readme's "Latency
+calibration" section and `documentation/08-recording.md` describe the API.
 
 ### Never Call stop(true) During Recording Finalization
 `stopRecording()` stops transport; the SDK then finalizes asynchronously on the main
@@ -289,7 +312,10 @@ below use that case); subsequent takes inherit it transitively through accumulat
 ```
 Buffer: [count-in frames | Take 1 audio | Take 2 audio | Take 3 audio ...]
 
-Take 1: waveformOffset = workletHeadStart + countInSeconds + outputLatency + inputLatency (set by SDK)
+Take 1: waveformOffset = (recordingStart.contextTime − firstQuantumTime) + outputLatency
+        + inputLatency + compensationLatency − intervalToSeconds(floor(position), position)
+        (set by SDK; the first term holds the count-in, the last the pulse fraction the
+        integer region position drops)
 Take 2: waveformOffset = take1.waveformOffset + take1.duration
 Take 3: waveformOffset = take2.waveformOffset + take2.duration
 ```
@@ -297,12 +323,11 @@ The count-in frames sit at the start of the buffer and are never referenced afte
 skips past them. Each take's `waveformOffset` is set once at creation time in
 `RecordAudio.ts` and never modified afterward.
 
-**Take durations:** Wrap-finalized takes get deterministic tempo-map durations —
-at each loop wrap the SDK sets the finalized take's duration to
-`tempoMap.intervalToSeconds(regionBox.position, loopTo)`, so there is no overshoot
-past the loop boundary. The FINAL take (teardown-finalized at stop) keeps the last
-live duration write (`numberOfFrames / sampleRate - waveformOffset`), which is
-RenderQuantum-granular — expect up to one audio block of extra tail on that take only.
+**Take durations:** a wrap-finalized take's duration is the time the engine rendered
+between its start and the wrap (`jump.contextTime + ringOffset − waveformOffset`), not the
+loop's musical length — the two differ by under one sample a lap, which used to make each later
+take of a recording sit about 0.02 ms earlier (the recording register's standing-sweep
+sections). The FINAL take ends at the engine's stop stamp, netted like the start.
 
 **5 ms crossfade at loop boundaries:** When the loop action proceeds (i.e.
 `playback.pauseOnLoopDisabled` is off — with it enabled the engine pauses at the wrap
@@ -361,11 +386,13 @@ created in the SAME `AudioContext` the engine captures into works — measured
 rms=0.074515 (14.9x the 0.005 pass threshold) on a 4s take recorded through it. Hand
 out `stream.clone()` per `getUserMedia` call so a consumer's `track.stop()` (tape
 disarm/remove) can't kill the source stream — see `src/lib/audit/loopbackInjection.ts`.
-Note: the SDK's take-region creation is gated on `engine.position` actually advancing
-(`RecordAudio.js`'s `fileBox.isEmpty()` branch, driven by
-`engine.position.catchupAndSubscribe`) — the documented transport-position-start delay
-(see `src/demos/engine/CLAUDE.md`) can produce a "0 regions" result unrelated to
-capture routing; poll `engine.position`/`isRecording` if a recording produces no take.
+Note: the SDK creates the first take once BOTH `engine.recordingStart` and the recording
+worklet's first-quantum time have arrived (checked when `engine.recordingStart` arrives, on
+every transport anchor and on every `engine.position` update while recording — the worklet's
+time is read, not subscribed; it is normally in first, the worklet being connected in
+`prepareRecording` before the engine starts) and never estimates them — a recording whose engine
+never reports a start produces no take; poll `engine.recordingStart` / `isRecording` if a
+recording produces none.
 
 ### Monitoring Peaks Across Recording Lifecycle
 Run the peaks AnimationFrame unconditionally for the component's lifetime — do NOT
@@ -660,14 +687,16 @@ records a Tape through the alignment harness's loopback for eight bars, interrup
 at the chosen moment, reads the take with the harness's reader, then records a second,
 uninterrupted take. Register: `debug/2026-10-21-hidden-page-recording/note.md`.
 
-- **The three frame-bound moments.** `RecordAudio` resolves the take's file inside its
-  `engine.position` subscription, the live length is written per frame, and a stop's
-  finalization waits on the recording flag; the engine's main-thread sync itself runs on
-  animation frames, which Chrome stops for a hidden document and a fully covered window.
-  Measured: the recorder survives all three moments on the SDK's own frame driver — the
-  audio is drained by a worker (openDAW#290) and the main thread catches up when it runs again —
-  but the page's VIEW freezes for the hidden span (`positionFrozenMs` = the hide, to the
-  sample), so a stop driven from a position wait lands late and a harness deadline gives up.
+- **What still waits for a frame.** The take's file and first region are made when the
+  engine's recording start arrives (the recording worklet's first-quantum time is normally in
+  by then; if not, the next anchor or frame makes them), and the stop finalizes on the engine's stop anchor —
+  neither waits for a frame. The live region length is still written per frame, and the
+  engine's main-thread sync (position, the flags) runs on animation frames, which Chrome
+  stops for a hidden document and a fully covered window. Measured: the recorder survives a
+  hide at the start, mid-take and at the stop on the SDK's own frame driver — the audio is
+  drained by a worker (openDAW#290) and the main thread catches up when it runs again — but
+  the page's VIEW freezes for the hidden span (`positionFrozenMs` = the hide, to the sample),
+  so a stop driven from a position wait lands late and a harness deadline gives up.
 - **The driver.** `initializeOpenDAW`'s `frameDriver` option (default `window`, the SDK's
   path; `?frameDriver=hidden-safe` on any demo URL opts in, except on this page, which passes
   its own `?driver=` as the option) pumps the SDK's `AnimationFrame`
