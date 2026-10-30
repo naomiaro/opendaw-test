@@ -232,9 +232,14 @@ unless a parameter is hovered; the note editor's "No CaptureMidi available" erro
   input sweep (36 of 36 `aligned`), its five-repeat loop-wrap row (`aligned`, the note on the loop end in
   the new take on 5 of 5 repeats within 0.004 ms), its `&effect=arpeggio` / `pitch` arm (`aligned`, 48
   of 48 notes with either effect) and the combined MIDI + audio cell (calibrated `together`); readings in
-  the MIDI input and combined registers under "SDK 0.0.180".
-- **Not run here**: the MIDI output timing audit, the hidden-page `cover` rows, and the Chromium probe's
-  bfcache, freeze, OPFS-restart, microphone and Bluetooth rows.
+  the MIDI input and combined registers under "SDK 0.0.180". The MIDI output timing audit, all three runs
+  (the release does not touch MIDI output): Run A engine transport-off `on-time` (live 10.21 / 10.22 ms),
+  transport-on the 0.0.179 one-off `investigate` on a live spread (3.53 ms) inside its drift range;
+  Run B both engine cells `matches-known-defect` (inside-block medians 60.38 / 60.76 ms, four
+  inversions per cell, as before); Run C every engine cell `on-time` (live 10.10–10.28 ms); every page
+  cell `bus-true`. Rows in `debug/2026-10-23-midi-output-timing/note.md` under "SDK 0.0.180".
+- **Not run here**: the hidden-page `cover` rows, and the Chromium probe's bfcache, freeze,
+  OPFS-restart, microphone and Bluetooth rows.
 - **The output device at 48 kHz** (the second footing root CLAUDE.md asks for; the first time these
   sweeps ran on it): sample-rate 240 of 240 with the same maxima; recording at 48 000 (now the device's
   own rate) the 44.1 kHz device's reading row for row; multi-mic +1.146 on every row; loudness 28 of 28
