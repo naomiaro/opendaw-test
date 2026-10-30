@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import { classifyCombinedCell, expectedAudioMs, expectedPartsApartMs } from "./combinedVerdict";
 import { quantumMs } from "./midiInputAlignment";
 
-const ctx = (state: "default" | "calibrated", micInputPartMs = 40.9, outputLatencyMs = 23) => ({
+const ctx = (state: "default" | "calibrated", micInputPartMs = 40.9, outputLatencyMs = 23, midiPlacesAtHeardTime = false) => ({
   outputLatencyMs, compensationLatencyMs: 0, frameIntervalMs: 16.7, sampleRate: 44100,
   state, micRoundTripMs: micInputPartMs + 23, micInputPartMs, inputLatencyAppliedMs: state === "calibrated" ? micInputPartMs : 0,
+  midiPlacesAtHeardTime,
 });
 const midi = (over = {}) => ({
   notesSent: 48, notesRecorded: 48, judgedNotes: 48, missing: 0, receiptsMissing: 0, extra: 0, stuck: 0, velocityMismatches: 0, collapsed: 0,
@@ -78,5 +79,17 @@ describe("expectedAudioMs with plug-in delay compensation", () => {
     const c = { ...ctx("default"), compensationLatencyMs: 5 };
     expect(expectedAudioMs(c)).toBeCloseTo(63.9 - 23 - 0 - 5, 6);
     expect(expectedPartsApartMs(c)).toBeCloseTo(2 * 28 - (16.7 - quantumMs(44100)) - (63.9 - 23 - 5), 6);
+  });
+
+  it("on a recorder that places a key at its heard time, expects no MIDI late term (measured: 63.8 ms input part, SDK 0.0.180)", () => {
+    const heard = (state: "default" | "calibrated") => ctx(state, 63.8, 23, true);
+    expect(expectedPartsApartMs(heard("default"))).toBeCloseTo(-63.8, 1);
+    expect(expectedPartsApartMs(heard("calibrated"))).toBeCloseTo(0, 1);
+    const v = classifyCombinedCell("nominal-start", [{ midi: midi({ placementMedianMs: 0 }), combined: combined(-63.8, 63.8, { partsApartMaxAbsDevMs: 0.01 }), context: heard("default") }]);
+    expect(v.status).toBe("matches-known-defect");
+    expect(v.detail).toContain("MIDI on the heard beat");
+    expect(classifyCombinedCell("nominal-start", [{ midi: midi({ placementMedianMs: 0 }), combined: combined(0, 0, { partsApartMaxAbsDevMs: 0.01 }), context: heard("calibrated") }]).status).toBe("together");
+    // The same default row judged by the earlier recorder's rule misses its band.
+    expect(classifyCombinedCell("nominal-start", [{ midi: midi(), combined: combined(-63.8, 63.8, { partsApartMaxAbsDevMs: 0.01 }), context: ctx("default", 63.8) }]).status).toBe("investigate");
   });
 });

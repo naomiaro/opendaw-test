@@ -30,7 +30,10 @@ captures can measure and store their real round trip. It closes two issues this 
    new take. **Measured here: the IAC sweep reads 36 of 36 rows `aligned`, medians 0.00–0.01 ms
    against the heard beat** (0.0.176–0.0.179: about +32 ms, the `MIDI_KNOWN_DEFECTS` band, which
    now only catches a regression back to the old recorder); the note on the loop end lands in the new
-   take, 0.007 ms off.
+   take, 0.007 ms off. The combined MIDI + audio cell, calibrated, now reads `together` — key and
+   sound both on the beat, 0.00 ms apart (on 0.0.176 the key landed 33 ms after the sound); its band
+   follows the build (`midiPlacesAtHeardTime`), so an uncalibrated cell reads the sound late by the
+   untold input part (63.80 ms) with the key on the beat.
 4. **A release keeps its length through a main-thread block** — openDAW#492, filed from this
    repo, CLOSED. The note-off is written from its own stamp on the anchor log
    (`transport.advance`), not from the first frame after the block. Measured: 0 collapsed releases
@@ -226,8 +229,7 @@ unless a parameter is hovered; the note editor's "No CaptureMidi available" erro
   per MiB; `opfs-usage` in-session `COUNTED`. Rows in the recording and loudness registers under
   "0.0.180", and in the vendor register's "Last checked" lines.
 - **Not run here** (they need the IAC Driver, the built-in microphone in a quiet room, or a hand):
-  the MIDI input sweep's five-repeat loop-wrap row and `&effect=` arm, the combined MIDI + audio
-  sweep, the MIDI output timing audit, the hidden-page `cover` rows, and the Chromium probe's bfcache,
+  the MIDI input sweep's five-repeat loop-wrap row and `&effect=` arm, the MIDI output timing audit, the hidden-page `cover` rows, and the Chromium probe's bfcache,
   freeze, OPFS-restart, microphone and Bluetooth rows.
 - **The output device at 48 kHz** (the second footing root CLAUDE.md asks for; the first time these
   sweeps ran on it): sample-rate 240 of 240 with the same maxima; recording at 48 000 (now the device's

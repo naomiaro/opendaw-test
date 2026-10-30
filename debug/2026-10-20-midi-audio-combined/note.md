@@ -5,11 +5,10 @@
 **SDK Pin:** `@opendaw/studio-sdk@0.0.176` (installed npm package; WASM engine only)
 
 **SDK 0.0.180 (2026-10-30):** the MIDI side's +33 ms (openDAW#491) is closed by the capture rewrite;
-the MIDI recorder now places a key at its stamp's heard context time. Not re-measured: expect the
-calibrated cell's key to land near the sound instead of 33 ms after it, and the uncalibrated cell
-to read about the input part apart (the audio late, the key on the beat), not 31 ms the other way.
-The page's guard against a stored round trip is not needed: it sets the Tape's own `inputLatency`,
-which wins over one.
+the MIDI recorder now places a key at its stamp's heard context time. **Re-measured the same day:
+calibrated, key and sound land together (0.00 ms apart, each on the beat)** — section "SDK 0.0.180
+(2026-10-30)" at the end. The page needs no guard against a stored round trip: it sets the Tape's
+own `inputLatency`, which wins over one.
 
 **Harness:** unlisted debug demo
 `midi-audio-combined-audit-debug-demo.html?scenario=<nominal-start|countin-start|janked-mid|all>&bpm=<n>[&repeats=<n>][&state=<default|calibrated|both>][&bus=<substring>][&input=<substring>][&output=<substring>][&audible=1]`
@@ -207,3 +206,34 @@ calibration (the upstream PR, or a host-side routine), or say so in its text. No
 - The interface arm when hardware arrives (`?input=` / `?output=`); a cable loopback would
   separate the air path from the device's delay.
 - Manual mode: the user plays the keyboard and claps.
+
+## SDK 0.0.180 (2026-10-30)
+
+`combined-summary-1793396326002.json`: `?scenario=all&bpm=120`, the user's real click, Chrome 156, the
+MacBook Pro built-in microphone and speakers, the IAC Driver Bus 1, a 44 100 Hz context, 3 repeats per
+cell. Calibration: round trip 86.80 ms (spread 0.00), input part 63.80 ms at output latency 23.0 ms.
+
+| scenario | state | parts apart (per repeat) | MIDI median | audio median | max dev | clicks found / missing / extra |
+|---|---|---|---|---|---|---|
+| nominal-start | default | −63.80 ×3 | 0.00 | 63.80 | 0.01 | 144 / 0 / 0 |
+| nominal-start | calibrated | 0.00 ×3 | 0.00 | 0.00 | 0.01 | 144 / 0 / 0 |
+| countin-start | default | −63.80 ×3 | 0.00 | 63.80 | 0.01 | 144 / 0 / 0 |
+| countin-start | calibrated | 0.00 ×3 | 0.00 | 0.00 | 0.01 | 144 / 0 / 0 |
+| janked-mid | default | −63.80 ×3 | 0.00 | 63.80 | 0.01 | 144 / 0 / 0 |
+| janked-mid | calibrated | 0.00 ×3 | 0.00 | 0.00 | 0.01 | 144 / 0 / 0 |
+
+- **Calibrated: `together` in every scenario.** The key and the sound land on the heard beat, 0.00 ms
+  apart; on 0.0.176 the key landed 33 ms after the sound.
+- **Default: the key on the beat, the sound 63.80 ms late** — exactly the input part the SDK was not
+  told (the Tape's own `inputLatency` 0). The page as run read these cells `investigate` against the
+  old band (expected −31.6 = the MIDI recorder's former +32.2 − 63.8); the band now follows the build
+  (`CombinedContext.midiPlacesAtHeardTime`, true when the served engine reports transport anchors),
+  and replaying the run through it reads every default cell `matches-known-defect` ("MIDI on the heard
+  beat, audio late by the microphone latency the SDK was not told") and every calibrated cell
+  `together`.
+- **The input source rebuilt by 0.0.180 did not move the audio side:** every repeat's audio median is
+  the run's own calibration to 0.00 ms. The page cannot see which source node it recorded through (it
+  has no node taps), so this says the rebuild did not happen between the calibration and the takes on
+  this run, or did not change the delay; the multi-mic recording sweep is the one that watches nodes.
+- The jitter the 0.0.176 cells carried (7–10 ms, all the MIDI recorder's) is gone: max deviation 0.01 ms.
+

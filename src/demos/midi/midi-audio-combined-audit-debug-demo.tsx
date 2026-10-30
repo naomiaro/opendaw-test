@@ -15,7 +15,7 @@ import { useCallback, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Badge, Button, Card, Container, Flex, Heading, Table, Text, Theme } from "@radix-ui/themes";
 import "@radix-ui/themes/styles.css";
-import { CaptureAudio, CaptureMidi, MidiDevices, type Project } from "@opendaw/studio-core";
+import { CaptureAudio, CaptureMidi, EngineFacade, MidiDevices, type Project } from "@opendaw/studio-core";
 import { InstrumentFactories, type AudioUnitBoxAdapter } from "@opendaw/studio-adapters";
 import type { AudioUnitBox } from "@opendaw/studio-boxes";
 import { OPENDAW_SDK_VERSION } from "@opendaw/studio-sdk";
@@ -100,6 +100,11 @@ interface MatrixContext {
   outputDevice: string;
   buildFeatures: AuditBuildFeature[];
 }
+
+/** See `CombinedContext.midiPlacesAtHeardTime`: the served build's engine reports transport anchors.
+ *  Read off the SDK class, not `buildFeatures` (the one-quantum tally keys on that list's exact shape). */
+const MIDI_PLACES_AT_HEARD_TIME =
+  typeof (EngineFacade.prototype as unknown as { subscribeTransportAnchors?: unknown }).subscribeTransportAnchors === "function";
 
 async function waitFor(predicate: () => boolean, deadlineMs: number, label: string): Promise<void> {
   const until = performance.now() + deadlineMs;
@@ -285,6 +290,7 @@ async function runAudit(setAuditState: (s: string) => void, onRows: (rows: Combi
               outputLatencyMs: result.midi.outputLatencyMs, compensationLatencyMs: result.midi.compensationLatencyMs,
               frameIntervalMs: result.midi.frameIntervalMs, sampleRate: audioContext.sampleRate,
               state, micRoundTripMs: micRoundTrip.roundTripMs, micInputPartMs: micRoundTrip.inputPartMs, inputLatencyAppliedMs: result.inputLatencyAppliedMs,
+              midiPlacesAtHeardTime: MIDI_PLACES_AT_HEARD_TIME,
             };
             inputs.push({ midi: result.midi.figures, combined: result.figures, context });
           } catch (err) {
@@ -328,7 +334,7 @@ async function runAudit(setAuditState: (s: string) => void, onRows: (rows: Combi
 
   const summary: CombinedSummary = {
     schemaVersion: COMBINED_SCHEMA_VERSION, runToken, userAgent: navigator.userAgent, sdkVersion: OPENDAW_SDK_VERSION,
-    buildFeatures: ctx.buildFeatures, busName: ctx.busName, inputDevice: ctx.inputDevice, outputDevice: ctx.outputDevice,
+    buildFeatures: ctx.buildFeatures, midiPlacesAtHeardTime: MIDI_PLACES_AT_HEARD_TIME, busName: ctx.busName, inputDevice: ctx.inputDevice, outputDevice: ctx.outputDevice,
     sampleRate: audioContext.sampleRate, micRoundTrip, repeatsPerCell, scenarios, states, cellVerdicts, rows: allRows,
   };
   await withDeadline(
@@ -375,6 +381,7 @@ function Harness() {
       outputLatencyMs: last.outputLatencyMs as number, compensationLatencyMs: last.compensationLatencyMs as number, frameIntervalMs: last.frameIntervalMs as number,
       sampleRate: last.sampleRate as number, state, micRoundTripMs: last.micRoundTripMs as number, micInputPartMs: last.micInputPartMs as number,
       inputLatencyAppliedMs: inputLatencySecondsFor(state, last.micInputPartMs as number) * 1000,
+      midiPlacesAtHeardTime: MIDI_PLACES_AT_HEARD_TIME,
     };
     return expectedPartsApartMs(ctx).toFixed(1);
   };

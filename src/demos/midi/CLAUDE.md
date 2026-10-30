@@ -418,14 +418,18 @@ MIDI capture and the clicks through a Tape pinned to the microphone, and reports
   audio side reads 64 ms late, a whole step), re-matches the eighths around the anchor so a
   stray onset cannot take a pair, then matches the 1/32 bar around it and reports every error
   raw; a lost click stays lost.
-- **What it measured:** uncalibrated, the key lands 31 ms BEFORE the sound (the audio late by
-  exactly the input part); calibrated, the sound is on its calibrated position to 0.00 ms and
-  the key 33 ms late. The parts-apart figure is safe against a constant the chain hides (key
+- **What it measures now:** calibrated, the key and the sound land together, both on the heard
+  beat (0.00 ms apart, max deviation 0.01 ms); uncalibrated, the key is on the beat and the sound
+  late by exactly the input part (63.80 ms on the built-in microphone). Before the capture
+  rewrite the key landed 33 ms after the sound calibrated and 31 ms before it uncalibrated, with
+  7–10 ms of MIDI jitter. The parts-apart figure is safe against a constant the chain hides (key
   and click share one clock pair); the audio side's 0.00 is a consistency check through one
-  chain, not an absolute truth (a cable loopback is that). The jitter (7–10 ms) is all the
-  MIDI recorder's.
-- `together` is the player's wish (within a quantum); every cell measured so far reads the
-  band computed from the row's own figures.
+  chain, not an absolute truth (a cable loopback is that).
+- `together` is the player's wish (within a quantum). The band (`matches-known-defect`) follows the
+  build: `CombinedContext.midiPlacesAtHeardTime` (the served engine reports transport anchors —
+  deliberately not a `buildFeatures` entry, whose exact shape the one-quantum tally keys on) sets
+  the MIDI term to 0, so an uncalibrated cell reads the band as "audio late by the microphone
+  latency the SDK was not told"; on the earlier recorder the term is `expectedLateMedianMs`.
 
 ## Cross-References
 - For recording preferences (takes, count-in), see `src/demos/recording/CLAUDE.md`
