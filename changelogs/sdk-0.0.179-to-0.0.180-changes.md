@@ -228,10 +228,13 @@ unless a parameter is hovered; the note editor's "No CaptureMidi available" erro
   loopback `CLEAN` at 48 000, `START GAPS` (one 441-frame run) at 44 100; `opfs-flush` median 0.80 ms
   per MiB; `opfs-usage` in-session `COUNTED`. Rows in the recording and loudness registers under
   "0.0.180", and in the vendor register's "Last checked" lines.
-- **Not run here** (they need the IAC Driver, the built-in microphone in a quiet room, or a hand):
-  the MIDI input sweep's `&effect=` arm (its five-repeat loop-wrap row read `aligned`, the note on the
-  loop end in the new take on 5 of 5 repeats, within 0.004 ms), the MIDI output timing audit, the hidden-page `cover` rows, and the Chromium probe's bfcache,
-  freeze, OPFS-restart, microphone and Bluetooth rows.
+- **Run by hand after the PR opened** (the IAC Driver, the built-in microphone, a real click): the MIDI
+  input sweep (36 of 36 `aligned`), its five-repeat loop-wrap row (`aligned`, the note on the loop end in
+  the new take on 5 of 5 repeats within 0.004 ms), its `&effect=arpeggio` / `pitch` arm (`aligned`, 48
+  of 48 notes with either effect) and the combined MIDI + audio cell (calibrated `together`); readings in
+  the MIDI input and combined registers under "SDK 0.0.180".
+- **Not run here**: the MIDI output timing audit, the hidden-page `cover` rows, and the Chromium probe's
+  bfcache, freeze, OPFS-restart, microphone and Bluetooth rows.
 - **The output device at 48 kHz** (the second footing root CLAUDE.md asks for; the first time these
   sweeps ran on it): sample-rate 240 of 240 with the same maxima; recording at 48 000 (now the device's
   own rate) the 44.1 kHz device's reading row for row; multi-mic +1.146 on every row; loudness 28 of 28

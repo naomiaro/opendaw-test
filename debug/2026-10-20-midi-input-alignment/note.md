@@ -415,5 +415,17 @@ end in the old take on three repeats and the new one on two, 13–34 ms late): e
 beat, and the note on the loop end in the new take on every repeat, within 0.004 ms — the recorder
 holds a key heard past the loop end until the engine's wrap anchor arrives.
 
-Not run on 0.0.180: the `&effect=arpeggio|pitch` arm.
+### Effect arm on 0.0.180
+
+`?scenario=nominal-start&bpm=120&effect=arpeggio` (run `1793396936612`) and `&effect=pitch` (run
+`1793396992258`), the user's real click, 2 repeats each:
+
+| effect | status | rec/sent | medians ms | max dev ms | dur max ms |
+|---|---|---|---|---|---|
+| arpeggio | aligned | 48/48, 48/48 | 0.001 / −0.001 | 0.005 | 0.00 |
+| pitch | aligned | 48/48, 48/48 | 0.004 / 0.006 | 0.005 | 0.00 |
+
+The same reading as without an effect: the recorder takes the capture's raw note signals before the
+MIDI effect chain, so an Arpeggio or a Pitch on the unit changes neither which notes are recorded nor
+where. (On 0.0.176 the arm read the same as its no-effect cell too, then inside the +32 ms band.)
 
