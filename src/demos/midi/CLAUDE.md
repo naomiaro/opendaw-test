@@ -244,8 +244,9 @@ picks another). Register: `debug/2026-10-20-midi-input-alignment/note.md`.
   within ±5 ms of `2 × (output + compensation latency) − (frame − quantum)`, jitter and
   duration within a frame plus a quantum), so it holds on any device or display and a
   median that does not track the formula is a finding; else `investigate` names the first
-  failing figure. The on-page copy says it: expect `investigate` or a band, not
-  `aligned`, until the recorder changes.
+  failing figure. Expect `aligned` (measured: 36 of 36 rows, medians 0.00–0.01 ms, release
+  lengths exact under the 150 ms blocks); the bands describe the recorder before the capture
+  rewrite and now only catch a regression back to it.
 - **Scenarios.** `nominal-start`, `janked-start` (the audio harness's 150 ms block on the
   `isRecording` flip), `janked-mid` (the same block fired from a timer task in the middle of
   the pattern's bar two, between frames), `countin-start` (one-bar count-in; three unanchored
@@ -253,12 +254,14 @@ picks another). Register: `debug/2026-10-20-midi-input-alignment/note.md`.
   the downbeat the SDK writes at position 0), `midtimeline-start` (record from bar
   three), `loop-wrap` (two-bar loop, takes allowed; the notes span two passes and the stop
   lead opens a third take; the note ON the loop end is
-  `wrapAdjacent` and reported, not judged — the SDK writes a key pressed between the loop end
-  and the wrap update into the old take).
-- **What the recorder did, as measured before the capture rewrite** (openDAW#491 / #492
-  CLOSED with it; the IAC sweep has not re-run since, so the bands below describe the old
-  recorder — a cell reading `aligned`, or `investigate` on a median near 0, is the fix
-  arriving, and the register then needs a new reading). `RecordMidi` wrote the extrapolated RENDERED
+  `wrapAdjacent` and reported, not judged — the recorder holds a key heard past the loop end
+  until the wrap's anchor arrives and writes it into the new take; measured matched there,
+  0.007 ms off, on every repeat).
+- **What the recorder does now, as measured** (the IAC sweep after the capture rewrite, 36 rows):
+  every note within 0.01 ms of the heard beat at 90 / 120 / 140 bpm, nothing missing, no release
+  shortened by a 150 ms main-thread block (duration error 0.00 ms), the note on the loop end
+  matched in the new take. Count-in pickups are still dropped or snapped (2 of 6 kept,
+  openDAW#493). **What it did before** (openDAW#491 / #492, closed by the rewrite): `RecordMidi` wrote the extrapolated RENDERED
   position plus the output latency, from a per-frame position read that is a frame old
   (single-slot handoff refilled after each read), so every note lands about
   `2 × outputLatency − (frame − quantum)` past the heard beat, the same at every tempo;

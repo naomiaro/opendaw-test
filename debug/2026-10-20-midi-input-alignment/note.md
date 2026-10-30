@@ -13,11 +13,10 @@ or snapped to the downbeat. Bodies as filed under `drafts/posted-openDAW-49x-*.m
 
 **Closed (2026-10-30):** #491 and #492 are CLOSED by the maintainer's capture rewrite, shipped in
 SDK 0.0.180 (`RecordMidi` places a key at its stamp's heard context time on the engine's
-transport anchors; the release is written from its own stamp). Not yet re-measured here: the
-sweep needs the IAC bus and a real click. Expect the `midi-late` / `midi-late-release-lost` bands
-to stop matching — a cell that reads `aligned`, or `investigate` on a median near 0, is the fix,
-not a regression; the bands then describe 0.0.179 and earlier. #493 stays open (the recorder still
-holds a pre-downbeat key and writes it at position 0).
+transport anchors; the release is written from its own stamp). **Re-measured here the same day:
+36 of 36 rows `aligned`** (section "SDK 0.0.180 (2026-10-30)" at the end). The `midi-late` /
+`midi-late-release-lost` bands describe 0.0.179 and earlier and now only catch a regression back
+to that recorder. #493 stays open (2 of 6 count-in pickups kept, as before).
 
 **Harness:** unlisted debug demo
 `midi-input-alignment-audit-debug-demo.html?scenario=<name|all>&bpm=<n|all>[&repeats=<n>][&bus=<substring>][&audible=1]`
@@ -368,3 +367,36 @@ once the combined harness has run.
 - A combined cell: a MIDI capture and an audio tape recording the same pass, judged
   against each other as well as against the grid — the direct repro of the two recorders'
   disagreement.
+
+## SDK 0.0.180 (2026-10-30)
+
+`midiaudit-summary-1793395479700.json`: `?scenario=all&bpm=all`, the user's real click, Chrome 156,
+the IAC Driver Bus 1, a 44 100 Hz context (the output device's rate is not in the envelope and was
+not recorded for this run), display 59.9 Hz, 2 repeats, no effect.
+The release is the maintainer's capture rewrite, which closed #491 and #492.
+
+| scenario | 90 bpm | 120 bpm | 140 bpm |
+|---|---|---|---|
+| nominal-start | aligned 0.00 / 0.00 | aligned 0.00 / 0.01 | aligned 0.00 / 0.00 |
+| janked-start | aligned 0.00 / 0.00 | aligned 0.00 / 0.00 | aligned 0.01 / 0.00 |
+| janked-mid | aligned 0.00 / 0.00 | aligned 0.00 / 0.00 | aligned 0.00 / 0.00 |
+| countin-start | aligned 0.00 / 0.00 | aligned 0.00 / 0.00 | aligned 0.00 / 0.00 |
+| midtimeline-start | aligned 0.00 / 0.00 | aligned 0.01 / 0.01 | aligned 0.00 / 0.00 |
+| loop-wrap | aligned 0.00 / 0.00 | aligned 0.01 / 0.00 | aligned 0.00 / 0.00 |
+
+Per-repeat placement medians in ms against the HEARD beat, nothing netted.
+
+- **Placement (#491): fixed.** Every cell's medians 0.00–0.01 ms and max deviation ≤ 0.01 ms, against
+  about +32 ms (the `2 × (output + compensation) − (frame − quantum)` band) on 0.0.176–0.0.179. The SDK's
+  latency term still reads 23.00 ms and the heard lag 22.75–25.29 ms; the recorder no longer adds the
+  one to a frame-stale position, it maps the stamp to the heard time.
+- **Release in a block (#492): fixed.** `janked-start` and `janked-mid` (150 ms blocks, frame gaps
+  156–169 ms): 0 collapsed, duration error 0.00 ms on every row — a release inside or just after the
+  block keeps its length.
+- **Loop wrap:** the note on the loop end (`wrapAdjacent`, reported not judged) is now matched in the
+  new take, 0.007 ms off; the old recorder wrote it into the previous take.
+- **Count-in (#493): unchanged.** 2 of 6 pickups recorded per cell, as before; the issue stays open.
+- Integrity: 0 missing / no-receipt / extra / stuck / velocity mismatches on all 36 rows.
+
+Not run on 0.0.180: `?scenario=loop-wrap&bpm=120&repeats=5` and the `&effect=arpeggio|pitch` arm.
+

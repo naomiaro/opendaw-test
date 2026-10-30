@@ -27,12 +27,14 @@ captures can measure and store their real round trip. It closes two issues this 
    anchors instead of extrapolating the frame-stale position plus the output latency (the +32 ms
    this repo measured). Firefox's MIDI stamps, on a clock of their own, are converted
    (`MidiClock`). A key between the loop end and the wrap's arrival is held and replayed into the
-   new take. **The MIDI input sweep's known-defect band (`MIDI_KNOWN_DEFECTS`, `2 × (output +
-   compensation) − (frame − quantum)`) no longer describes the recorder**; the IAC sweep has not
-   been re-run on 0.0.180 (follow-ups).
+   new take. **Measured here: the IAC sweep reads 36 of 36 rows `aligned`, medians 0.00–0.01 ms
+   against the heard beat** (0.0.176–0.0.179: about +32 ms, the `MIDI_KNOWN_DEFECTS` band, which
+   now only catches a regression back to the old recorder); the note on the loop end lands in the new
+   take, 0.007 ms off.
 4. **A release keeps its length through a main-thread block** — openDAW#492, filed from this
    repo, CLOSED. The note-off is written from its own stamp on the anchor log
-   (`transport.advance`), not from the first frame after the block.
+   (`transport.advance`), not from the first frame after the block. Measured: 0 collapsed releases
+   and duration error 0.00 ms on every `janked-start` / `janked-mid` row (150 ms blocks).
 5. **A measured round trip replaces both reported latencies.** `CaptureAudio.measureRoundTrip()`
    plays three maximum-length-sequence noise bursts and finds them in the input; a steady result
    (all three heard, spread ≤ 1.5 ms) is stored in `localStorage["opendaw:round-trips"]` per output
@@ -224,7 +226,7 @@ unless a parameter is hovered; the note editor's "No CaptureMidi available" erro
   per MiB; `opfs-usage` in-session `COUNTED`. Rows in the recording and loudness registers under
   "0.0.180", and in the vendor register's "Last checked" lines.
 - **Not run here** (they need the IAC Driver, the built-in microphone in a quiet room, or a hand):
-  the MIDI input sweeps — **the one that will read #491 / #492's fix** —, the combined MIDI + audio
+  the MIDI input sweep's five-repeat loop-wrap row and `&effect=` arm, the combined MIDI + audio
   sweep, the MIDI output timing audit, the hidden-page `cover` rows, and the Chromium probe's bfcache,
   freeze, OPFS-restart, microphone and Bluetooth rows.
 - **The output device at 48 kHz** (the second footing root CLAUDE.md asks for; the first time these

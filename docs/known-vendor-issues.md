@@ -547,7 +547,8 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   [#492](https://github.com/andremichelle/openDAW/issues/492), [#493](https://github.com/andremichelle/openDAW/issues/493)) are explained by the SDK's own arithmetic (the latency term's sign
   and a frame-stale position base, `debug/2026-10-20-midi-input-alignment/note.md`); #491 and #492 closed with the
   SDK's capture rewrite (0.0.180), whose recorder maps the stamp through `getOutputTimestamp()` — the stamp is now the
-  only input, so a band that moves on the next IAC sweep reads against this entry first. No open Chromium issue concerns `MIDIMessageEvent.timeStamp`, MIDI input latency or jitter
+  only input; the IAC sweep on 0.0.180 read every note within 0.01 ms of the heard beat (36 of 36 rows, Chrome
+  156), so the stamp Chrome assigns over IAC is exact enough that nothing of it shows. No open Chromium issue concerns `MIDIMessageEvent.timeStamp`, MIDI input latency or jitter
   (searched 2026-10-23: `midi` with timestamp, latency, jitter, CoreMIDI and IAC), so the campaign's +32 ms has no
   vendor candidate.
 - **Last checked:** 2026-10-23 (tracker read; no probe — the sweeps are the measurement).
