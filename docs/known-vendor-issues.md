@@ -437,7 +437,9 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   output, none with dither, on the built-in microphone. The loopback rows again on Chrome 156.0.8078.49,
   2026-10-29 (SDK 0.0.179 sweep): `CLEAN` at 48 000, `START GAPS` at 44 100 with the one 441-frame run
   441 frames after the tone (`chromium-capture-gaps-mvtrn8ia-fvqb.json`); again on Chrome 156.0.8078.74,
-  2026-10-30 (SDK 0.0.180 sweep): `CLEAN` at 48 000, `START GAPS` with one 441-frame start run at 44 100.
+  2026-10-30 (SDK 0.0.180 sweep): `CLEAN` at 48 000, `START GAPS` with one 441-frame start run at 44 100, and
+  the same two readings with the Mac's output device at 48 kHz — the start run follows the context's rate, not
+  the device's.
   The microphone rows were not run on 156.
 
 ### Chromium [40726491](https://issues.chromium.org/issues/40726491) — `getOutputTimestamp()`'s context ↔ performance relation wanders: a sawtooth of one device buffer on a context at the other rate than the device's, single early steps at the device's rate
@@ -827,6 +829,26 @@ upstream tracker, or are by design.
   on 2026-10-22, on 0.0.179 and on 0.0.180 (2026-10-30: alerts up 13.0 / 5.0 / 10.9 s, every take intact; 0.0.180
   finalizes on the engine's stop anchor, and the `stop` row still waited the dialog out, 10 955 ms, the anchor's handler
   being main-thread too).
+
+### Chrome — on a context resampled to the device, the reported `outputLatency` can step by whole milliseconds mid-session
+
+- **Tracker:** none; measured behaviour, not reported. Related: [40726491](https://issues.chromium.org/issues/40726491)
+  (the same resampled configuration is where `getOutputTimestamp()`'s sawtooth lives).
+- **Symptom:** with the Mac's output device at 48 kHz and a context created at 44 100 Hz, Chrome 156 reported
+  `audioContext.outputLatency` at 0.022, 0.023, 0.024 and 0.025 s across one six-minute recording sweep (each a whole
+  millisecond), and a flat 0.022 s across two others of the same length (one of them on the previous SDK release).
+  Every value read here, on either device rate, was a whole millisecond.
+- **Where it bites here:** the SDK adds the `outputLatency` it reads when a take is placed to the take's
+  `waveformOffset` (both 0.0.179 and 0.0.180 read it at placement), so in the stepping run the recording-alignment
+  sweep's netted medians moved by exactly 1.00 ms between repeats (−0.84 / 0.16 / 1.16 / 2.16 ms) and four of ten cells
+  read `investigate`; the harness reads the latency once per run. Also on the resampled context only, both releases
+  leave sub-millisecond tail deficits (0.0.179: 15 of 60 rows, up to 1.02 ms; 0.0.180: 1 and 25 of 60, up to 1.08 ms),
+  none at 48 000 on the same device.
+- **Workaround:** none needed for the demos; for the sweeps, read a resampled run's cells against this entry
+  before the SDK, and keep the device at 44.1 kHz between sessions as root CLAUDE.md asks. A context at the device's
+  own rate showed neither (48 000 on the 48 kHz device: 60 of 60 rows as at 44.1 kHz).
+- **Evidence:** `debug/2026-09-02-recording-start-alignment/note.md`, "Standing sweep on 0.0.180", "Device at 48 kHz".
+- **Last checked:** 2026-10-30, Chrome 156.0.8078.74, macOS 15.6.1.
 
 ### Chrome — each `MediaStreamAudioSourceNode` delivers its stream with a delay of its own
 

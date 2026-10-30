@@ -6042,3 +6042,36 @@ a check on the capture's own `roundTrip` missed the first repeat, whose stream w
 arming starts it, `prepareRecording` awaits it): with the entry the run ends `error:<the refusal>` at setup, without it
 +1.15 on all three repeats. The control envelopes are in `.verify-output/round-trip-guard-controls/`,
 out of the one-quantum tally.
+
+### Device at 48 kHz (2026-10-30)
+
+The same release with the Mac's output device switched to 48 kHz (read off a bare
+`new AudioContext().sampleRate`), so a 48 000 Hz context runs at the device's rate and a 44 100 Hz
+context is resampled — the first time this harness ran on that footing.
+
+| file | context rate | rows | error rows | cells `aligned` | netted medians | tail deficit rows |
+|---|---|---|---|---|---|---|
+| `recaudit-summary-1793391880114.json` | 48000 (native) | 60 | 0 | 10 of 10 | +1.10…+1.17 ms | 0 |
+| `recaudit-summary-1793392305390.json` | 44100 (resampled) | 60 | 0 | **6 of 10** | −0.84…+2.18 ms | 1 (0.16 ms) |
+| `recaudit-summary-1793393245510.json` | 44100 (resampled), repeat | 60 | 0 | 10 of 10 | +1.09…+1.19 ms | 25 (up to 1.08 ms, median 0.39) |
+| `sdk-0179-resampled-ab/recaudit-summary-1793392754489.json` | 44100 (resampled), **0.0.179** | 60 | 0 | 10 of 10 | +0.98…+1.19 ms | 15 (up to 1.02 ms, median 0.25) |
+| `recaudit-mt-summary-1793393678096.json` | 48000 multi-mic | 32 | 0 | 2 of 2 | +1.146 every row | 0 |
+
+**48 000 on the 48 kHz device reads as on the 44.1 kHz device, row for row** (tally 1.15 ×27, 1.17
+×15, 1.16 ×12, 1.10 ×6); the multi-mic run too (+1.146, raw skew 0.00 on every repeat). The context
+reported `outputLatency` 0.022 s here, 0.023 s on the 44.1 kHz device.
+
+**The first resampled 0.0.180 run moved by whole milliseconds.** Its netted medians sat at −0.84, 0.16,
+1.16 or 2.16 ms from one repeat to the next (`nominal-start/120`: 0.16, 1.16, −0.84), and four cells read
+`investigate`. Every step is in the take's own `waveformOffset` (26.604 / 25.604 / 27.604 ms on the
+three `nominal-start/120` repeats, exactly 1 ms apart, while the loopback delay moves smoothly) — the
+`outputLatency` the SDK read at placement stepping through 0.022–0.025 s. A/B on the same device and
+context: the installed 0.0.179 packages swapped back in (the byte-exact pre-upgrade copy, dev server
+restarted, `.vite` cleared) read every cell `aligned` with the offset steady; a repeat of the 0.0.180
+sweep read every cell `aligned` too, the recorder logging 0.022 s on every take it logged. Both releases
+read `outputLatency` at placement, so one stepping run in three is the browser's report moving, not
+something the release introduced; recorded as an observation in `docs/known-vendor-issues.md`.
+
+**Tail deficits appear on the resampled context only, on both releases** (0.0.179 15 of 60 rows, up to
+1.02 ms; 0.0.180 1 and 25 of 60, up to 1.08 ms; none at 48 000 on either device). Sub-millisecond, as
+the 44.1 kHz device's frame-rounding rows, but more of them; not an SDK finding on this evidence.

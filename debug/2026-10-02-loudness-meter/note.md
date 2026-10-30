@@ -654,6 +654,16 @@ moves on four rows by one or two 0.1 LU steps (`3341-15` 9.20, was 9.40; `3341-1
 | `kweight-16000` | pass | shortTerm −16.65 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
 | `kweight-20000` | pass | shortTerm −16.65 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
 
+### SDK 0.0.180 on the 48 kHz device, 2026-10-30, Chrome 156 on macOS
+
+The same release with the Mac's output device switched to 48 kHz: the 48 000 Hz run at the device's
+rate, the 44 100 Hz run resampled (the reverse of the two runs above). `loudness-audit-1793394498128.json`
+(48 kHz) and `loudness-audit-1793395186257.json` (44.1 kHz): **28 of 28 pass in each**, every judged
+metric the value the runs above read to the hundredth. The unjudged "5 s after the end" range moves by one
+0.1 LU step on a few rows (48 kHz: `3341-15` 9.30, `3341-16` 9.40, `3341-18` 9.20; 44.1 kHz: `3341-1` and
+`3341-2` 4.30, `3341-15` 9.30, `3341-16` 9.40, `3341-18` 9.30) — `3341-15`'s 8.60 on the 44.1 kHz device
+was a wobble, not a step. The device rate does not reach the meter.
+
 ## Observed
 
 - Tones at 1 kHz read 0.25 to 0.27 LU below their level in every loudness case, at both rates:

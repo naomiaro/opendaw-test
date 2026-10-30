@@ -226,7 +226,19 @@ unless a parameter is hovered; the note editor's "No CaptureMidi available" erro
 - **Not run here** (they need the IAC Driver, the built-in microphone in a quiet room, or a hand):
   the MIDI input sweeps — **the one that will read #491 / #492's fix** —, the combined MIDI + audio
   sweep, the MIDI output timing audit, the hidden-page `cover` rows, and the Chromium probe's bfcache,
-  freeze, OPFS-restart, microphone and Bluetooth rows; and the sweeps on a 48 kHz output device.
+  freeze, OPFS-restart, microphone and Bluetooth rows.
+- **The output device at 48 kHz** (the second footing root CLAUDE.md asks for; the first time these
+  sweeps ran on it): sample-rate 240 of 240 with the same maxima; recording at 48 000 (now the device's
+  own rate) the 44.1 kHz device's reading row for row; multi-mic +1.146 on every row; loudness 28 of 28
+  at both rates, judged metrics unchanged; capture-gaps loopback `CLEAN` / `START GAPS` (441) as before.
+  Recording at 44 100, now **resampled**: one 0.0.180 run had netted medians stepping by exactly 1.00 ms
+  between repeats (−0.84…+2.16, four cells `investigate`), the take's `waveformOffset` carrying the
+  `outputLatency` Chrome reported at placement as it stepped 0.022 → 0.025 s; a repeat on 0.0.180 and an
+  A/B on the byte-exact 0.0.179 packages read every cell `aligned`, so the stepping is the browser's
+  report, which both releases read at placement (a new Observations entry in the vendor register).
+  Sub-millisecond tail deficits appear on the resampled context on both releases (0.0.179 15 of 60 rows,
+  0.0.180 1 and 25), on neither at the device's rate. Rows in the recording register under "Device at
+  48 kHz" and the loudness register under "SDK 0.0.180 on the 48 kHz device".
 - **Verification**: `npm run typecheck` 0 errors, 1565 of 1565 vitest tests (1563 + the guard's 2),
   `npm run build`, `npm ci` on the regenerated lockfile; the openDAW checkout and the XERJ corpus
   clone moved to `9306eaab6` (the `@opendaw/studio-sdk@0.0.180` tag; 39 125 records re-indexed).
