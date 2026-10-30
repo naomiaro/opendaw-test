@@ -398,5 +398,22 @@ Per-repeat placement medians in ms against the HEARD beat, nothing netted.
 - **Count-in (#493): unchanged.** 2 of 6 pickups recorded per cell, as before; the issue stays open.
 - Integrity: 0 missing / no-receipt / extra / stuck / velocity mismatches on all 36 rows.
 
-Not run on 0.0.180: `?scenario=loop-wrap&bpm=120&repeats=5` and the `&effect=arpeggio|pitch` arm.
+### Loop-wrap, five repeats, on 0.0.180
+
+Run `1793396800773`: `?scenario=loop-wrap&bpm=120&repeats=5`, the user's real click, display 60.0 Hz.
+
+| repeat | rec/sent | missing / extra / stuck | median ms | max dev ms | dur max ms | takes | wrap-adjacent note |
+|---|---|---|---|---|---|---|---|
+| 1 | 48/48 | 0 / 0 / 0 | −0.01 | 0.01 | 0.00 | 3 | new take, −0.001 |
+| 2 | 48/48 | 0 / 0 / 0 | −0.00 | 0.01 | 0.00 | 3 | new take, −0.002 |
+| 3 | 48/48 | 0 / 0 / 0 | −0.00 | 0.01 | 0.00 | 3 | new take, −0.003 |
+| 4 | 48/48 | 0 / 0 / 0 | −0.00 | 0.01 | 0.00 | 3 | new take, −0.004 |
+| 5 | 48/48 | 0 / 0 / 0 | −0.00 | 0.01 | 0.00 | 3 | new take, −0.002 |
+
+Cell `aligned`. Against the 0.0.176 run above (medians about +32.8, max dev 8–10 ms, the note on the loop
+end in the old take on three repeats and the new one on two, 13–34 ms late): every note on the heard
+beat, and the note on the loop end in the new take on every repeat, within 0.004 ms — the recorder
+holds a key heard past the loop end until the engine's wrap anchor arrives.
+
+Not run on 0.0.180: the `&effect=arpeggio|pitch` arm.
 

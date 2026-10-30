@@ -229,7 +229,8 @@ unless a parameter is hovered; the note editor's "No CaptureMidi available" erro
   per MiB; `opfs-usage` in-session `COUNTED`. Rows in the recording and loudness registers under
   "0.0.180", and in the vendor register's "Last checked" lines.
 - **Not run here** (they need the IAC Driver, the built-in microphone in a quiet room, or a hand):
-  the MIDI input sweep's five-repeat loop-wrap row and `&effect=` arm, the MIDI output timing audit, the hidden-page `cover` rows, and the Chromium probe's bfcache,
+  the MIDI input sweep's `&effect=` arm (its five-repeat loop-wrap row read `aligned`, the note on the
+  loop end in the new take on 5 of 5 repeats, within 0.004 ms), the MIDI output timing audit, the hidden-page `cover` rows, and the Chromium probe's bfcache,
   freeze, OPFS-restart, microphone and Bluetooth rows.
 - **The output device at 48 kHz** (the second footing root CLAUDE.md asks for; the first time these
   sweeps ran on it): sample-rate 240 of 240 with the same maxima; recording at 48 000 (now the device's
