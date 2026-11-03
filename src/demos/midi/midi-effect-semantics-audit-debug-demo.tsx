@@ -65,6 +65,7 @@ const CALIBRATION_NOTES = 32;
 const MARK_OPTIONS = {
   attackMs: NANO_ATTACK_SECONDS * 1000,
   releaseMs: NANO_RELEASE_SECONDS * 1000,
+  gapMs: READER_DEFAULTS.gapMs,
   minCycles: READER_DEFAULTS.minCycles,
   minVelocity: 0.01,
 };

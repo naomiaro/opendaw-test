@@ -175,7 +175,7 @@ describe("composeRules", () => {
 });
 
 describe("markReadability", () => {
-  const options = { attackMs: 1, releaseMs: 1, minCycles: 3, minVelocity: 0.01 };
+  const options = { attackMs: 1, releaseMs: 1, gapMs: 2, minCycles: 3, minVelocity: 0.01 };
   const at = (position: number, duration: number, pitch: number, velocity = 1): RuleNote => ({ position, duration, pitch, cent: 0, velocity });
   const readabilityAt = (marked: ReturnType<typeof markReadability>, position: number, pitch: number) =>
     marked.find((n) => n.position === position && n.pitch === pitch)?.readability;
@@ -195,6 +195,11 @@ describe("markReadability", () => {
     expect(steps(240)).toEqual(["abutting", "abutting"]);
     expect(steps(480)).toEqual(["polyphonic", "polyphonic"]);
     expect(steps(120)).toEqual(["readable", "readable"]);
+  });
+  it("spans less than gapMs apart after the release are abutting, further apart readable", () => {
+    // bpm 120: 480 pulses = 250 ms, release to 251 ms; 485 pulses = 252.6 ms (1.6 ms), 489 pulses = 254.7 ms (3.7 ms)
+    expect(markReadability([at(0, 480, 60), at(485, 240, 60)], 120, options).map((n) => n.readability)).toEqual(["abutting", "abutting"]);
+    expect(markReadability([at(0, 480, 60), at(489, 240, 60)], 120, options).map((n) => n.readability)).toEqual(["readable", "readable"]);
   });
   it("same-pitch steps that touch are abutting too, not overlap", () => {
     const marked = markReadability([at(3840, 240, 60), at(4080, 240, 60)], 120, options);

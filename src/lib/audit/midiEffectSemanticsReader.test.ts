@@ -76,7 +76,12 @@ describe("readNotes", () => {
   it("returns nothing for silence and does not split a sine at its zero crossings", () => {
     expect(readNotes(new Float32Array(RATE), RATE)).toEqual([]);
     const out = new Float32Array(RATE); tone(out, 100, 500, hzOf(36), 0.7);
-    expect(readNotes(out, RATE, { ...READER_DEFAULTS, gapMs: 5 }).length).toBe(1);
+    expect(readNotes(out, RATE, { ...READER_DEFAULTS }).length).toBe(1);
+  });
+  it("reads two 243 ms notes of one pitch 4.8 ms apart as two notes", () => {
+    const out = new Float32Array(RATE);
+    tone(out, 100, 243, hzOf(60), 0.7); tone(out, 348.8, 243, hzOf(60), 0.7);
+    expect(readNotes(out, RATE).length).toBe(2);
   });
 });
 

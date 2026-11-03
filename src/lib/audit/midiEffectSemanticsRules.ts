@@ -227,12 +227,13 @@ export function toPredictedFigures(notes: readonly PredictedNote[], bpm: number)
 /**
  * Whether a monophonic reader can judge each predicted note. Audible span = `[pos, end + releaseMs]`.
  * Two spans intersecting by more than `releaseMs` make both notes `overlap` (same pitch) or `polyphonic`;
- * by at most `releaseMs` (a step ending where the next begins) both `abutting`. A span shorter than the
+ * by at most `releaseMs` (a step ending where the next begins) both `abutting`; spans that do not intersect but
+ * sit less than `gapMs` apart are `abutting` too (the reader cannot separate them). A span shorter than the
  * attack twice plus `minCycles` periods is `too-short`, a velocity below `minVelocity` `too-quiet`.
  * Precedence: overlap, polyphonic, abutting, too-short, too-quiet. Sorted by position, then pitch.
  */
 export function markReadability(
-  notes: readonly RuleNote[], bpm: number, options: { attackMs: number; releaseMs: number; minCycles: number; minVelocity: number }
+  notes: readonly RuleNote[], bpm: number, options: { attackMs: number; releaseMs: number; gapMs: number; minCycles: number; minVelocity: number }
 ): PredictedNote[] {
   const sorted = [...notes].sort((a, b) => a.position - b.position || a.pitch - b.pitch);
   const onsets = sorted.map((note) => toMs(note.position, bpm));
@@ -243,7 +244,13 @@ export function markReadability(
   for (let i = 0; i < sorted.length; i++) {
     for (let j = i + 1; j < sorted.length; j++) {
       const shared = Math.min(ends[i], ends[j]) + options.releaseMs - Math.max(onsets[i], onsets[j]);
-      if (shared <= EPSILON_MS) continue;
+      if (shared <= EPSILON_MS) {
+        if (-shared < options.gapMs - EPSILON_MS) {
+          abutting.add(i);
+          abutting.add(j);
+        }
+        continue;
+      }
       const bucket = shared > options.releaseMs + EPSILON_MS ? (sorted[i].pitch === sorted[j].pitch ? overlap : polyphonic) : abutting;
       bucket.add(i);
       bucket.add(j);

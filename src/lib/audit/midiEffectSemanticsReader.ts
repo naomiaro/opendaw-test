@@ -8,7 +8,9 @@
 export interface ReaderOptions {
   /** `|x|` above this opens a note. */
   onsetThreshold: number;
-  /** A run of frames at or below the threshold this long ends a note. */
+  /** A run of frames at or below the threshold this long ends a note. A sine's envelope sits under the
+   *  threshold only for microseconds around a zero crossing, so 2 ms never splits a tone, and it separates
+   *  notes that end and begin a few ms apart (a Zeitgeist-warped note-off 4.8 ms before the next onset). */
   gapMs: number;
   /** The voice's attack and release length. */
   attackMs: number;
@@ -16,7 +18,7 @@ export interface ReaderOptions {
   minCycles: number;
 }
 
-export const READER_DEFAULTS: ReaderOptions = { onsetThreshold: 0.002, gapMs: 5, attackMs: 1, minCycles: 3 };
+export const READER_DEFAULTS: ReaderOptions = { onsetThreshold: 0.002, gapMs: 2, attackMs: 1, minCycles: 3 };
 
 export interface ReadNote {
   onsetFrame: number;
