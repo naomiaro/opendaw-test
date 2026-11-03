@@ -81,8 +81,12 @@ export async function buildNanoProject(options: NanoProjectOptions): Promise<Nan
     })
     .unwrap("createNoteRegion");
   if (options.removeMaximizer) {
-    const outputUnit = project.rootBoxAdapter.audioUnits.adapters().find((unit) => unit.isOutput)!.box;
-    removeMasterMaximizer(project.editing, outputUnit);
+    const master = project.rootBoxAdapter.audioUnits.adapters().find((unit) => unit.isOutput);
+    if (master === undefined) throw new Error("the project has no master unit");
+    const effects = master.audioEffects.unwrap("the master hosts no audio-effect chain").adapters();
+    const removed = removeMasterMaximizer(project.editing, effects);
+    // the skeleton builds exactly one; any other count means the render is not the level-true one the audit reads
+    if (removed !== 1) throw new Error(`expected one Maximizer on the master, removed ${removed}`);
   }
   onStatus("Loading the sample...");
   await awaitSampleLoaded(project, uuid);

@@ -4,7 +4,8 @@
  * graph unstages it with the device (the test pins it): one `delete()` in one transaction
  * leaves nothing behind. A groove shared by two devices would stay.
  */
-import { GrooveShuffleBox, MaximizerDeviceBox, type AudioUnitBox, type ZeitgeistDeviceBox } from "@opendaw/studio-boxes";
+import type { Box } from "@opendaw/lib-box";
+import { GrooveShuffleBox, MaximizerDeviceBox, type ZeitgeistDeviceBox } from "@opendaw/studio-boxes";
 import type { EffectBox } from "@opendaw/studio-core";
 
 export function zeitgeistGrooveBox(box: ZeitgeistDeviceBox): GrooveShuffleBox {
@@ -33,10 +34,12 @@ export function removeMidiEffects(editing: { modify(fn: () => void): unknown }, 
 }
 
 /** The project skeleton puts a Maximizer on the master's audio chain; a render that must be level-true
- *  deletes it first. One transaction; returns how many it deleted. */
-export function removeMasterMaximizer(editing: { modify(fn: () => void): unknown }, outputUnitBox: AudioUnitBox): number {
-  const maximizers = outputUnitBox.audioEffects.pointerHub.incoming()
-    .map((pointer) => pointer.box)
+ *  deletes it first. `effects` is the master's audio chain as the adapter layer gives it
+ *  (`AudioUnitBoxAdapter.audioEffects`, each entry carrying its `box`); a Node test passes the chain's pointers,
+ *  which carry it the same way. One transaction; deletes only the Maximizers and returns how many. */
+export function removeMasterMaximizer(editing: { modify(fn: () => void): unknown }, effects: ReadonlyArray<{ box: Box }>): number {
+  const maximizers = effects
+    .map((effect) => effect.box)
     .filter((box): box is MaximizerDeviceBox => box instanceof MaximizerDeviceBox);
   editing.modify(() => maximizers.forEach((box) => box.delete()));
   return maximizers.length;
