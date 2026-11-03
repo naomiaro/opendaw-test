@@ -48,9 +48,10 @@ const comparePitch = (index: number, expected: Expected, got: NoteFigure, tolera
   const expectedCents = expected.pitch * 100 + (expected.cents ?? 0);
   const gotCents = got.pitch * 100 + (got.cents ?? 0);
   if (!exceeds(expectedCents, gotCents, tolerances.cents)) {return null;}
-  return got.pitch !== expected.pitch
+  const errorCents = Math.abs(expectedCents - gotCents);
+  return Math.abs(got.pitch - expected.pitch) >= 2 || (got.pitch !== expected.pitch && errorCents >= 100)
     ? { index, field: "pitch", expected: expected.pitch, got: got.pitch }
-    : { index, field: "cents", expected: expected.cents ?? 0, got: got.cents ?? 0 };
+    : { index, field: "cents", expected: expected.cents ?? 0, got: gotCents - expected.pitch * 100 };
 };
 
 const compareVelocity = (index: number, expected: Expected, got: NoteFigure, tolerances: Tolerances): Mismatch | null =>
@@ -119,11 +120,12 @@ export function judgeRule(
   if (variants.length === 0 || variants.every(v => v.predicted.length > 0 && !judgeable(v))) {
     return { kind: "none", deviations: [], readable: 0, unreadable: read.length, mismatch: null };
   }
+  const intentIndex = Math.max(0, variants.findIndex(v => v.deviations.size === 0));
   let intentResult: VariantResult | null = null;
   for (let i = 0; i < variants.length; i++) {
     const variant = variants[i]!;
     const result = judgeVariant(read, variant, tolerances, readAt);
-    if (i === 0) {intentResult = result;}
+    if (i === intentIndex) {intentResult = result;}
     if (result.mismatch === null) {
       const deviations = [...variant.deviations];
       return {
@@ -132,7 +134,7 @@ export function judgeRule(
       };
     }
   }
-  const first = intentResult!;
+  const first = intentResult ?? judgeVariant(read, variants[intentIndex]!, tolerances, readAt);
   return { kind: "broken", deviations: [], readable: first.readable, unreadable: first.unreadable, mismatch: first.mismatch };
 }
 

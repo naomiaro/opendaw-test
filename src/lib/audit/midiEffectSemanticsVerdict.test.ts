@@ -48,6 +48,21 @@ describe("judgeRule", () => {
     expect(j.kind).toBe("broken");
     expect(j.mismatch).toMatchObject({ index: 0, field: "velocity", expected: 0.5, got: 0.8 });
   });
+  it("broken carries the empty set's mismatch even when that variant is not first", () => {
+    const variants: Variant[] = [
+      { deviations: new Set(["arpeggio-drops-cent"]), predicted: [pred(1000, { velocity: 0.3 })] },
+      intent([pred(1000, { velocity: 0.5 })])
+    ];
+    const j = judgeRule([note(1000)], variants, TOLERANCES, never);
+    expect(j.kind).toBe("broken");
+    expect(j.mismatch).toMatchObject({ field: "velocity", expected: 0.5 });
+  });
+  it("a neighbouring pitch under 100 cents off is a cents mismatch; two semitones off is pitch", () => {
+    const near = judgeRule([note(1000, { pitch: 60, cents: 49 })], [intent([pred(1000, { pitch: 61, cents: -47 })])], TOLERANCES, never);
+    expect(near.mismatch).toMatchObject({ field: "cents", expected: -47, got: -51 });
+    const far = judgeRule([note(1000, { pitch: 60, cents: 0 })], [intent([pred(1000, { pitch: 62, cents: 0 })])], TOLERANCES, never);
+    expect(far.mismatch).toMatchObject({ field: "pitch", expected: 62, got: 60 });
+  });
   it("a sounding render against a silent prediction is broken, naming the extra note", () => {
     const j = judgeRule([{ onsetMs: 2000, endMs: 2060, pitch: 60, cents: 0, velocity: 1, jitterCents: 0.1 }], [{ deviations: new Set(), predicted: [] }], TOLERANCES, never);
     expect(j.kind).toBe("broken");
