@@ -6,6 +6,12 @@ says, across the whole range of every parameter, and has anything changed since 
 **SDK Pin:** `@opendaw/studio-sdk@0.0.180` (installed npm package; WASM engine only). The crate and
 manual citations below are read in the openDAW checkout pinned to that release.
 
+**Filed (2026-11-03):** [openDAW#524](https://github.com/andremichelle/openDAW/issues/524) the Arpeggio's
+Velocity control is silent at −100 % and full at 0 % where its manual says full at −100 % and a blend at
+0 % (`drafts/posted-openDAW-524-arpeggio-velocity-vs-manual.md`); [openDAW#525](https://github.com/andremichelle/openDAW/issues/525)
+the Zeitgeist warps note-offs too, so note lengths change with the groove where its manual says
+durations remain unchanged (`drafts/posted-openDAW-525-zeitgeist-warps-note-offs-vs-manual.md`).
+
 **Harness:** unlisted debug demo
 `midi-effect-semantics-audit-debug-demo.html[?rate=48000|44100][&rows=all|quick|<id,id,…>][&device=all|arpeggio|pitch|velocity|zeitgeist|order|disabled][&pattern=<id>]`
 on the dev server, Chrome, a real click on "Run audit"; deterministic, no hardware, about 35
@@ -371,13 +377,12 @@ be a dependence of the sample or render path on the device, not of the engine's 
 
 Behaviours the rule takes as the engine's, where the documentation does not settle which is meant.
 Rows that exercise one carry `questioned: <name>` in the figure column. Whether to raise either is the
-user's call. Two behaviours that disagree with the MANUAL outright are drafted as issues for the
-user's read under `drafts/`: `TO-REVIEW-openDAW-issue-arpeggio-velocity-vs-manual.md` (the
-`arpeggio-velocity-manual-gap` question below) and
-`TO-REVIEW-openDAW-issue-zeitgeist-warps-note-offs-vs-manual.md` (the `zeitgeist-warps-note-off`
-deviation: the manual's technical notes say durations remain unchanged, the engine warps the
-note-offs, measured as 26.4 / 63.6 ms note lengths at 25 % and 124.0 / 38.9 ms at 75 % for notes
-held 62.5 ms). The Pitch drop is not drafted: the manual is silent on it.
+user's call. Two behaviours that disagree with the MANUAL outright are filed: openDAW#524 (the
+`arpeggio-velocity-manual-gap` question below, `drafts/posted-openDAW-524-arpeggio-velocity-vs-manual.md`)
+and openDAW#525 (the `zeitgeist-warps-note-off` deviation: the manual's technical notes say durations
+remain unchanged, the engine warps the note-offs, measured as 26.4 / 63.6 ms note lengths at 25 % and
+124.0 / 38.9 ms at 75 % for notes held 62.5 ms; `drafts/posted-openDAW-525-zeitgeist-warps-note-offs-vs-manual.md`).
+The Pitch drop is not filed: the manual is silent on it.
 
 - **`pitch-drops-out-of-range`.** The engine drops a note shifted outside 0..127, and its note-off
   passes through unshifted; the crate documents this as its deviation from the TS device, which
