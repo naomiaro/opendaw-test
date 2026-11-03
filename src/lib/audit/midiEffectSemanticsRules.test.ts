@@ -176,7 +176,7 @@ describe("composeRules", () => {
 });
 
 describe("markReadability", () => {
-  const options = { attackMs: 1, releaseMs: 1, gapMs: 2, minCycles: 3, minVelocity: 0.01 };
+  const options = { attackMs: 1, releaseMs: 1, gapMs: 2, minCycles: READER_DEFAULTS.minCycles, minVelocity: 0.01 };
   const at = (position: number, duration: number, pitch: number, velocity = 1): RuleNote => ({ position, duration, pitch, cent: 0, velocity });
   const readabilityAt = (marked: ReturnType<typeof markReadability>, position: number, pitch: number) =>
     marked.find((n) => n.position === position && n.pitch === pitch)?.readability;

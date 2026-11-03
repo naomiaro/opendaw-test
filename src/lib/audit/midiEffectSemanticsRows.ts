@@ -8,9 +8,11 @@
  * its parameter. Two pairs are swept together because neither reads alone: the Velocity magnet's position
  * and strength (a position with no strength moves nothing), and the Arpeggio's rate and gate (the gate is a
  * fraction of the rate's step). Each parameter's identity setting is a row too, as the control. Orderings and
- * disabled devices are one row per device or pair at a single non-identity setting. The Arpeggio rates are nine of
- * the seventeen, 1/3 to 1/64; 1/96 and 1/128 are left out: a step there at gate 0.5 is under the reader's floor at
- * pitch 60 (1/64 at gate 0.5 already is, and reads `no rule`).
+ * disabled devices are one row per device or pair at a single non-identity setting. Nine of the seventeen Arpeggio
+ * rates are swept (1/3, 1/4, 3/16, 1/8, 3/32, 1/12, 1/16, 1/32, 1/64), the straight, dotted and triplet kinds from
+ * the longest step that falls twice on the 1750-pulse hold to the first under the reader's floor. Of the eight left
+ * out, 1/1 and 1/2 give a single step on the hold, 1/6, 3/64, 1/24 and 1/48 repeat a kind already swept between two
+ * swept neighbours, and 1/96 and 1/128 put a gate-0.5 step under the floor at C4, as 1/64 already does (`no rule`).
  *
  * Id readings: a number prints as JavaScript prints it (`-0.5`, `12.5`), no padding, so `vel-offset-1-melody`
  * is offset -1. The Zeitgeist rows take every DISTINCT `GrooveShuffleBoxAdapter.DurationPPQNs` value, 8 of
