@@ -79,8 +79,7 @@ const judgeVariant = (
 ): VariantResult => {
   const spans = variant.predicted.filter(p => p.readability !== "readable");
   const kept = byOnset(read.filter(r =>
-    !(r.jitterCents !== null && r.jitterCents > tolerances.unstableJitterCents)
-    && !spans.some(s => r.onsetMs >= s.onsetMs - tolerances.onsetMs && r.onsetMs <= s.endMs + tolerances.onsetMs)));
+    !spans.some(s => r.onsetMs >= s.onsetMs - tolerances.onsetMs && r.onsetMs <= s.endMs + tolerances.onsetMs)));
   const result = (mismatch: Mismatch | null): VariantResult =>
     ({ mismatch, readable: kept.length, unreadable: read.length - kept.length });
   const readable = byOnset(variant.predicted.filter(p => p.readability === "readable"));
@@ -91,7 +90,12 @@ const judgeVariant = (
     return result({ index: 0, field: "count", expected: readable.length, got: kept.length });
   }
   for (let i = 0; i < readable.length; i++) {
-    const mismatch = compareNote(i, readable[i]!, kept[i]!, tolerances);
+    const got = kept[i]!;
+    const unstable = got.jitterCents !== null && got.jitterCents > tolerances.unstableJitterCents;
+    const onsetOff = exceeds(readable[i]!.onsetMs, got.onsetMs, tolerances.onsetMs);
+    const mismatch = unstable && !onsetOff
+      ? { index: i, field: "pitch" as const, expected: readable[i]!.pitch, got: `unstable, jitter ${got.jitterCents!.toFixed(1)} cents` }
+      : compareNote(i, readable[i]!, got, tolerances);
     if (mismatch !== null) {return result(mismatch);}
   }
   const abutting = variant.predicted.filter(p => p.readability === "abutting");

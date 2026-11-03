@@ -84,11 +84,18 @@ describe("judgeRule", () => {
     const j = judgeRule([note(1000.9, { cents: 1.9, velocity: 0.809, endMs: 1101.9 })], [intent([pred(1000)])], TOLERANCES, never);
     expect(j.kind).toBe("holds");
   });
-  it("an unstable read note (jitter above 10 cents) is dropped before matching", () => {
-    const read = [note(1000), note(1500, { jitterCents: 40 })];
-    const j = judgeRule(read, [intent([pred(1000)])], TOLERANCES, never);
-    expect(j.kind).toBe("holds");
-    expect(j.unreadable).toBe(1);
+  it("an unstable read note is dropped only inside a non-readable span; elsewhere it is judged", () => {
+    const unstable = note(2000, { jitterCents: 40, pitch: null, cents: null });
+    const silent = judgeRule([unstable], [intent([])], TOLERANCES, never);
+    expect(silent.kind).toBe("broken");
+    expect(silent.mismatch?.field).toBe("extra");
+    const readable = judgeRule([unstable], [intent([pred(2000)])], TOLERANCES, never);
+    expect(readable.kind).toBe("broken");
+    expect(readable.mismatch?.field).toBe("pitch");
+    expect(String(readable.mismatch?.got)).toContain("40");
+    const covered = judgeRule([unstable], [intent([pred(1990, { readability: "overlap", endMs: 2100 })])], TOLERANCES, never);
+    expect(covered.kind).toBe("none");
+    expect(covered.unreadable).toBe(1);
   });
   it("abutting predicted notes are judged through readAt on pitch and velocity, never on onset; a wrong pitch there breaks", () => {
     const predicted = [pred(1000), pred(1100, { readability: "abutting", endMs: 1200, pitch: 64 })];
