@@ -27,7 +27,9 @@ import { PATTERN_BPM, writePattern } from "@/lib/midiEffects/patterns";
 import { resolveRate, type RenderRate } from "@/lib/audit/midiEffectScenarios";
 import { buildNanoProject, RunAbort, uploadSummary, type NanoProject } from "@/lib/audit/midiEffectBootstrap";
 import { removeMidiEffects } from "@/lib/audit/midiEffectChain";
-import { READER_DEFAULTS, readNotes, readWindow, sineSample, toFigure, type NoteFigure } from "@/lib/audit/midiEffectSemanticsReader";
+import {
+  calibrationFrom, channelPeak, READER_DEFAULTS, readFigureAt, readNotes, sineSample, toFigure, type Calibration, type NoteFigure,
+} from "@/lib/audit/midiEffectSemanticsReader";
 import {
   markReadability, questionsFor, RULE_SENTENCES, toPredictedFigures, type RuleContext,
 } from "@/lib/audit/midiEffectSemanticsRules";
@@ -35,7 +37,9 @@ import {
   applySettings, FACTORY_KEYS, NANO_ATTACK_SECONDS, NANO_RELEASE_SECONDS, predictedVariants, REGION_DURATION_PPQN,
   REGION_POSITION_PPQN, renderRange, renderSeconds, resolveRows, ROOT_KEY, rowNotes, SAMPLE_HZ, SAMPLE_SECONDS, AUDIT_PATTERNS, type SemanticsRow,
 } from "@/lib/audit/midiEffectSemanticsRows";
-import { compareRegister, describeMismatch, judgeRule, TOLERANCES, verdictOf, type Variant } from "@/lib/audit/midiEffectSemanticsVerdict";
+import {
+  compareRegister, describeMismatch, judgeRule, silentRenderError, TOLERANCES, verdictOf, type Variant,
+} from "@/lib/audit/midiEffectSemanticsVerdict";
 import {
   MIDI_SEMANTICS_SCHEMA_VERSION, parseSemanticsRegister, roundFigure, summaryFileName, type SemanticsRegister,
   type SemanticsRowRecord, type SemanticsSummary,
@@ -112,7 +116,7 @@ const App: React.FC = () => {
   const [built, setBuilt] = useState<NanoProject | null>(null);
   const [running, setRunning] = useState(false);
   const [records, setRecords] = useState<SemanticsRowRecord[]>([]);
-  const [calibration, setCalibration] = useState<{ referencePeak: number; instrumentOffsetFrames: number } | null>(null);
+  const [calibration, setCalibration] = useState<Calibration | null>(null);
   const [registerSource, setRegisterSource] = useState<string | null | undefined>(undefined);
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
   const eventsRef = useRef<NoteEventBox[]>([]);
@@ -149,8 +153,7 @@ const App: React.FC = () => {
     const out: SemanticsRowRecord[] = [];
     const { register, source: loadedSource } = await fetchRegister();
     setRegisterSource(loadedSource);
-    let referencePeak = 1;
-    let instrumentOffsetFrames = 0;
+    let calibrated: Calibration = { referencePeak: 1, instrumentOffsetFrames: 0 };
 
     const useRowPattern = (row: SemanticsRow): void => {
       if (patternRef.current === row.pattern) return;
@@ -159,7 +162,12 @@ const App: React.FC = () => {
       const held = eventsRef.current;
       patternRef.current = null;
       eventsRef.current = [];
-      eventsRef.current = writePattern(project, regionBox, held, pattern);
+      try {
+        eventsRef.current = writePattern(project, regionBox, held, pattern);
+      } catch (error) {
+        // the region now holds an unknown pattern: every later row would be judged against it
+        throw new RunAbort(`row ${row.id}: the pattern ${row.pattern} could not be written: ${error instanceof Error ? error.message : String(error)}`);
+      }
       patternRef.current = row.pattern;
     };
 
@@ -205,24 +213,24 @@ const App: React.FC = () => {
         const channel = channels[0];
         const notes = readNotes(channel, RATE, READER_DEFAULTS);
         if (row.id === CALIBRATION_ROW) {
-          if (notes.length !== CALIBRATION_NOTES) {
-            throw new RunAbort(`${row.id}: read ${notes.length} notes, expected ${CALIBRATION_NOTES}`);
+          try {
+            calibrated = calibrationFrom(notes, RATE, PPQN.pulsesToSeconds(REGION_POSITION_PPQN, PATTERN_BPM), CALIBRATION_NOTES);
+          } catch (error) {
+            throw new RunAbort(`${row.id}: ${error instanceof Error ? error.message : String(error)}`);
           }
-          referencePeak = Math.max(...notes.map((note) => note.peak));
-          instrumentOffsetFrames = notes[0].onsetFrame - Math.round(PPQN.pulsesToSeconds(REGION_POSITION_PPQN, PATTERN_BPM) * RATE);
-          setCalibration({ referencePeak, instrumentOffsetFrames });
+          setCalibration(calibrated);
         }
-        const read: NoteFigure[] = notes.map((note) => roundFigure(toFigure(note, RATE, referencePeak, instrumentOffsetFrames)));
-        const readAt = (onsetMs: number, endMs: number): NoteFigure => {
-          const onsetFrame = Math.round(onsetMs / 1000 * RATE) + instrumentOffsetFrames;
-          const endFrame = Math.round(endMs / 1000 * RATE) + instrumentOffsetFrames;
-          return roundFigure(toFigure(readWindow(channel, RATE, onsetFrame, endFrame), RATE, referencePeak, instrumentOffsetFrames));
-        };
+        const cal = calibrated;
+        const read: NoteFigure[] = notes.map((note) => roundFigure(toFigure(note, RATE, cal.referencePeak, cal.instrumentOffsetFrames)));
+        const readAt = (onsetMs: number, endMs: number): NoteFigure => roundFigure(readFigureAt(channel, RATE, onsetMs, endMs, cal));
         const judged: Variant[] = variants.map((variant) => ({
           deviations: variant.deviations,
           predicted: toPredictedFigures(markReadability(variant.notes, PATTERN_BPM, MARK_OPTIONS), PATTERN_BPM),
         }));
         const intent = judged.find((variant) => variant.deviations.size === 0) ?? judged[0];
+        // a render that is silent where the rule predicts sound did not play the row: an error, not a judgement
+        const silent = silentRenderError(channelPeak(channel), judged);
+        if (silent !== null) throw new Error(silent);
         const unreadable = intent === undefined ? 0 : intent.predicted.filter((p) => p.readability !== "readable").length;
         const rule = judgeRule(read, judged, TOLERANCES, readAt);
         const registered = compareRegister({ notes: read, unreadable }, register?.rows[row.id], TOLERANCES);
@@ -277,7 +285,7 @@ const App: React.FC = () => {
       registerSource: loadedSource,
       registerSdkVersion: register === null ? null : register.sdkVersion,
       calibration: {
-        referencePeak, instrumentOffsetFrames, onsetThreshold: READER_DEFAULTS.onsetThreshold,
+        referencePeak: calibrated.referencePeak, instrumentOffsetFrames: calibrated.instrumentOffsetFrames, onsetThreshold: READER_DEFAULTS.onsetThreshold,
         attackMs: READER_DEFAULTS.attackMs, gapMs: READER_DEFAULTS.gapMs,
       },
       rows: out,

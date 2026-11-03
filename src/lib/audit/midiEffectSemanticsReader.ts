@@ -76,20 +76,36 @@ function readPitch(samples: Float32Array, rate: number, from: number, to: number
   return { frequencyHz: rate / periodFrames, jitterCents: 1200 * Math.log2(maxPeriod / minPeriod), cycles, periodFrames };
 }
 
-/** The largest `|x|` in `[from, to]`, lifted to the vertex of a parabola through it and its neighbours, so a crest between two frames is not read low. */
-function refinedPeak(samples: Float32Array, from: number, to: number): number {
+/** The vertex of the parabola through `|x|` at `at` and its two neighbours; the sample itself when the three are flat. */
+function vertexAt(samples: Float32Array, at: number): number {
+  const y0 = Math.abs(samples[at - 1]);
+  const y1 = Math.abs(samples[at]);
+  const y2 = Math.abs(samples[at + 1]);
+  const denominator = y0 - 2 * y1 + y2;
+  return denominator === 0 ? y1 : y1 - (y0 - y2) ** 2 / (8 * denominator);
+}
+
+/**
+ * The largest `|x|` in `[from, to]`, lifted to the vertex of a parabola through it and its neighbours, so a crest between
+ * two frames is not read low. Only neighbours inside the window are used: a max on the window's edge may be the flank of a
+ * crest outside it, and a parabola through a larger outside sample can put its vertex anywhere. Such a max is not refined;
+ * the window's largest interior crest (a sample no smaller than either neighbour) is refined instead, and the larger of the
+ * two is the peak. A refined crest lies within half a frame of its sample, so it stays within a quarter of its level.
+ */
+export function refinedPeak(samples: Float32Array, from: number, to: number): number {
   let at = -1;
   let best = 0;
   for (let i = from; i <= to; i++) {
     const level = Math.abs(samples[i]);
     if (level > best) { best = level; at = i; }
   }
-  if (at < 1 || at > samples.length - 2) return best;
-  const y0 = Math.abs(samples[at - 1]);
-  const y2 = Math.abs(samples[at + 1]);
-  const denominator = y0 - 2 * best + y2;
-  if (denominator === 0) return best;
-  return best - (y0 - y2) ** 2 / (8 * denominator);
+  if (at > from && at < to) return vertexAt(samples, at);
+  let refined = best;
+  for (let i = from + 1; i < to; i++) {
+    const level = Math.abs(samples[i]);
+    if (level >= Math.abs(samples[i - 1]) && level >= Math.abs(samples[i + 1])) refined = Math.max(refined, vertexAt(samples, i));
+  }
+  return refined;
 }
 
 /** The pitch and peak passes over a GIVEN span; the peak covers one cycle after the attack (the whole span when there is no pitch). */
@@ -119,6 +135,39 @@ export function readNotes(samples: Float32Array, rate: number, options: ReaderOp
   }
   if (onset >= 0) spans.push([onset, lastLoud]);
   return spans.map(([from, to]) => readWindow(samples, rate, from, to, options));
+}
+
+/** The largest `|x|` in the channel: 0 is a silent render. */
+export function channelPeak(samples: Float32Array): number {
+  let peak = 0;
+  for (let i = 0; i < samples.length; i++) peak = Math.max(peak, Math.abs(samples[i]));
+  return peak;
+}
+
+/** What the calibration row gives every later row: the loudest note's peak (velocity 1) and the frames between the first note's pulse and its read onset. */
+export interface Calibration { referencePeak: number; instrumentOffsetFrames: number }
+
+/** From the calibration row's read notes; `firstOnsetSeconds` is where its first note's pulse falls in the render. Throws unless exactly `expectedNotes` were read. */
+export function calibrationFrom(notes: readonly ReadNote[], rate: number, firstOnsetSeconds: number, expectedNotes: number): Calibration {
+  if (notes.length !== expectedNotes) throw new Error(`read ${notes.length} notes, expected ${expectedNotes}`);
+  return {
+    referencePeak: Math.max(...notes.map((note) => note.peak)),
+    instrumentOffsetFrames: notes[0].onsetFrame - Math.round(firstOnsetSeconds * rate),
+  };
+}
+
+/** A time in the register's frame (the instrument offset netted out) as a frame of the render. */
+export function msToFrame(ms: number, rate: number, instrumentOffsetFrames: number): number {
+  return Math.round(ms / 1000 * rate) + instrumentOffsetFrames;
+}
+
+/** `readWindow` over a span given in the register's milliseconds, as a figure: how the judge reads an abutting note at its predicted span. */
+export function readFigureAt(
+  samples: Float32Array, rate: number, onsetMs: number, endMs: number, calibration: Calibration, options: ReaderOptions = READER_DEFAULTS
+): NoteFigure {
+  const { referencePeak, instrumentOffsetFrames } = calibration;
+  const note = readWindow(samples, rate, msToFrame(onsetMs, rate, instrumentOffsetFrames), msToFrame(endMs, rate, instrumentOffsetFrames), options);
+  return toFigure(note, rate, referencePeak, instrumentOffsetFrames);
 }
 
 /** A read note as the register's figures: times net the instrument offset, velocity is the peak over the reference. */
