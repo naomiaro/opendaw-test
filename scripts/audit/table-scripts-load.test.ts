@@ -11,6 +11,7 @@ const SCRIPTS = [
   "scripts/audit/midi-input-alignment/table.ts",
   "scripts/audit/midi-audio-combined/table.ts",
   "scripts/audit/midi-effect-placement/table.ts",
+  "scripts/audit/midi-effect-semantics/table.ts",
   "scripts/audit/recording-alignment/one-quantum-events.ts",
 ];
 
