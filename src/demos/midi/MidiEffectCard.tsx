@@ -3,28 +3,34 @@
  * sliders print the SDK's strings), what it does and what to listen for, and the insert snippet.
  */
 import React, { useMemo } from "react";
-import { Flex, Switch, Text } from "@radix-ui/themes";
-import { Devices } from "@opendaw/studio-adapters";
+import { Button, Flex, Switch, Text } from "@radix-ui/themes";
+import { Devices, VelocityDeviceBoxAdapter } from "@opendaw/studio-adapters";
 import type { Project } from "@opendaw/studio-core";
 import { ParamSlider } from "@/components/ParamSlider";
 import { CODE_BLOCK_STYLE } from "@/lib/design/consoleTheme";
-import { DEVICES, deviceParameters } from "@/lib/midiEffects/devices";
+import { DEVICES, deviceParameters, reseedVelocity } from "@/lib/midiEffects/devices";
 import type { ChainEntry } from "./useMidiChain";
 
 export interface MidiEffectCardProps {
   project: Project;
   entry: ChainEntry;
   onEnabledChange(enabled: boolean): void;
+  /** After a write that changes what the chain does (the Velocity reseed), so the pattern restarts. */
+  onChainChange(): void;
   /** Without the prose and the snippet: the compact form a stack chip expands to. */
   compact?: boolean;
 }
 
-export const MidiEffectCard: React.FC<MidiEffectCardProps> = ({ project, entry, onEnabledChange, compact = false }) => {
+export const MidiEffectCard: React.FC<MidiEffectCardProps> = ({ project, entry, onEnabledChange, onChainChange, compact = false }) => {
   const spec = DEVICES[entry.id];
-  const parameters = useMemo(
-    () => deviceParameters(project.boxAdapters.adapterFor(entry.box, Devices.isMidiEffect)),
-    [project, entry.box]
-  );
+  const adapter = useMemo(() => project.boxAdapters.adapterFor(entry.box, Devices.isMidiEffect), [project, entry.box]);
+  const parameters = useMemo(() => deviceParameters(adapter), [adapter]);
+  const reseed = adapter instanceof VelocityDeviceBoxAdapter
+    ? () => {
+        reseedVelocity(project.editing, adapter);
+        onChainChange();
+      }
+    : null;
   return (
     <div className="mc-panel" style={{ padding: compact ? "16px 18px" : undefined, gap: 12 }}>
       <Flex justify="between" align="center" gap="3">
@@ -40,6 +46,11 @@ export const MidiEffectCard: React.FC<MidiEffectCardProps> = ({ project, entry, 
         {parameters.map((p) => (
           <ParamSlider key={p.key} project={project} parameter={p.parameter} label={p.label} positions={p.positions} />
         ))}
+        {reseed && (
+          <Flex align="end">
+            <Button size="1" variant="soft" onClick={reseed}>Reseed random</Button>
+          </Flex>
+        )}
       </div>
       {!compact && (
         <>

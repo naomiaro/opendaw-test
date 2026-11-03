@@ -56,13 +56,19 @@ describe("chain", () => {
 
   it("removeDevice leaves the chain without it", () => {
     const { unit, boxes, editing } = threeDevices();
-    removeDevice(editing, boxes[1]);
+    removeDevice(editing, unit.midiEffects, boxes[1]);
     expect(ids(unit)).toEqual(["pitch", "arpeggio"]);
+  });
+
+  it("removeDevice compacts the survivors' indices", () => {
+    const { unit, boxes, editing } = threeDevices();
+    removeDevice(editing, unit.midiEffects, boxes[0]);
+    expect(chainBoxes(unit.midiEffects).map((b) => b.index.getValue())).toEqual([0, 1]);
   });
 
   it("removeDevice of a zeitgeist takes its groove with it", () => {
     const { boxGraph, unit, device, groove } = graphWithZeitgeist();
-    removeDevice(new BoxEditing(boxGraph), device);
+    removeDevice(new BoxEditing(boxGraph), unit.midiEffects, device);
     expect(chainBoxes(unit.midiEffects)).toHaveLength(0);
     expect(groove.isAttached()).toBe(false);
   });
@@ -113,6 +119,15 @@ describe("reconcileChain", () => {
     reconcileChain(project, unit.midiEffects, ["arpeggio", "velocity", "pitch"], factories);
     expect(ids(unit)).toEqual(["arpeggio", "velocity", "pitch"]);
     expect(new Set(chainBoxes(unit.midiEffects))).toEqual(new Set(before));
+  });
+
+  it("a remove followed by an insert leaves dense, distinct indices", () => {
+    const { unit, project, factories } = double();
+    reconcileChain(project, unit.midiEffects, ["arpeggio", "pitch", "velocity"], factories);
+    reconcileChain(project, unit.midiEffects, ["pitch", "velocity"], factories);
+    reconcileChain(project, unit.midiEffects, ["pitch", "velocity", "arpeggio"], factories);
+    expect(chainBoxes(unit.midiEffects).map((b) => b.index.getValue())).toEqual([0, 1, 2]);
+    expect(ids(unit)).toEqual(["pitch", "velocity", "arpeggio"]);
   });
 
   it("reports no change for the same list twice", () => {

@@ -7,7 +7,6 @@ import { IndexedBox, type Field } from "@opendaw/lib-box";
 import type { Editing } from "@opendaw/lib-std";
 import type { Pointers } from "@opendaw/studio-enums";
 import type { EffectBox, EffectFactory, Project } from "@opendaw/studio-core";
-import { removeMidiEffect } from "@/lib/audit/midiEffectChain";
 import { DEVICES, deviceIdOf, type DeviceId, type FactoryKey } from "./devices";
 
 export type MidiEffectsField = Field<Pointers.MIDIEffectHost>;
@@ -32,9 +31,18 @@ export function insertDevice(
   return project.editing.modify(() => project.api.insertEffect(field, factory)).unwrap("insertEffect");
 }
 
-/** One transaction; a Zeitgeist takes its groove box with it. */
-export function removeDevice(editing: Editing, box: EffectBox): void {
-  removeMidiEffect(editing, box);
+/**
+ * One transaction: the survivors' indices are compacted first (`IndexedBox.removeOrder` takes the
+ * box's POSITION in the sorted chain), then the box goes; a Zeitgeist takes its groove box with it.
+ * A bare delete would leave a gap, and the SDK's insert (`insertOrder`) appends at `length`, which
+ * then collides with a survivor's index.
+ */
+export function removeDevice(editing: Editing, field: MidiEffectsField, box: EffectBox): void {
+  editing.modify(() => {
+    const position = chainBoxes(field).indexOf(box);
+    if (position >= 0) IndexedBox.removeOrder(field, position);
+    box.delete();
+  });
 }
 
 export function setDeviceEnabled(editing: Editing, box: EffectBox, enabled: boolean): void {
@@ -63,7 +71,7 @@ export function reconcileChain(
   for (const box of chainBoxes(field)) {
     const id = deviceIdOf(box);
     if (id === null || !desired.includes(id)) {
-      removeDevice(project.editing, box);
+      removeDevice(project.editing, field, box);
       changed = true;
     }
   }

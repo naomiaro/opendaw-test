@@ -180,6 +180,7 @@ function MidiEffectsDemo() {
         setDeviceEnabled(project!.editing, entry.box, enabled);
         reseekIfPlaying();
       }}
+      onChainChange={reseekIfPlaying}
     />
   );
 

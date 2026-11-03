@@ -11,6 +11,7 @@ import {
   ZeitgeistDeviceBoxAdapter, type MidiEffectDeviceAdapter,
 } from "@opendaw/studio-adapters";
 import type { EffectBox } from "@opendaw/studio-core";
+import type { Editing } from "@opendaw/lib-std";
 import type { UnitParameter } from "@/lib/parameterBinding";
 
 export type DeviceId = "arpeggio" | "pitch" | "velocity" | "zeitgeist";
@@ -80,7 +81,8 @@ project.editing.modify(() => vel.namedParameter.magnetStrength.setValue(1));`,
     listenFor: "On Sixteenths, every other note drags late. The shift is about 24 ms at amount 60%, one and a half display frames, so the emitted lane shows it only roughly; the placement audit measures it to the frame.",
     snippet: `${insert("Zeitgeist")}
 const zeit = project.boxAdapters.adapterFor(box, ZeitgeistDeviceBoxAdapter);
-const groove = zeit.groove(); // the device's own groove box
+const groove = zeit.groove(); // the device's own groove box, a GrooveAdapter
+if (!(groove instanceof GrooveShuffleBoxAdapter)) throw new Error("not a shuffle groove");
 project.editing.modify(() => groove.namedParameter.amount.setValue(0.6));`,
   },
 };
@@ -145,4 +147,12 @@ export function deviceParameters(adapter: MidiEffectDeviceAdapter): DeviceParame
     ];
   }
   throw new Error(`no parameters for ${adapter.constructor.name}`);
+}
+
+/** A new random seed for the Velocity device's scatter, never the one it has (the adapter maps 0..0xFFFF). */
+export function reseedVelocity(editing: Editing, adapter: VelocityDeviceBoxAdapter): void {
+  const current = adapter.box.randomSeed.getValue();
+  let next = Math.floor(Math.random() * 0x10000);
+  if (next === current) next = (next + 1) & 0xffff;
+  editing.modify(() => adapter.box.randomSeed.setValue(next));
 }

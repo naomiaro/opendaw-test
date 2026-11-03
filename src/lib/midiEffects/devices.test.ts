@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { midiEffectFixture } from "@/lib/testing/boxGraphFixtures";
-import { DEVICES, DEVICE_IDS, deviceIdOf, deviceParameters } from "./devices";
+import { VelocityDeviceBoxAdapter } from "@opendaw/studio-adapters";
+import { DEVICES, DEVICE_IDS, deviceIdOf, deviceParameters, reseedVelocity } from "./devices";
 
 describe("devices", () => {
   it("registers the four devices, each naming its factory", () => {
@@ -21,6 +22,22 @@ describe("devices", () => {
     const { adapter } = midiEffectFixture("zeitgeist");
     const params = deviceParameters(adapter);
     expect(params.map((p) => p.key)).toEqual(["amount", "duration"]);
+  });
+
+  it("reseedVelocity writes a different seed in range", () => {
+    const { adapter, box, editing } = midiEffectFixture("velocity");
+    if (!(adapter instanceof VelocityDeviceBoxAdapter) || !("randomSeed" in box)) throw new Error("not a velocity fixture");
+    const before = box.randomSeed.getValue();
+    reseedVelocity(editing, adapter);
+    const after = box.randomSeed.getValue();
+    expect(after).not.toBe(before);
+    expect(Number.isInteger(after)).toBe(true);
+    expect(after).toBeGreaterThanOrEqual(0);
+    expect(after).toBeLessThanOrEqual(0xffff);
+  });
+
+  it("the zeitgeist snippet narrows the groove before reading its parameters", () => {
+    expect(DEVICES.zeitgeist.snippet).toContain("instanceof GrooveShuffleBoxAdapter");
   });
 
   it("deviceIdOf names a box by its class", () => {
