@@ -386,7 +386,8 @@ table `node scripts/audit/midi-effect-placement/table.ts`.
 - **A script that throws at module load "compiles".** Chrome's `addModule` resolves for a module
   whose top level throws (a misnamed `Processor`, a bare `throw`), so `ScriptCompiler.compile`
   resolves after writing `code` and the parameter boxes while the worklet keeps the previous script
-  and sends no device message (measured 0.0.180, `debug/2026-11-03-spielwerk-addmodule-resolves/`).
+  and sends no device message (measured 0.0.180, `debug/2026-11-03-spielwerk-addmodule-resolves/`;
+  filed as openDAW#523).
   Build and construct the Processor on the main thread first (`preflightScript`,
   `src/lib/midiEffects/spielwerkCompile.ts`); runtime failures (a yield in the past, the 128-note
   scheduler) do arrive through `engine.subscribeDeviceMessage(uuid, …)` and silence the device until
