@@ -7,7 +7,7 @@ import { midiEffectFixture, transact } from "@/lib/testing/boxGraphFixtures";
 import { zeitgeistGrooveBox } from "./midiEffectChain";
 import { arpeggioRule, type RuleContext } from "./midiEffectSemanticsRules";
 import {
-  ARPEGGIO_BASE, AUDIT_PATTERNS, FACTORY_KEYS, HELD_NOTE, PITCH_BASE, REGION_DURATION_PPQN, REGION_POSITION_PPQN, SAMPLE_SECONDS,
+  ARPEGGIO_BASE, AUDIT_PATTERNS, CALIBRATION_ROW_ID, FACTORY_KEYS, QUICK_IDS, HELD_NOTE, PITCH_BASE, REGION_DURATION_PPQN, REGION_POSITION_PPQN, SAMPLE_SECONDS,
   SEMANTICS_ROWS, VELOCITY_BASE, ZEITGEIST_BASE, applySettings, predictedVariants, renderRange, renderSeconds, resolveRows, rowNotes,
   type RowGroup, type SemanticsRow,
 } from "./midiEffectSemanticsRows";
@@ -38,6 +38,24 @@ describe("SEMANTICS_ROWS", () => {
   it("counts per group follow the brief", () => {
     const count = (group: RowGroup) => SEMANTICS_ROWS.filter((r) => r.group === group).length;
     expect(GROUPS.map(count)).toEqual([4, 88, 40, 38, 50, 6, 4]);
+  });
+  it("has 230 rows, 41 of them quick (the counts src/demos/midi/CLAUDE.md gives)", () => {
+    expect(SEMANTICS_ROWS.length).toBe(230);
+    expect(quick.length).toBe(41);
+  });
+  it("every quick id names a row: a renamed row cannot silently leave the quick subset", () => {
+    const ids = new Set(SEMANTICS_ROWS.map((r) => r.id));
+    expect([...QUICK_IDS].filter((id) => !ids.has(id))).toEqual([]);
+  });
+  it("the calibration row leads the table and is a dry row", () => {
+    expect(SEMANTICS_ROWS[0]).toMatchObject({ id: CALIBRATION_ROW_ID, group: "dry", chain: [] });
+  });
+  it("every chain holds at most one Velocity and one Zeitgeist: the rule context carries one computeVelocity and one warp", () => {
+    for (const row of SEMANTICS_ROWS) {
+      for (const device of ["velocity", "zeitgeist"] as const) {
+        expect(row.chain.filter((stage) => stage.setting.device === device).length, `${row.id} ${device}`).toBeLessThanOrEqual(1);
+      }
+    }
   });
   it("the quick subset has 30 to 60 rows and every order and disabled row", () => {
     expect(quick.length).toBeGreaterThanOrEqual(30);

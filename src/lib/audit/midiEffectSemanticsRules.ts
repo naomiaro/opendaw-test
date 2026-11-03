@@ -246,8 +246,8 @@ export function toPredictedFigures(notes: readonly PredictedNote[], bpm: number)
  * by at most `releaseMs` (a step ending where the next begins) both `abutting`; spans that do not intersect but
  * sit less than `gapMs` apart are `abutting` too (the reader cannot separate them). A note is `too-short` unless its
  * duration less three attacks (the reader's pitch window starts two attacks after the onset and stops one before the
- * end) holds `minCycles + 1` periods: only then does a window of that length hold the `minCycles + 1` rising zero
- * crossings the reader needs whatever the phase. A velocity below `minVelocity` is `too-quiet`. A velocity of exactly 0 is
+ * end) is at least `minCycles + 1` periods long: a window that long holds `minCycles + 1` rising zero crossings whatever
+ * the phase, the `minCycles` whole cycles the reader needs. A velocity below `minVelocity` is `too-quiet`. A velocity of exactly 0 is
  * silence, not a quiet note: the Nano's voice gain is `gain × velocity` (`device-nano/src/voice.rs:129`), so the note is
  * left out of the prediction before anything is marked, and it neither sounds nor touches a neighbour.
  * Precedence: overlap, polyphonic, too-short, too-quiet, abutting (a note too short or too quiet to read is unreadable whatever its neighbours; abutting applies to the rest). Sorted by position, then pitch.

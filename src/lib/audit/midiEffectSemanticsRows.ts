@@ -42,7 +42,7 @@ export const SAMPLE_HZ = 440;
 export const ROOT_KEY = 69;
 export const NANO_ATTACK_SECONDS = 0.001;
 export const NANO_RELEASE_SECONDS = 0.001;
-/** 1750 pulses = 0.911 s at 120 bpm, and 3840 + 1750 = 5590 is not on the 1/16 grid (5520 + 70): the last Arpeggio step is capped at 70 pulses where the engine does not cap it. */
+/** 1750 pulses = 0.911 s at 120 bpm, and 3840 + 1750 = 5590 is not on the 1/16 grid (5520 + 70), so the held note ends 70 pulses into the last Arpeggio step: the row exercises `arpeggio-uncapped-note-off` (`DEVIATIONS` in the rules). */
 export const HELD_NOTE_PPQN = 1750;
 
 export type SemanticsPatternId = "held-note" | "held-chord" | "chromatic" | "chords" | "sixteenths" | "melody";
@@ -116,7 +116,11 @@ const pitch = (settings: PitchSettings): DeviceSetting => ({ device: "pitch", se
 const velocity = (settings: VelocitySettings): DeviceSetting => ({ device: "velocity", settings });
 const zeitgeist = (settings: ZeitgeistSettings): DeviceSetting => ({ device: "zeitgeist", settings });
 
-const QUICK_IDS: ReadonlySet<string> = new Set([
+/** The row every later row is calibrated by (reference peak, instrument offset): the first row, a dry one, always rendered. */
+export const CALIBRATION_ROW_ID = "dry-sixteenths";
+
+/** The quick subset's ids, besides every order and disabled row. */
+export const QUICK_IDS: ReadonlySet<string> = new Set([
   "dry-sixteenths", "dry-melody", "dry-chromatic", "dry-held-note",
   ...[0, 1, 2].flatMap((m) => [`arp-mode${m}-oct1-held-chord`, `arp-mode${m}-oct3-held-chord`, `arp-mode${m}-oct2-gate1-held-chord`]),
   "arp-rate9-gate1-held-note", "arp-rate6-gate0.5-held-note", "arp-rate12-gate0.5-held-note",
