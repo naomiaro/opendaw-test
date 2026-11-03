@@ -19,6 +19,7 @@ Visit http://localhost:5173 to explore the demos.
 | **[Track Editing](https://opendaw-test.pages.dev/track-editing-demo.html)** | Split, move, and rearrange audio regions on a timeline |
 | **[Recording API](https://opendaw-test.pages.dev/recording-api-react-demo.html)** | Microphone recording with live 60fps waveform, device selection, mono/stereo, input gain, and monitoring modes |
 | **[MIDI Recording](https://opendaw-test.pages.dev/midi-recording-demo.html)** | Record MIDI notes with device/channel selection, on-screen piano keyboard, and step recording |
+| **[MIDI Effects](https://opendaw-test.pages.dev/midi-effects-demo.html)** | Arpeggio, Pitch, Velocity and Zeitgeist on a looping synth pattern, one at a time or stacked and reordered by drag, with a lane that shows the notes the chain emits |
 | **[Neon: CZ-101 Phase Distortion](https://opendaw-test.pages.dev/neon-demo.html)** | Play OpenDAW's Casio CZ-101 phase-distortion synth — five original patches round-tripped through real `.syx` bytes, a sysex drop zone, live wave/modulation controls, and an 8-stage envelope visualizer |
 | **[Cubed: 303-Style Acid Bassline](https://opendaw-test.pages.dev/cubed-demo.html)** | Program Cubed's built-in step sequencer live — notes, gates, slides and accents on a 64-step grid, a random pattern generator, JSON and ABL `.pat` pattern exchange, and a synced LFO sweeping the filter |
 | **[Nano: Polyphonic Sampler](https://opendaw-test.pages.dev/nano-demo.html)** | Play one sample across the keyboard — four synthesized samples or your own file, draggable region and loop markers on the waveform, reverse playback, a crossfaded loop, an LFO scanning the sample start, and live read heads for the sounding voices |
@@ -147,7 +148,8 @@ src/
     │   ├── swipe-comping-demo.tsx     # Quick Swipe Comping
     │   └── SwipeCompLanes.tsx         # Swipe comp lane component
     ├── midi/                          # MIDI demos
-    │   └── midi-recording-demo.tsx    # MIDI recording + step recording
+    │   ├── midi-recording-demo.tsx    # MIDI recording + step recording
+    │   └── midi-effects-demo.tsx      # Stock MIDI effects, one at a time and stacked
     ├── instruments/                   # Stock instrument demos
     │   ├── neon/                      # One folder per instrument
     │   │   ├── neon-demo.tsx          # Neon (CZ-101 phase distortion) + .syx presets

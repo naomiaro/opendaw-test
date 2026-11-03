@@ -139,7 +139,7 @@ export const NoteLane = forwardRef<NoteLaneHandle, NoteLaneProps>(function NoteL
         <div
           ref={playheadRef}
           style={{
-            position: "absolute", top: 0, bottom: 0, left: 0, width: 1, pointerEvents: "none",
+            position: "absolute", top: 0, height, left: 0, width: 1, pointerEvents: "none",
             boxSizing: "border-box", borderLeft: `1px solid ${CANVAS_COLORS.playhead}`, opacity: 0.8,
           }}
         />
