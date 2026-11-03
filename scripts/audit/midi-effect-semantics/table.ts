@@ -22,22 +22,23 @@ const tidy = (value: number): number => Number(value.toFixed(6));
 const maxOrNull = (values: number[]): number | null => values.length === 0 ? null : tidy(Math.max(...values));
 
 /**
- * The largest absolute difference per figure between each readable predicted note and the read note at its
- * place in onset order. Only when the read list is as long as the predicted one does the place mean the same
- * note; otherwise nothing pairs.
+ * The largest absolute difference per figure between the readable predicted notes, in onset order, and the
+ * read notes at the same place. Only when the read list is as long as the readable list does the place mean
+ * the same note; otherwise nothing pairs.
  */
 export function rowDeltas(row: SemanticsRowRecord): RowDeltas {
-  const aligned = row.read.length === row.predicted.length;
+  const readable = row.predicted.filter(p => p.readability === "readable");
   const onset: number[] = [];
   const cents: number[] = [];
   const velocity: number[] = [];
-  row.predicted.forEach((p, i) => {
-    const got = row.read[i];
-    if (!aligned || p.readability !== "readable" || got === undefined) {return;}
-    onset.push(Math.abs(got.onsetMs - p.onsetMs));
-    velocity.push(Math.abs(got.velocity - p.velocity));
-    if (got.cents !== null) {cents.push(Math.abs(got.cents - p.cents));}
-  });
+  if (row.read.length === readable.length) {
+    readable.forEach((p, i) => {
+      const got = row.read[i]!;
+      onset.push(Math.abs(got.onsetMs - p.onsetMs));
+      velocity.push(Math.abs(got.velocity - p.velocity));
+      if (got.cents !== null) {cents.push(Math.abs(got.cents - p.cents));}
+    });
+  }
   return { onsetMs: maxOrNull(onset), cents: maxOrNull(cents), velocity: maxOrNull(velocity) };
 }
 
@@ -76,10 +77,10 @@ export function acceptPath(rate: number, root: string = REPO_ROOT): string {
   return resolve(root, "debug/2026-11-03-midi-effect-semantics/register", `${rate}.json`);
 }
 
-/** Throws the refusal of `registerFromSummary`; otherwise writes the register and returns the diff lines printed before it. */
-export function writeAccepted(
+/** Throws the refusal of `registerFromSummary`; otherwise returns the register, its path and the diff lines to print before the write. */
+export function planAccept(
   summary: SemanticsSummary, options: { force: boolean; root?: string }
-): { path: string; diffLines: string[] } {
+): { path: string; next: SemanticsRegister; diffLines: string[] } {
   const next: SemanticsRegister = registerFromSummary(summary, { force: options.force, acceptedAt: new Date().toISOString() });
   const path = acceptPath(summary.sampleRate, options.root);
   const previous = existsSync(path) ? parseSemanticsRegister(JSON.parse(readFileSync(path, "utf8"))) : null;
@@ -91,9 +92,12 @@ export function writeAccepted(
   if (diff.removed.length > 0) {diffLines.push(`removed: ${diff.removed.join(", ")}`);}
   if (diff.changed.length > 0) {diffLines.push(`changed: ${diff.changed.join(", ")}`);}
   if (previous !== null && diffLines.length === (options.force ? 1 : 0)) {diffLines.push("no differences");}
+  return { path, next, diffLines };
+}
+
+export function writeRegister(path: string, register: SemanticsRegister): void {
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(next, null, 2)}\n`);
-  return { path, diffLines };
+  writeFileSync(path, `${JSON.stringify(register, null, 2)}\n`);
 }
 
 function runTokens(): number[] {
@@ -121,13 +125,14 @@ function main(): void {
     process.exit(1);
   }
   const summary = parseSemanticsSummary(JSON.parse(readFileSync(resolve(VERIFY_DIR, summaryFileName(token)), "utf8")), token);
-  console.log("row | verdict | figure | read / readable (unreadable) | max |Δonset| ms | max |Δcents| | max |Δvel| | render ms");
+  console.log("id | verdict | figure | read / readable (unreadable) | max |Δonset| ms | max |Δcents| | max |Δvel| | render ms");
   for (const line of formatRows(summary)) {console.log(line);}
   console.log(runLine(summary));
   if (accept) {
     try {
-      const { path, diffLines } = writeAccepted(summary, { force });
+      const { path, next, diffLines } = planAccept(summary, { force });
       for (const line of diffLines) {console.log(line);}
+      writeRegister(path, next);
       console.log(path);
     } catch (error) {
       console.error(error instanceof Error ? error.message : String(error));

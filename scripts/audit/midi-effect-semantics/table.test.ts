@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { acceptPath, formatRows, rowDeltas, runLine, writeAccepted } from "./table.ts";
+import { acceptPath, formatRows, planAccept, rowDeltas, runLine, writeRegister } from "./table.ts";
 import type { SemanticsRowRecord, SemanticsSummary } from "../../../src/lib/audit/midiEffectSemanticsArtifacts.ts";
 
 const fig = (onsetMs: number, cents: number | null, velocity: number) => ({ onsetMs, endMs: onsetMs + 50, pitch: 60, cents, velocity, jitterCents: null });
@@ -29,10 +29,14 @@ describe("rowDeltas", () => {
     expect(rowDeltas(row({}))).toEqual({ onsetMs: 1, cents: 3, velocity: 0.02 });
   });
   it("skips predicted notes that are not readable", () => {
-    const r = row({ predicted: [pred(100, "abutting"), pred(200, "readable")], read: [fig(150, 0, 1), fig(200.25, 0, 1)] });
+    const r = row({ predicted: [pred(100, "abutting"), pred(200, "readable")], read: [fig(200.25, 0, 1)] });
     expect(rowDeltas(r).onsetMs).toBeCloseTo(0.25);
   });
-  it("pairs nothing when the read list is not as long as the predicted one", () => {
+  it("with an abutting note present and read count equal to the readable count, deltas are numbers", () => {
+    const r = row({ predicted: [pred(100, "readable"), pred(150, "abutting"), pred(200, "readable")], read: [fig(100.5, 0, 1), fig(199, 0, 1)] });
+    expect(rowDeltas(r)).toEqual({ onsetMs: 1, cents: 0, velocity: 0 });
+  });
+  it("pairs nothing when the read list is not as long as the readable list", () => {
     expect(rowDeltas(row({ read: [fig(100, 0, 1)] }))).toEqual({ onsetMs: null, cents: null, velocity: null });
   });
   it("is null throughout when nothing pairs", () => {
@@ -69,19 +73,21 @@ describe("acceptPath", () => {
   });
 });
 
-describe("writeAccepted", () => {
-  it("writes the register, reports no previous, then the diff", () => {
+describe("planAccept", () => {
+  it("plans the register, reports no previous, then the diff against the written one", () => {
     const root = mkdtempSync(join(tmpdir(), "semreg-"));
-    const first = writeAccepted(summary([row({})]), { force: false, root });
+    const first = planAccept(summary([row({})]), { force: false, root });
     expect(first.diffLines).toEqual(["no previous register", "added: a"]);
+    expect(existsSync(first.path)).toBe(false);
+    writeRegister(first.path, first.next);
     expect(JSON.parse(readFileSync(first.path, "utf8")).rows.a.notes).toHaveLength(2);
-    const second = writeAccepted(summary([row({ id: "c" })]), { force: false, root });
-    expect(second.diffLines).toEqual(["added: c", "removed: a"]);
+    expect(planAccept(summary([row({ id: "c" })]), { force: false, root }).diffLines).toEqual(["added: c", "removed: a"]);
   });
   it("refuses a broken row without force and writes nothing, FORCED with force", () => {
     const root = mkdtempSync(join(tmpdir(), "semreg-"));
     const s = summary([row({ rule: "broken" })]);
-    expect(() => writeAccepted(s, { force: false, root })).toThrow(/not accepted without force: a/);
-    expect(writeAccepted(s, { force: true, root }).diffLines[0]).toBe("FORCED");
+    expect(() => planAccept(s, { force: false, root })).toThrow(/not accepted without force: a/);
+    expect(existsSync(acceptPath(48000, root))).toBe(false);
+    expect(planAccept(s, { force: true, root }).diffLines[0]).toBe("FORCED");
   });
 });
