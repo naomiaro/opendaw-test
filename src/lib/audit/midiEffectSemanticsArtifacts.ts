@@ -112,14 +112,30 @@ export function parseSemanticsRegister(json: unknown): SemanticsRegister {
   return register as unknown as SemanticsRegister;
 }
 
+/** The row filters of a run that are not `all`, as `name=value`; empty for a full run. */
+export function partialParams(summary: SemanticsSummary): string[] {
+  return ([["rows", summary.rowsParam], ["device", summary.deviceParam], ["pattern", summary.patternParam]] as const)
+    .filter(([, value]) => value !== "all")
+    .map(([name, value]) => `${name}=${value}`);
+}
+
+/**
+ * The register a run makes. A full run replaces `previous`. A partial run (a row filter not `all`) would drop every row it
+ * did not render, so it is refused without force; forced, its rows are merged into `previous`'s, the rows it did not cover
+ * kept as they were. A run with a broken or errored row is refused without force too.
+ */
 export function registerFromSummary(
-  summary: SemanticsSummary, options: { force: boolean; acceptedAt: string }
+  summary: SemanticsSummary, options: { force: boolean; acceptedAt: string; previous?: SemanticsRegister | null }
 ): SemanticsRegister {
+  const partial = partialParams(summary);
+  if (partial.length > 0 && !options.force) {
+    throw new Error(`run ${summary.runToken} is partial (${partial.join(", ")}), not accepted without force: forced, it merges into the previous register`);
+  }
   const refused = summary.rows.filter(row => row.error !== null || row.rule === "broken").map(row => row.id);
   if (refused.length > 0 && !options.force) {
     throw new Error(`run ${summary.runToken} has ${refused.length} row(s) in error or broken, not accepted without force: ${refused.join(", ")}`);
   }
-  const rows: SemanticsRegister["rows"] = {};
+  const rows: SemanticsRegister["rows"] = partial.length > 0 && options.previous ? { ...options.previous.rows } : {};
   for (const row of summary.rows) {rows[row.id] = { notes: row.read, unreadable: row.unreadable };}
   return {
     schemaVersion: 1, sdkVersion: summary.sdkVersion, acceptedRunToken: summary.runToken, acceptedAt: options.acceptedAt,

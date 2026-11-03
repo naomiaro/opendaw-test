@@ -3,13 +3,14 @@
  *   node scripts/audit/midi-effect-semantics/table.ts [runToken] [--accept] [--force]
  * One line per row, then the run line. Newest summary when no token is given. `--accept` writes the
  * run as the JSON register the next run is judged against (a run with a broken or errored row needs
- * `--force`).
+ * `--force`; so does a partial run, one whose rows, device or pattern filter is not `all`, which is then
+ * merged into the register on disk instead of replacing it).
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  parseSemanticsRegister, parseSemanticsSummary, registerDiff, registerFromSummary, SUMMARY_NAME, summaryFileName
+  parseSemanticsRegister, parseSemanticsSummary, partialParams, registerDiff, registerFromSummary, SUMMARY_NAME, summaryFileName
 } from "../../../src/lib/audit/midiEffectSemanticsArtifacts.ts";
 import type { SemanticsRegister, SemanticsRowRecord, SemanticsSummary } from "../../../src/lib/audit/midiEffectSemanticsArtifacts.ts";
 
@@ -65,34 +66,42 @@ export function formatRows(summary: SemanticsSummary): string[] {
 
 export function runLine(summary: SemanticsSummary): string {
   const count = (kind: SemanticsRowRecord["rule"]): number => summary.rows.filter(r => r.rule === kind && r.error === null).length;
+  const registered = (kind: SemanticsRowRecord["register"]): number => summary.rows.filter(r => r.register === kind && r.error === null).length;
   const errors = summary.rows.filter(r => r.error !== null).length;
   const { calibration } = summary;
   return `run ${summary.runToken} | sdk ${summary.sdkVersion} | ${summary.sampleRate} Hz | ${summary.bpm} bpm | `
     + `reference peak ${calibration.referencePeak} | instrument offset ${calibration.instrumentOffsetFrames} frames | `
     + `register ${summary.registerSource ?? "none"} | rows ${summary.rows.length} | `
-    + `holds ${count("holds")} deviation ${count("deviation")} broken ${count("broken")} none ${count("none")} error ${errors}`;
+    + `holds ${count("holds")} deviation ${count("deviation")} broken ${count("broken")} none ${count("none")} error ${errors} | `
+    + `as-registered ${registered("as-registered")} changed ${registered("changed")} unregistered ${registered("unregistered")}`;
 }
 
 export function acceptPath(rate: number, root: string = REPO_ROOT): string {
   return resolve(root, "debug/2026-11-03-midi-effect-semantics/register", `${rate}.json`);
 }
 
-/** Throws the refusal of `registerFromSummary`; otherwise returns the register, its path and the diff lines to print before the write. */
+/**
+ * Throws the refusal of `registerFromSummary` (a broken or errored row, or a partial run, without force); otherwise returns
+ * the register, its path and the lines to print before the write: `FORCED` and `merged into <path>` first when they apply,
+ * then the diff against the register on disk, or `no differences`.
+ */
 export function planAccept(
   summary: SemanticsSummary, options: { force: boolean; root?: string }
 ): { path: string; next: SemanticsRegister; diffLines: string[] } {
-  const next: SemanticsRegister = registerFromSummary(summary, { force: options.force, acceptedAt: new Date().toISOString() });
   const path = acceptPath(summary.sampleRate, options.root);
   const previous = existsSync(path) ? parseSemanticsRegister(JSON.parse(readFileSync(path, "utf8"))) : null;
+  const next: SemanticsRegister = registerFromSummary(summary, { force: options.force, acceptedAt: new Date().toISOString(), previous });
   const diff = registerDiff(previous, next);
-  const diffLines: string[] = [];
-  if (options.force) {diffLines.push("FORCED");}
-  if (previous === null) {diffLines.push("no previous register");}
-  if (diff.added.length > 0) {diffLines.push(`added: ${diff.added.join(", ")}`);}
-  if (diff.removed.length > 0) {diffLines.push(`removed: ${diff.removed.join(", ")}`);}
-  if (diff.changed.length > 0) {diffLines.push(`changed: ${diff.changed.join(", ")}`);}
-  if (previous !== null && diffLines.length === (options.force ? 1 : 0)) {diffLines.push("no differences");}
-  return { path, next, diffLines };
+  const header: string[] = [];
+  if (options.force) {header.push("FORCED");}
+  if (partialParams(summary).length > 0) {header.push(previous === null ? `partial run, no previous register to merge into at ${path}` : `merged into ${path}`);}
+  const body: string[] = [];
+  if (previous === null) {body.push("no previous register");}
+  if (diff.added.length > 0) {body.push(`added: ${diff.added.join(", ")}`);}
+  if (diff.removed.length > 0) {body.push(`removed: ${diff.removed.join(", ")}`);}
+  if (diff.changed.length > 0) {body.push(`changed: ${diff.changed.join(", ")}`);}
+  if (body.length === 0) {body.push("no differences");}
+  return { path, next, diffLines: [...header, ...body] };
 }
 
 export function writeRegister(path: string, register: SemanticsRegister): void {

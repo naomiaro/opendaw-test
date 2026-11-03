@@ -61,9 +61,13 @@ describe("formatRows", () => {
 });
 
 describe("runLine", () => {
-  it("counts the verdict classes", () => {
-    const line = runLine(summary([row({}), row({ rule: "deviation" }), row({ rule: "deviation" }), row({ rule: "broken" }), row({ rule: "none" }), row({ error: "boom" })]));
-    expect(line).toBe("run 7 | sdk 0.0.180 | 48000 Hz | 120 bpm | reference peak 0.5 | instrument offset 12 frames | register none | rows 6 | holds 1 deviation 2 broken 1 none 1 error 1");
+  it("counts the rule classes and the register classes", () => {
+    const line = runLine(summary([
+      row({}), row({ rule: "deviation", register: "changed" }), row({ rule: "deviation", register: "unregistered" }), row({ rule: "broken", register: "changed" }),
+      row({ rule: "none", register: "unregistered" }), row({ error: "boom", register: "unregistered" })
+    ]));
+    expect(line).toBe("run 7 | sdk 0.0.180 | 48000 Hz | 120 bpm | reference peak 0.5 | instrument offset 12 frames | register none | rows 6 | "
+      + "holds 1 deviation 2 broken 1 none 1 error 1 | as-registered 1 changed 2 unregistered 2");
   });
 });
 
@@ -82,6 +86,34 @@ describe("planAccept", () => {
     writeRegister(first.path, first.next);
     expect(JSON.parse(readFileSync(first.path, "utf8")).rows.a.notes).toHaveLength(2);
     expect(planAccept(summary([row({ id: "c" })]), { force: false, root }).diffLines).toEqual(["added: c", "removed: a"]);
+  });
+  it("stamps acceptedAt as an ISO time, prints changed: for a moved row and no differences for a repeat", () => {
+    const root = mkdtempSync(join(tmpdir(), "semreg-"));
+    const first = planAccept(summary([row({}), row({ id: "b" })]), { force: false, root });
+    expect(first.next.acceptedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    writeRegister(first.path, first.next);
+    expect(planAccept(summary([row({}), row({ id: "b" })]), { force: false, root }).diffLines).toEqual(["no differences"]);
+    expect(planAccept(summary([row({}), row({ id: "b", read: [fig(110, 1, 0.98), fig(199, -3, 1)] })]), { force: false, root }).diffLines).toEqual(["changed: b"]);
+  });
+  it("refuses a partial run without force and writes nothing; forced, merges into the previous register and says so", () => {
+    const root = mkdtempSync(join(tmpdir(), "semreg-"));
+    const full = planAccept(summary([row({}), row({ id: "b" })]), { force: false, root });
+    writeRegister(full.path, full.next);
+    const before = readFileSync(full.path, "utf8");
+    const partial = { ...summary([row({ id: "b", read: [fig(110, 1, 0.98), fig(199, -3, 1)] })]), rowsParam: "quick" };
+    expect(() => planAccept(partial, { force: false, root })).toThrow(/partial \(rows=quick\)/);
+    expect(readFileSync(full.path, "utf8")).toBe(before);
+    const forced = planAccept(partial, { force: true, root });
+    expect(Object.keys(forced.next.rows).sort()).toEqual(["a", "b"]);
+    expect(forced.diffLines).toEqual(["FORCED", `merged into ${full.path}`, "changed: b"]);
+  });
+  it("a full run replaces the register: a row it did not render is removed", () => {
+    const root = mkdtempSync(join(tmpdir(), "semreg-"));
+    const full = planAccept(summary([row({}), row({ id: "b" })]), { force: false, root });
+    writeRegister(full.path, full.next);
+    const next = planAccept(summary([row({})]), { force: false, root });
+    expect(Object.keys(next.next.rows)).toEqual(["a"]);
+    expect(next.diffLines).toEqual(["removed: b"]);
   });
   it("refuses a broken row without force and writes nothing, FORCED with force", () => {
     const root = mkdtempSync(join(tmpdir(), "semreg-"));

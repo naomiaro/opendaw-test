@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  MIDI_SEMANTICS_SCHEMA_VERSION, SUMMARY_NAME, parseSemanticsRegister, parseSemanticsSummary, registerDiff,
+  MIDI_SEMANTICS_SCHEMA_VERSION, SUMMARY_NAME, parseSemanticsRegister, partialParams, parseSemanticsSummary, registerDiff,
   registerFromSummary, roundFigure, summaryFileName, type SemanticsRowRecord, type SemanticsSummary
 } from "./midiEffectSemanticsArtifacts";
 import type { NoteFigure } from "./midiEffectSemanticsReader";
@@ -15,7 +15,7 @@ const record = (id: string, patch: Partial<SemanticsRowRecord> = {}): SemanticsR
 
 const summary = (rows: SemanticsRowRecord[]): SemanticsSummary => ({
   schemaVersion: MIDI_SEMANTICS_SCHEMA_VERSION, runToken: 7, userAgent: "ua", sdkVersion: "0.0.180", sampleRate: 48000, bpm: 120,
-  rowsParam: "", deviceParam: "", patternParam: "", registerSource: null, registerSdkVersion: null,
+  rowsParam: "all", deviceParam: "all", patternParam: "all", registerSource: null, registerSdkVersion: null,
   calibration: { referencePeak: 1, instrumentOffsetFrames: 0, onsetThreshold: 0.002, attackMs: 1, gapMs: 5 }, rows
 });
 
@@ -62,6 +62,29 @@ describe("midiEffectSemanticsArtifacts", () => {
     const clean = registerFromSummary(summary([record("a", { rule: "none", unreadable: 2 }), record("b")]), { force: false, acceptedAt });
     expect(clean).toMatchObject({ schemaVersion: 1, sdkVersion: "0.0.180", acceptedRunToken: 7, acceptedAt, sampleRate: 48000, bpm: 120 });
     expect(clean.rows.a).toEqual({ notes: [note(0)], unreadable: 2 });
+  });
+
+  it("partialParams names every row filter that is not all", () => {
+    expect(partialParams(summary([]))).toEqual([]);
+    expect(partialParams({ ...summary([]), rowsParam: "quick", patternParam: "melody" })).toEqual(["rows=quick", "pattern=melody"]);
+    expect(partialParams({ ...summary([]), deviceParam: "pitch" })).toEqual(["device=pitch"]);
+  });
+
+  it("a partial run is refused without force; forced, its rows merge into the previous register's", () => {
+    const previous = registerFromSummary(summary([record("keep"), record("redo")]), { force: false, acceptedAt });
+    const partial = { ...summary([record("redo", { read: [note(5)] }), record("new")]), rowsParam: "redo,new" };
+    expect(() => registerFromSummary(partial, { force: false, acceptedAt, previous })).toThrow(/partial \(rows=redo,new\), not accepted without force/);
+    const merged = registerFromSummary(partial, { force: true, acceptedAt, previous });
+    expect(Object.keys(merged.rows).sort()).toEqual(["keep", "new", "redo"]);
+    expect(merged.rows.keep).toEqual(previous.rows.keep);
+    expect(merged.rows.redo!.notes).toEqual([note(5)]);
+    expect(Object.keys(registerFromSummary(partial, { force: true, acceptedAt, previous: null }).rows).sort()).toEqual(["new", "redo"]);
+  });
+
+  it("a full run replaces the previous register: rows it did not render are gone", () => {
+    const previous = registerFromSummary(summary([record("keep"), record("gone")]), { force: false, acceptedAt });
+    const full = registerFromSummary(summary([record("keep")]), { force: false, acceptedAt, previous });
+    expect(Object.keys(full.rows)).toEqual(["keep"]);
   });
 
   it("parses a register and rejects another schema, a bad rows object, a row without notes or unreadable", () => {
