@@ -295,8 +295,16 @@ const App: React.FC = () => {
       },
       rows: out,
     };
-    await uploadSummary(summaryFileName(runToken), summary);
-    console.log(`[midi-semantics] summary ${summaryFileName(runToken)} uploaded, ${out.length} rows`);
+    // The `/__verify` sink exists on the dev server only: on the public host the PUT answers 404 or
+    // 405, which leaves the run's verdicts on the page and nothing on disk — a warning, not an error.
+    try {
+      await uploadSummary(summaryFileName(runToken), summary);
+      console.log(`[midi-semantics] summary ${summaryFileName(runToken)} uploaded, ${out.length} rows`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/HTTP 40[45]\b/.test(message)) throw error;
+      console.warn(`[midi-semantics] summary not uploaded: no /__verify sink on this host (${message})`);
+    }
   }, []);
 
   const handleRun = useCallback(() => {

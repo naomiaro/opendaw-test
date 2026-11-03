@@ -371,7 +371,13 @@ be a dependence of the sample or render path on the device, not of the engine's 
 
 Behaviours the rule takes as the engine's, where the documentation does not settle which is meant.
 Rows that exercise one carry `questioned: <name>` in the figure column. Whether to raise either is the
-user's call; nothing is drafted under `drafts/`.
+user's call. Two behaviours that disagree with the MANUAL outright are drafted as issues for the
+user's read under `drafts/`: `TO-REVIEW-openDAW-issue-arpeggio-velocity-vs-manual.md` (the
+`arpeggio-velocity-manual-gap` question below) and
+`TO-REVIEW-openDAW-issue-zeitgeist-warps-note-offs-vs-manual.md` (the `zeitgeist-warps-note-off`
+deviation: the manual's technical notes say durations remain unchanged, the engine warps the
+note-offs, measured as 26.4 / 63.6 ms note lengths at 25 % and 124.0 / 38.9 ms at 75 % for notes
+held 62.5 ms). The Pitch drop is not drafted: the manual is silent on it.
 
 - **`pitch-drops-out-of-range`.** The engine drops a note shifted outside 0..127, and its note-off
   passes through unshifted; the crate documents this as its deviation from the TS device, which
