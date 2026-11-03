@@ -78,13 +78,16 @@ export const AUDIT_PATTERNS: readonly AuditPattern[] = [HELD_NOTE, HELD_CHORD, C
 
 export type RowGroup = "dry" | "arpeggio" | "pitch" | "velocity" | "zeitgeist" | "order" | "disabled";
 
+/** One device in a row's chain; a chain holds at most one Velocity and one Zeitgeist (`RuleContext` carries one of each). */
+export interface ChainStage { setting: DeviceSetting; enabled: boolean }
+
 export interface SemanticsRow {
   id: string;
   label: string;
   group: RowGroup;
   pattern: SemanticsPatternId;
   /** Index order; `[]` for a dry row */
-  chain: readonly { setting: DeviceSetting; enabled: boolean }[];
+  chain: readonly ChainStage[];
   quick: boolean;
 }
 
@@ -124,7 +127,7 @@ const QUICK_IDS: ReadonlySet<string> = new Set([
 ]);
 
 type RowDraft = Omit<SemanticsRow, "quick">;
-const one = (setting: DeviceSetting, enabled = true): { setting: DeviceSetting; enabled: boolean } => ({ setting, enabled });
+const one = (setting: DeviceSetting, enabled = true): ChainStage => ({ setting, enabled });
 
 function dryRows(): RowDraft[] {
   return (["sixteenths", "melody", "chromatic", "held-note"] as const).map((pattern) => ({

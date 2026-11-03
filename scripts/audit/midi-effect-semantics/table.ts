@@ -64,16 +64,35 @@ export function formatRows(summary: SemanticsSummary): string[] {
   });
 }
 
+/** The run line; the token is the run's start in epoch ms, printed as a date too, so an operator sees which run the newest envelope is (an aborted run uploads nothing). */
 export function runLine(summary: SemanticsSummary): string {
   const count = (kind: SemanticsRowRecord["rule"]): number => summary.rows.filter(r => r.rule === kind && r.error === null).length;
   const registered = (kind: SemanticsRowRecord["register"]): number => summary.rows.filter(r => r.register === kind && r.error === null).length;
   const errors = summary.rows.filter(r => r.error !== null).length;
   const { calibration } = summary;
-  return `run ${summary.runToken} | sdk ${summary.sdkVersion} | ${summary.sampleRate} Hz | ${summary.bpm} bpm | `
+  return `run ${summary.runToken} (${new Date(summary.runToken).toISOString()}) | sdk ${summary.sdkVersion} | ${summary.sampleRate} Hz | ${summary.bpm} bpm | `
     + `reference peak ${calibration.referencePeak} | instrument offset ${calibration.instrumentOffsetFrames} frames | `
     + `register ${summary.registerSource ?? "none"} | rows ${summary.rows.length} | `
     + `holds ${count("holds")} deviation ${count("deviation")} broken ${count("broken")} none ${count("none")} error ${errors} | `
     + `as-registered ${registered("as-registered")} changed ${registered("changed")} unregistered ${registered("unregistered")}`;
+}
+
+/** A JSON file, its path in the message when it does not parse. */
+function readJson(path: string): unknown {
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch (cause) {
+    throw new Error(`${path}: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+  }
+}
+
+const FLAGS = ["--accept", "--force"] as const;
+
+/** The token (the first argument that is not a flag) and the flags; an unknown flag throws, so a typo never runs without its flag. */
+export function parseArgs(args: readonly string[]): { token: string | undefined; accept: boolean; force: boolean } {
+  const unknown = args.find((arg) => arg.startsWith("--") && !(FLAGS as readonly string[]).includes(arg));
+  if (unknown !== undefined) {throw new Error(`unknown flag "${unknown}"; known: ${FLAGS.join(", ")}`);}
+  return { token: args.find((arg) => !arg.startsWith("--")), accept: args.includes("--accept"), force: args.includes("--force") };
 }
 
 export function acceptPath(rate: number, root: string = REPO_ROOT): string {
@@ -83,17 +102,23 @@ export function acceptPath(rate: number, root: string = REPO_ROOT): string {
 /**
  * Throws the refusal of `registerFromSummary` (a broken or errored row, or a partial run, without force); otherwise returns
  * the register, its path and the lines to print before the write: `FORCED` and `merged into <path>` first when they apply,
- * then the diff against the register on disk, or `no differences`.
+ * then, forced, the errored rows (kept as registered from the register on disk, or left out), then the diff against the
+ * register on disk, or `no differences`.
  */
 export function planAccept(
   summary: SemanticsSummary, options: { force: boolean; root?: string }
 ): { path: string; next: SemanticsRegister; diffLines: string[] } {
   const path = acceptPath(summary.sampleRate, options.root);
-  const previous = existsSync(path) ? parseSemanticsRegister(JSON.parse(readFileSync(path, "utf8"))) : null;
+  const previous = existsSync(path) ? parseSemanticsRegister(readJson(path)) : null;
   const next: SemanticsRegister = registerFromSummary(summary, { force: options.force, acceptedAt: new Date().toISOString(), previous });
   const diff = registerDiff(previous, next);
   const header: string[] = [];
   if (options.force) {header.push("FORCED");}
+  const errored = summary.rows.filter((row) => row.error !== null).map((row) => row.id);
+  const kept = errored.filter((id) => id in next.rows);
+  const leftOut = errored.filter((id) => !(id in next.rows));
+  if (kept.length > 0) {header.push(`errored, kept as registered: ${kept.join(", ")}`);}
+  if (leftOut.length > 0) {header.push(`errored, left out: ${leftOut.join(", ")}`);}
   if (partialParams(summary).length > 0) {header.push(previous === null ? `partial run, no previous register to merge into at ${path}` : `merged into ${path}`);}
   const body: string[] = [];
   if (previous === null) {body.push("no previous register");}
@@ -109,12 +134,14 @@ export function writeRegister(path: string, register: SemanticsRegister): void {
   writeFileSync(path, `${JSON.stringify(register, null, 2)}\n`);
 }
 
-function runTokens(): number[] {
+/** The summaries' tokens, oldest first; null when the verify directory does not exist. */
+function runTokens(): number[] | null {
   let names: string[];
   try {
     names = readdirSync(VERIFY_DIR);
-  } catch {
-    return [];
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {return null;}
+    throw error;
   }
   return names
     .map((f) => SUMMARY_NAME.exec(f)?.[1])
@@ -124,16 +151,25 @@ function runTokens(): number[] {
 }
 
 function main(): void {
-  const args = process.argv.slice(2);
-  const accept = args.includes("--accept");
-  const force = args.includes("--force");
-  const positional = args.find(a => !a.startsWith("--"));
-  const token = positional !== undefined ? Number(positional) : runTokens().at(-1);
+  let parsed: ReturnType<typeof parseArgs>;
+  try {
+    parsed = parseArgs(process.argv.slice(2));
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+  const { accept, force } = parsed;
+  const tokens = parsed.token === undefined ? runTokens() : [];
+  if (tokens === null) {
+    console.error(`no midisem summary in ${VERIFY_DIR}: the directory does not exist`);
+    process.exit(1);
+  }
+  const token = parsed.token !== undefined ? Number(parsed.token) : tokens.at(-1);
   if (token === undefined || !Number.isFinite(token) || !existsSync(resolve(VERIFY_DIR, summaryFileName(token)))) {
     console.error(`no midisem summary${token === undefined ? "" : ` ${token}`} in ${VERIFY_DIR}`);
     process.exit(1);
   }
-  const summary = parseSemanticsSummary(JSON.parse(readFileSync(resolve(VERIFY_DIR, summaryFileName(token)), "utf8")), token);
+  const summary = parseSemanticsSummary(readJson(resolve(VERIFY_DIR, summaryFileName(token))), token);
   console.log("id | verdict | figure | read / readable (unreadable) | max |Δonset| ms | max |Δcents| | max |Δvel| | render ms");
   for (const line of formatRows(summary)) {console.log(line);}
   console.log(runLine(summary));

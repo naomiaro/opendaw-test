@@ -12,8 +12,6 @@ import { PPQN } from "@opendaw/lib-dsp";
 /** The shape of `EventRecord`'s note-on (`crates/abi/src/lib.rs:39-51`), in absolute pulses. */
 export interface RuleNote { position: number; duration: number; pitch: number; cent: number; velocity: number }
 
-export type SemanticsDevice = "arpeggio" | "pitch" | "velocity" | "zeitgeist";
-
 export type DeviationName = "arpeggio-velocity-matrix" | "arpeggio-drops-cent" | "arpeggio-uncapped-note-off" | "zeitgeist-warps-note-off";
 
 export type QuestionName = "pitch-drops-out-of-range" | "arpeggio-velocity-manual-gap";
@@ -33,6 +31,8 @@ export type DeviceSetting =
   | { device: "pitch"; settings: PitchSettings }
   | { device: "velocity"; settings: VelocitySettings }
   | { device: "zeitgeist"; settings: ZeitgeistSettings };
+
+export type SemanticsDevice = DeviceSetting["device"];
 
 /** The adapter functions a chain needs, bound by the caller; a chain holds at most one Velocity and one Zeitgeist. */
 export interface RuleContext {

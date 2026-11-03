@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   MIDI_SEMANTICS_SCHEMA_VERSION, SUMMARY_NAME, parseSemanticsRegister, partialParams, parseSemanticsSummary, registerDiff,
   registerFromSummary, roundFigure, summaryFileName, type SemanticsRowRecord, type SemanticsSummary
@@ -59,6 +61,7 @@ describe("midiEffectSemanticsArtifacts", () => {
     expect(() => registerFromSummary(withBroken, { force: false, acceptedAt })).toThrow(/boom/);
     const forced = registerFromSummary(withBroken, { force: true, acceptedAt });
     expect(Object.keys(forced.rows)).toContain("arp-vel0-held-chord");
+    expect(Object.keys(forced.rows)).not.toContain("boom");
     const clean = registerFromSummary(summary([record("a", { rule: "none", unreadable: 2 }), record("b")]), { force: false, acceptedAt });
     expect(clean).toMatchObject({ schemaVersion: 1, sdkVersion: "0.0.180", acceptedRunToken: 7, acceptedAt, sampleRate: 48000, bpm: 120 });
     expect(clean.rows.a).toEqual({ notes: [note(0)], unreadable: 2 });
@@ -79,6 +82,83 @@ describe("midiEffectSemanticsArtifacts", () => {
     expect(merged.rows.keep).toEqual(previous.rows.keep);
     expect(merged.rows.redo!.notes).toEqual([note(5)]);
     expect(Object.keys(registerFromSummary(partial, { force: true, acceptedAt, previous: null }).rows).sort()).toEqual(["new", "redo"]);
+  });
+
+  it("forced, an errored row is never a baseline: it keeps the previous entry, and is left out when there is none", () => {
+    const previous = registerFromSummary(summary([record("dry"), record("boom", { read: [note(3)] })]), { force: false, acceptedAt });
+    const errored = summary([record("dry"), record("boom", { error: "render threw", read: [] }), record("fresh", { error: "render threw", read: [] })]);
+    const full = registerFromSummary(errored, { force: true, acceptedAt, previous });
+    expect(full.rows.boom).toEqual(previous.rows.boom);
+    expect(Object.keys(full.rows).sort()).toEqual(["boom", "dry"]);
+    expect(Object.keys(registerFromSummary(errored, { force: true, acceptedAt, previous: null }).rows)).toEqual(["dry"]);
+    const partial = registerFromSummary({ ...errored, rowsParam: "quick" }, { force: true, acceptedAt, previous });
+    expect(partial.rows.boom).toEqual(previous.rows.boom);
+    expect(partial.rows.fresh).toBeUndefined();
+  });
+
+  it("forced, an errored row keeps no entry from a register of another SDK, bpm or rate", () => {
+    const previous = { ...registerFromSummary(summary([record("boom")]), { force: false, acceptedAt }), sdkVersion: "0.0.179" };
+    const full = registerFromSummary(summary([record("boom", { error: "threw", read: [] })]), { force: true, acceptedAt, previous });
+    expect(full.rows.boom).toBeUndefined();
+  });
+
+  it("a partial merge into a register of another SDK, bpm or rate is refused, naming the fields; on the same footing it merges and takes the latest accept", () => {
+    const previous = registerFromSummary(summary([record("keep"), record("redo")]), { force: false, acceptedAt });
+    const partial = { ...summary([record("redo", { read: [note(5)] })]), rowsParam: "redo", runToken: 9 };
+    expect(() => registerFromSummary(partial, { force: true, acceptedAt, previous: { ...previous, sdkVersion: "0.0.179" } }))
+      .toThrow(/sdkVersion 0\.0\.179 in the register, 0\.0\.180 in the run/);
+    expect(() => registerFromSummary(partial, { force: true, acceptedAt, previous: { ...previous, bpm: 100, sampleRate: 44100 } }))
+      .toThrow(/bpm 100 in the register, 120 in the run, sampleRate 44100 in the register, 48000 in the run/);
+    const merged = registerFromSummary(partial, { force: true, acceptedAt: "2026-11-04T00:00:00Z", previous });
+    expect(merged).toMatchObject({ acceptedRunToken: 9, acceptedAt: "2026-11-04T00:00:00Z", sdkVersion: "0.0.180", bpm: 120, sampleRate: 48000 });
+    expect(merged.rows.keep).toEqual(previous.rows.keep);
+  });
+
+  it("parseSemanticsRegister rejects a note with a missing or non-finite figure, naming the row, the note and the field", () => {
+    const register = registerFromSummary(summary([record("a", { read: [note(0), note(200)] })]), { force: false, acceptedAt });
+    const withNote = (patch: Record<string, unknown>) => ({ ...register, rows: { a: { notes: [note(0), { ...note(200), ...patch }], unreadable: 0 } } });
+    expect(() => parseSemanticsRegister(withNote({ onsetMs: undefined }))).toThrow("register: row a note 1 onsetMs is undefined, not a finite number");
+    expect(() => parseSemanticsRegister(withNote({ endMs: "12" }))).toThrow("register: row a note 1 endMs is string, not a finite number");
+    expect(() => parseSemanticsRegister(withNote({ velocity: Number.NaN }))).toThrow("register: row a note 1 velocity is NaN, not a finite number");
+    expect(() => parseSemanticsRegister(withNote({ cents: "x" }))).toThrow("register: row a note 1 cents is string, not a finite number or null");
+    expect(() => parseSemanticsRegister({ ...register, rows: { a: { notes: [null], unreadable: 0 } } })).toThrow("register: row a note 0 is not an object");
+  });
+
+  it("a note's pitch, cents and jitterCents are null together or numbers together", () => {
+    const register = registerFromSummary(summary([record("a")]), { force: false, acceptedAt });
+    const mixed = { ...register, rows: { a: { notes: [{ ...note(0), pitch: null, cents: null }], unreadable: 0 } } };
+    expect(() => parseSemanticsRegister(mixed)).toThrow("register: row a note 0 has pitch, cents and jitterCents neither all null nor all numbers");
+    const unread = { ...register, rows: { a: { notes: [{ ...note(0), pitch: null, cents: null, jitterCents: null }], unreadable: 0 } } };
+    expect(parseSemanticsRegister(unread).rows.a!.notes[0]!.pitch).toBeNull();
+  });
+
+  it("parseSemanticsRegister rejects a register without its sdkVersion, sampleRate or bpm", () => {
+    const register = registerFromSummary(summary([record("a")]), { force: false, acceptedAt });
+    expect(() => parseSemanticsRegister({ ...register, sdkVersion: 1 })).toThrow("register: sdkVersion is number, not a string");
+    expect(() => parseSemanticsRegister({ ...register, sampleRate: undefined })).toThrow("register: sampleRate is undefined, not a finite number");
+    expect(() => parseSemanticsRegister({ ...register, bpm: Number.NaN })).toThrow("register: bpm is NaN, not a finite number");
+  });
+
+  it("parseSemanticsSummary validates the top-level figures, the calibration and every read note", () => {
+    const ok = summary([record("a")]);
+    expect(() => parseSemanticsSummary({ ...ok, sampleRate: "48000" }, 7)).toThrow("summary 7: sampleRate is string, not a finite number");
+    expect(() => parseSemanticsSummary({ ...ok, bpm: undefined }, 7)).toThrow("summary 7: bpm is undefined, not a finite number");
+    expect(() => parseSemanticsSummary({ ...ok, sdkVersion: null }, 7)).toThrow("summary 7: sdkVersion is null, not a string");
+    expect(() => parseSemanticsSummary({ ...ok, calibration: null }, 7)).toThrow("summary 7: calibration is not an object");
+    expect(() => parseSemanticsSummary({ ...ok, calibration: { ...ok.calibration, referencePeak: Number.NaN } }, 7))
+      .toThrow("summary 7: calibration.referencePeak is NaN, not a finite number");
+    expect(() => parseSemanticsSummary({ ...ok, rows: [record("a", { read: [{ ...note(0), velocity: "loud" as never }] })] }, 7))
+      .toThrow("summary 7: row a note 0 velocity is string, not a finite number");
+    expect(() => parseSemanticsSummary({ ...ok, rows: [{ ...record("a"), id: 4 }] }, 7)).toThrow("summary 7: row 0 id is number, not a string");
+  });
+
+  it("the checked-in registers parse", () => {
+    for (const rate of [44100, 48000]) {
+      const path = resolve(import.meta.dirname, `../../../debug/2026-11-03-midi-effect-semantics/register/${rate}.json`);
+      const register = parseSemanticsRegister(JSON.parse(readFileSync(path, "utf8")));
+      expect(register.sampleRate).toBe(rate);
+      expect(Object.keys(register.rows).length).toBeGreaterThan(200);
+    }
   });
 
   it("a full run replaces the previous register: rows it did not render are gone", () => {

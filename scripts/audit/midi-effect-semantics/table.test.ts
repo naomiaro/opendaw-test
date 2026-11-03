@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { acceptPath, formatRows, planAccept, rowDeltas, runLine, writeRegister } from "./table.ts";
+import { dirname, join, resolve } from "node:path";
+import { acceptPath, formatRows, parseArgs, planAccept, rowDeltas, runLine, writeRegister } from "./table.ts";
 import type { SemanticsRowRecord, SemanticsSummary } from "../../../src/lib/audit/midiEffectSemanticsArtifacts.ts";
 
-const fig = (onsetMs: number, cents: number | null, velocity: number) => ({ onsetMs, endMs: onsetMs + 50, pitch: 60, cents, velocity, jitterCents: null });
+/** A read note; a null `cents` is a note read without a pitch, so its pitch and jitter are null too. */
+const fig = (onsetMs: number, cents: number | null, velocity: number) =>
+  ({ onsetMs, endMs: onsetMs + 50, pitch: cents === null ? null : 60, cents, velocity, jitterCents: cents === null ? null : 0.2 });
 const pred = (onsetMs: number, readability: "readable" | "abutting") => ({ onsetMs, endMs: onsetMs + 50, pitch: 60, cents: 0, velocity: 1, readability });
 
 function row(over: Partial<SemanticsRowRecord>): SemanticsRowRecord {
@@ -66,8 +69,24 @@ describe("runLine", () => {
       row({}), row({ rule: "deviation", register: "changed" }), row({ rule: "deviation", register: "unregistered" }), row({ rule: "broken", register: "changed" }),
       row({ rule: "none", register: "unregistered" }), row({ error: "boom", register: "unregistered" })
     ]));
-    expect(line).toBe("run 7 | sdk 0.0.180 | 48000 Hz | 120 bpm | reference peak 0.5 | instrument offset 12 frames | register none | rows 6 | "
+    expect(line).toBe("run 7 (1970-01-01T00:00:00.007Z) | sdk 0.0.180 | 48000 Hz | 120 bpm | reference peak 0.5 | instrument offset 12 frames | register none | rows 6 | "
       + "holds 1 deviation 2 broken 1 none 1 error 1 | as-registered 1 changed 2 unregistered 2");
+  });
+});
+
+describe("parseArgs", () => {
+  it("reads the token and the two flags", () => {
+    expect(parseArgs(["17", "--accept", "--force"])).toEqual({ token: "17", accept: true, force: true });
+    expect(parseArgs([])).toEqual({ token: undefined, accept: false, force: false });
+  });
+  it("refuses an unknown flag, naming it", () => {
+    expect(() => parseArgs(["--acept"])).toThrow('unknown flag "--acept"; known: --accept, --force');
+  });
+  it("the script exits 1 on an unknown flag before reading any summary", () => {
+    const script = resolve(import.meta.dirname, "table.ts");
+    const result = spawnSync(process.execPath, [script, "--frce"], { encoding: "utf8", timeout: 60_000 });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('unknown flag "--frce"');
   });
 });
 
@@ -114,6 +133,22 @@ describe("planAccept", () => {
     const next = planAccept(summary([row({})]), { force: false, root });
     expect(Object.keys(next.next.rows)).toEqual(["a"]);
     expect(next.diffLines).toEqual(["removed: b"]);
+  });
+  it("forced, names the errored rows: kept as registered, or left out", () => {
+    const root = mkdtempSync(join(tmpdir(), "semreg-"));
+    const full = planAccept(summary([row({}), row({ id: "b" })]), { force: false, root });
+    writeRegister(full.path, full.next);
+    const errored = summary([row({}), row({ id: "b", error: "threw", read: [] }), row({ id: "c", error: "threw", read: [] })]);
+    const forced = planAccept(errored, { force: true, root });
+    expect(forced.diffLines).toEqual(["FORCED", "errored, kept as registered: b", "errored, left out: c", "no differences"]);
+    expect(forced.next.rows.b).toEqual(full.next.rows.b);
+  });
+  it("names the register's path when it is not JSON", () => {
+    const root = mkdtempSync(join(tmpdir(), "semreg-"));
+    const path = acceptPath(48000, root);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, "{ not json");
+    expect(() => planAccept(summary([row({})]), { force: false, root })).toThrow(path);
   });
   it("refuses a broken row without force and writes nothing, FORCED with force", () => {
     const root = mkdtempSync(join(tmpdir(), "semreg-"));
