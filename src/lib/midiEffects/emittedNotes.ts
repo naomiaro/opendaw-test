@@ -1,0 +1,55 @@
+/**
+ * Bars for the "as emitted" lane, built by sampling the engine's held-note set once per frame.
+ * The set says which pitches are sounding now and nothing else: a pitch newly on opens a bar at the
+ * sampled position, newly off closes it; a position that fell below the previous one (a loop wrap or
+ * a seek back) drops every bar first. Velocity is not in the set, and a note shorter than a frame can
+ * be missed, so the lane is for Arpeggio steps and Pitch moves, not for Velocity or fine timing.
+ */
+import { PATTERN_PPQN } from "./patterns";
+
+export interface Bar {
+  pitch: number;
+  /** ppqn */
+  from: number;
+  /** ppqn; null while the pitch is still sounding */
+  to: number | null;
+}
+
+export class EmittedBars {
+  readonly #open = new Map<number, Bar>();
+  #bars: Bar[] = [];
+  #lastPosition = -Infinity;
+
+  constructor(private readonly horizon: number = PATTERN_PPQN) {}
+
+  get bars(): readonly Bar[] {
+    return this.#bars;
+  }
+
+  /** Call once per frame with the current held-note predicate and transport position. */
+  sample(isOn: (pitch: number) => boolean, position: number): void {
+    if (position < this.#lastPosition) this.reset();
+    this.#lastPosition = position;
+    for (let pitch = 0; pitch < 128; pitch++) {
+      const open = this.#open.get(pitch);
+      if (isOn(pitch)) {
+        if (open === undefined) {
+          const bar: Bar = { pitch, from: position, to: null };
+          this.#open.set(pitch, bar);
+          this.#bars.push(bar);
+        }
+      } else if (open !== undefined) {
+        open.to = position;
+        this.#open.delete(pitch);
+      }
+    }
+    const oldest = position - this.horizon;
+    this.#bars = this.#bars.filter((bar) => bar.to === null || bar.to >= oldest);
+  }
+
+  /** Drop every bar, open ones included. */
+  reset(): void {
+    this.#open.clear();
+    this.#bars = [];
+  }
+}
