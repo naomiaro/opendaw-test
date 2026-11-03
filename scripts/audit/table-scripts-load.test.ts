@@ -11,6 +11,7 @@ const SCRIPTS = [
   "scripts/audit/midi-input-alignment/table.ts",
   "scripts/audit/midi-audio-combined/table.ts",
   "scripts/audit/midi-effect-placement/table.ts",
+  "scripts/audit/midi-effect-semantics/table.ts",
   "scripts/audit/recording-alignment/one-quantum-events.ts",
 ];
 
@@ -19,6 +20,10 @@ describe("the audit table scripts load under Node", () => {
     it(script, () => {
       const result = spawnSync(process.execPath, [script, "1"], { cwd: ROOT, encoding: "utf8", timeout: 60_000 });
       expect(result.stderr).not.toMatch(/ERR_MODULE_NOT_FOUND|Cannot find module|SyntaxError/);
+      if (script === "scripts/audit/midi-effect-semantics/table.ts") {
+        expect(result.status).toBe(1);
+        expect(result.stderr).toMatch(/^no midisem summary 1 in /);
+      }
     });
   }
 });

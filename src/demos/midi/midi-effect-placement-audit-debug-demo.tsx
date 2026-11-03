@@ -23,16 +23,14 @@ import { AudioData, type ppqn } from "@opendaw/lib-dsp";
 import { EffectFactories, type EffectBox, type Project } from "@opendaw/studio-core";
 import { OPENDAW_SDK_VERSION } from "@opendaw/studio-sdk";
 import {
-  ArpeggioDeviceBox, AudioFileBox, PitchDeviceBox, SpielwerkDeviceBox, VelocityDeviceBox, ZeitgeistDeviceBox,
-  type AudioUnitBox, type NanoDeviceBox, type NoteEventBox, type NoteRegionBox,
+  ArpeggioDeviceBox, PitchDeviceBox, SpielwerkDeviceBox, VelocityDeviceBox, ZeitgeistDeviceBox, type NoteEventBox,
 } from "@opendaw/studio-boxes";
-import { InstrumentFactories, ScriptCompiler, ZeitgeistDeviceBoxAdapter } from "@opendaw/studio-adapters";
+import { ScriptCompiler, ZeitgeistDeviceBoxAdapter } from "@opendaw/studio-adapters";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
 import { TestStep, type TestStepRow } from "@/components/TestStep";
 import { DebugLinkBar } from "@/components/DebugLinkBar";
-import { initializeOpenDAW } from "@/lib/projectSetup";
 import { midiEffectsFieldOf } from "@/lib/adapterUtils";
 import { renderOfflineSlice } from "@/lib/offlineScan";
 import { withDeadline } from "@/lib/deadline";
@@ -45,6 +43,7 @@ import {
 import { arpeggioSteps, echoCopies, expectedFrames, instrumentOffsetFrames, zeitgeistWarped } from "@/lib/audit/midiEffectRules";
 import { judgePassThrough, judgeRule, onsetsOf, peakOf, type RowVerdict } from "@/lib/audit/midiEffectPlacement";
 import { zeitgeistGrooveBox, removeMidiEffect } from "@/lib/audit/midiEffectChain";
+import { buildNanoProject, RunAbort, uploadSummary, type NanoProject } from "@/lib/audit/midiEffectBootstrap";
 import { MIDI_EFFECT_SCHEMA_VERSION, summaryFileName, type MidiEffectRowRecord, type MidiEffectSummary } from "@/lib/audit/midiEffectArtifacts";
 import "@radix-ui/themes/styles.css";
 import { Badge, Button, Callout, Card, Code, Container, Flex, Heading, Table, Text, Theme } from "@radix-ui/themes";
@@ -81,63 +80,27 @@ const FACTORIES = {
 const COMPILE_DEADLINE_MS = 30_000;
 const SAMPLE_LOAD_DEADLINE_MS = 30_000;
 
-/** A failure that voids every later row: the run ends in `error:` instead of continuing. */
-class RunAbort extends Error {}
-
-interface Built {
-  project: Project;
-  audioContext: AudioContext;
-  audioUnitBox: AudioUnitBox;
-  regionBox: NoteRegionBox;
+interface Built extends NanoProject {
   /** What `?importMs=` did, shown beside the status for the page's lifetime. */
   importNote: string | null;
 }
 
-/** The burst, the Nano with it attached, the region at bar 1. Two transactions after init: the file box
- *  and the instrument together (the attachment is a mandatory-edge target), then the sampler's settings
- *  and the region. */
+/** `?importMs=`'s synthetic take right after init, on the project as init left it (the shared bootstrap's `afterInit`),
+ *  then the burst on a Nano at bar 1. */
 async function buildProject(localAudioBuffers: Map<string, AudioBuffer>, onStatus: (s: string) => void): Promise<Built> {
-  const { project, audioContext } = await initializeOpenDAW({ localAudioBuffers, bpm: BPM, audioContextSampleRate: RATE, onStatusUpdate: onStatus });
-  let importNote: string | null = null;
-  if (IMPORT_MS !== null) {
-    onStatus(`Importing a ${IMPORT_MS} ms recording...`);
-    importNote = await importShortRecording(project, IMPORT_MS);
-  }
-  const channel = burstSample(RATE, SAMPLE_MS);
-  const buffer = audioContext.createBuffer(2, channel.length, RATE);
-  buffer.getChannelData(0).set(channel);
-  buffer.getChannelData(1).set(channel);
-  const uuid = UUID.generate();
-  localAudioBuffers.set(UUID.toString(uuid), buffer);
-  const { audioUnitBox, instrumentBox, trackBox } = project.editing
-    .modify(() => {
-      const fileBox = AudioFileBox.create(project.boxGraph, uuid, (box) => {
-        box.fileName.setValue("burst.wav");
-        box.endInSeconds.setValue(buffer.duration);
-      });
-      return project.api.createInstrument(InstrumentFactories.Nano, { attachment: fileBox });
-    })
-    .unwrap("createInstrument");
-  const nanoBox: NanoDeviceBox = instrumentBox;
-  const regionBox = project.editing
-    .modify(() => {
-      nanoBox.attack.setValue(NANO_ATTACK_SECONDS);
-      nanoBox.release.setValue(NANO_RELEASE_SECONDS);
-      nanoBox.rootKey.setValue(NOTE_PITCH);
-      nanoBox.loop.setValue(false);
-      project.timelineBox.loopArea.enabled.setValue(false);
-      return project.api.createNoteRegion({
-        trackBox,
-        position: REGION_POSITION_PPQN as ppqn,
-        duration: REGION_DURATION_PPQN as ppqn,
-        loopDuration: REGION_DURATION_PPQN as ppqn,
-        name: "pattern",
-      });
-    })
-    .unwrap("createNoteRegion");
-  onStatus("Loading the sample...");
-  await awaitSampleLoaded(project, uuid);
-  return { project, audioContext, audioUnitBox, regionBox, importNote };
+  const importMs = IMPORT_MS;
+  const imported: { note: string | null } = { note: null };
+  const afterInit = async (project: Project): Promise<void> => {
+    if (importMs === null) return;
+    onStatus(`Importing a ${importMs} ms recording...`);
+    imported.note = await importShortRecording(project, importMs);
+  };
+  const nano = await buildNanoProject({
+    localAudioBuffers, bpm: BPM, rate: RATE, sample: burstSample(RATE, SAMPLE_MS), fileName: "burst.wav", rootKey: NOTE_PITCH,
+    attackSeconds: NANO_ATTACK_SECONDS, releaseSeconds: NANO_RELEASE_SECONDS,
+    regionPositionPpqn: REGION_POSITION_PPQN, regionDurationPpqn: REGION_DURATION_PPQN, removeMaximizer: false, onStatus, afterInit,
+  });
+  return { ...nano, importNote: imported.note };
 }
 
 /** The burst as a synthetic take through `importRecording`, the function a finished recording's audio goes through. */
@@ -152,24 +115,6 @@ async function importShortRecording(project: Project, ms: number): Promise<strin
   } catch (error) {
     throw new Error(`recording import of ${ms} ms (${channel.length} frames) failed: ${error instanceof Error ? error.message : String(error)}`);
   }
-}
-
-/** The loader's terminal state, read first and then awaited (the loader has `subscribe` only, and it
- *  fires synchronously for a terminal state). An error carries the loader's own reason. */
-function awaitSampleLoaded(project: Project, uuid: UUID.Bytes): Promise<void> {
-  const loader = project.sampleManager.getOrCreate(uuid);
-  const failed = (reason: string) => new Error(`sample load failed: ${reason}`);
-  if (loader.state.type === "loaded") return Promise.resolve();
-  if (loader.state.type === "error") return Promise.reject(failed(loader.state.reason));
-  return withDeadline(new Promise<void>((resolve, reject) => {
-    let subscribed = false;
-    const sub = loader.subscribe((state) => {
-      if (state.type !== "loaded" && state.type !== "error") return;
-      if (state.type === "loaded") resolve(); else reject(failed(state.reason));
-      if (subscribed) sub.terminate();
-    });
-    subscribed = true;
-  }), SAMPLE_LOAD_DEADLINE_MS, "sample load");
 }
 
 function applySettings(box: EffectBox, device: MidiEffectDevice): void {
@@ -401,14 +346,7 @@ const App: React.FC = () => {
       deviceParam: DEVICE_PARAM,
       rows: records,
     };
-    await withDeadline(
-      (async () => {
-        const res = await fetch(`/__verify/${summaryFileName(runToken)}`, { method: "PUT", body: JSON.stringify(summary, null, 2) });
-        if (!res.ok) throw new Error(`verify sink rejected JSON: HTTP ${res.status}`);
-      })(),
-      30_000,
-      "summary upload",
-    );
+    await uploadSummary(summaryFileName(runToken), summary);
     console.log(`[midi-effect-audit] summary ${summaryFileName(runToken)} uploaded, ${records.length} rows`);
   }, []);
 

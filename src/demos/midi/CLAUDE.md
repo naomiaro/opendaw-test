@@ -397,6 +397,75 @@ table `node scripts/audit/midi-effect-placement/table.ts`.
   registered, and an unregistered Spielwerk forwards its input, so such a row reads as a
   pass-through, not as the script.
 
+### MIDI Effect Semantics Audit (unlisted)
+`midi-effect-semantics-audit-debug-demo.html[?rate=48000|44100][&rows=all|quick|<id,id,…>][&device=all|arpeggio|pitch|velocity|zeitgeist|order|disabled][&pattern=<id>]`
+renders 230 rows offline (a Nano playing a 440 Hz sine, root key 69, 1 ms attack and release), each
+with a chain of stock MIDI effects at one setting, reads the left channel back as notes and judges
+them against what the devices DOCUMENT (the placement audit asks when; this one asks what). Register:
+`debug/2026-11-03-midi-effect-semantics/note.md` and `register/<rate>.json`; library
+`src/lib/audit/midiEffectSemantics*.ts`; table `node scripts/audit/midi-effect-semantics/table.ts
+[runToken] [--accept] [--force]`. `&rows=quick` is a 41-row subset; the dry rows always run and
+`dry-sixteenths` calibrates (reference peak, instrument offset; 32 notes and a positive finite peak,
+or the run aborts; a run whose calibration row did not render ends in `error:` too). `#audit-state`
+reads `done` with `data-error-rows="<n>"` counting the rows that failed on their own (0 on a clean
+run). The register is fetched first: only a 404 or the dev server's HTML fallback means none; any
+other answer, a corrupt register, or one of another rate or bpm ends the run in `error:`.
+
+- **Verdicts.** The rule judgement (`rule holds`, `matches-known-deviation <names>`, `rule broken`,
+  `no rule`) joined with the register judgement (`as-registered`, `changed`, `unregistered`):
+  `as-registered`, `as-registered, matches-known-deviation …`, `changed, <rule>`, `<rule>,
+  unregistered`, `no rule`, `error`; a `no rule` row still reads the register (`changed, no rule`,
+  `no rule, unregistered`) and still catches an extra note (a read note outside every predicted span
+  of every variant reads `rule broken`). `error` is a failed render, or a silent one (peak 0) where
+  every variant predicts a judgeable note. A `rule broken` row is first a reader, rule or row fault on this
+  side: read its first mismatch and the envelope's predicted and read notes, then the crate. The
+  badge is green only for `as-registered`; red for `error` and any `rule broken`; amber for the rest,
+  `<rule>, unregistered` included (a row the register has never seen deserves a look). A mismatch names
+  the list its index counts in: `read note <i>` (the row's read notes), `predicted note <i>` (an
+  abutting note in the intent's prediction), `register note <i>`; a figure that is not a number never
+  sits inside a tolerance.
+- **The rule** is the crate's and the manual's, intent first; each subset of the row's known
+  deviations is tried after it, smallest first. Deviations (`DEVIATIONS` in the rules module, with
+  crate lines): `arpeggio-velocity-matrix` (silence at −100 %, 1.0 at 0 %),
+  `arpeggio-drops-cent`, `arpeggio-uncapped-note-off` (a step outlasts its held note),
+  `zeitgeist-warps-note-off` (the groove moves note-offs too). The Arpeggio walks the ABSOLUTE grid:
+  `step_index = k / repeat` with `k` the absolute grid index, so a hold from bar 1 at 1/16 starts at
+  index 16. Questioned behaviours (`QUESTIONS`): the Pitch drops a note shifted outside 0..127, the
+  Arpeggio's velocity disagrees with its manual (raised only where the manual's blend and the crate's
+  matrix give a different velocity for a note that reaches it); a row that shows one carries
+  `questioned: <name>`.
+- **Readability** (a monophonic reader): `overlap` and `polyphonic` are not judged; `too-short` is a
+  note whose duration less three attacks holds fewer than four periods (18.3 ms at C4; the reader's
+  pitch window starts two attacks in, stops one before the end and needs four rising crossings);
+  `too-quiet` is velocity above 0 and under 0.01; a velocity of exactly 0 is silence (the Nano's gain is
+  `gain × velocity`, `device-nano/src/voice.rs:129`) and leaves the prediction, so a row whose every
+  note is at 0 (`vel-offset-1-*`, `vel-magnet0x1-*`) is predicted silent and judged: it holds on
+  silence and breaks if anything sounds; `abutting` notes (touching within the release or under the
+  reader's 2 ms gap apart, the legato melody, Arpeggio gate 1) are read at their PREDICTED span for
+  pitch, cents and velocity only. Precedence overlap > polyphonic > too-short > too-quiet > abutting.
+  `no rule` means no judgeable note in any variant (gate 2, steps under the floor, notes squeezed
+  onto one another).
+- **The rules' range is the render's span** (`renderRange`: region start to the render's end, the
+  region plus a quarter second). The region's end cuts nothing a device emits: a Zeitgeist on a long
+  cell moves notes past it and they sound in the tail.
+- **Reading a table line:** verdict, the first mismatch (or `questioned:`), `read / readable
+  (unreadable)` of the INTENT variant (a deviation row's readable count is the intent's), the
+  largest deltas where read and readable pair one to one (dashes otherwise), render ms. The cents
+  delta compares the residual alone, so a ±50-cent row prints 100 on the half-semitone tie while the
+  judge, comparing pitch and cents together, holds. The run line counts both axes: `holds / deviation /
+  broken / none / error`, then `as-registered / changed / unregistered`.
+- **`--accept`** writes `register/<rate>.json` and prints the diff against the previous one first;
+  only after a person has read every row that is not `as-registered`. A run with a broken or errored
+  row is refused without `--force`, and a forced accept names the row in the note. Forced, a broken
+  row is accepted (it was read); an errored row never is: it keeps the register's entry when the
+  register on disk has the run's SDK, bpm and rate, and is left out otherwise, and the accept prints
+  `errored, kept as registered: …` / `errored, left out: …`. A partial run (`rows`, `device` or
+  `pattern` not `all`) is refused too: forced, its rows merge into the register on disk (the diff
+  says `merged into <path>`) instead of replacing it, and the merge is refused outright when that
+  register has another SDK, bpm or rate. The script refuses an unknown flag, and its run line carries
+  the run's date. Offline renders are deterministic: a `changed` row on an unchanged SDK is a
+  non-determinism finding.
+
 ### Combined MIDI + Audio Audit (unlisted)
 `midi-audio-combined-audit-debug-demo.html?scenario=<nominal-start|countin-start|janked-mid|all>&bpm=<n>[&repeats=<n>][&state=<default|calibrated|both>][&bus=][&input=][&output=][&audible=1]`
 sends each note of the MIDI sweep's pattern on the IAC bus AND plays a 6 kHz click out of the

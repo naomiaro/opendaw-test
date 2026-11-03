@@ -770,6 +770,18 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   `midi-input-alignment-audit-debug-demo.html?scenario=nominal-start&bpm=120&effect=arpeggio`
   then `&effect=pitch` (IAC online; expect the same band and 48 of 48 notes as without an
   effect — the recorder reads the capture's raw note signals before the chain).
+- After SDK upgrades, also run the MIDI effect semantics audit:
+  `midi-effect-semantics-audit-debug-demo.html` then `?rate=44100` — a real click on Run,
+  deterministic, no hardware, about 35 seconds per rate (230 rows). Expect every row
+  `as-registered`, `as-registered, matches-known-deviation …` or `no rule` (the counts per rate are
+  in the note's Runs section). A `changed` row is the finding; a `matches-known-deviation` the register
+  lists is not (a deviation that stops matching is a fix landing: retire it in the note). Register
+  `debug/2026-11-03-midi-effect-semantics/note.md` and `register/<rate>.json` beside it, table
+  `node scripts/audit/midi-effect-semantics/table.ts [runToken]`; `--accept` writes the register,
+  only after a person's read (`--force` for a broken row, named in the note, or a partial run, which
+  then merges into a register of the same SDK, bpm and rate; an errored row is never accepted).
+  Reading recipe:
+  `src/demos/midi/CLAUDE.md`.
 - After SDK upgrades, also re-run the standing combined MIDI + audio sweep:
   `midi-audio-combined-audit-debug-demo.html?scenario=all&bpm=120` — Chrome, a real click on
   Run, the IAC Driver online, the laptop's built-in microphone and speakers (an interface is
