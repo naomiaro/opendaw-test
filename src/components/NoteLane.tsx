@@ -11,13 +11,13 @@ import { CanvasPainter } from "@/lib/CanvasPainter";
 import { CANVAS_COLORS, CANVAS_FONT_SMALL } from "@/lib/design/consoleTheme";
 
 export interface LaneNote {
-  pitch: number;
+  readonly pitch: number;
   /** ppqn */
-  from: number;
+  readonly from: number;
   /** ppqn; null = still sounding (drawn to the playhead, or the lane's end) */
-  to: number | null;
+  readonly to: number | null;
   /** 0..1; shades the bar when the lane shades by velocity */
-  velocity?: number;
+  readonly velocity?: number;
 }
 
 export interface NoteLaneHandle {
@@ -35,7 +35,7 @@ export interface NoteLaneProps {
   pitchHigh: number;
   height: number;
   shadeByVelocity: boolean;
-  /** ppqn per frame; when given, the playhead overlay follows it and open bars end at it */
+  /** read every frame; when given, the playhead overlay follows it and open bars end at it */
   position?: () => number;
   /** pulses per beat and per bar, for the grid */
   beatPpqn?: number;
@@ -66,6 +66,7 @@ export const NoteLane = forwardRef<NoteLaneHandle, NoteLaneProps>(function NoteL
       const { notes, rangePpqn, pitchLow, pitchHigh, shadeByVelocity, position, beatPpqn, barPpqn } = propsRef.current;
       const width = canvas.clientWidth;
       const height = canvas.clientHeight;
+      if (rangePpqn <= 0 || beatPpqn <= 0 || barPpqn <= 0 || pitchHigh < pitchLow) return;
       const rows = pitchHigh - pitchLow + 1;
       const rowHeight = height / rows;
       const x = (ppqn: number) => (ppqn / rangePpqn) * width;
@@ -116,17 +117,19 @@ export const NoteLane = forwardRef<NoteLaneHandle, NoteLaneProps>(function NoteL
     };
   }, [title]);
 
+  const hasPosition = position !== undefined;
   useEffect(() => {
-    if (!position) return undefined;
+    if (!hasPosition) return undefined;
     const sub = AnimationFrame.add(() => {
       const playhead = playheadRef.current;
       const canvas = canvasRef.current;
-      if (!playhead || !canvas) return;
-      const fraction = Math.max(0, Math.min(1, position() / propsRef.current.rangePpqn));
+      const read = propsRef.current.position;
+      if (!playhead || !canvas || !read) return;
+      const fraction = Math.max(0, Math.min(1, read() / propsRef.current.rangePpqn));
       playhead.style.left = `${fraction * canvas.clientWidth}px`;
     });
     return () => sub.terminate();
-  }, [position]);
+  }, [hasPosition]);
 
   return (
     <div style={{ position: "relative" }}>

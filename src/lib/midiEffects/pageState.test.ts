@@ -30,6 +30,25 @@ describe("pageReducer", () => {
     expect(pageReducer(INITIAL_STATE, { type: "addToStack", id: "zeitgeist" })).toEqual(stack("dry", "zeitgeist"));
   });
 
+  it("addToStack of the tab's own device starts a one-chip stack", () => {
+    const s = pageReducer({ mode: "single", tab: "arpeggio", stack: [] }, { type: "addToStack", id: "arpeggio" });
+    expect(s).toEqual({ mode: "stack", tab: "arpeggio", stack: ["arpeggio"] });
+  });
+
+  it("moveInStack in single mode or out of range is ignored", () => {
+    const single: PageState = { mode: "single", tab: "pitch", stack: [] };
+    expect(pageReducer(single, { type: "moveInStack", from: 0, to: 0 })).toBe(single);
+    const stacked = stack("dry", "pitch", "velocity");
+    expect(pageReducer(stacked, { type: "moveInStack", from: 2, to: 0 })).toBe(stacked);
+    expect(pageReducer(stacked, { type: "moveInStack", from: 0, to: 5 })).toBe(stacked);
+    expect(pageReducer(stacked, { type: "moveInStack", from: -1, to: 0 })).toBe(stacked);
+  });
+
+  it("removeFromStack of an id not stacked returns the same state", () => {
+    const stacked = stack("dry", "pitch");
+    expect(pageReducer(stacked, { type: "removeFromStack", id: "velocity" })).toBe(stacked);
+  });
+
   it("addToStack of a device already stacked is ignored", () => {
     const before = stack("dry", "pitch");
     expect(pageReducer(before, { type: "addToStack", id: "pitch" })).toBe(before);

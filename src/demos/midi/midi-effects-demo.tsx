@@ -1,8 +1,8 @@
 /**
  * MIDI Effects demo: a two-bar pattern loops on a Vaporisateur while the visitor puts one stock
  * MIDI effect at a time on the unit's MIDI chain, then stacks and reorders them. Two lanes show
- * the notes as written and as the chain emits them (the engine's per-frame held-note set).
- * Design: `docs/superpowers/specs/2026-11-03-midi-effects-demos-design.md`.
+ * the notes as written and as the chain emits them (the engine's held-note set, marked as the
+ * instrument pulls the chain's output and read on the main thread once per frame).
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -20,7 +20,7 @@ import { BackLink } from "@/components/BackLink";
 import { NoteLane, type LaneNote, type NoteLaneHandle } from "@/components/NoteLane";
 import { CONSOLE_STYLES, CODE_BLOCK_STYLE } from "@/lib/design/consoleTheme";
 import { PATTERNS, PATTERN_BPM, PATTERN_PPQN, BAR_PPQN, patternById, writePattern, type Pattern, type PatternId } from "@/lib/midiEffects/patterns";
-import { DEVICES, DEVICE_IDS, type DeviceId } from "@/lib/midiEffects/devices";
+import { DEVICES, DEVICE_IDS } from "@/lib/midiEffects/devices";
 import { reconcileChain, setDeviceEnabled, type Factories } from "@/lib/midiEffects/chain";
 import { INITIAL_STATE, desiredChain, pageReducer, type Tab } from "@/lib/midiEffects/pageState";
 import { EmittedBars } from "@/lib/midiEffects/emittedNotes";
@@ -31,14 +31,10 @@ import "@radix-ui/themes/styles.css";
 import { Theme, Container, Text, Button, Flex, Select, SegmentedControl, Callout, Code } from "@radix-ui/themes";
 import { PlayIcon, StopIcon } from "@radix-ui/react-icons";
 
-const FACTORIES: Factories = {
-  Arpeggio: EffectFactories.Arpeggio,
-  Pitch: EffectFactories.Pitch,
-  Velocity: EffectFactories.Velocity,
-  Zeitgeist: EffectFactories.Zeitgeist,
-};
+const FACTORIES: Factories = EffectFactories.MidiNamed;
 
-/** C2 to C7: the union of the patterns' pitches plus the widest Pitch and Arpeggio settings. */
+/** C2 to C7: the patterns (36..71) with room for a three-octave Arpeggio on Chords or a two-octave Pitch
+ *  shift; beyond that the lane marks notes out of range. */
 const PITCH_LOW = 36;
 const PITCH_HIGH = 96;
 const LANE_HEIGHT = 112;
@@ -58,6 +54,7 @@ function MidiEffectsDemo() {
   const [built, setBuilt] = useState<Built | null>(null);
   const [status, setStatus] = useState("Starting engine…");
   const [initError, setInitError] = useState<string | null>(null);
+  const [chainError, setChainError] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [patternId, setPatternId] = useState<PatternId>(DEFAULT_PATTERN);
   const [state, dispatch] = useReducer(pageReducer, INITIAL_STATE);
@@ -124,15 +121,22 @@ function MidiEffectsDemo() {
     if (project && project.engine.isPlaying.getValue()) project.engine.setPosition(0);
   }, [project]);
 
-  // The chain follows the page state; a real change restarts the pattern (the engine drops sounding voices on a chain change).
-  const desired = desiredChain(state);
-  const desiredKey = desired.join(",");
+  // The chain follows the page state; a real change restarts the pattern (the engine drops sounding voices on a chain
+  // change). The reducer returns the same state object when it ignores an action, so `desired` is a stable dependency.
+  const desired = useMemo(() => desiredChain(state), [state]);
   useEffect(() => {
     if (!project || !audioUnitBox) return;
-    const field = midiEffectsFieldOf(project, audioUnitBox);
-    const { changed } = reconcileChain(project, field, desiredKey === "" ? [] : (desiredKey.split(",") as DeviceId[]), FACTORIES);
-    if (changed) reseekIfPlaying();
-  }, [project, audioUnitBox, desiredKey, reseekIfPlaying]);
+    try {
+      const field = midiEffectsFieldOf(project, audioUnitBox);
+      const { changed } = reconcileChain(project, field, desired, FACTORIES);
+      if (changed) reseekIfPlaying();
+      setChainError(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Chain reconcile failed for [${desired.join(", ")}]: ${message}`);
+      setChainError(`The chain could not be rebuilt for ${desired.join(" → ") || "dry"}: ${message}`);
+    }
+  }, [project, audioUnitBox, desired, reseekIfPlaying]);
 
   // The emitted lane: sample the unit's held-note set every frame while playing.
   useEffect(() => {
@@ -153,8 +157,8 @@ function MidiEffectsDemo() {
   const changePattern = useCallback((id: PatternId) => {
     if (!built) return;
     const pattern = patternById(id);
-    patternRef.current = pattern;
     heldRef.current = writePattern(built.project, built.regionBox, heldRef.current, pattern);
+    patternRef.current = pattern;
     setPatternId(id);
     writtenLane.current?.requestUpdate();
     reseekIfPlaying();
@@ -197,14 +201,13 @@ function MidiEffectsDemo() {
             A two-bar pattern loops on a Vaporisateur. Put one of the four stock MIDI effects on the unit's MIDI
             chain and hear what it does to the notes before they reach the synth, then stack several and drag them
             into an order. The lower lane reads the notes the chain emits from the engine, not from a model of the
-            device. For the fifth device, the scriptable one, see the{" "}
-            <a href="/spielwerk-demo.html" style={{ color: "var(--mc-amber)" }}>Spielwerk demo</a>.
+            device. The fifth device, the scriptable Spielwerk, has a demo of its own, coming next.
           </p>
         </header>
 
-        {initError && (
+        {(initError ?? chainError) && (
           <Callout.Root color="red" style={{ marginBottom: 16 }}>
-            <Callout.Text>{initError}</Callout.Text>
+            <Callout.Text>{initError ?? chainError}</Callout.Text>
           </Callout.Root>
         )}
 
@@ -307,7 +310,8 @@ project.editing.modify(() => IndexedBox.moveIndices(field, [from], dropIndex));`
           </Code>
           <Text size="2" weight="bold" style={{ display: "block", marginTop: 16 }}>Read what the chain emits:</Text>
           <Code size="2" style={CODE_BLOCK_STYLE}>
-{`// 128 held-note bits per unit, marked by the instrument after the chain, once per frame
+{`// 128 held-note bits per unit, marked in the engine as the instrument pulls the chain's
+// output; read on the main thread once per frame
 const notes = new NoteStreamReceiver(project.liveStreamReceiver, audioUnitBox.address);
 AnimationFrame.add(() => { if (notes.isNoteOn(60)) { /* C4 is sounding */ } });`}
           </Code>

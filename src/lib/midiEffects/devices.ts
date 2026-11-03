@@ -10,7 +10,7 @@ import {
   ArpeggioDeviceBoxAdapter, GrooveShuffleBoxAdapter, PitchDeviceBoxAdapter, VelocityDeviceBoxAdapter,
   ZeitgeistDeviceBoxAdapter, type MidiEffectDeviceAdapter,
 } from "@opendaw/studio-adapters";
-import type { EffectBox } from "@opendaw/studio-core";
+import type { EffectBox, EffectFactories } from "@opendaw/studio-core";
 import type { Editing } from "@opendaw/lib-std";
 import type { UnitParameter } from "@/lib/parameterBinding";
 
@@ -22,18 +22,18 @@ export const DEVICE_IDS: readonly DeviceId[] = ["arpeggio", "pitch", "velocity",
 /** The entry's name in `EffectFactories`. Kept as a key, not the factory: a value import of
  *  `@opendaw/studio-core` pulls the engine worklet in, which Node (the tests) cannot load. The page
  *  resolves `EffectFactories[factoryKey]`. */
-export type FactoryKey = "Arpeggio" | "Pitch" | "Velocity" | "Zeitgeist";
+export type FactoryKey = Extract<EffectFactories.MidiEffectKeys, "Arpeggio" | "Pitch" | "Velocity" | "Zeitgeist">;
 
 export interface DeviceSpec {
-  id: DeviceId;
-  label: string;
-  factoryKey: FactoryKey;
+  readonly id: DeviceId;
+  readonly label: string;
+  readonly factoryKey: FactoryKey;
   /** What the device does, one or two sentences. */
-  what: string;
+  readonly what: string;
   /** What to listen for on the patterns, one or two sentences. */
-  listenFor: string;
+  readonly listenFor: string;
   /** The insert and one parameter write, as a visitor would code it. */
-  snippet: string;
+  readonly snippet: string;
 }
 
 const insert = (name: string) =>
@@ -42,12 +42,12 @@ const box = project.editing
   .modify(() => project.api.insertEffect(field, EffectFactories.${name}))
   .unwrap("insertEffect");`;
 
-export const DEVICES: Readonly<Record<DeviceId, DeviceSpec>> = {
+export const DEVICES: { readonly [K in DeviceId]: DeviceSpec & { readonly id: K } } = {
   arpeggio: {
     id: "arpeggio",
     label: "Arpeggio",
     factoryKey: "Arpeggio",
-    what: "Holds the notes that are down and plays them one at a time on a grid: up, down or up-and-down, over one to five octaves, at a rate from whole notes to 1/64.",
+    what: "Holds the notes that are down and plays them one at a time on a grid: up, down or up-and-down, over one to five octaves, at a rate from whole notes to 1/128.",
     listenFor: "On Chords, the held triads become running sixteenths. Raise the octaves and the run climbs; drop the gate and the steps get short.",
     snippet: `${insert("Arpeggio")}
 const arp = project.boxAdapters.adapterFor(box, ArpeggioDeviceBoxAdapter);
@@ -77,8 +77,8 @@ project.editing.modify(() => vel.namedParameter.magnetStrength.setValue(1));`,
     id: "zeitgeist",
     label: "Zeitgeist",
     factoryKey: "Zeitgeist",
-    what: "Applies a shuffle groove to note timing: notes on the groove's grid stay put, notes between grid lines move toward the cell's eased midpoint by the amount.",
-    listenFor: "On Sixteenths, every other note drags late. The shift is about 24 ms at amount 60%, one and a half display frames, so the emitted lane shows it only roughly; the placement audit measures it to the frame.",
+    what: "Applies a shuffle groove to note timing through a Möbius ease: at 50% nothing moves; above it every note between grid lines lands later, below it earlier, and the grid lines themselves stay put.",
+    listenFor: "On Sixteenths at 60%, every other note drags late by about 24 ms (47 pulses at 120 bpm), one and a half frames on a 60 Hz display, so the emitted lane shows it only roughly; the placement audit (debug/2026-10-21-midi-effect-placement/note.md) measures it to the frame. Below 50% the off-beats rush instead.",
     snippet: `${insert("Zeitgeist")}
 const zeit = project.boxAdapters.adapterFor(box, ZeitgeistDeviceBoxAdapter);
 const groove = zeit.groove(); // the device's own groove box, a GrooveAdapter
@@ -88,11 +88,11 @@ project.editing.modify(() => groove.namedParameter.amount.setValue(0.6));`,
 };
 
 export interface DeviceParameter {
-  key: string;
-  label: string;
-  parameter: UnitParameter;
+  readonly key: string;
+  readonly label: string;
+  readonly parameter: UnitParameter;
   /** Number of whole values of an integer parameter, so a slider steps over them. */
-  positions?: number;
+  readonly positions?: number;
 }
 
 /** Which registry entry a box on the chain is, or null for a device the demo does not handle. */

@@ -35,16 +35,22 @@ export function pageReducer(state: PageState, action: PageAction): PageState {
       return state.mode === "stack" ? state : { ...state, tab: action.tab };
     case "addToStack": {
       if (state.stack.includes(action.id)) return state;
+      // The tab's device is carried over as the first chip; adding that same device starts a one-chip stack.
       const carried = state.mode === "single" && state.tab !== "dry" ? [state.tab] : state.stack;
-      if (carried.includes(action.id)) return state;
-      return { mode: "stack", tab: state.tab, stack: [...carried, action.id] };
+      const stack = carried.includes(action.id) ? carried : [...carried, action.id];
+      return { mode: "stack", tab: state.tab, stack };
     }
     case "removeFromStack": {
+      if (!state.stack.includes(action.id)) return state;
       const stack = state.stack.filter((id) => id !== action.id);
       return stack.length === 0 ? INITIAL_STATE : { ...state, stack };
     }
-    case "moveInStack":
-      return { ...state, stack: arrayMove(state.stack, action.from, action.to) };
+    case "moveInStack": {
+      const { from, to } = action;
+      const inRange = (i: number) => Number.isInteger(i) && i >= 0 && i < state.stack.length;
+      if (state.mode !== "stack" || !inRange(from) || !inRange(to)) return state;
+      return { ...state, stack: arrayMove(state.stack, from, to) };
+    }
     case "clearStack":
       return INITIAL_STATE;
   }

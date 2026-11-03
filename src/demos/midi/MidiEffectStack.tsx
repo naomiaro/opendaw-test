@@ -99,7 +99,10 @@ export const MidiEffectStack: React.FC<MidiEffectStackProps> = ({ entries, onMov
                 entry={entry}
                 expanded={entry.id === expandedId}
                 onToggle={() => setExpandedId(entry.id === expandedId ? null : entry.id)}
-                onRemove={() => onRemove(entry.id)}
+                onRemove={() => {
+                  if (expandedId === entry.id) setExpandedId(null);
+                  onRemove(entry.id);
+                }}
               />
             ))}
           </SortableContext>

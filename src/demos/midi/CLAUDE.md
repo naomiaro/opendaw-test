@@ -149,7 +149,7 @@ midi chain, e.g. an effect-composite branch):
 - **PitchDeviceBoxAdapter** — pitch transpose/shift
 - **VelocityDeviceBoxAdapter** — velocity curve mapping
 - **SpielwerkDeviceBoxAdapter** — scriptable MIDI effect (JavaScript)
-- **ZeitgeistDeviceBoxAdapter** — step sequencer/pattern generator
+- **ZeitgeistDeviceBoxAdapter** — shuffle groove on note timing (its own `GrooveShuffleBox`; `groove()` + `instanceof GrooveShuffleBoxAdapter` for `amount` / `duration`)
 
 Insert via the adapter layer: `project.api.insertEffect(midiEffectsFieldOf(project,
 audioUnitBox), EffectFactories.Arpeggio)` (`midiEffectsFieldOf` from
@@ -365,7 +365,7 @@ table `node scripts/audit/midi-effect-placement/table.ts`.
   pulses, and the instrument resolves them to sample offsets. A live key is pushed into the
   same sequencer that plays the regions, so one offline render covers live playing and
   playback. A disabled effect is left out of the chain. A change to an instrument's MIDI
-  chain (an effect bypassed, removed or added) drops the instrument's sounding voices, and a
+  chain (an effect bypassed, removed, added or reordered) drops the instrument's sounding voices, and a
   MIDI Output sends note offs for the notes it holds, so no note hangs; a change that leaves
   the MIDI effects as they were (an audio effect added) keeps them. The audit sets
   `enabled` before it renders, so a row never sees the drop.

@@ -1,5 +1,68 @@
 import { describe, expect, it } from "vitest";
-import { PATTERNS, PATTERN_PPQN, patternById } from "./patterns";
+import { Option, UUID } from "@opendaw/lib-std";
+import { BoxEditing } from "@opendaw/lib-box";
+import { NoteEventBox, NoteEventCollectionBox, NoteRegionBox, TrackBox } from "@opendaw/studio-boxes";
+import { AudioUnitFactory, ProjectSkeleton, TrackType } from "@opendaw/studio-adapters";
+import { AudioUnitType } from "@opendaw/studio-enums";
+import type { Project } from "@opendaw/studio-core";
+import { transact } from "@/lib/testing/boxGraphFixtures";
+import { PATTERNS, PATTERN_PPQN, patternById, writePattern } from "./patterns";
+
+/** A note region on a real graph, and the one-method `api` double `writePattern` needs (mirrors ProjectApi.createNoteEvent). */
+function regionFixture() {
+  const skeleton = ProjectSkeleton.empty({ createOutputMaximizer: false, createDefaultUser: false });
+  const { boxGraph } = skeleton;
+  const { collection, regionBox } = transact(boxGraph, () => {
+    const unit = AudioUnitFactory.create(skeleton, AudioUnitType.Instrument, Option.None);
+    const trackBox = TrackBox.create(boxGraph, UUID.generate(), (box) => {
+      box.type.setValue(TrackType.Notes);
+      box.index.setValue(0);
+      box.tracks.refer(unit.tracks);
+      box.target.refer(unit);
+    });
+    const collection = NoteEventCollectionBox.create(boxGraph, UUID.generate());
+    const regionBox = NoteRegionBox.create(boxGraph, UUID.generate(), (box) => {
+      box.regions.refer(trackBox.regions);
+      box.events.refer(collection.owners);
+      box.position.setValue(0);
+      box.duration.setValue(PATTERN_PPQN);
+      box.loopDuration.setValue(PATTERN_PPQN);
+    });
+    return { collection, regionBox };
+  });
+  const editing = new BoxEditing(boxGraph);
+  const api = {
+    createNoteEvent: ({ owner, position, duration, velocity, pitch }: { owner: NoteRegionBox; position: number; duration: number; velocity: number; pitch: number }) =>
+      NoteEventBox.create(boxGraph, UUID.generate(), (box) => {
+        box.position.setValue(position);
+        box.duration.setValue(duration);
+        box.velocity.setValue(velocity);
+        box.pitch.setValue(pitch);
+        box.events.refer(owner.events.targetVertex.unwrap("no collection").box.asBox(NoteEventCollectionBox).events);
+      }),
+  } as unknown as Project["api"];
+  const notes = () => collection.events.pointerHub.incoming().map((p) => p.box as NoteEventBox);
+  return { editing, regionBox, project: { editing, api }, notes };
+}
+
+describe("writePattern", () => {
+  it("replaces the region's notes with the pattern's, in one undo step", () => {
+    const { editing, regionBox, project, notes } = regionFixture();
+    const chords = writePattern(project, regionBox, [], patternById("chords"));
+    expect(notes()).toHaveLength(12);
+    const bass = writePattern(project, regionBox, chords, patternById("bass"));
+    expect(bass).toHaveLength(8);
+    expect(bass.every((b) => b.isAttached())).toBe(true);
+    expect(notes().map((n) => n.pitch.getValue()).sort((a, b) => a - b)).toEqual([36, 36, 41, 41, 43, 43, 45, 45]);
+    expect(chords.every((c) => !c.isAttached())).toBe(true);
+    editing.undo();
+    // One undo step: the bass notes go and the chord notes come back (as new instances under the same uuids).
+    const chordUuids = new Set(chords.map((c) => UUID.toString(c.address.uuid)));
+    expect(notes()).toHaveLength(12);
+    expect(notes().every((n) => chordUuids.has(UUID.toString(n.address.uuid)))).toBe(true);
+    expect(bass.every((b) => !b.isAttached())).toBe(true);
+  });
+});
 
 describe("patterns", () => {
   it("has the four patterns in order", () => {

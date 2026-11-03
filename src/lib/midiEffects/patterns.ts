@@ -1,6 +1,6 @@
 /**
  * The MIDI effects demos' patterns: four two-bar phrases at 120 bpm, each written for the devices
- * it serves (design: `docs/superpowers/specs/2026-11-03-midi-effects-demos-design.md`).
+ * it serves (the MIDI Effects and Spielwerk demos under `src/demos/midi/`).
  * `writePattern` replaces a region's notes the way the placement audit does: the old boxes go in
  * one transaction, the new ones come in an `append` folded into the same undo step.
  */
@@ -16,17 +16,17 @@ export type PatternId = "chords" | "sixteenths" | "melody" | "bass";
 
 export interface PatternNote {
   /** region-local pulses */
-  position: number;
-  duration: number;
-  pitch: number;
-  velocity: number;
+  readonly position: ppqn;
+  readonly duration: ppqn;
+  readonly pitch: number;
+  readonly velocity: number;
 }
 
 export interface Pattern {
-  id: PatternId;
-  label: string;
-  blurb: string;
-  notes: readonly PatternNote[];
+  readonly id: PatternId;
+  readonly label: string;
+  readonly blurb: string;
+  readonly notes: readonly PatternNote[];
 }
 
 const { Quarter, SemiQuaver } = PPQN;
@@ -64,7 +64,7 @@ const melody: readonly PatternNote[] = [0, 1].flatMap((bar) =>
   }))
 );
 
-/** Quarter-note roots in the C2 octave: A1, F1, C1, G1 as the chords' roots two octaves down. */
+/** Quarter-note roots in the C2 octave (A2, F2, C2, G2): the chord roots an octave down, C two so it stays in the octave. */
 const BASS_ROOTS: readonly number[] = [45, 41, 36, 43];
 const bass: readonly PatternNote[] = Array.from({ length: 8 }, (_, k) => ({
   position: k * Quarter,
@@ -125,8 +125,8 @@ export function writePattern(
       pattern.notes.map((note) =>
         project.api.createNoteEvent({
           owner: regionBox,
-          position: note.position as ppqn,
-          duration: note.duration as ppqn,
+          position: note.position,
+          duration: note.duration,
           pitch: note.pitch,
           velocity: note.velocity,
         })

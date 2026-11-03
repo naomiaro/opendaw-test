@@ -4,20 +4,24 @@
  * sampled position, newly off closes it; a position that fell below the previous one (a loop wrap or
  * a seek back) drops every bar first. Velocity is not in the set, and a note shorter than a frame can
  * be missed, so the lane is for Arpeggio steps and Pitch moves, not for Velocity or fine timing.
+ * Closed bars older than `horizon` pulses behind the position are dropped. A `Bar` is structurally a
+ * `LaneNote` without velocity, which is how the lane draws it without this file importing a component.
  */
 import { PATTERN_PPQN } from "./patterns";
 
 export interface Bar {
-  pitch: number;
+  readonly pitch: number;
   /** ppqn */
-  from: number;
+  readonly from: number;
   /** ppqn; null while the pitch is still sounding */
-  to: number | null;
+  readonly to: number | null;
 }
 
+type OpenBar = { -readonly [K in keyof Bar]: Bar[K] };
+
 export class EmittedBars {
-  readonly #open = new Map<number, Bar>();
-  #bars: Bar[] = [];
+  readonly #open = new Map<number, OpenBar>();
+  #bars: OpenBar[] = [];
   #lastPosition = -Infinity;
 
   constructor(private readonly horizon: number = PATTERN_PPQN) {}
@@ -34,7 +38,7 @@ export class EmittedBars {
       const open = this.#open.get(pitch);
       if (isOn(pitch)) {
         if (open === undefined) {
-          const bar: Bar = { pitch, from: position, to: null };
+          const bar: OpenBar = { pitch, from: position, to: null };
           this.#open.set(pitch, bar);
           this.#bars.push(bar);
         }
@@ -51,5 +55,6 @@ export class EmittedBars {
   reset(): void {
     this.#open.clear();
     this.#bars = [];
+    this.#lastPosition = -Infinity;
   }
 }
