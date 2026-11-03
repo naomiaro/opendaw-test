@@ -201,7 +201,8 @@ function MidiEffectsDemo() {
             A two-bar pattern loops on a Vaporisateur. Put one of the four stock MIDI effects on the unit's MIDI
             chain and hear what it does to the notes before they reach the synth, then stack several and drag them
             into an order. The lower lane reads the notes the chain emits from the engine, not from a model of the
-            device. The fifth device, the scriptable Spielwerk, has a demo of its own, coming next.
+            device. For the fifth device, the scriptable one, see the{" "}
+            <a href="/spielwerk-demo.html" style={{ color: "var(--mc-amber)" }}>Spielwerk demo</a>.
           </p>
         </header>
 
