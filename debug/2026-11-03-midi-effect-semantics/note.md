@@ -311,6 +311,23 @@ The table (`node scripts/audit/midi-effect-semantics/table.ts <runToken>`): verd
 mismatch or the questioned behaviours, read / readable (unreadable) of the intent, the largest
 deltas where read and readable pair one to one, render time.
 
+### 2026-11-03, the Mac's output device at 48 kHz (SDK 0.0.180, Chrome, macOS)
+
+The device-rate pass the root CLAUDE.md asks of every standing sweep. Both page rates against the
+registers accepted above, the device switched to 48 kHz in Audio MIDI Setup first and back to
+44.1 kHz afterwards:
+
+```
+run 1793744985720 | sdk 0.0.180 | 48000 Hz | 120 bpm | reference peak 0.7078585456111496 | instrument offset 6 frames | register /debug/2026-11-03-midi-effect-semantics/register/48000.json | rows 230 | holds 149 deviation 63 broken 0 none 18 error 0 | as-registered 230 changed 0 unregistered 0
+run 1793745032251 | sdk 0.0.180 | 44100 Hz | 120 bpm | reference peak 0.7078102259681298 | instrument offset 6 frames | register /debug/2026-11-03-midi-effect-semantics/register/44100.json | rows 230 | holds 149 deviation 63 broken 0 none 18 error 0 | as-registered 230 changed 0 unregistered 0
+```
+
+Every row `as-registered` at both page rates, and each reference peak is bit-identical to the run
+with the device at 44.1 kHz (0.7078585456111496 at 48 kHz, 0.7078102259681298 at 44.1 kHz). The
+render is offline at the page's rate and the sine sample is generated in memory, not decoded, so the
+live context's resampling never reaches a figure; this pass measures that. A `changed` row here would
+be a dependence of the sample or render path on the device, not of the engine's rules.
+
 
 ## Reading
 
