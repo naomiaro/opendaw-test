@@ -397,6 +397,49 @@ table `node scripts/audit/midi-effect-placement/table.ts`.
   registered, and an unregistered Spielwerk forwards its input, so such a row reads as a
   pass-through, not as the script.
 
+### MIDI Effect Semantics Audit (unlisted)
+`midi-effect-semantics-audit-debug-demo.html[?rate=48000|44100][&rows=all|quick|<id,id,…>][&device=all|arpeggio|pitch|velocity|zeitgeist|order|disabled][&pattern=<id>]`
+renders 230 rows offline (a Nano playing a 440 Hz sine, root key 69, 1 ms attack and release), each
+with a chain of stock MIDI effects at one setting, reads the left channel back as notes and judges
+them against what the devices DOCUMENT (the placement audit asks when; this one asks what). Register:
+`debug/2026-11-03-midi-effect-semantics/note.md` and `register/<rate>.json`; library
+`src/lib/audit/midiEffectSemantics*.ts`; table `node scripts/audit/midi-effect-semantics/table.ts
+[runToken] [--accept] [--force]`. `&rows=quick` is a 41-row subset; the dry rows always run and
+`dry-sixteenths` calibrates (reference peak, instrument offset; 32 notes or the run aborts).
+
+- **Verdicts.** The rule judgement (`rule holds`, `matches-known-deviation <names>`, `rule broken`,
+  `no rule`) joined with the register judgement (`as-registered`, `changed`, `unregistered`):
+  `as-registered`, `as-registered, matches-known-deviation …`, `changed, <rule>`, `<rule>,
+  unregistered`, `no rule`, `error`. A `rule broken` row is first a reader, rule or row fault on this
+  side: read its first mismatch and the envelope's predicted and read notes, then the crate.
+- **The rule** is the crate's and the manual's, intent first; each subset of the row's known
+  deviations is tried after it, smallest first. Deviations (`DEVIATIONS` in the rules module, with
+  crate lines): `arpeggio-velocity-matrix` (silence at −100 %, 1.0 at 0 %),
+  `arpeggio-drops-cent`, `arpeggio-uncapped-note-off` (a step outlasts its held note),
+  `zeitgeist-warps-note-off` (the groove moves note-offs too). The Arpeggio walks the ABSOLUTE grid:
+  `step_index = k / repeat` with `k` the absolute grid index, so a hold from bar 1 at 1/16 starts at
+  index 16. Questioned behaviours (`QUESTIONS`): the Pitch drops a note shifted outside 0..127, the
+  Arpeggio's velocity disagrees with its manual; a row that shows one carries `questioned: <name>`.
+- **Readability** (a monophonic reader): `overlap` and `polyphonic` are not judged; `too-short` is a
+  note whose duration less three attacks holds fewer than four periods (18.3 ms at C4; the reader's
+  pitch window starts two attacks in, stops one before the end and needs four rising crossings);
+  `too-quiet` is velocity under 0.01; `abutting` notes (touching within the release or under the
+  reader's 2 ms gap apart, the legato melody, Arpeggio gate 1) are read at their PREDICTED span for
+  pitch, cents and velocity only. Precedence overlap > polyphonic > too-short > too-quiet > abutting.
+  `no rule` means no judgeable note in any variant (gate 2, steps under the floor, velocity 0).
+- **The rules' range is the render's span** (`renderRange`: region start to the render's end, the
+  region plus a quarter second). The region's end cuts nothing a device emits: a Zeitgeist on a long
+  cell moves notes past it and they sound in the tail.
+- **Reading a table line:** verdict, the first mismatch (or `questioned:`), `read / readable
+  (unreadable)` of the INTENT variant (a deviation row's readable count is the intent's), the
+  largest deltas where read and readable pair one to one (dashes otherwise), render ms. The cents
+  delta compares the residual alone, so a ±50-cent row prints 100 on the half-semitone tie while the
+  judge, comparing pitch and cents together, holds.
+- **`--accept`** writes `register/<rate>.json` and prints the diff against the previous one first;
+  only after a person has read every row that is not `as-registered`. A run with a broken or errored
+  row is refused without `--force`, and a forced accept names the row in the note. Offline renders
+  are deterministic: a `changed` row on an unchanged SDK is a non-determinism finding.
+
 ### Combined MIDI + Audio Audit (unlisted)
 `midi-audio-combined-audit-debug-demo.html?scenario=<nominal-start|countin-start|janked-mid|all>&bpm=<n>[&repeats=<n>][&state=<default|calibrated|both>][&bus=][&input=][&output=][&audible=1]`
 sends each note of the MIDI sweep's pattern on the IAC bus AND plays a 6 kHz click out of the
