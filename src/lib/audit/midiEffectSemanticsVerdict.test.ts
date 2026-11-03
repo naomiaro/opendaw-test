@@ -129,6 +129,46 @@ describe("judgeRule", () => {
     expect(covered.kind).toBe("none");
     expect(covered.unreadable).toBe(1);
   });
+  it("a NaN read figure breaks: a tolerance comparison against NaN is never inside it", () => {
+    expect(judgeRule([note(1000, { velocity: Number.NaN })], [intent([pred(1000)])], TOLERANCES, never)).toMatchObject({ kind: "broken", mismatch: { field: "velocity" } });
+    expect(judgeRule([note(Number.NaN, { endMs: 1100 })], [intent([pred(1000)])], TOLERANCES, never)).toMatchObject({ kind: "broken", mismatch: { field: "onset" } });
+    expect(judgeRule([note(1000, { cents: Number.NaN })], [intent([pred(1000)])], TOLERANCES, never)).toMatchObject({ kind: "broken", mismatch: { field: "cents" } });
+  });
+  it("a readable-note mismatch indexes the read list, counting the notes dropped inside unreadable spans", () => {
+    const predicted = [pred(1000), pred(1200, { readability: "overlap", endMs: 1500 }), pred(2000)];
+    const read = [note(1000), note(1300, { pitch: 72 }), note(2000, { velocity: 0.5 })];
+    const j = judgeRule(read, [intent(predicted)], TOLERANCES, never);
+    expect(j.mismatch).toEqual({ list: "read", index: 2, field: "velocity", expected: 0.8, got: 0.5 });
+  });
+  it("a velocity off on an abutting note breaks, indexing the predicted list", () => {
+    const predicted = [pred(1000), pred(1100, { readability: "abutting", endMs: 1200, pitch: 64, velocity: 0.6 })];
+    const read = [note(1000, { endMs: 1100 }), note(1100)];
+    const j = judgeRule(read, [intent(predicted)], TOLERANCES, () => note(1100, { pitch: 64, velocity: 0.65 }));
+    expect(j.kind).toBe("broken");
+    expect(j.mismatch).toEqual({ list: "predicted", index: 1, field: "velocity", expected: 0.6, got: 0.65 });
+  });
+  it("an unstable read note at the wrong onset is an onset mismatch, not an unstable pitch", () => {
+    const j = judgeRule([note(1005, { jitterCents: 40, pitch: null, cents: null })], [intent([pred(1000)])], TOLERANCES, never);
+    expect(j.kind).toBe("broken");
+    expect(j.mismatch).toMatchObject({ field: "onset", expected: 1000, got: 1005 });
+  });
+  it("an intent with nothing readable that reports an extra note gives way to a judgeable deviation that matches", () => {
+    const variants: Variant[] = [
+      intent([pred(1000, { readability: "too-short", endMs: 1010 })]),
+      { deviations: new Set(["arpeggio-uncapped-note-off"]), predicted: [pred(1000, { readability: "too-short", endMs: 1010 }), pred(3000)] }
+    ];
+    const j = judgeRule([note(1000), note(3000)], variants, TOLERANCES, never);
+    expect(j.kind).toBe("deviation");
+    expect(j.deviations).toEqual(["arpeggio-uncapped-note-off"]);
+    // the intent alone reports the extra note
+    expect(judgeRule([note(1000), note(3000)], [variants[0]!], TOLERANCES, never)).toMatchObject({ kind: "broken", mismatch: { field: "extra", got: 3000 } });
+  });
+  it("throws when no variant has an empty deviation set: the intent is never guessed", () => {
+    const deviationOnly: Variant[] = [{ deviations: new Set(["arpeggio-drops-cent"]), predicted: [pred(1000)] }];
+    expect(() => judgeRule([note(1000)], deviationOnly, TOLERANCES, never)).toThrow("judgeRule: no intent variant");
+    const unjudgeable: Variant[] = [{ deviations: new Set(["arpeggio-drops-cent"]), predicted: [pred(1000, { readability: "overlap" })] }];
+    expect(() => judgeRule([note(1000)], unjudgeable, TOLERANCES, never)).toThrow("judgeRule: no intent variant");
+  });
   it("abutting predicted notes are judged through readAt on pitch and velocity, never on onset; a wrong pitch there breaks", () => {
     const predicted = [pred(1000), pred(1100, { readability: "abutting", endMs: 1200, pitch: 64 })];
     const read = [note(1000, { endMs: 1100 }), note(1100)];
@@ -173,7 +213,15 @@ describe("compareRegister", () => {
     const registered = { notes: [fig.notes[0]!, note(2000, over)], unreadable: 1 };
     const r = compareRegister(fig, registered, TOLERANCES);
     expect(r.kind).toBe("changed");
-    expect(r.mismatch).toMatchObject({ index: 1, field });
+    expect(r.mismatch).toMatchObject({ list: "register", index: 1, field });
+  });
+  it("a NaN figure is changed, never as-registered", () => {
+    const registered = { notes: [note(1000), note(2000)], unreadable: 1 };
+    expect(compareRegister({ notes: [note(1000), note(Number.NaN)], unreadable: 1 }, registered, TOLERANCES).kind).toBe("changed");
+    expect(compareRegister({ notes: [note(1000), note(2000, { velocity: Number.NaN })], unreadable: 1 }, registered, TOLERANCES).kind).toBe("changed");
+  });
+  it("an unreadable count that moved is a register mismatch at index -1", () => {
+    expect(compareRegister(fig, { notes: fig.notes, unreadable: 0 }, TOLERANCES).mismatch).toEqual({ list: "register", index: -1, field: "count", expected: 0, got: 1 });
   });
   it("a number against a registered null pitch is changed; two nulls agree", () => {
     const unreadable = { notes: [note(1000, { pitch: null, cents: null })], unreadable: 0 };
@@ -221,6 +269,9 @@ describe("silentRenderError", () => {
     expect(silentRenderError(0, [intent([pred(1000, { readability: "overlap" })])])).toBeNull();
     expect(silentRenderError(0, [])).toBeNull();
   });
+  it("throws when no variant has an empty deviation set", () => {
+    expect(() => silentRenderError(0, [{ deviations: new Set(["arpeggio-drops-cent"]), predicted: [pred(1000)] }])).toThrow("silentRenderError: no intent variant");
+  });
   it("is null when a known deviation predicts the silence (Arpeggio velocity -100 %: the manual sounds, the matrix is silent)", () => {
     const variants: Variant[] = [intent([pred(1000)]), { deviations: new Set(["arpeggio-velocity-matrix"]), predicted: [] }];
     expect(silentRenderError(0, variants)).toBeNull();
@@ -228,15 +279,21 @@ describe("silentRenderError", () => {
 });
 
 describe("describeMismatch", () => {
-  const m = (field: Mismatch["field"], index: number, expected: number | string, got: number | string): Mismatch => ({ index, field, expected, got });
-  it("formats each field", () => {
-    expect(describeMismatch(m("velocity", 3, 0.9, 0.812))).toBe("note 3 velocity 0.812 expected 0.900");
+  const m = (field: Mismatch["field"], index: number, expected: number | string, got: number | string, list: Mismatch["list"] = "read"): Mismatch =>
+    ({ list, index, field, expected, got });
+  it("formats each field, naming the list the index counts in", () => {
+    expect(describeMismatch(m("velocity", 3, 0.9, 0.812))).toBe("read note 3 velocity 0.812 expected 0.900");
+    expect(describeMismatch(m("velocity", 7, 0.9, 0.812, "predicted"))).toBe("predicted note 7 velocity 0.812 expected 0.900");
+    expect(describeMismatch(m("onset", 1, 1000, 1003, "register"))).toBe("register note 1 onset 1003.0 ms expected 1000.0 ms");
     expect(describeMismatch(m("extra", 0, "none", 2037.5))).toBe("extra note at 2037.5 ms");
     expect(describeMismatch(m("count", 0, 8, 7))).toBe("count 7 expected 8");
-    expect(describeMismatch(m("pitch", 1, 60, 62))).toBe("note 1 pitch 62 expected 60");
-    expect(describeMismatch(m("pitch", 1, 60, "unreadable"))).toBe("note 1 pitch unreadable expected 60");
-    expect(describeMismatch(m("cents", 2, -1, 4.25))).toBe("note 2 cents 4.3 expected -1.0");
-    expect(describeMismatch(m("onset", 2, 1000, 1002.04))).toBe("note 2 onset 1002.0 ms expected 1000.0 ms");
-    expect(describeMismatch(m("end", 2, 1100, 1104))).toBe("note 2 end 1104.0 ms expected 1100.0 ms");
+    expect(describeMismatch(m("pitch", 1, 60, 62))).toBe("read note 1 pitch 62 expected 60");
+    expect(describeMismatch(m("pitch", 1, 60, "unreadable"))).toBe("read note 1 pitch unreadable expected 60");
+    expect(describeMismatch(m("cents", 2, -1, 4.25))).toBe("read note 2 cents 4.3 expected -1.0");
+    expect(describeMismatch(m("onset", 2, 1000, 1002.04))).toBe("read note 2 onset 1002.0 ms expected 1000.0 ms");
+    expect(describeMismatch(m("end", 2, 1100, 1104))).toBe("read note 2 end 1104.0 ms expected 1100.0 ms");
+  });
+  it("an index of -1 on a count is the unreadable count", () => {
+    expect(describeMismatch(m("count", -1, 0, 2, "register"))).toBe("unreadable 2 expected 0");
   });
 });
