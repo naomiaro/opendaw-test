@@ -6,10 +6,10 @@ and no device message is sent
 
 **SDK pin:** `@opendaw/studio-sdk@0.0.180` (installed npm package; WASM engine), Chrome 155, macOS.
 
-**Status (2026-11-03):** measured on the Spielwerk demo (PR #190); worked around in the demo by building
-and constructing the Processor on the main thread before compiling (`preflightScript`,
-`src/lib/midiEffects/spielwerkCompile.ts`). Draft issue for the user's read:
-`drafts/TO-REVIEW-openDAW-script-compile-resolves-on-load-error.md`.
+**Filed (2026-11-03):** [openDAW#523](https://github.com/andremichelle/openDAW/issues/523)
+(`drafts/posted-openDAW-523-script-compile-resolves-on-load-error.md`). Measured on the Spielwerk demo
+(PR #190); worked around in the demo by building and constructing the Processor on the main thread
+before compiling (`preflightScript`, `src/lib/midiEffects/spielwerkCompile.ts`).
 
 ## What was seen
 

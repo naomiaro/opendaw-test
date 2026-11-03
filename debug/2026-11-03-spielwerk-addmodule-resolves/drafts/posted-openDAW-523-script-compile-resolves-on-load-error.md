@@ -1,4 +1,4 @@
-<!-- Draft for the user's read before posting to andremichelle/openDAW. Not posted. -->
+<!-- Posted 2026-11-03 as https://github.com/andremichelle/openDAW/issues/523 — the body below is as filed (the note link made absolute). -->
 
 # `ScriptCompiler.compile` resolves for a script that throws at module load; the device keeps the previous script with the new script's parameters
 
@@ -32,4 +32,4 @@ The wrapper evaluates the user code and `return Processor` at module top level, 
 `globalThis.openDAW.<registry>[uuid] = {...}` assignment, so the throw leaves the registry entry at its
 previous `update`, and the bridge's `#ensureProc` swaps nothing.
 
-Measurements and the demo's workaround: `debug/2026-11-03-spielwerk-addmodule-resolves/note.md`.
+Measurements and the demo's workaround: https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-11-03-spielwerk-addmodule-resolves/note.md
