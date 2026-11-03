@@ -23,7 +23,7 @@ import type { EffectBox } from "@opendaw/studio-core";
 import { BAR_PPQN, PATTERN_PPQN, patternById, type Pattern } from "@/lib/midiEffects/patterns";
 import { zeitgeistGrooveBox } from "./midiEffectChain";
 import {
-  DEVIATIONS, DEVIATION_SUBSETS, composeRules,
+  DEVIATIONS, DEVIATION_SUBSETS, clipToRange, composeRules,
   type ArpeggioSettings, type DeviationName, type DeviceSetting, type PitchSettings, type RuleContext, type RuleNote,
   type SemanticsDevice, type VelocitySettings, type ZeitgeistSettings,
 } from "./midiEffectSemanticsRules";
@@ -291,7 +291,7 @@ export function predictedVariants(row: SemanticsRow, context: RuleContext): { de
   const devices = new Set(enabled.map((stage) => stage.device));
   const applicable = DEVIATIONS.filter((deviation) => devices.has(deviation.device)).map((deviation) => deviation.name);
   const source = rowNotes(row);
-  return DEVIATION_SUBSETS(applicable).map((deviations) => ({ deviations, notes: composeRules(enabled, context, deviations, source) }));
+  return DEVIATION_SUBSETS(applicable).map((deviations) => ({ deviations, notes: clipToRange(composeRules(enabled, context, deviations, source), context.range) }));
 }
 
 /** Raw field writes; the caller holds the transaction. */

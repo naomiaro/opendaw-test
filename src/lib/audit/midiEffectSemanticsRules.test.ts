@@ -3,7 +3,7 @@ import { GrooveShuffleBoxAdapter, ParameterFieldAdapters, VelocityDeviceBoxAdapt
 import { graphWithZeitgeist, midiEffectFixture, transact } from "@/lib/testing/boxGraphFixtures";
 import {
   ARPEGGIO_RATE_PPQN, DEVIATIONS, DEVIATION_SUBSETS, QUESTIONS, RULE_SENTENCES, arpeggioIntentVelocity, arpeggioMatrixVelocity,
-  arpeggioRule, composeRules, markReadability, pitchRule, questionsFor, toPredictedFigures, velocityRule, zeitgeistRule,
+  arpeggioRule, clipToRange, composeRules, markReadability, pitchRule, questionsFor, toPredictedFigures, velocityRule, zeitgeistRule,
   type ArpeggioSettings, type DeviceSetting, type RuleContext, type RuleNote,
 } from "./midiEffectSemanticsRules";
 
@@ -230,5 +230,14 @@ describe("DEVIATION_SUBSETS", () => {
   it("lists 2^n sets", () => {
     expect(DEVIATION_SUBSETS(["arpeggio-drops-cent", "arpeggio-velocity-matrix", "arpeggio-uncapped-note-off"])).toHaveLength(8);
     expect(DEVIATION_SUBSETS([])).toHaveLength(1);
+  });
+});
+
+describe("clipToRange", () => {
+  const range = { from: 3840, to: 11520 };
+  const note = (position: number, duration: number): RuleNote => ({ position, duration, pitch: 60, cent: 0, velocity: 1 });
+  it("clips a note crossing the end, drops one starting at it, leaves one inside", () => {
+    const out = clipToRange([note(11400, 240), note(11520, 120), note(4000, 240)], range);
+    expect(out).toEqual([note(11400, 120), note(4000, 240)]);
   });
 });

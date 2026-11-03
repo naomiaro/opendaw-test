@@ -86,6 +86,13 @@ describe("SEMANTICS_ROWS", () => {
     expect(SEMANTICS_ROWS.filter((r) => r.id.startsWith("zg-") && r.id.endsWith("-melody")).map((r) => r.id)).toEqual(
       [0, 0.25, 0.5, 0.75, 1].flatMap((a) => [480, 3840].map((d) => `zg-amount${a}-dur${d}-melody`)));
   });
+  it("predictedVariants clips a note a variant pushes past the region end", () => {
+    const end = REGION_POSITION_PPQN + REGION_DURATION_PPQN;
+    const pushing: RuleContext = { ...context, warp: (position) => position + 150 };
+    const notes = predictedVariants(rowById("zg-amount0.75-dur480-sixteenths"), pushing).flatMap((v) => v.notes);
+    expect(notes.every((n) => n.position + n.duration <= end && n.position < end)).toBe(true);
+    expect(notes.some((n) => n.position + n.duration === end)).toBe(true);
+  });
   it("predictedVariants skips a disabled device and takes deviations only from enabled ones", () => {
     const disabled = rowById("disabled-zeitgeist");
     expect(disabled.chain.every((c) => !c.enabled)).toBe(true);

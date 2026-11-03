@@ -181,6 +181,13 @@ function applyStage(stage: DeviceSetting, context: RuleContext, deviations: Read
   }
 }
 
+/** The engine ends a note at its region's end when `playback.truncateNotesAtRegionEnd` is on (`crates/engine-env/src/note_sequencer.rs:199-200`; the schema default is false, `EnginePreferencesSchema.ts:27`). A note starting at or past the end is never heard. */
+export function clipToRange(notes: readonly RuleNote[], range: { from: number; to: number }): RuleNote[] {
+  return notes
+    .filter((note) => note.position < range.to)
+    .map((note) => (note.position + note.duration > range.to ? { ...note, duration: range.to - note.position } : note));
+}
+
 /** Index 0 first: the engine folds the chain so the highest index sits nearest the instrument (`crates/engine/src/audio_unit/wiring.rs:1061-1066`). */
 export function composeRules(
   chain: readonly DeviceSetting[], context: RuleContext, deviations: ReadonlySet<DeviationName>, notes: readonly RuleNote[]
