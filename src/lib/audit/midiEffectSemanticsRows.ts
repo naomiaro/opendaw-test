@@ -44,12 +44,6 @@ export const NANO_ATTACK_SECONDS = 0.001;
 export const NANO_RELEASE_SECONDS = 0.001;
 /** 1750 pulses = 0.911 s at 120 bpm, and 3840 + 1750 = 5590 is not on the 1/16 grid (5520 + 70): the last Arpeggio step is capped at 70 pulses where the engine does not cap it. */
 export const HELD_NOTE_PPQN = 1750;
-export const ONSET_TOLERANCE_MS = 1;
-export const CENTS_TOLERANCE = 2;
-export const VELOCITY_TOLERANCE = 0.01;
-export const END_TOLERANCE_MS = 2;
-/** A pitch track that wanders more than this over a note is a tone the reader cannot name, not a pitch. */
-export const UNSTABLE_JITTER_CENTS = 10;
 
 export type SemanticsPatternId = "held-note" | "held-chord" | "chromatic" | "chords" | "sixteenths" | "melody";
 

@@ -201,17 +201,20 @@ export function composeRules(
   return chain.reduce<RuleNote[]>((current, stage) => applyStage(stage, context, deviations, current), [...notes]);
 }
 
-/** The questioned behaviours a row exercises; `chain` is the enabled chain. A Pitch stage that dropped a note counts at that stage, not through the rest of the chain. */
+/**
+ * The questioned behaviours a row exercises; `chain` is the enabled chain. Each is read at its own stage, from the notes that
+ * reach it: a Pitch that dropped a note, an Arpeggio whose manual blend and crate matrix give a different velocity for a
+ * note it holds (on a velocity-1 note at 0 % or above they agree, so such a row is not questioned).
+ */
 export function questionsFor(chain: readonly DeviceSetting[], context: RuleContext, source: readonly RuleNote[]): QuestionName[] {
   const names: QuestionName[] = [];
   const none: ReadonlySet<DeviationName> = new Set();
-  const dropped = chain.some((stage, index) => {
-    if (stage.device !== "pitch") return false;
-    const before = composeRules(chain.slice(0, index), context, none, source);
-    return pitchRule(before, stage.settings).length < before.length;
-  });
+  const before = (index: number): RuleNote[] => composeRules(chain.slice(0, index), context, none, source);
+  const dropped = chain.some((stage, index) => stage.device === "pitch" && pitchRule(before(index), stage.settings).length < before(index).length);
   if (dropped) names.push("pitch-drops-out-of-range");
-  if (chain.some((stage) => stage.device === "arpeggio" && stage.settings.velocity < 1)) names.push("arpeggio-velocity-manual-gap");
+  const gap = chain.some((stage, index) => stage.device === "arpeggio" && before(index).some((note) =>
+    Math.abs(arpeggioIntentVelocity(stage.settings.velocity, note.velocity) - arpeggioMatrixVelocity(stage.settings.velocity, note.velocity)) > 1e-9));
+  if (gap) names.push("arpeggio-velocity-manual-gap");
   return names;
 }
 
@@ -244,13 +247,15 @@ export function toPredictedFigures(notes: readonly PredictedNote[], bpm: number)
  * sit less than `gapMs` apart are `abutting` too (the reader cannot separate them). A note is `too-short` unless its
  * duration less three attacks (the reader's pitch window starts two attacks after the onset and stops one before the
  * end) holds `minCycles + 1` periods: only then does a window of that length hold the `minCycles + 1` rising zero
- * crossings the reader needs whatever the phase. A velocity below `minVelocity` is `too-quiet`.
+ * crossings the reader needs whatever the phase. A velocity below `minVelocity` is `too-quiet`. A velocity of exactly 0 is
+ * silence, not a quiet note: the Nano's voice gain is `gain × velocity` (`device-nano/src/voice.rs:129`), so the note is
+ * left out of the prediction before anything is marked, and it neither sounds nor touches a neighbour.
  * Precedence: overlap, polyphonic, too-short, too-quiet, abutting (a note too short or too quiet to read is unreadable whatever its neighbours; abutting applies to the rest). Sorted by position, then pitch.
  */
 export function markReadability(
   notes: readonly RuleNote[], bpm: number, options: { attackMs: number; releaseMs: number; gapMs: number; minCycles: number; minVelocity: number }
 ): PredictedNote[] {
-  const sorted = [...notes].sort((a, b) => a.position - b.position || a.pitch - b.pitch);
+  const sorted = notes.filter((note) => note.velocity !== 0).sort((a, b) => a.position - b.position || a.pitch - b.pitch);
   const onsets = sorted.map((note) => toMs(note.position, bpm));
   const ends = sorted.map((note) => toMs(note.position + note.duration, bpm));
   const overlap = new Set<number>();

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GrooveShuffleBoxAdapter, ParameterFieldAdapters, VelocityDeviceBoxAdapter, type BoxAdaptersContext } from "@opendaw/studio-adapters";
+import { ArpeggioDeviceBoxAdapter, GrooveShuffleBoxAdapter, ParameterFieldAdapters, VelocityDeviceBoxAdapter, type BoxAdaptersContext } from "@opendaw/studio-adapters";
 import { graphWithZeitgeist, midiEffectFixture, transact } from "@/lib/testing/boxGraphFixtures";
 import { READER_DEFAULTS, frequencyToPitch, readNotes } from "./midiEffectSemanticsReader";
 import {
@@ -17,8 +17,9 @@ describe("arpeggioRule", () => {
   const range = { from: 3840, to: 3840 + 7680 };
   const pitches = (notes: RuleNote[], count: number) => notes.map((n) => n.pitch).slice(0, count);
 
-  it("has the 17 rates floor(3840 / d) × n", () => {
-    expect(ARPEGGIO_RATE_PPQN).toEqual([3840, 1920, 1280, 960, 720, 640, 480, 360, 320, 240, 180, 160, 120, 80, 60, 40, 30]);
+  it("has the adapter's 17 rates as floor(3840 / d) × n", () => {
+    expect(ArpeggioDeviceBoxAdapter.RateFractions).toHaveLength(17);
+    expect(ARPEGGIO_RATE_PPQN).toEqual(ArpeggioDeviceBoxAdapter.RateFractions.map(([n, d]) => Math.floor(3840 / d) * n));
   });
   it("walks a triad up over two octaves from the absolute grid index (3840 / 240 = 16), steps 120 pulses long", () => {
     // crate: step_index = index / repeat with index absolute; 16 % 3 = 1, (16 % 6) / 3 = 1 -> 64 + 12; then 79, 60, 64, 67, 72, 76
@@ -106,9 +107,21 @@ describe("questionsFor", () => {
     expect(questionsFor([arp(1), pitch(100)], identityContext, [note(60)])).toEqual(["pitch-drops-out-of-range"]);
     expect(questionsFor([arp(1), pitch(10)], identityContext, [note(60)])).toEqual([]);
   });
-  it("names the velocity gap only below +1", () => {
-    expect(questionsFor([arp(0.5)], identityContext, [note(60)])).toEqual(["arpeggio-velocity-manual-gap"]);
-    expect(questionsFor([arp(1)], identityContext, [note(60)])).toEqual([]);
+  it("names the velocity gap only where the manual's blend and the crate's matrix give different velocities for the row's notes", () => {
+    const at = (velocity: number): RuleNote => ({ ...note(60), velocity });
+    // velocity 0.8 at +50 %: blend 0.85, matrix 0.9; at -100 % on a velocity-1 note: blend 1, matrix 0
+    expect(questionsFor([arp(0.5)], identityContext, [at(0.8)])).toEqual(["arpeggio-velocity-manual-gap"]);
+    expect(questionsFor([arp(-1)], identityContext, [at(1)])).toEqual(["arpeggio-velocity-manual-gap"]);
+    // a velocity-1 note at 0 % and +50 %: both give 1.0, nothing to question
+    expect(questionsFor([arp(0)], identityContext, [at(1)])).toEqual([]);
+    expect(questionsFor([arp(0.5)], identityContext, [at(1)])).toEqual([]);
+    expect(questionsFor([arp(1)], identityContext, [at(0.8)])).toEqual([]);
+  });
+  it("reads the velocities that reach the Arpeggio, after the stages before it", () => {
+    const toOne: RuleContext = { ...identityContext, computeVelocity: () => 1 };
+    const velocity: DeviceSetting = { device: "velocity", settings: { magnetPosition: 1, magnetStrength: 1, randomAmount: 0, offset: 0, mix: 1 } };
+    expect(questionsFor([velocity, arp(0.5)], toOne, [{ ...note(60), velocity: 0.8 }])).toEqual([]);
+    expect(questionsFor([arp(0.5)], toOne, [{ ...note(60), velocity: 0.8 }])).toEqual(["arpeggio-velocity-manual-gap"]);
   });
   it("registers both questions and the four deviations with a source each", () => {
     expect(QUESTIONS.map((q) => q.name).sort()).toEqual(["arpeggio-velocity-manual-gap", "pitch-drops-out-of-range"]);
@@ -190,6 +203,14 @@ describe("markReadability", () => {
       at(7000, 480, 60),
     ], 120, options);
     expect(marked.map((n) => n.readability)).toEqual(["overlap", "overlap", "polyphonic", "polyphonic", "too-short", "too-quiet", "readable"]);
+  });
+  it("a velocity-0 note is silence (the Nano's gain is gain × velocity, device-nano/src/voice.rs:129): left out of the prediction", () => {
+    // the shape of vel-offset-1-sixteenths: 32 sixteenths, every one at velocity 0
+    const silent = Array.from({ length: 32 }, (_, k) => at(3840 + k * 240, 120, 60, 0));
+    expect(markReadability(silent, 120, options)).toEqual([]);
+    expect(markReadability([at(0, 480, 60, 0.005)], 120, options)[0].readability).toBe("too-quiet");
+    // a silent neighbour makes nothing abutting or overlapping
+    expect(markReadability([at(0, 480, 60), at(480, 480, 60, 0), at(240, 480, 60, 0)], 120, options).map((n) => [n.position, n.readability])).toEqual([[0, "readable"]]);
   });
   it("steps that touch are abutting (gate 1), steps that overlap a whole step polyphonic (gate 2), steps with a gap readable (gate 0.5)", () => {
     const steps = (duration: number) => markReadability([at(3840, duration, 60), at(4080, duration, 62)], 120, options).map((n) => n.readability);

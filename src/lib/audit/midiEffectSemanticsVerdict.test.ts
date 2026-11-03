@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { NoteFigure } from "./midiEffectSemanticsReader";
 import type { PredictedFigure } from "./midiEffectSemanticsRules";
 import {
-  compareRegister, describeMismatch, judgeRule, TOLERANCES, verdictOf,
+  compareRegister, describeMismatch, judgeRule, silentRenderError, TOLERANCES, verdictOf,
   type Mismatch, type RuleJudgement, type Variant
 } from "./midiEffectSemanticsVerdict";
 
@@ -77,6 +77,23 @@ describe("judgeRule", () => {
     const predicted = [pred(1000, { readability: "too-short" })];
     expect(judgeRule([note(1000)], [intent(predicted)], TOLERANCES, never).kind).toBe("none");
     expect(judgeRule([], [intent(predicted)], TOLERANCES, never).kind).toBe("none");
+  });
+  it("a no-rule prediction still catches a read note outside every predicted span: broken, extra", () => {
+    const predicted = [pred(1000, { readability: "overlap", endMs: 1500 }), pred(1200, { readability: "overlap", endMs: 1500 })];
+    const inside = judgeRule([note(1001)], [intent(predicted)], TOLERANCES, never);
+    expect(inside.kind).toBe("none");
+    const j = judgeRule([note(1001), note(5000)], [intent(predicted)], TOLERANCES, never);
+    expect(j.kind).toBe("broken");
+    expect(j.mismatch).toMatchObject({ field: "extra", got: 5000 });
+    expect(j.unreadable).toBe(1);
+  });
+  it("a no-rule row is none when any variant's spans cover every read note, broken when none does", () => {
+    const covering: Variant[] = [
+      intent([pred(1000, { readability: "too-short", endMs: 1010 })]),
+      { deviations: new Set(["arpeggio-uncapped-note-off"]), predicted: [pred(1000, { readability: "too-short", endMs: 1010 }), pred(3000, { readability: "too-short", endMs: 3010 })] }
+    ];
+    expect(judgeRule([note(1000), note(3000)], covering, TOLERANCES, never).kind).toBe("none");
+    expect(judgeRule([note(1000), note(4000)], covering, TOLERANCES, never)).toMatchObject({ kind: "broken", mismatch: { field: "extra", got: 4000 } });
   });
   it("a missing readable note is a count mismatch", () => {
     const j = judgeRule([note(1000)], [intent([pred(1000), pred(2000)])], TOLERANCES, never);
@@ -179,13 +196,34 @@ describe("verdictOf", () => {
     [rule("deviation", ["zeitgeist-warps-note-off"]), "unregistered", "matches-known-deviation zeitgeist-warps-note-off, unregistered"],
     [rule("broken"), "unregistered", "rule broken, unregistered"],
     [rule("none"), "as-registered", "no rule"],
-    [rule("none"), "changed", "no rule"]
+    [rule("none"), "changed", "changed, no rule"],
+    [rule("none"), "unregistered", "no rule, unregistered"]
   ] as const)("%j + %s", (judgement, register, expected) => {
     expect(verdictOf(judgement, register, null)).toBe(expected);
   });
   it("an error wins over everything", () => {
     expect(verdictOf(rule("holds"), "as-registered", "render threw")).toBe("error");
     expect(verdictOf(rule("none"), "unregistered", "render threw")).toBe("error");
+  });
+});
+
+describe("silentRenderError", () => {
+  it("a silent render where the rule predicts readable or abutting notes is an error naming the intent's count", () => {
+    const predicted = [pred(1000), pred(1100, { readability: "abutting" }), pred(1200, { readability: "too-short" })];
+    expect(silentRenderError(0, [intent(predicted)])).toBe("render is silent (peak 0) where the rule predicts 2 notes");
+    expect(silentRenderError(0, [intent([pred(1000)])])).toBe("render is silent (peak 0) where the rule predicts 1 note");
+    const bothSound: Variant[] = [intent([pred(1000)]), { deviations: new Set(["arpeggio-uncapped-note-off"]), predicted: [pred(1000), pred(2000)] }];
+    expect(silentRenderError(0, bothSound)).toBe("render is silent (peak 0) where the rule predicts 1 note");
+  });
+  it("is null when the render sounds or the rule predicts nothing judgeable", () => {
+    expect(silentRenderError(0.7, [intent([pred(1000)])])).toBeNull();
+    expect(silentRenderError(0, [intent([])])).toBeNull();
+    expect(silentRenderError(0, [intent([pred(1000, { readability: "overlap" })])])).toBeNull();
+    expect(silentRenderError(0, [])).toBeNull();
+  });
+  it("is null when a known deviation predicts the silence (Arpeggio velocity -100 %: the manual sounds, the matrix is silent)", () => {
+    const variants: Variant[] = [intent([pred(1000)]), { deviations: new Set(["arpeggio-velocity-matrix"]), predicted: [] }];
+    expect(silentRenderError(0, variants)).toBeNull();
   });
 });
 

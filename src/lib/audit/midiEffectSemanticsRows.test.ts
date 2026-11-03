@@ -86,7 +86,7 @@ describe("SEMANTICS_ROWS", () => {
     expect(SEMANTICS_ROWS.filter((r) => r.id.startsWith("zg-") && r.id.endsWith("-melody")).map((r) => r.id)).toEqual(
       [0, 0.25, 0.5, 0.75, 1].flatMap((a) => [480, 3840].map((d) => `zg-amount${a}-dur${d}-melody`)));
   });
-  it("predictedVariants clips a note a variant pushes past the region end", () => {
+  it("predictedVariants clips a note a variant pushes past the end of the context's range", () => {
     const end = REGION_POSITION_PPQN + REGION_DURATION_PPQN;
     const pushing: RuleContext = { ...context, warp: (position) => position + 150 };
     const notes = predictedVariants(rowById("zg-amount0.75-dur480-sixteenths"), pushing).flatMap((v) => v.notes);

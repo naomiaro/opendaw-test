@@ -9,7 +9,7 @@ import type { DeviationName, PredictedFigure } from "./midiEffectSemanticsRules"
 
 export interface Tolerances { onsetMs: number; cents: number; velocity: number; endMs: number; unstableJitterCents: number }
 
-// The same figures are documented in midiEffectSemanticsRows.ts (kept literal: that file imports the SDK).
+/** The audit's only copy of the tolerances; `unstableJitterCents`: a pitch track that wanders more than this over a note is a tone the reader cannot name, not a pitch. */
 export const TOLERANCES: Tolerances = { onsetMs: 1, cents: 2, velocity: 0.01, endMs: 2, unstableJitterCents: 10 };
 
 export interface Variant { deviations: ReadonlySet<DeviationName>; predicted: PredictedFigure[] }
@@ -117,8 +117,13 @@ export function judgeRule(
   readAt: (onsetMs: number, endMs: number) => NoteFigure
 ): RuleJudgement {
   const judgeable = (v: Variant): boolean => v.predicted.some(p => p.readability === "readable" || p.readability === "abutting");
-  if (variants.length === 0 || variants.every(v => v.predicted.length > 0 && !judgeable(v))) {
-    return { kind: "none", deviations: [], readable: 0, unreadable: read.length, mismatch: null };
+  if (variants.length === 0) {return { kind: "none", deviations: [], readable: 0, unreadable: read.length, mismatch: null };}
+  if (variants.every(v => v.predicted.length > 0 && !judgeable(v))) {
+    // Nothing to judge, but a read note outside every predicted span of every variant is still an extra note.
+    const results = variants.map(v => judgeVariant(read, v, tolerances, readAt));
+    if (results.some(r => r.mismatch === null)) {return { kind: "none", deviations: [], readable: 0, unreadable: read.length, mismatch: null };}
+    const intent = results[Math.max(0, variants.findIndex(v => v.deviations.size === 0))]!;
+    return { kind: "broken", deviations: [], readable: intent.readable, unreadable: intent.unreadable, mismatch: intent.mismatch };
   }
   const intentIndex = Math.max(0, variants.findIndex(v => v.deviations.size === 0));
   let intentResult: VariantResult | null = null;
@@ -158,13 +163,28 @@ export function compareRegister(
 
 export function verdictOf(rule: RuleJudgement, register: RegisterJudgement, error: string | null): string {
   if (error !== null) {return "error";}
-  if (rule.kind === "none") {return "no rule";}
+  if (rule.kind === "none") {
+    return register === "changed" ? "changed, no rule" : register === "unregistered" ? "no rule, unregistered" : "no rule";
+  }
   const body = rule.kind === "holds" ? "rule holds"
     : rule.kind === "deviation" ? `matches-known-deviation ${rule.deviations.join("+")}`
     : "rule broken";
   if (register === "unregistered") {return `${body}, unregistered`;}
   if (register === "changed") {return `changed, ${body}`;}
   return rule.kind === "holds" ? "as-registered" : `as-registered, ${body}`;
+}
+
+/**
+ * The spec's `error` for a render that is silent where the rule predicts sound: `peak` is the rendered channel's largest
+ * `|x|`, `variants` the intent and each known-deviation subset as judged. Null unless the peak is 0 and EVERY variant
+ * predicts a readable or abutting note: a silence one variant predicts (the Arpeggio at -100 %, silent under the crate's
+ * velocity matrix where the manual sounds) is a judgement, not a failed render. The message counts the intent's notes.
+ */
+export function silentRenderError(peak: number, variants: readonly Variant[]): string | null {
+  const sounding = (v: Variant): number => v.predicted.filter(p => p.readability === "readable" || p.readability === "abutting").length;
+  if (peak !== 0 || variants.length === 0 || variants.some(v => sounding(v) === 0)) {return null;}
+  const count = sounding(variants.find(v => v.deviations.size === 0) ?? variants[0]!);
+  return `render is silent (peak 0) where the rule predicts ${count} note${count === 1 ? "" : "s"}`;
 }
 
 const num = (value: number | string, digits: number): string => typeof value === "number" ? value.toFixed(digits) : value;
