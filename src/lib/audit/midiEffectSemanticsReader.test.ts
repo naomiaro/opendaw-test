@@ -125,6 +125,12 @@ describe("calibration and windows", () => {
     expect(calibration.instrumentOffsetFrames).toBeGreaterThan(0);
     expect(() => calibrationFrom(notes, RATE, 0.5, 32)).toThrow(/read 2 notes, expected 32/);
   });
+  it("calibrationFrom throws on a reference peak of 0 or one that is not finite: every velocity would divide by it", () => {
+    const silent = { onsetFrame: 24006, endFrame: 26000, peak: 0, frequencyHz: 261.6, jitterCents: 0.1, cycles: 10 };
+    expect(() => calibrationFrom([silent], RATE, 0.5, 1)).toThrow("reference peak 0 is not a positive finite level");
+    expect(() => calibrationFrom([{ ...silent, peak: Number.NaN }], RATE, 0.5, 1)).toThrow("reference peak NaN is not a positive finite level");
+    expect(() => calibrationFrom([{ ...silent, peak: Number.POSITIVE_INFINITY }], RATE, 0.5, 1)).toThrow("reference peak Infinity is not a positive finite level");
+  });
   it("msToFrame rounds the time to a frame and adds the instrument offset", () => {
     expect(msToFrame(100, RATE, 6)).toBe(4806);
     expect(msToFrame(100.01, 44100, 6)).toBe(4416);
@@ -138,6 +144,28 @@ describe("calibration and windows", () => {
     expect(Math.abs(figure.velocity - 0.5)).toBeLessThan(0.002);
     expect(figure.onsetMs).toBeCloseTo(200, 6);
     expect(figure.endMs).toBeCloseTo(300, 6);
+  });
+  it("readFigureAt over a window too short for a pitch gives null pitch, cents and jitter, and still a velocity", () => {
+    const out = new Float32Array(RATE);
+    tone(out, 200, 8, hzOf(36), 0.35);                              // 8 ms at 65 Hz: under three cycles
+    const figure = readFigureAt(out, RATE, 200, 208, { referencePeak: 0.7, instrumentOffsetFrames: 0 });
+    expect(figure.pitch).toBeNull();
+    expect(figure.cents).toBeNull();
+    expect(figure.jitterCents).toBeNull();
+    expect(figure.velocity).toBeGreaterThan(0);
+    expect(figure.velocity).toBeLessThanOrEqual(0.5 + 0.002);
+  });
+  it("a note running to the buffer's end ends on the last frame and is read; a window past the end reads the same", () => {
+    const out = new Float32Array(RATE);
+    tone(out, 900, 200, hzOf(60), 0.35);                             // sounds past the 1 s buffer
+    const [note] = readNotes(out, RATE);
+    expect(note!.endFrame).toBe(RATE - 1);
+    expect(frequencyToPitch(note!.frequencyHz!).pitch).toBe(60);
+    expect(Math.abs(note!.peak / 0.7 - 0.5)).toBeLessThan(0.002);
+    const past = readFigureAt(out, RATE, 900, 1100, { referencePeak: 0.7, instrumentOffsetFrames: 0 });
+    expect(past.pitch).toBe(60);
+    expect(Number.isFinite(past.velocity)).toBe(true);
+    expect(Math.abs(past.velocity - 0.5)).toBeLessThan(0.002);
   });
   it("channelPeak is the largest absolute sample, 0 on silence", () => {
     expect(channelPeak(new Float32Array(16))).toBe(0);
@@ -156,6 +184,10 @@ describe("sineSample / frequencyToPitch / toFigure", () => {
     const tie = frequencyToPitch(440 * 2 ** (0.5 / 12));
     expect(tie.pitch).toBe(70);
     expect(tie.cents).toBeCloseTo(-50, 3);
+  });
+  it("toFigure keeps a null frequency as null pitch, cents and jitter", () => {
+    const figure = toFigure({ onsetFrame: 4800, endFrame: 5000, peak: 0.35, frequencyHz: null, jitterCents: null, cycles: 1 }, RATE, 0.7, 0);
+    expect(figure).toEqual({ onsetMs: 100, endMs: 5000 / 48, pitch: null, cents: null, velocity: 0.5, jitterCents: null });
   });
   it("toFigure nets the instrument offset and normalises the peak", () => {
     const figure = toFigure({ onsetFrame: 4812, endFrame: 7692, peak: 0.35, frequencyHz: 261.6, jitterCents: 0.1, cycles: 10 }, RATE, 0.7, 12);

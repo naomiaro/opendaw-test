@@ -10,11 +10,12 @@ export interface ReaderOptions {
   onsetThreshold: number;
   /** A run of frames at or below the threshold this long ends a note. A sine's envelope sits under the
    *  threshold only for microseconds around a zero crossing, so 2 ms never splits a tone, and it separates
-   *  notes that end and begin a few ms apart (a Zeitgeist-warped note-off 4.8 ms before the next onset). */
+   *  notes that end and begin a few ms apart (a Zeitgeist-warped note-off 4.8 ms before the next onset: run 1793740770955,
+   *  `zg-amount1-dur480-sixteenths`). */
   gapMs: number;
   /** The voice's attack and release length. */
   attackMs: number;
-  /** A pitch needs more than this many cycles. */
+  /** A pitch needs at least this many whole cycles: `minCycles + 1` rising zero crossings. */
   minCycles: number;
 }
 
@@ -147,11 +148,14 @@ export function channelPeak(samples: Float32Array): number {
 /** What the calibration row gives every later row: the loudest note's peak (velocity 1) and the frames between the first note's pulse and its read onset. */
 export interface Calibration { referencePeak: number; instrumentOffsetFrames: number }
 
-/** From the calibration row's read notes; `firstOnsetSeconds` is where its first note's pulse falls in the render. Throws unless exactly `expectedNotes` were read. */
+/** From the calibration row's read notes; `firstOnsetSeconds` is where its first note's pulse falls in the render. Throws unless
+ *  exactly `expectedNotes` were read, and unless the reference peak is a positive finite level (every velocity divides by it). */
 export function calibrationFrom(notes: readonly ReadNote[], rate: number, firstOnsetSeconds: number, expectedNotes: number): Calibration {
   if (notes.length !== expectedNotes) throw new Error(`read ${notes.length} notes, expected ${expectedNotes}`);
+  const referencePeak = Math.max(...notes.map((note) => note.peak));
+  if (!(Number.isFinite(referencePeak) && referencePeak > 0)) throw new Error(`reference peak ${referencePeak} is not a positive finite level`);
   return {
-    referencePeak: Math.max(...notes.map((note) => note.peak)),
+    referencePeak,
     instrumentOffsetFrames: notes[0].onsetFrame - Math.round(firstOnsetSeconds * rate),
   };
 }
