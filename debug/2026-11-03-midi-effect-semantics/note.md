@@ -398,7 +398,8 @@ against the crate before anything else. A `matches-known-deviation` the register
 finding; a deviation that stops showing (the row reads `changed, rule holds`) is a fix landing: retire
 the deviation in the table above with the release. `--accept` only after a person's read; a broken
 row needs `--force` and a line here naming it; so does a partial run, which then merges into the
-register instead of replacing it.
+register instead of replacing it, and only into a register of the same SDK, bpm and rate. An errored
+row is never accepted, forced or not: it keeps its registered entry, or stays out of the register.
 
 ## Open items
 

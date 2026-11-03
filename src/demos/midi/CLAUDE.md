@@ -405,7 +405,11 @@ them against what the devices DOCUMENT (the placement audit asks when; this one 
 `debug/2026-11-03-midi-effect-semantics/note.md` and `register/<rate>.json`; library
 `src/lib/audit/midiEffectSemantics*.ts`; table `node scripts/audit/midi-effect-semantics/table.ts
 [runToken] [--accept] [--force]`. `&rows=quick` is a 41-row subset; the dry rows always run and
-`dry-sixteenths` calibrates (reference peak, instrument offset; 32 notes or the run aborts).
+`dry-sixteenths` calibrates (reference peak, instrument offset; 32 notes and a positive finite peak,
+or the run aborts; a run whose calibration row did not render ends in `error:` too). `#audit-state`
+reads `done` with `data-error-rows="<n>"` counting the rows that failed on their own (0 on a clean
+run). The register is fetched first: only a 404 or the dev server's HTML fallback means none; any
+other answer, a corrupt register, or one of another rate or bpm ends the run in `error:`.
 
 - **Verdicts.** The rule judgement (`rule holds`, `matches-known-deviation <names>`, `rule broken`,
   `no rule`) joined with the register judgement (`as-registered`, `changed`, `unregistered`):
@@ -414,7 +418,12 @@ them against what the devices DOCUMENT (the placement audit asks when; this one 
   `no rule, unregistered`) and still catches an extra note (a read note outside every predicted span
   of every variant reads `rule broken`). `error` is a failed render, or a silent one (peak 0) where
   every variant predicts a judgeable note. A `rule broken` row is first a reader, rule or row fault on this
-  side: read its first mismatch and the envelope's predicted and read notes, then the crate.
+  side: read its first mismatch and the envelope's predicted and read notes, then the crate. The
+  badge is green only for `as-registered`; red for `error` and any `rule broken`; amber for the rest,
+  `<rule>, unregistered` included (a row the register has never seen deserves a look). A mismatch names
+  the list its index counts in: `read note <i>` (the row's read notes), `predicted note <i>` (an
+  abutting note in the intent's prediction), `register note <i>`; a figure that is not a number never
+  sits inside a tolerance.
 - **The rule** is the crate's and the manual's, intent first; each subset of the row's known
   deviations is tried after it, smallest first. Deviations (`DEVIATIONS` in the rules module, with
   crate lines): `arpeggio-velocity-matrix` (silence at −100 %, 1.0 at 0 %),
@@ -447,10 +456,15 @@ them against what the devices DOCUMENT (the placement audit asks when; this one 
   broken / none / error`, then `as-registered / changed / unregistered`.
 - **`--accept`** writes `register/<rate>.json` and prints the diff against the previous one first;
   only after a person has read every row that is not `as-registered`. A run with a broken or errored
-  row is refused without `--force`, and a forced accept names the row in the note. A partial run
-  (`rows`, `device` or `pattern` not `all`) is refused too: forced, its rows merge into the register
-  on disk (the diff says `merged into <path>`) instead of replacing it. Offline renders
-  are deterministic: a `changed` row on an unchanged SDK is a non-determinism finding.
+  row is refused without `--force`, and a forced accept names the row in the note. Forced, a broken
+  row is accepted (it was read); an errored row never is: it keeps the register's entry when the
+  register on disk has the run's SDK, bpm and rate, and is left out otherwise, and the accept prints
+  `errored, kept as registered: …` / `errored, left out: …`. A partial run (`rows`, `device` or
+  `pattern` not `all`) is refused too: forced, its rows merge into the register on disk (the diff
+  says `merged into <path>`) instead of replacing it, and the merge is refused outright when that
+  register has another SDK, bpm or rate. The script refuses an unknown flag, and its run line carries
+  the run's date. Offline renders are deterministic: a `changed` row on an unchanged SDK is a
+  non-determinism finding.
 
 ### Combined MIDI + Audio Audit (unlisted)
 `midi-audio-combined-audit-debug-demo.html?scenario=<nominal-start|countin-start|janked-mid|all>&bpm=<n>[&repeats=<n>][&state=<default|calibrated|both>][&bus=][&input=][&output=][&audible=1]`

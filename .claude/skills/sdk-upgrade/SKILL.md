@@ -56,6 +56,12 @@ grep -o 'OPENDAW_SDK_VERSION = "[^"]*"' node_modules/@opendaw/studio-sdk/dist/ve
 `diff $OLD/<pkg>/dist/<file>.d.ts node_modules/@opendaw/<pkg>/dist/<file>.d.ts` per changed
 declaration gives the exact new signatures the changelog and the docs quote.
 
+The MIDI effect semantics audit's rules cite the crate and the manual by line: re-check every
+`lib.rs:<n>` / `.md:<n>` citation in `src/lib/audit/midiEffectSemantics*.ts` and the "Rule sources"
+table of `debug/2026-11-03-midi-effect-semantics/note.md` against the new tag
+(`git diff --stat` over `crates/stock-devices/device-{arpeggio,pitch,velocity,zeitgeist}`,
+`crates/abi`, `crates/engine/src/audio_unit/wiring.rs` and `packages/app/manual/public/devices/midi`).
+
 ## 3. Behaviour the compiler cannot see
 
 `npm run typecheck` and `npx vitest run` passing says nothing about a demo that reads a

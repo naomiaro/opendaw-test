@@ -779,7 +779,8 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   `debug/2026-11-03-midi-effect-semantics/note.md` and `register/<rate>.json` beside it, table
   `node scripts/audit/midi-effect-semantics/table.ts [runToken]`; `--accept` writes the register,
   only after a person's read (`--force` for a broken row, named in the note, or a partial run, which
-  then merges into the register). Reading recipe:
+  then merges into a register of the same SDK, bpm and rate; an errored row is never accepted).
+  Reading recipe:
   `src/demos/midi/CLAUDE.md`.
 - After SDK upgrades, also re-run the standing combined MIDI + audio sweep:
   `midi-audio-combined-audit-debug-demo.html?scenario=all&bpm=120` — Chrome, a real click on
