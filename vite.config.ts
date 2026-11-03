@@ -161,6 +161,7 @@ export default defineConfig(({command}) => ({
                 clipFades: resolve(__dirname, "clip-fades-demo.html"),
                 mixerGroups: resolve(__dirname, "mixer-groups-demo.html"),
                 midiRecording: resolve(__dirname, "midi-recording-demo.html"),
+                midiEffects: resolve(__dirname, "midi-effects-demo.html"),
                 loopRecording: resolve(__dirname, "loop-recording-demo.html"),
                 swipeComping: resolve(__dirname, "swipe-comping-demo.html"),
                 trackAutomation: resolve(__dirname, "track-automation-demo.html"),

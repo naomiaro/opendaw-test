@@ -162,6 +162,12 @@ const GROUPS: Group[] = [
         blurb:
           "Record MIDI notes with device selection, channel filtering, an on-screen piano keyboard, and step-recording mode for precise note-by-note entry.",
       },
+      {
+        href: "/midi-effects-demo.html",
+        title: "MIDI Effects",
+        blurb:
+          "Hear and see what Arpeggio, Pitch, Velocity and Zeitgeist do to a looping synth pattern — one device at a time, then stacked and reordered by drag. The emitted-notes lane reads the engine, not a model.",
+      },
     ],
   },
   {
