@@ -64,25 +64,27 @@ export function parseSemanticsSummary(json: unknown, runToken: number): Semantic
     throw new Error(`summary ${runToken}: schemaVersion ${String(summary.schemaVersion)}, readable: ${MIDI_SEMANTICS_SCHEMA_VERSION}`);
   }
   if (!Array.isArray(summary.rows)) {throw new Error(`summary ${runToken}: rows is not an array`);}
-  summary.rows.forEach((row: Record<string, unknown>, i: number) => {
+  summary.rows.forEach((row: Record<string, unknown> | null, i: number) => {
+    if (typeof row !== "object" || row === null) {throw new Error(`summary ${runToken}: row ${i} is not an object`);}
     if (!Array.isArray(row.read)) {throw new Error(`summary ${runToken}: row ${i} read is not an array`);}
     if (typeof row.verdict !== "string") {throw new Error(`summary ${runToken}: row ${i} verdict is ${typeof row.verdict}, not a string`);}
   });
   return summary as unknown as SemanticsSummary;
 }
 
-const roundTo = (value: number, step: number): number => Math.round(value / step) * step;
-const roundOrNull = (value: number | null, step: number): number | null => value === null ? null : roundTo(value, step);
+const tenth = (value: number): number => Number(value.toFixed(1));
+const tenthOrNull = (value: number | null): number | null => value === null ? null : tenth(value);
+const halfPercent = (value: number): number => Number((Math.round(value / 0.005) * 0.005).toFixed(3));
 
 /** The register's resolution: onset and end 0.1 ms, cents 0.1, velocity 0.005. */
 export function roundFigure(note: NoteFigure): NoteFigure {
   return {
-    onsetMs: roundTo(note.onsetMs, 0.1),
-    endMs: roundTo(note.endMs, 0.1),
+    onsetMs: tenth(note.onsetMs),
+    endMs: tenth(note.endMs),
     pitch: note.pitch,
-    cents: roundOrNull(note.cents, 0.1),
-    velocity: roundTo(note.velocity, 0.005),
-    jitterCents: roundOrNull(note.jitterCents, 0.1)
+    cents: tenthOrNull(note.cents),
+    velocity: halfPercent(note.velocity),
+    jitterCents: tenthOrNull(note.jitterCents)
   };
 }
 
@@ -102,7 +104,8 @@ export function parseSemanticsRegister(json: unknown): SemanticsRegister {
   if (register.schemaVersion !== 1) {throw new Error(`register: schemaVersion ${String(register.schemaVersion)}, readable: 1`);}
   const rows = register.rows;
   if (typeof rows !== "object" || rows === null || Array.isArray(rows)) {throw new Error("register: rows is not an object");}
-  for (const [id, row] of Object.entries(rows as Record<string, Record<string, unknown>>)) {
+  for (const [id, row] of Object.entries(rows as Record<string, Record<string, unknown> | null>)) {
+    if (typeof row !== "object" || row === null) {throw new Error(`register: row ${id} is not an object`);}
     if (!Array.isArray(row.notes)) {throw new Error(`register: row ${id} notes is not an array`);}
     if (typeof row.unreadable !== "number") {throw new Error(`register: row ${id} unreadable is ${typeof row.unreadable}, not a number`);}
   }

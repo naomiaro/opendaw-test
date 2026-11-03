@@ -37,15 +37,20 @@ describe("midiEffectSemanticsArtifacts", () => {
     expect(() => parseSemanticsSummary(null, 7)).toThrow(/not an object/);
   });
 
-  it("roundFigure rounds to the register's resolution and keeps nulls", () => {
+  it("roundFigure rounds to the register's resolution, leaves no float tail and keeps nulls", () => {
     const rounded = roundFigure({ onsetMs: 10.04, endMs: 20.06, pitch: 69, cents: 1.26, velocity: 0.5066, jitterCents: 0.349 });
-    expect(rounded.onsetMs).toBeCloseTo(10.0, 9);
-    expect(rounded.endMs).toBeCloseTo(20.1, 9);
-    expect(rounded.cents).toBeCloseTo(1.3, 9);
-    expect(rounded.velocity).toBeCloseTo(0.505, 9);
-    expect(rounded.jitterCents).toBeCloseTo(0.3, 9);
+    expect(rounded).toEqual({ onsetMs: 10, endMs: 20.1, pitch: 69, cents: 1.3, velocity: 0.505, jitterCents: 0.3 });
+    const tails = roundFigure({ onsetMs: 10.1000001, endMs: 0.30000000000000004 + 0.1, pitch: 60, cents: -2.7000000001, velocity: 0.7, jitterCents: 0.1 + 0.2 });
+    expect(tails).toEqual({ onsetMs: 10.1, endMs: 0.4, pitch: 60, cents: -2.7, velocity: 0.7, jitterCents: 0.3 });
+    expect(JSON.stringify(tails)).not.toMatch(/\.\d*(0000|9999)/);
     expect(roundFigure({ onsetMs: 1, endMs: 2, pitch: null, cents: null, velocity: 0, jitterCents: null }))
       .toEqual({ onsetMs: 1, endMs: 2, pitch: null, cents: null, velocity: 0, jitterCents: null });
+  });
+
+  it("names a null row in its own message", () => {
+    expect(() => parseSemanticsSummary({ ...summary([]), rows: [null] }, 7)).toThrow("summary 7: row 0 is not an object");
+    const register = registerFromSummary(summary([record("a")]), { force: false, acceptedAt });
+    expect(() => parseSemanticsRegister({ ...register, rows: { x: null } })).toThrow("register: row x is not an object");
   });
 
   it("registerFromSummary keys figures by id and refuses a run with an error or a broken row unless forced", () => {
