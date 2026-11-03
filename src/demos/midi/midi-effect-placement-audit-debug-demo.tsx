@@ -85,19 +85,22 @@ interface Built extends NanoProject {
   importNote: string | null;
 }
 
-/** The burst on a Nano at bar 1 (the shared bootstrap), then `?importMs=`'s synthetic take. */
+/** `?importMs=`'s synthetic take right after init, on the project as init left it (the shared bootstrap's `afterInit`),
+ *  then the burst on a Nano at bar 1. */
 async function buildProject(localAudioBuffers: Map<string, AudioBuffer>, onStatus: (s: string) => void): Promise<Built> {
+  const importMs = IMPORT_MS;
+  const imported: { note: string | null } = { note: null };
+  const afterInit = async (project: Project): Promise<void> => {
+    if (importMs === null) return;
+    onStatus(`Importing a ${importMs} ms recording...`);
+    imported.note = await importShortRecording(project, importMs);
+  };
   const nano = await buildNanoProject({
     localAudioBuffers, bpm: BPM, rate: RATE, sample: burstSample(RATE, SAMPLE_MS), fileName: "burst.wav", rootKey: NOTE_PITCH,
     attackSeconds: NANO_ATTACK_SECONDS, releaseSeconds: NANO_RELEASE_SECONDS,
-    regionPositionPpqn: REGION_POSITION_PPQN, regionDurationPpqn: REGION_DURATION_PPQN, removeMaximizer: false, onStatus,
+    regionPositionPpqn: REGION_POSITION_PPQN, regionDurationPpqn: REGION_DURATION_PPQN, removeMaximizer: false, onStatus, afterInit,
   });
-  let importNote: string | null = null;
-  if (IMPORT_MS !== null) {
-    onStatus(`Importing a ${IMPORT_MS} ms recording...`);
-    importNote = await importShortRecording(nano.project, IMPORT_MS);
-  }
-  return { ...nano, importNote };
+  return { ...nano, importNote: imported.note };
 }
 
 /** The burst as a synthetic take through `importRecording`, the function a finished recording's audio goes through. */

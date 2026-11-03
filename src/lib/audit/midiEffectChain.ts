@@ -20,15 +20,17 @@ export function removeMidiEffect(editing: { modify(fn: () => void): unknown }, b
 }
 
 /** Every box, one transaction each, last to first (the chain unwinds the way it was built). A throw names the
- *  box and leaves the boxes already removed removed. `Box.delete()` of a detached box returns without a word,
- *  so a box that is not attached is refused here: it is not in the chain it was meant to leave. */
+ *  box, carries the failure as its `cause`, and leaves the boxes already removed removed. `Box.delete()` of a
+ *  detached box returns without a word, so a box that is not attached is refused here: it is not in the chain it
+ *  was meant to leave; and a box still attached after its transaction was not removed, whatever the transaction said. */
 export function removeMidiEffects(editing: { modify(fn: () => void): unknown }, boxes: readonly EffectBox[]): void {
   for (const box of [...boxes].reverse()) {
     try {
       if (!box.isAttached()) throw new Error("the box is not attached");
       removeMidiEffect(editing, box);
+      if (box.isAttached()) throw new Error("the box is still attached after the delete");
     } catch (cause) {
-      throw new Error(`${box.label.getValue()} could not be removed: ${String(cause)}`);
+      throw new Error(`${box.label.getValue()} could not be removed: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
     }
   }
 }

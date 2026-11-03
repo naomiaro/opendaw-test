@@ -57,6 +57,23 @@ describe("removeMidiEffects", () => {
     expect(pitch.isAttached()).toBe(false);
     expect(() => removeMidiEffects(editing, [pitch])).toThrow(/Pitch/);
   });
+  it("keeps the failure as the cause of the error that names the box", () => {
+    const { pitch, editing } = pitchAndVelocity();
+    const failure = new Error("graph refused");
+    const refusing = { modify: () => { throw failure; } };
+    let caught: unknown = null;
+    try { removeMidiEffects(refusing, [pitch]); } catch (error) { caught = error; }
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toBe("Pitch could not be removed: graph refused");
+    expect((caught as Error).cause).toBe(failure);
+    expect(pitch.isAttached()).toBe(true);
+    removeMidiEffects(editing, [pitch]);
+  });
+  it("refuses a box still attached after its transaction: a delete that did nothing is not a removal", () => {
+    const { pitch } = pitchAndVelocity();
+    const inert = { modify: () => undefined };
+    expect(() => removeMidiEffects(inert, [pitch])).toThrow("Pitch could not be removed: the box is still attached after the delete");
+  });
   it("goes in reverse array order and leaves the earlier boxes removed when one throws", () => {
     const { unit, pitch, velocity, editing } = pitchAndVelocity();
     removeMidiEffect(editing, pitch);

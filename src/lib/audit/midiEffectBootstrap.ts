@@ -11,12 +11,12 @@ import { InstrumentFactories } from "@opendaw/studio-adapters";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { withDeadline } from "@/lib/deadline";
 import { removeMasterMaximizer } from "@/lib/audit/midiEffectChain";
+import { awaitSampleLoader } from "@/lib/audit/midiEffectRunSupport";
+
+export { RunAbort } from "@/lib/audit/midiEffectRunSupport";
 
 const SAMPLE_LOAD_DEADLINE_MS = 30_000;
 const SUMMARY_UPLOAD_DEADLINE_MS = 30_000;
-
-/** A failure that voids every later row: the run ends in `error:` instead of continuing. */
-export class RunAbort extends Error {}
 
 export interface NanoProjectOptions {
   localAudioBuffers: Map<string, AudioBuffer>;
@@ -33,6 +33,9 @@ export interface NanoProjectOptions {
   /** Delete the Maximizer the skeleton puts on the master, for a render that must be level-true. */
   removeMaximizer: boolean;
   onStatus: (s: string) => void;
+  /** Awaited right after `initializeOpenDAW`, before the file box and the instrument exist: work that must find the
+   *  project as init left it (the placement page's `?importMs=` import). A throw ends the build. */
+  afterInit?: (project: Project) => Promise<void>;
 }
 
 export interface NanoProject {
@@ -43,12 +46,13 @@ export interface NanoProject {
   nanoBox: NanoDeviceBox;
 }
 
-/** The sample, the Nano with it attached, the region. Two transactions after init: the file box and the
- *  instrument together (the attachment is a mandatory-edge target), then the sampler's settings and the
+/** The sample, the Nano with it attached, the region. `afterInit` first when given; then two transactions: the file
+ *  box and the instrument together (the attachment is a mandatory-edge target), then the sampler's settings and the
  *  region. */
 export async function buildNanoProject(options: NanoProjectOptions): Promise<NanoProject> {
   const { localAudioBuffers, bpm, rate, sample, onStatus } = options;
   const { project, audioContext } = await initializeOpenDAW({ localAudioBuffers, bpm, audioContextSampleRate: rate, onStatusUpdate: onStatus });
+  if (options.afterInit !== undefined) await options.afterInit(project);
   const buffer = audioContext.createBuffer(2, sample.length, rate);
   buffer.getChannelData(0).set(sample);
   buffer.getChannelData(1).set(sample);
@@ -93,22 +97,9 @@ export async function buildNanoProject(options: NanoProjectOptions): Promise<Nan
   return { project, audioContext, audioUnitBox, regionBox, nanoBox };
 }
 
-/** The loader's terminal state, read first and then awaited (the loader has `subscribe` only, and it
- *  fires synchronously for a terminal state). An error carries the loader's own reason. */
+/** The sample's loader to its terminal state (`awaitSampleLoader`, tested in Node). */
 export function awaitSampleLoaded(project: Project, uuid: UUID.Bytes, deadlineMs: number = SAMPLE_LOAD_DEADLINE_MS): Promise<void> {
-  const loader = project.sampleManager.getOrCreate(uuid);
-  const failed = (reason: string) => new Error(`sample load failed: ${reason}`);
-  if (loader.state.type === "loaded") return Promise.resolve();
-  if (loader.state.type === "error") return Promise.reject(failed(loader.state.reason));
-  return withDeadline(new Promise<void>((resolve, reject) => {
-    let subscribed = false;
-    const sub = loader.subscribe((state) => {
-      if (state.type !== "loaded" && state.type !== "error") return;
-      if (state.type === "loaded") resolve(); else reject(failed(state.reason));
-      if (subscribed) sub.terminate();
-    });
-    subscribed = true;
-  }), deadlineMs, "sample load");
+  return awaitSampleLoader(project.sampleManager.getOrCreate(uuid), deadlineMs);
 }
 
 /** The run's summary to the dev server's verify sink (`PUT /__verify/<fileName>`). */
