@@ -4,6 +4,7 @@ import { PPQN } from "@opendaw/lib-dsp";
 import { Project, EffectFactories } from "@opendaw/studio-core";
 import { AudioRegionBox, AudioUnitBox, WerkstattDeviceBox } from "@opendaw/studio-boxes";
 import { ScriptCompiler, ScriptDeclaration } from "@opendaw/studio-adapters";
+import { readScriptParams, writeScriptParam } from "@/lib/scriptParams";
 import { audioEffectsFieldOf } from "@/lib/adapterUtils";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
@@ -29,19 +30,9 @@ import {
 } from "@radix-ui/themes";
 import { PlayIcon, PauseIcon, StopIcon } from "@radix-ui/react-icons";
 
-/** Read Werkstatt parameter values from the adapter's pointerHub. */
+/** The declared parameters as a label → value record, the shape the sliders read. */
 function readWerkstattParams(werkstattBox: WerkstattDeviceBox): Record<string, number> {
-  const params: Record<string, number> = {};
-  const paramPointers = werkstattBox.parameters.pointerHub.incoming();
-  for (const pointer of paramPointers) {
-    const paramBox = pointer.box as { label?: { getValue(): string }; value?: { getValue(): number } };
-    const label = paramBox.label?.getValue?.();
-    const value = paramBox.value?.getValue?.();
-    if (label != null && value != null) {
-      params[label] = value;
-    }
-  }
-  return params;
+  return Object.fromEntries(readScriptParams(werkstattBox).map((p) => [p.label, p.value]));
 }
 
 const BPM = 124;
@@ -232,16 +223,7 @@ const App: React.FC = () => {
 
   const updateEffectParam = useCallback((paramName: string, value: number) => {
     if (!project || !werkstattBoxRef.current) return;
-
-    const paramPointers = werkstattBoxRef.current.parameters.pointerHub.incoming();
-    const paramBox = paramPointers.find(
-      p => (p.box as { label?: { getValue(): string } }).label?.getValue?.() === paramName
-    )?.box as { value?: { setValue(v: number): void } } | undefined;
-
-    if (paramBox?.value) {
-      project.editing.modify(() => {
-        paramBox.value!.setValue(value);
-      });
+    if (writeScriptParam(project.editing, werkstattBoxRef.current, paramName, value)) {
       setEffectParams(prev => ({ ...prev, [paramName]: value }));
     }
   }, [project]);

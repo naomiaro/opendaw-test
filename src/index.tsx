@@ -168,6 +168,12 @@ const GROUPS: Group[] = [
         blurb:
           "Hear and see what Arpeggio, Pitch, Velocity and Zeitgeist do to a looping synth pattern — one device at a time, then stacked and reordered by drag. The emitted-notes lane reads the engine, not a model.",
       },
+      {
+        href: "/spielwerk-demo.html",
+        title: "Spielwerk",
+        blurb:
+          "Write a MIDI effect in JavaScript: a Processor whose generator receives note events and yields notes. Pre-built echo, chord, humanize, octave-jump, strum and filter scripts, an editor that compiles on demand, knobs from // @param lines, and an API reference whose examples load into the editor.",
+      },
     ],
   },
   {
