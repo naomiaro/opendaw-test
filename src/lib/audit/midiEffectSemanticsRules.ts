@@ -181,7 +181,7 @@ function applyStage(stage: DeviceSetting, context: RuleContext, deviations: Read
   }
 }
 
-/** The engine ends a note at its region's end when `playback.truncateNotesAtRegionEnd` is on (`crates/engine-env/src/note_sequencer.rs:199-200`; the schema default is false, `EnginePreferencesSchema.ts:27`). A note starting at or past the end is never heard. */
+/** Measured: the offline render ends a note that crosses the region end at the region end (5999.9 ms for a note due to ring to 6060 ms, run 1793740770955). `playback.truncateNotesAtRegionEnd`, default false (`EnginePreferencesSchema.ts:27`), only shortens the note's own duration at scheduling (`note_sequencer.rs:199-200`), so it is not the cut; the sequencer releases every retained note at once when the block is not playing or is discontinuous (`note_sequencer.rs:131-135`), which is the candidate and not shown. A note starting at or past the end is never heard. */
 export function clipToRange(notes: readonly RuleNote[], range: { from: number; to: number }): RuleNote[] {
   return notes
     .filter((note) => note.position < range.to)
@@ -237,7 +237,7 @@ export function toPredictedFigures(notes: readonly PredictedNote[], bpm: number)
  * by at most `releaseMs` (a step ending where the next begins) both `abutting`; spans that do not intersect but
  * sit less than `gapMs` apart are `abutting` too (the reader cannot separate them). A span shorter than the
  * attack twice plus `minCycles` periods is `too-short`, a velocity below `minVelocity` `too-quiet`.
- * Precedence: overlap, polyphonic, abutting, too-short, too-quiet. Sorted by position, then pitch.
+ * Precedence: overlap, polyphonic, too-short, too-quiet, abutting (a note too short or too quiet to read is unreadable whatever its neighbours; abutting applies to the rest). Sorted by position, then pitch.
  */
 export function markReadability(
   notes: readonly RuleNote[], bpm: number, options: { attackMs: number; releaseMs: number; gapMs: number; minCycles: number; minVelocity: number }
@@ -269,9 +269,9 @@ export function markReadability(
     const readability: Readability =
       overlap.has(i) ? "overlap"
       : polyphonic.has(i) ? "polyphonic"
-      : abutting.has(i) ? "abutting"
       : ends[i] - onsets[i] < shortest ? "too-short"
       : note.velocity < options.minVelocity ? "too-quiet"
+      : abutting.has(i) ? "abutting"
       : "readable";
     return { ...note, readability };
   });

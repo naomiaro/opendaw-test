@@ -201,6 +201,13 @@ describe("markReadability", () => {
     expect(markReadability([at(0, 480, 60), at(485, 240, 60)], 120, options).map((n) => n.readability)).toEqual(["abutting", "abutting"]);
     expect(markReadability([at(0, 480, 60), at(489, 240, 60)], 120, options).map((n) => n.readability)).toEqual(["readable", "readable"]);
   });
+  it("a note too short or too quiet to read is not abutting, whatever its neighbour; the neighbour stays abutting", () => {
+    // 3 pulses = 1.6 ms; the second note starts where the first ends
+    const marked = markReadability([at(0, 480, 60), at(480, 3, 60)], 120, options);
+    expect(marked.map((n) => n.readability)).toEqual(["abutting", "too-short"]);
+    const quiet = markReadability([at(0, 480, 60), at(480, 480, 60, 0.005)], 120, options);
+    expect(quiet.map((n) => n.readability)).toEqual(["abutting", "too-quiet"]);
+  });
   it("same-pitch steps that touch are abutting too, not overlap", () => {
     const marked = markReadability([at(3840, 240, 60), at(4080, 240, 60)], 120, options);
     expect(marked.map((n) => n.readability)).toEqual(["abutting", "abutting"]);
