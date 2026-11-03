@@ -1,4 +1,4 @@
-<!-- Draft for the user's read. Target: a new issue on andremichelle/openDAW. Not posted. -->
+<!-- Posted 2026-11-03 as https://github.com/andremichelle/openDAW/issues/525 — the body below is as filed (the parenthetical on the page going live was dropped at posting). -->
 
 # Zeitgeist moves note-offs as well as note-ons, so note durations change with the groove; the manual says they stay
 

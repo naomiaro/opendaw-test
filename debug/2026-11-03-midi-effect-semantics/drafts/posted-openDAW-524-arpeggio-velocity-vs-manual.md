@@ -1,4 +1,4 @@
-<!-- Draft for the user's read. Target: a new issue on andremichelle/openDAW. Not posted. -->
+<!-- Posted 2026-11-03 as https://github.com/andremichelle/openDAW/issues/524 — the body below is as filed (the parenthetical on the page going live was dropped at posting). -->
 
 # Arpeggio: the Velocity control does not do what its manual says (−100 % is silent, 0 % is full)
 
