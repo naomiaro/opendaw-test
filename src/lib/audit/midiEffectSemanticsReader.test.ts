@@ -63,6 +63,16 @@ describe("readNotes", () => {
     expect(Math.abs(b.peak / 0.7 - 0.5)).toBeLessThan(0.002);
     expect(b.jitterCents!).toBeLessThan(1);
   });
+  it("a sampled crest at high pitch does not bias velocity: half the level reads 0.5 within 0.002", () => {
+    for (const pitch of [96, 100, 103, 105, 106, 107, 107.3, 107.6, 107.9, 108].flatMap(p => [p, p + 0.17, p + 0.41])) {
+      const out = new Float32Array(RATE);
+      tone(out, 100, 100, hzOf(60), 0.7); tone(out, 300, 100, hzOf(pitch), 0.35);
+      const [low, high] = readNotes(out, RATE);
+      expect(Math.abs(high.peak / low.peak - 0.5), `readNotes pitch ${pitch}`).toBeLessThan(0.002);
+      const window = readWindow(out, RATE, high.onsetFrame, high.endFrame);
+      expect(Math.abs(window.peak / low.peak - 0.5), `readWindow pitch ${pitch}`).toBeLessThan(0.002);
+    }
+  });
   it("returns nothing for silence and does not split a sine at its zero crossings", () => {
     expect(readNotes(new Float32Array(RATE), RATE)).toEqual([]);
     const out = new Float32Array(RATE); tone(out, 100, 500, hzOf(36), 0.7);

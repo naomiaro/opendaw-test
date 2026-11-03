@@ -74,14 +74,29 @@ function readPitch(samples: Float32Array, rate: number, from: number, to: number
   return { frequencyHz: rate / periodFrames, jitterCents: 1200 * Math.log2(maxPeriod / minPeriod), cycles, periodFrames };
 }
 
+/** The largest `|x|` in `[from, to]`, lifted to the vertex of a parabola through it and its neighbours, so a crest between two frames is not read low. */
+function refinedPeak(samples: Float32Array, from: number, to: number): number {
+  let at = -1;
+  let best = 0;
+  for (let i = from; i <= to; i++) {
+    const level = Math.abs(samples[i]);
+    if (level > best) { best = level; at = i; }
+  }
+  if (at < 1 || at > samples.length - 2) return best;
+  const y0 = Math.abs(samples[at - 1]);
+  const y2 = Math.abs(samples[at + 1]);
+  const denominator = y0 - 2 * best + y2;
+  if (denominator === 0) return best;
+  return best - (y0 - y2) ** 2 / (8 * denominator);
+}
+
 /** The pitch and peak passes over a GIVEN span; the peak covers one cycle after the attack (the whole span when there is no pitch). */
 export function readWindow(samples: Float32Array, rate: number, onsetFrame: number, endFrame: number, options: ReaderOptions = READER_DEFAULTS): ReadNote {
   const attackFrames = Math.round(options.attackMs * rate / 1000);
   const pitch = readPitch(samples, rate, onsetFrame + 2 * attackFrames, endFrame - attackFrames, options.minCycles);
   const peakFrom = onsetFrame + attackFrames;
   const peakTo = pitch.frequencyHz === null ? endFrame : Math.min(endFrame, peakFrom + Math.ceil(pitch.periodFrames) + attackFrames);
-  let peak = 0;
-  for (let i = Math.max(peakFrom, 0); i <= Math.min(peakTo, samples.length - 1); i++) peak = Math.max(peak, Math.abs(samples[i]));
+  const peak = refinedPeak(samples, Math.max(peakFrom, 0), Math.min(peakTo, samples.length - 1));
   return { onsetFrame, endFrame, peak, frequencyHz: pitch.frequencyHz, jitterCents: pitch.jitterCents, cycles: pitch.cycles };
 }
 
