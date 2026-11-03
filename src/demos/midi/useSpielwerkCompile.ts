@@ -1,6 +1,8 @@
 /**
- * Compiling a Spielwerk script on demand and reading the parameters it declares. A rejected compile
- * leaves the device on its last good script (`compileWithRestore`). A successful compile hot-swaps
+ * Compiling a Spielwerk script on demand and reading the parameters it declares. The script is built
+ * and constructed on the main thread first (`preflightScript`: Chrome's addModule resolves for a
+ * module that throws at load, so the SDK cannot report that); a rejected compile leaves the device
+ * on its last good script (`compileWithRestore`). A successful compile hot-swaps
  * the script in the worklet, which drops the old runtime's held notes without note-offs, so the
  * caller is told to restart the pattern.
  */
@@ -9,7 +11,7 @@ import type { Project } from "@opendaw/studio-core";
 import { ScriptCompiler } from "@opendaw/studio-adapters";
 import type { SpielwerkDeviceBox } from "@opendaw/studio-boxes";
 import { readScriptParams, writeScriptParam, type ScriptParam } from "@/lib/scriptParams";
-import { compileWithRestore } from "@/lib/midiEffects/spielwerkCompile";
+import { compileWithRestore, preflightScript } from "@/lib/midiEffects/spielwerkCompile";
 
 export interface SpielwerkCompile {
   /** Rejects with the compiler's error; the device then still runs its previous script. */
@@ -38,6 +40,7 @@ export function useSpielwerkCompile(
 
   const compile = useCallback(async (source: string) => {
     if (!project || !audioContext || !box) throw new Error("the engine is still starting");
+    preflightScript(source);
     setBusy(true);
     try {
       await compileWithRestore(compilerRef.current!, audioContext, project.editing, box, source);

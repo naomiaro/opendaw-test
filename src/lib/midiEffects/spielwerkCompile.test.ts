@@ -6,7 +6,7 @@ import { AudioUnitFactory, ProjectSkeleton } from "@opendaw/studio-adapters";
 import { AudioUnitType } from "@opendaw/studio-enums";
 import { transact } from "@/lib/testing/boxGraphFixtures";
 import { readScriptParams } from "@/lib/scriptParams";
-import { compileWithRestore, type ScriptCompilerLike } from "./spielwerkCompile";
+import { compileWithRestore, preflightScript, type ScriptCompilerLike } from "./spielwerkCompile";
 
 /** A Spielwerk on a real graph and a compiler double that behaves like the SDK's: it writes `code` and
  *  re-registers the parameter boxes BEFORE the module loads, then resolves or rejects. */
@@ -64,5 +64,27 @@ describe("compileWithRestore", () => {
     expect(calls).toEqual([GOOD, BAD, GOOD]);
     expect(box.code.getValue()).toBe(GOOD);
     expect(readScriptParams(box)).toEqual([{ label: "delay", value: 240 }]);
+  });
+});
+
+describe("preflightScript", () => {
+  it("accepts a script whose Processor builds", () => {
+    expect(() => preflightScript("class Processor { * process(block, events) {} }")).not.toThrow();
+  });
+
+  it("rejects a script with no Processor class", () => {
+    expect(() => preflightScript("class Prozessor { * process(block, events) {} }")).toThrow(/Processor is not defined/);
+  });
+
+  it("rejects a script that throws at load", () => {
+    expect(() => preflightScript('throw new Error("boom at load")\nclass Processor { * process(block, events) {} }')).toThrow(/boom at load/);
+  });
+
+  it("rejects a Processor whose constructor throws", () => {
+    expect(() => preflightScript('class Processor { constructor() { throw new Error("no") } * process(block, events) {} }')).toThrow(/no/);
+  });
+
+  it("rejects a Processor without a process generator", () => {
+    expect(() => preflightScript("class Processor { }")).toThrow(/process/);
   });
 });

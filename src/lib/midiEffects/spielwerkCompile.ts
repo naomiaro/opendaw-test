@@ -32,3 +32,16 @@ export async function compileWithRestore(
     throw error;
   }
 }
+
+/**
+ * Build and construct the script's Processor on the main thread before compiling, and throw with
+ * the error a visitor can act on. Needed because Chrome's `audioWorklet.addModule` RESOLVES for a
+ * module whose top level throws (measured 2026-11-03: a renamed class, a bare `throw`), so the
+ * SDK's compile reports success, rewrites the parameter boxes, and the worklet keeps running the
+ * previous script with no message. The runtime's own checks (yields, scheduler) still happen there.
+ */
+export function preflightScript(source: string): void {
+  const Processor = new Function(`"use strict";\n${source}\nreturn Processor;`)() as new () => { process?: unknown };
+  const proc = new Processor();
+  if (typeof proc.process !== "function") throw new Error("the Processor has no process() generator");
+}

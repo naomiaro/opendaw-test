@@ -383,6 +383,14 @@ table `node scripts/audit/midi-effect-placement/table.ts`.
   the burst sits at the head of a one-second sample. `?sampleMs=20` reproduces the load
   failure in `#audit-state`; `?importMs=20` runs a synthetic take of that length through
   `sampleService.importRecording` first and reports it.
+- **A script that throws at module load "compiles".** Chrome's `addModule` resolves for a module
+  whose top level throws (a misnamed `Processor`, a bare `throw`), so `ScriptCompiler.compile`
+  resolves after writing `code` and the parameter boxes while the worklet keeps the previous script
+  and sends no device message (measured 0.0.180, `debug/2026-11-03-spielwerk-addmodule-resolves/`).
+  Build and construct the Processor on the main thread first (`preflightScript`,
+  `src/lib/midiEffects/spielwerkCompile.ts`); runtime failures (a yield in the past, the 128-note
+  scheduler) do arrive through `engine.subscribeDeviceMessage(uuid, …)` and silence the device until
+  the next successful compile.
 - **Spielwerk offline.** `ScriptCompiler.compile` on the live context writes the header the
   offline renderer re-registers from. A script the renderer finds without a header is not
   registered, and an unregistered Spielwerk forwards its input, so such a row reads as a
