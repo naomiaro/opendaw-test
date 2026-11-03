@@ -48,6 +48,13 @@ subs.push(trackSub);
 - We pass a Proxy that throws a clear error if a future SDK version accesses it
 - None of the demos use soundfont instruments (MIDI demo uses Vaporisateur built-in synth)
 
+### Master Maximizer Is Created By Default
+`Project.new` creates a `MaximizerDeviceBox` on the output unit when the studio preference
+`auto-create-output-maximizer` is true, its default — every demo project carries one. A page that
+reads output LEVELS (velocity, peaks) must remove it first: `removeMasterMaximizer` in
+`src/lib/audit/midiEffectChain.ts` (reads the master through the adapter layer, returns the count;
+assert it is 1). Offline renders include it too.
+
 ### Stored Samples Are Swept at Page Load
 - The SDK's loader writes every sample it fetches to OPFS (`samples/v2/<uuid>/`), and
   `SampleService` writes every finished recording there. The SDK never deletes a valid one
@@ -208,6 +215,8 @@ API: `.isEmpty()`, `.nonEmpty()`, `.unwrap()`, `.unwrapOrNull()`, `.unwrapOrUnde
   the engine never see them — the pointer path was unguarded once, openDAW#480, regression
   test `src/lib/staleBoxPointerWrite.test.ts`). A write that lands nowhere is still a lost
   write: re-resolve with `boxGraph.findBox(uuid)`.
+- `box.delete()` on a DETACHED box (`isAttached() === false`) returns silently — no throw. A helper
+  that must report a failed removal checks `isAttached()` before and after the delete itself.
 - AudioRegionBox gain: field is `gain` (dB, decibel constraint), NOT `volume`, NOT a 0-1 range
 - Option API: `isEmpty()` / `nonEmpty()` — NOT `isSome()` / `isNone()`
 - Disconnect pointer: `pointerField.defer()` — NOT `unrefer()` (doesn't exist)
@@ -714,6 +723,10 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   note, and read a changed row against the device rate before the SDK; leave the device at 44.1 kHz between
   sessions so an unlabelled figure keeps its footing. The clock-drift probe records `deviceRateHz` in its
   envelope; the other harnesses do not yet (a follow-up: a bare `new AudioContext().sampleRate` per envelope).
+- An OFFLINE-ONLY audit (rendered through `renderOfflineSlice`, its sample generated in memory) is
+  independent of the device rate: the semantics audit measured bit-identical reference peaks and
+  every row as-registered at both page rates with the device at 44.1 and at 48 kHz. Its standing
+  sweep needs the two PAGE rates only; the device-rate pass is a one-time proof, recorded in its note.
 - After SDK upgrades, re-run the standing sample-rate/quantum-alignment regression sweep:
   `samplerate-audit-debug-demo.html?family=all&bpm=all&rate=all` (calibration in
   `src/lib/audit/auditCalibration.ts`, campaign register in
@@ -874,6 +887,11 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
 - typescript-lsp plugin: install `typescript-language-server` and `typescript` **globally** (`npm i -g typescript-language-server typescript`) — the plugin spawns by PATH, NOT from `node_modules/.bin`, so a devDep doesn't satisfy it. LSP `hover` / `goToDefinition` / `documentSymbol` also resolve types in the upstream openDAW checkout (`tsserver` walks up to the nearest tsconfig — handy for SDK drift audits). Prefer file-scoped ops over `workspaceSymbol` (~3.9k symbols / ~135 KB persisted in this repo).
 - Dev server is HTTPS (COOP/COEP) — Playwright/curl must use `https://`, not `http://`. Custom port:
   `npm run dev -- --port 5180 --host 127.0.0.1`, then browse `https://localhost:5180/<demo>.html`.
+- A page fetching a file under the repo root from the DEV server gets the SPA fallback for a missing
+  path: HTML with status 200, not 404 — test the content type or a body starting with `<` before
+  parsing. The PUBLIC host (Cloudflare Pages) answers an `.html` URL with a 308 to the clean URL
+  (query string kept), 404s a missing file, and has no `/__verify` sink: a PUT there is 404/405, so a
+  page that uploads an envelope treats those two statuses as "no sink", not as a failed run.
 - COOP/COEP headers in `public/_headers` exclude `/docs/*` — VitePress assets break under `require-corp`
 - The repo compiles with `strict` (plus `noFallthroughCasesInSwitch`, `noImplicitOverride`,
   `noUnusedLocals`, `noUnusedParameters`, `noImplicitReturns`). `npm run typecheck`
@@ -951,7 +969,9 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
 - Unit tests can run against a REAL box graph in Node, no AudioContext: fixtures in
   `src/lib/testing/boxGraphFixtures.ts`. `graph.endTransaction()` validates mandatory
   pointers and rolls back on a violation (a bare `NanoDeviceBox.create` fails with
-  "Pointer … (host) requires an edge"), so build instruments the way the SDK does:
+  "Pointer … (host) requires an edge"), so build instruments the way the SDK does
+  (`ProjectSkeleton.empty(...)` returns `mandatoryBoxes.primaryAudioUnitBox`, the output unit, which
+  carries the Master Maximizer when `createOutputMaximizer` is true):
   `ProjectSkeleton.empty(…)` → `AudioUnitFactory.create(skeleton, AudioUnitType.Instrument,
   Option.None)` → `InstrumentFactories.X.create(boxGraph, unit.input, name, icon)`. Device
   adapters construct with a minimal context, `{ parameterFieldAdapters: new
@@ -1097,6 +1117,9 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   unbreakable content (code tokens) need `min-width: 0` or the 1fr track widens past
   its container.
 - PRs are squash-merged (`gh pr merge <n> --squash`) — main carries one commit per PR.
+- The merge itself is the user's: in auto mode the permission layer refuses `gh pr merge` as a merge
+  without review. Open the PR, hand the user the one-line merge command, and continue with what
+  does not depend on it.
 - Once a PR is open and its work complete, run the comprehensive PR review
   (`/pr-review-toolkit:review-pr`, applicable aspects) and FIX Critical + Important
   findings before merge; push fixes to the PR branch and note them in a PR comment.
@@ -1164,6 +1187,9 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   see `.claude/local.md`) — readable TypeScript with comments beats compiled dist JS. Reach for
   `node_modules/@opendaw/<pkg>/dist` only to confirm what the INSTALLED version actually ships
   (exports, signatures, tag-vs-publish drift) — not as the default place to read code.
+  The device MANUALS live in the same checkout, `packages/app/manual/public/devices/<kind>/<device>.md`:
+  they are the first source of a device's documented intent (the adapter's mapping second, the
+  crate third); where manual and crate disagree, the crate is the deviation (openDAW#524, #525).
 - Before documenting an SDK method or field signature in any CLAUDE.md, verify it in
   `node_modules/@opendaw/<pkg>/dist/**/*.d.ts` (installed surface is the authority).
 - Verify SDK exports: check `node_modules/@opendaw/<package>/dist/*.d.ts` before writing imports
@@ -1250,6 +1276,11 @@ unasked (every `xerj` command prints a banner inviting it).
 - `docs/superpowers/{specs,plans}` hold in-flight work only — delete a spec/plan in the
   PR that completes its work (git history preserves them). Durable decisions graduate to
   `docs/design/`, CLAUDE.md, or `documentation/` before deletion.
+  Subagent-driven runs: the plan's workspace under `.superpowers/sdd/` is git-ignored — never
+  `git add -f` anything there; once the completing task has deleted the plan file, the skill's
+  `review-package` script refuses, so build the final package by hand (`git log --oneline`,
+  `git diff --stat`, `git diff -U8` over the range, large generated JSON excluded). Ask review
+  subagents for reports under ~80 lines: a result over 16 000 characters is truncated in transit.
 - Unlisted debug demo pages: HTML at repo root with `<meta name="robots" content="noindex">`,
   not added to `src/index.tsx` or `public/sitemap.xml`. See `comp-lanes-debug-demo.tsx` as reference.
 - OpenDAW source code locations: see `.claude/local.md`
