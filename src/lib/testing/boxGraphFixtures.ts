@@ -102,7 +102,7 @@ export function graphWithZeitgeist(): ZeitgeistGraph {
   });
 }
 
-/** What every stock MIDI effect box has, typed structurally: the `EffectBox` union's `host` is an intersection. */
+/** What every stock MIDI effect box has, typed structurally: calling `host.refer` through the `EffectBox` union wants a target typed for both pointer kinds. */
 interface MidiEffectBoxFields {
   readonly label: StringField;
   readonly index: Int32Field;

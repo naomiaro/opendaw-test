@@ -116,7 +116,8 @@ describe("reconcileChain", () => {
     const { unit, project, factories } = double();
     reconcileChain(project, unit.midiEffects, ["pitch", "velocity", "arpeggio"], factories);
     const before = chainBoxes(unit.midiEffects);
-    reconcileChain(project, unit.midiEffects, ["arpeggio", "velocity", "pitch"], factories);
+    const { changed } = reconcileChain(project, unit.midiEffects, ["arpeggio", "velocity", "pitch"], factories);
+    expect(changed).toBe(true);
     expect(ids(unit)).toEqual(["arpeggio", "velocity", "pitch"]);
     expect(new Set(chainBoxes(unit.midiEffects))).toEqual(new Set(before));
   });
@@ -128,6 +129,12 @@ describe("reconcileChain", () => {
     reconcileChain(project, unit.midiEffects, ["pitch", "velocity", "arpeggio"], factories);
     expect(chainBoxes(unit.midiEffects).map((b) => b.index.getValue())).toEqual([0, 1, 2]);
     expect(ids(unit)).toEqual(["pitch", "velocity", "arpeggio"]);
+  });
+
+  it("throws on a duplicated desired list and writes nothing", () => {
+    const { unit, project, factories } = double();
+    expect(() => reconcileChain(project, unit.midiEffects, ["pitch", "pitch"], factories)).toThrow(/duplicate/);
+    expect(ids(unit)).toEqual([]);
   });
 
   it("reports no change for the same list twice", () => {

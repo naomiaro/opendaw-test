@@ -6,12 +6,12 @@
 import { IndexedBox, type Field } from "@opendaw/lib-box";
 import type { Editing } from "@opendaw/lib-std";
 import type { Pointers } from "@opendaw/studio-enums";
-import type { EffectBox, EffectFactory, Project } from "@opendaw/studio-core";
+import type { EffectBox, EffectFactories, Project } from "@opendaw/studio-core";
 import { DEVICES, deviceIdOf, type DeviceId, type FactoryKey } from "./devices";
 
 export type MidiEffectsField = Field<Pointers.MIDIEffectHost>;
-/** `EffectFactories[key]`, resolved by the page: the factories cannot be imported here (see `devices.ts`). */
-export type Factories = Readonly<Record<FactoryKey, EffectFactory>>;
+/** The SDK's own `EffectFactories.MidiNamed`, passed in by the page: the value cannot be imported here (see `devices.ts`). */
+export type Factories = Pick<typeof EffectFactories.MidiNamed, FactoryKey>;
 
 /** The boxes on the chain, sorted by their index field. */
 export function chainBoxes(field: MidiEffectsField): EffectBox[] {
@@ -67,6 +67,7 @@ export function reconcileChain(
   desired: readonly DeviceId[],
   factories: Factories
 ): { changed: boolean } {
+  if (new Set(desired).size !== desired.length) throw new Error(`duplicate device in desired chain: ${desired.join(",")}`);
   let changed = false;
   for (const box of chainBoxes(field)) {
     const id = deviceIdOf(box);

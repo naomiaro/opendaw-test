@@ -12,9 +12,9 @@ import { chainBoxes } from "@/lib/midiEffects/chain";
 import { deviceIdOf, type DeviceId } from "@/lib/midiEffects/devices";
 
 export interface ChainEntry {
-  box: EffectBox;
-  id: DeviceId;
-  enabled: boolean;
+  readonly box: EffectBox;
+  readonly id: DeviceId;
+  readonly enabled: boolean;
 }
 
 /** Entries for the boxes the demo knows, in the order given (callers pass `chainBoxes(field)`). */
