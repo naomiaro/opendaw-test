@@ -4,13 +4,19 @@
  * imports this file.
  */
 import { Option } from "@opendaw/lib-std";
-import { BoxEditing, type BoxGraph } from "@opendaw/lib-box";
-import { GrooveShuffleBox, ZeitgeistDeviceBox, type AudioUnitBox, type BoxIO, type NanoDeviceBox } from "@opendaw/studio-boxes";
+import { BoxEditing, type BoxGraph, type Int32Field, type PointerField, type StringField } from "@opendaw/lib-box";
 import {
-  AudioUnitFactory, InstrumentFactories, NanoDeviceBoxAdapter, ParameterFieldAdapters, ProjectSkeleton,
-  type BoxAdaptersContext,
+  ArpeggioDeviceBox, GrooveShuffleBox, PitchDeviceBox, VelocityDeviceBox, ZeitgeistDeviceBox,
+  type AudioUnitBox, type BoxIO, type NanoDeviceBox,
+} from "@opendaw/studio-boxes";
+import {
+  ArpeggioDeviceBoxAdapter, AudioUnitFactory, BoxAdapters, InstrumentFactories, NanoDeviceBoxAdapter,
+  ParameterFieldAdapters, PitchDeviceBoxAdapter, ProjectSkeleton, VelocityDeviceBoxAdapter, ZeitgeistDeviceBoxAdapter,
+  type BoxAdaptersContext, type MidiEffectDeviceAdapter,
 } from "@opendaw/studio-adapters";
-import { AudioUnitType, IconSymbol } from "@opendaw/studio-enums";
+import type { EffectBox } from "@opendaw/studio-core";
+import type { DeviceId } from "@/lib/midiEffects/devices";
+import { AudioUnitType, IconSymbol, type Pointers } from "@opendaw/studio-enums";
 import { UUID } from "@opendaw/lib-std";
 
 export type Graph = BoxGraph<BoxIO.TypeMap>;
@@ -94,4 +100,67 @@ export function graphWithZeitgeist(): ZeitgeistGraph {
     });
     return { boxGraph, unit, device, groove };
   });
+}
+
+/** What every stock MIDI effect box has, typed structurally: the `EffectBox` union's `host` is an intersection. */
+interface MidiEffectBoxFields {
+  readonly label: StringField;
+  readonly index: Int32Field;
+  readonly host: PointerField<Pointers.MIDIEffectHost>;
+}
+
+export interface MidiEffectFixture {
+  readonly boxGraph: Graph;
+  readonly unit: AudioUnitBox;
+  readonly box: EffectBox;
+  /** The SDK's own adapter, so parameters carry their real value and string mappings */
+  readonly adapter: MidiEffectDeviceAdapter;
+  readonly editing: BoxEditing;
+}
+
+/**
+ * One instrument unit with one stock MIDI effect on its chain, created by hand the way the factories do
+ * (a Zeitgeist gets its own groove box). The adapter context is the minimum the device adapters touch
+ * off the main thread: the parameter registry, plus a `BoxAdapters` for the Zeitgeist's groove adapter.
+ */
+export function midiEffectFixture(id: DeviceId): MidiEffectFixture {
+  const skeleton = ProjectSkeleton.empty({ createOutputMaximizer: false, createDefaultUser: false });
+  const { boxGraph } = skeleton;
+  const { unit, box } = transact(boxGraph, () => {
+    const unit = AudioUnitFactory.create(skeleton, AudioUnitType.Instrument, Option.None);
+    const common = (label: string) => (box: MidiEffectBoxFields) => {
+      box.label.setValue(label);
+      box.index.setValue(0);
+      box.host.refer(unit.midiEffects);
+    };
+    switch (id) {
+      case "arpeggio": return { unit, box: ArpeggioDeviceBox.create(boxGraph, UUID.generate(), common("Arpeggio")) };
+      case "pitch": return { unit, box: PitchDeviceBox.create(boxGraph, UUID.generate(), common("Pitch")) };
+      case "velocity": return { unit, box: VelocityDeviceBox.create(boxGraph, UUID.generate(), common("Velocity")) };
+      case "zeitgeist": {
+        const groove = GrooveShuffleBox.create(boxGraph, UUID.generate(), (box) => {
+          box.label.setValue("Shuffle");
+          box.duration.setValue(480);
+          box.amount.setValue(0.6);
+        });
+        return {
+          unit,
+          box: ZeitgeistDeviceBox.create(boxGraph, UUID.generate(), (box) => {
+            common("Zeitgeist")(box);
+            box.groove.refer(groove);
+          }),
+        };
+      }
+    }
+  });
+  const context = { boxGraph, parameterFieldAdapters: new ParameterFieldAdapters(), isMainThread: false } as unknown as {
+    -readonly [K in keyof BoxAdaptersContext]: BoxAdaptersContext[K];
+  };
+  context.boxAdapters = new BoxAdapters(context as BoxAdaptersContext);
+  const adapter: MidiEffectDeviceAdapter =
+    box instanceof ArpeggioDeviceBox ? new ArpeggioDeviceBoxAdapter(context, box)
+    : box instanceof PitchDeviceBox ? new PitchDeviceBoxAdapter(context, box)
+    : box instanceof VelocityDeviceBox ? new VelocityDeviceBoxAdapter(context, box)
+    : new ZeitgeistDeviceBoxAdapter(context, box as ZeitgeistDeviceBox);
+  return { boxGraph, unit, box, adapter, editing: new BoxEditing(boxGraph) };
 }
