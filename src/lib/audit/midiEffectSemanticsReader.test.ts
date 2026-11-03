@@ -26,7 +26,7 @@ describe("readNotes", () => {
     expect(notes[2].peak / notes[0].peak).toBeCloseTo(0.5, 2);
   });
   it("reads pitch within 0.5 cents at 65 Hz, 261.6 Hz and 4186 Hz, with cents", () => {
-    for (const [pitch, cents] of [[36, 0], [60, 12.5], [108, -50]] as const) {
+    for (const [pitch, cents] of [[36, 0], [60, 12.5], [108, -45]] as const) {
       const out = new Float32Array(RATE);
       tone(out, 100, 200, hzOf(pitch, cents), 0.7);
       const [note] = readNotes(out, RATE);
@@ -76,9 +76,11 @@ describe("sineSample / frequencyToPitch / toFigure", () => {
     expect(s.length).toBe(RATE);
     expect(frequencyToPitch(readNotes(s, RATE)[0].frequencyHz!).pitch).toBe(69);
   });
-  it("frequencyToPitch maps 440 to 69/0 and 452.9 to 69/+50", () => {
+  it("frequencyToPitch maps 440 to 69/0 and the half-semitone tie up to 70/-50", () => {
     expect(frequencyToPitch(440)).toEqual({ pitch: 69, cents: 0 });
-    expect(frequencyToPitch(440 * 2 ** (0.5 / 12)).cents).toBeCloseTo(50, 3);
+    const tie = frequencyToPitch(440 * 2 ** (0.5 / 12));
+    expect(tie.pitch).toBe(70);
+    expect(tie.cents).toBeCloseTo(-50, 3);
   });
   it("toFigure nets the instrument offset and normalises the peak", () => {
     const figure = toFigure({ onsetFrame: 4812, endFrame: 7692, peak: 0.35, frequencyHz: 261.6, jitterCents: 0.1, cycles: 10 }, RATE, 0.7, 12);

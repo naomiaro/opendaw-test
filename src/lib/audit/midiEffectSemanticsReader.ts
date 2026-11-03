@@ -43,10 +43,10 @@ export function sineSample(rate: number, seconds: number, hz: number): Float32Ar
   return out;
 }
 
-/** The nearest MIDI pitch at A4 = 440 and the residual in cents (-50..50). */
+/** The nearest MIDI pitch at A4 = 440 and the residual in cents (-50..50); a half-semitone tie rounds up. */
 export function frequencyToPitch(hz: number): { pitch: number; cents: number } {
   const midi = 69 + 12 * Math.log2(hz / 440);
-  const pitch = Math.round(midi - 1e-9);
+  const pitch = Math.round(midi);
   return { pitch, cents: (midi - pitch) * 100 };
 }
 
