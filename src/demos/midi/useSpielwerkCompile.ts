@@ -1,15 +1,15 @@
 /**
- * Compiling a Spielwerk script on demand and reading the parameters it declares. On a rejected
- * compile the device keeps its last good script: the compiler validates syntax before it writes,
- * but a module that fails to evaluate lands after the write, so the previous source is restored
- * when the field changed. A successful compile is a MIDI-chain change: the engine drops the
- * instrument's sounding voices, so the caller is told to restart the pattern.
+ * Compiling a Spielwerk script on demand and reading the parameters it declares. A rejected compile
+ * leaves the device on its last good script (`compileWithRestore`). A successful compile hot-swaps
+ * the script in the worklet, which drops the old runtime's held notes without note-offs, so the
+ * caller is told to restart the pattern.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Project } from "@opendaw/studio-core";
 import { ScriptCompiler } from "@opendaw/studio-adapters";
 import type { SpielwerkDeviceBox } from "@opendaw/studio-boxes";
 import { readScriptParams, writeScriptParam, type ScriptParam } from "@/lib/scriptParams";
+import { compileWithRestore } from "@/lib/midiEffects/spielwerkCompile";
 
 export interface SpielwerkCompile {
   /** Rejects with the compiler's error; the device then still runs its previous script. */
@@ -38,19 +38,14 @@ export function useSpielwerkCompile(
 
   const compile = useCallback(async (source: string) => {
     if (!project || !audioContext || !box) throw new Error("the engine is still starting");
-    const previous = box.code.getValue();
     setBusy(true);
     try {
-      await compilerRef.current!.compile(audioContext, project.editing, box, source);
-    } catch (error) {
-      if (box.code.getValue() !== previous) {
-        project.editing.modify(() => box.code.setValue(previous));
-      }
-      throw error;
+      await compileWithRestore(compilerRef.current!, audioContext, project.editing, box, source);
     } finally {
       setBusy(false);
+      // On a rejection the previous script's boxes are back; either way the sliders follow the device.
+      setParams(readScriptParams(box));
     }
-    setParams(readScriptParams(box));
     onCompiled();
   }, [project, audioContext, box, onCompiled]);
 

@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AnimationFrame } from "@opendaw/lib-dom";
-import type { Terminable } from "@opendaw/lib-std";
+import { UUID, type Terminable } from "@opendaw/lib-std";
 import { EffectFactories, type Project } from "@opendaw/studio-core";
 import { InstrumentFactories, NoteStreamReceiver, ScriptDeclaration } from "@opendaw/studio-adapters";
 import type { AudioUnitBox, NoteEventBox, NoteRegionBox, SpielwerkDeviceBox, VaporisateurDeviceBox } from "@opendaw/studio-boxes";
@@ -58,6 +58,8 @@ function SpielwerkDemo() {
   const [activeScript, setActiveScript] = useState<ScriptId | null>(DEFAULT_SCRIPT);
   const [source, setSource] = useState(scriptById(DEFAULT_SCRIPT).source);
   const [restorable, setRestorable] = useState<string | null>(null);
+  /** A load that failed to compile, or the worklet's runtime message; cleared by the next successful compile. */
+  const [pageError, setPageError] = useState<string | null>(null);
   /** The source the device runs; its declarations give the sliders their ranges. */
   const [compiledSource, setCompiledSource] = useState<string | null>(null);
 
@@ -103,6 +105,10 @@ function SpielwerkDemo() {
           })
           .unwrap("createNoteRegion");
         heldRef.current = writePattern(project, regionBox, [], patternRef.current);
+        subs.push(project.engine.subscribeDeviceMessage(UUID.toString(spielwerk.address.uuid), (message) => {
+          if (!mounted) return;
+          setPageError(`The script failed while running and the device is silenced until it is fixed and compiled again: ${message}`);
+        }));
         subs.push(project.engine.isPlaying.catchupAndSubscribe((obs) => {
           if (!mounted) return;
           const playing = obs.getValue();
@@ -166,14 +172,23 @@ function SpielwerkDemo() {
   const handleCompile = useCallback(async (text: string) => {
     await compile(text);
     setCompiledSource(text);
+    setPageError(null);
   }, [compile]);
+
+  /** The visitor's own compile: a success also retires the Restore link, whose text is from before. */
+  const handleUserCompile = useCallback(async (text: string) => {
+    await handleCompile(text);
+    setRestorable(null);
+  }, [handleCompile]);
 
   /** Put `text` in the editor and compile it, keeping the current text for one Restore if it differs. */
   const loadSource = useCallback((text: string, scriptId: ScriptId | null) => {
     setRestorable((current) => current ?? (source !== text ? source : null));
     setSource(text);
     setActiveScript(scriptId);
-    handleCompile(text).catch((error: unknown) => console.warn("Loaded script failed to compile: " + String(error)));
+    handleCompile(text).catch((error: unknown) => {
+      setPageError(`The loaded script failed to compile: ${error instanceof Error ? error.message : String(error)}`);
+    });
   }, [source, handleCompile]);
 
   const restore = useCallback(() => {
@@ -303,11 +318,16 @@ function SpielwerkDemo() {
             <SpielwerkEditor
               source={source}
               onChange={setSource}
-              onCompile={handleCompile}
+              onCompile={handleUserCompile}
               busy={busy || !built}
               restorable={restorable}
               onRestore={restore}
             />
+            {pageError !== null && (
+              <Callout.Root color="red" size="1">
+                <Callout.Text style={{ fontFamily: "var(--mc-mono)", whiteSpace: "pre-wrap" }}>{pageError}</Callout.Text>
+              </Callout.Root>
+            )}
             {noPass && (
               <Text size="1" color="gray">This script declares <code>// @no-pass</code>: the device emits only what it yields. A script that yields nothing is then silent.</Text>
             )}

@@ -2,7 +2,7 @@
 import "@/lib/testing/domSetup";
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Theme } from "@radix-ui/themes";
 import { SpielwerkEditor } from "./SpielwerkEditor";
@@ -58,6 +58,34 @@ describe("SpielwerkEditor", () => {
     show({ onCompile: vi.fn(() => Promise.reject(new Error("Malformed @param: 'x'"))) });
     await user.click(screen.getByRole("button", { name: "Compile" }));
     expect(await screen.findByText("Malformed @param: 'x'")).toBeDefined();
+  });
+
+  it("Tab inserts four spaces and Shift+Tab is left to the browser", async () => {
+    const user = userEvent.setup();
+    const { props } = show({ source: "" });
+    const editor = screen.getByRole("textbox");
+    editor.focus();
+    await user.keyboard("{Tab}");
+    expect(props.onChange).toHaveBeenCalledWith("    ");
+    // fireEvent.keyDown returns false when a handler called preventDefault
+    expect(fireEvent.keyDown(editor, { key: "Tab", shiftKey: true })).toBe(true);
+  });
+
+  it("Escape leaves the editor", async () => {
+    const user = userEvent.setup();
+    show();
+    const editor = screen.getByRole("textbox");
+    editor.focus();
+    await user.keyboard("{Escape}");
+    expect(document.activeElement).not.toBe(editor);
+  });
+
+  it("Cmd/Ctrl+Enter while busy does not compile", async () => {
+    const user = userEvent.setup();
+    const { props } = show({ busy: true });
+    screen.getByRole("textbox").focus();
+    await user.keyboard("{Meta>}{Enter}{/Meta}");
+    expect(props.onCompile).not.toHaveBeenCalled();
   });
 
   it("restore previous brings back the replaced text", async () => {

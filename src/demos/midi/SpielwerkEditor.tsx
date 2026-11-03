@@ -18,6 +18,8 @@ export interface SpielwerkEditorProps {
   onRestore(): void;
 }
 
+const INDENT = "    ";
+
 const EDITOR_STYLE: React.CSSProperties = {
   width: "100%",
   minHeight: 320,
@@ -50,16 +52,21 @@ export const SpielwerkEditor: React.FC<SpielwerkEditorProps> = ({ source, onChan
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
-      compile();
+      if (!busy) compile();
       return;
     }
-    if (event.key === "Tab") {
+    if (event.key === "Escape") {
+      event.currentTarget.blur();
+      return;
+    }
+    // Tab indents by the scripts' own four spaces; Shift+Tab is left to the browser so focus can leave backwards.
+    if (event.key === "Tab" && !event.shiftKey) {
       event.preventDefault();
       const target = event.currentTarget;
       const { selectionStart, selectionEnd } = target;
-      const next = `${source.slice(0, selectionStart)}  ${source.slice(selectionEnd)}`;
+      const next = `${source.slice(0, selectionStart)}${INDENT}${source.slice(selectionEnd)}`;
       onChange(next);
-      requestAnimationFrame(() => target.setSelectionRange(selectionStart + 2, selectionStart + 2));
+      requestAnimationFrame(() => target.setSelectionRange(selectionStart + INDENT.length, selectionStart + INDENT.length));
     }
   };
 
@@ -77,7 +84,7 @@ export const SpielwerkEditor: React.FC<SpielwerkEditorProps> = ({ source, onChan
       />
       <Flex gap="3" align="center" wrap="wrap">
         <Button size="2" onClick={compile} disabled={busy}>Compile</Button>
-        <Text size="1" color="gray">or Cmd/Ctrl+Enter in the editor. Compiling restarts the pattern: the engine drops the sounding voices on a chain change.</Text>
+        <Text size="1" color="gray">or Cmd/Ctrl+Enter in the editor; Tab indents, Escape leaves the editor. Compiling restarts the pattern so no note is left hanging across the swap.</Text>
         {restorable !== null && (
           <Button size="1" variant="ghost" color="gray" onClick={onRestore}>Restore previous</Button>
         )}

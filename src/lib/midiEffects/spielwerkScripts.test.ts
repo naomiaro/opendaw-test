@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ScriptDeclaration } from "@opendaw/studio-adapters";
+import { PATTERNS } from "./patterns";
+import { parameterCorners, sweepScript } from "@/lib/testing/spielwerkRuntime";
 import { SPIELWERK_REFERENCE, SPIELWERK_SCRIPTS, type ScriptId } from "./spielwerkScripts";
 
 const NO_PASS: readonly ScriptId[] = ["humanize", "octave-jump", "strum", "note-filter"];
@@ -125,4 +127,25 @@ describe("SPIELWERK_SCRIPTS", () => {
       expect(() => instantiate(e.example)).not.toThrow();
     }
   });
+});
+
+describe("the scripts through the installed runtime", () => {
+  /** Headroom under the runtime's scheduler limit (128): a slider corner must not get near it. */
+  const SCHEDULED_CEILING = 96;
+  const sources = [
+    ...SPIELWERK_SCRIPTS.map((s) => ({ name: s.id, source: s.source })),
+    ...SPIELWERK_REFERENCE.map((e) => ({ name: `reference:${e.name}`, source: e.example })),
+  ];
+
+  for (const { name, source } of sources) {
+    it(`${name}: every parameter corner on every pattern runs three loops without a runtime error`, () => {
+      for (const corner of parameterCorners(source)) {
+        for (const pattern of PATTERNS) {
+          const result = sweepScript(source, corner, pattern.notes);
+          expect(result.error, `${name} ${JSON.stringify(corner)} on ${pattern.id}`).toBeNull();
+          expect(result.maxScheduled, `${name} ${JSON.stringify(corner)} on ${pattern.id}: scheduled`).toBeLessThanOrEqual(SCHEDULED_CEILING);
+        }
+      }
+    });
+  }
 });

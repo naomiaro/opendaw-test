@@ -5,8 +5,8 @@
  * `// @no-pass` stops the device from forwarding its input. The runtime's rules the scripts obey:
  * a yielded note needs pitch 0..127, velocity 0..1, a positive duration, and a position at or after
  * `block.from` (a position in the past silences the device); a position past `block.to` is kept and
- * played in a later block. The runtime is the SDK's `script-spielwerk` bridge; the reference text here
- * is this repo's own wording.
+ * played in a later block, unless a loop wrap or a seek comes first, which drops what is held. The
+ * runtime is the SDK's `script-spielwerk` bridge; the reference text here is this repo's own wording.
  */
 
 export type ScriptId = "echo" | "chord" | "humanize" | "octave-jump" | "strum" | "note-filter" | "blank";
@@ -21,9 +21,10 @@ export interface SpielwerkScript {
 }
 
 const ECHO = `// @param delay 240 60 960 int pulses
-// @param repeats 3 1 8 int
+// @param repeats 3 1 6 int
 // @param decay 0.6
-// The original is forwarded (no @no-pass); the copies are added on top.
+// The original is forwarded (no @no-pass); the copies are added on top. The runtime holds at
+// most 128 notes for later blocks: six repeats at a whole-note delay on sixteenths stays under it.
 class Processor {
     delay = 240
     repeats = 3
@@ -264,7 +265,7 @@ export const SPIELWERK_REFERENCE: readonly ReferenceEntry[] = [
 class Processor {
     * process(block, events) {
         for (const event of events) {
-            if (event.gate) yield { position: event.position, duration: event.duration, pitch: event.pitch + 12, velocity: event.velocity, cent: event.cent }
+            if (event.gate) yield { position: event.position, duration: event.duration, pitch: Math.min(127, event.pitch + 12), velocity: event.velocity, cent: event.cent }
         }
     }
 }`),
@@ -289,7 +290,7 @@ class Processor {
     signature: "{ gate: true, id, position, duration, pitch, velocity, cent } · { gate: false, id, position, pitch }",
     doc: "Note-ons and note-offs inside the block, in time order. A note-on carries its full duration. Match a note-off to its note-on by id, not by pitch.",
     example: example(`
-// Holds a note's velocity by id so the note-off can log it.
+// Remembers each sounding note's velocity by id until its note-off; yields nothing itself.
 class Processor {
     held = new Map()
     reset() { this.held.clear() }
@@ -304,7 +305,7 @@ class Processor {
   {
     name: "yield",
     signature: "yield { position, duration, pitch, velocity, cent }",
-    doc: "Pitch 0 to 127, velocity 0 to 1, a positive duration in pulses. The position may lie past the block's end (the note is kept and played when its block comes) but never before the block's start: a note in the past silences the device.",
+    doc: "Pitch 0 to 127, velocity 0 to 1, a positive duration in pulses. The position may lie past the block's end (the note is kept and played when its block comes, unless a loop wrap or a seek drops it first; the runtime holds at most 128 such notes) but never before the block's start: a note in the past silences the device until the script is compiled again.",
     example: example(`
 // A copy of every note a beat later.
 class Processor {
