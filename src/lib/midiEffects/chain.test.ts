@@ -1,0 +1,69 @@
+import { describe, expect, it } from "vitest";
+import { Option, UUID } from "@opendaw/lib-std";
+import { BoxEditing } from "@opendaw/lib-box";
+import { ArpeggioDeviceBox, PitchDeviceBox, VelocityDeviceBox, type AudioUnitBox } from "@opendaw/studio-boxes";
+import { AudioUnitFactory, ProjectSkeleton } from "@opendaw/studio-adapters";
+import { AudioUnitType } from "@opendaw/studio-enums";
+import type { EffectBox } from "@opendaw/studio-core";
+import { graphWithZeitgeist, transact } from "@/lib/testing/boxGraphFixtures";
+import { deviceIdOf } from "./devices";
+import { chainBoxes, moveDevice, removeDevice, setDeviceEnabled } from "./chain";
+
+/** Pitch at 0, Velocity at 1, Arpeggio at 2 on one unit's MIDI chain. */
+function threeDevices(): { unit: AudioUnitBox; boxes: EffectBox[]; editing: BoxEditing } {
+  const skeleton = ProjectSkeleton.empty({ createOutputMaximizer: false, createDefaultUser: false });
+  const { boxGraph } = skeleton;
+  return transact(boxGraph, () => {
+    const unit = AudioUnitFactory.create(skeleton, AudioUnitType.Instrument, Option.None);
+    const at = (index: number) => (box: { index: { setValue(v: number): void }; host: { refer(target: unknown): void } }) => {
+      box.index.setValue(index);
+      box.host.refer(unit.midiEffects);
+    };
+    const boxes: EffectBox[] = [
+      PitchDeviceBox.create(boxGraph, UUID.generate(), at(0)),
+      VelocityDeviceBox.create(boxGraph, UUID.generate(), at(1)),
+      ArpeggioDeviceBox.create(boxGraph, UUID.generate(), at(2)),
+    ];
+    return { unit, boxes, editing: new BoxEditing(boxGraph) };
+  });
+}
+
+const ids = (unit: AudioUnitBox) => chainBoxes(unit.midiEffects).map(deviceIdOf);
+
+describe("chain", () => {
+  it("chainBoxes reads the chain in index order", () => {
+    const { unit } = threeDevices();
+    expect(ids(unit)).toEqual(["pitch", "velocity", "arpeggio"]);
+  });
+
+  it("moveDevice(2, 0) puts the last device first", () => {
+    const { unit, editing } = threeDevices();
+    moveDevice(editing, unit.midiEffects, 2, 0);
+    expect(ids(unit)).toEqual(["arpeggio", "pitch", "velocity"]);
+  });
+
+  it("moveDevice(0, 2) puts the first device last", () => {
+    const { unit, editing } = threeDevices();
+    moveDevice(editing, unit.midiEffects, 0, 2);
+    expect(ids(unit)).toEqual(["velocity", "arpeggio", "pitch"]);
+  });
+
+  it("setDeviceEnabled writes the enabled field", () => {
+    const { boxes, editing } = threeDevices();
+    setDeviceEnabled(editing, boxes[0], false);
+    expect(boxes[0].enabled.getValue()).toBe(false);
+  });
+
+  it("removeDevice leaves the chain without it", () => {
+    const { unit, boxes, editing } = threeDevices();
+    removeDevice(editing, boxes[1]);
+    expect(ids(unit)).toEqual(["pitch", "arpeggio"]);
+  });
+
+  it("removeDevice of a zeitgeist takes its groove with it", () => {
+    const { boxGraph, unit, device, groove } = graphWithZeitgeist();
+    removeDevice(new BoxEditing(boxGraph), device);
+    expect(chainBoxes(unit.midiEffects)).toHaveLength(0);
+    expect(groove.isAttached()).toBe(false);
+  });
+});
