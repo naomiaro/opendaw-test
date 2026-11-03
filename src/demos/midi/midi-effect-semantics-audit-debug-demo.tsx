@@ -242,8 +242,14 @@ const App: React.FC = () => {
         if (error instanceof RunAbort || row.id === CALIBRATION_ROW) {
           out.push(record);
           setRecords([...out]);
-          try { removeMidiEffects(project.editing, inserted.filter((box) => box.isAttached())); } catch { /* the run ends anyway */ }
-          throw error instanceof RunAbort ? error : new Error(message);
+          let removal = "";
+          try {
+            removeMidiEffects(project.editing, inserted.filter((box) => box.isAttached()));
+          } catch (cleanupError) {
+            removal = `; and the chain could not be removed: ${String(cleanupError)}`;
+            console.error(`[midi-semantics] ${row.id}: the chain could not be removed after the failure: ${String(cleanupError)}`);
+          }
+          throw error instanceof RunAbort ? new RunAbort(message + removal) : new Error(message + removal);
         }
       }
       try {
