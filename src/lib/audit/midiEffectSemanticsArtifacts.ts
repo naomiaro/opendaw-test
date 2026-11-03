@@ -160,6 +160,32 @@ export function parseSemanticsRegister(json: unknown): SemanticsRegister {
   return register as unknown as SemanticsRegister;
 }
 
+/**
+ * What the page's register fetch means. No register: a 404, or a 200 whose body is the host's HTML fallback for a missing
+ * file (it starts with `<`). Anything else must be the register: another status, a content type that is not JSON, a body
+ * that does not parse, or a register for another rate or bpm than the page renders throws, naming `path`, so a lost or
+ * misplaced register ends the run instead of reading as an unregistered one.
+ */
+export function registerFromFetch(
+  response: { status: number; contentType: string; body: string }, expected: { sampleRate: number; bpm: number }, path: string
+): SemanticsRegister | null {
+  if (response.status === 404) {return null;}
+  if (response.status !== 200) {throw new Error(`${path}: HTTP ${response.status}`);}
+  if (response.body.trimStart().startsWith("<")) {return null;}
+  if (!response.contentType.includes("json")) {throw new Error(`${path}: content type ${response.contentType || "none"}, not JSON`);}
+  let json: unknown;
+  try {
+    json = JSON.parse(response.body);
+  } catch (cause) {
+    throw new Error(`${path}: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+  }
+  const register = parseSemanticsRegister(json);
+  if (register.sampleRate !== expected.sampleRate || register.bpm !== expected.bpm) {
+    throw new Error(`${path}: a register of ${register.sampleRate} Hz and ${register.bpm} bpm, the page renders ${expected.sampleRate} Hz and ${expected.bpm} bpm`);
+  }
+  return register;
+}
+
 /** The row filters of a run that are not `all`, as `name=value`; empty for a full run. */
 export function partialParams(summary: SemanticsSummary): string[] {
   return ([["rows", summary.rowsParam], ["device", summary.deviceParam], ["pattern", summary.patternParam]] as const)

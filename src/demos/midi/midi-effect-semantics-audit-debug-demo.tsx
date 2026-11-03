@@ -8,7 +8,9 @@
 // accepted register of the same SDK. The page converts, loops and renders; every reading, rule and
 // judgement is in `src/lib/audit/midiEffectSemantics*.ts`. DOM contract: #audit-state carries
 // data-audit-state walking setup → running:<row> → done | error:<message>; a row that failed on its own
-// is a red row under `done`, a failure that voids the later rows ends the run in `error:`.
+// is a red row under `done`, and #audit-state's data-error-rows counts them (0 on a clean run); a failure
+// that voids the later rows ends the run in `error:` (a register fetch that is neither a 404 nor the
+// host's fallback page, a register of another rate or bpm, a calibration row that did not run).
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { PPQN } from "@opendaw/lib-dsp";
@@ -34,14 +36,14 @@ import {
   markReadability, questionsFor, RULE_SENTENCES, toPredictedFigures, type RuleContext,
 } from "@/lib/audit/midiEffectSemanticsRules";
 import {
-  applySettings, FACTORY_KEYS, NANO_ATTACK_SECONDS, NANO_RELEASE_SECONDS, predictedVariants, REGION_DURATION_PPQN,
+  applySettings, CALIBRATION_ROW_ID, FACTORY_KEYS, NANO_ATTACK_SECONDS, NANO_RELEASE_SECONDS, predictedVariants, REGION_DURATION_PPQN,
   REGION_POSITION_PPQN, renderRange, renderSeconds, resolveRows, ROOT_KEY, rowNotes, SAMPLE_HZ, SAMPLE_SECONDS, AUDIT_PATTERNS, type SemanticsRow,
 } from "@/lib/audit/midiEffectSemanticsRows";
 import {
-  compareRegister, describeMismatch, judgeRule, silentRenderError, TOLERANCES, verdictOf, type Variant,
+  compareRegister, describeMismatch, judgeRule, silentRenderError, TOLERANCES, verdictColor, verdictOf, type Variant,
 } from "@/lib/audit/midiEffectSemanticsVerdict";
 import {
-  MIDI_SEMANTICS_SCHEMA_VERSION, parseSemanticsRegister, roundFigure, summaryFileName, type SemanticsRegister,
+  MIDI_SEMANTICS_SCHEMA_VERSION, registerFromFetch, roundFigure, summaryFileName, type SemanticsRegister,
   type SemanticsRowRecord, type SemanticsSummary,
 } from "@/lib/audit/midiEffectSemanticsArtifacts";
 import "@radix-ui/themes/styles.css";
@@ -64,7 +66,6 @@ const PATTERN_PARAM = params.get("pattern") ?? "all";
 
 const NOTE_URL = "https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-11-03-midi-effect-semantics/note.md";
 const REGISTER_PATH = `/debug/2026-11-03-midi-effect-semantics/register/${RATE}.json`;
-const CALIBRATION_ROW = "dry-sixteenths";
 const CALIBRATION_NOTES = 32;
 const MARK_OPTIONS = {
   attackMs: NANO_ATTACK_SECONDS * 1000,
@@ -77,22 +78,21 @@ const RULE_RANGE = renderRange(PATTERN_BPM);
 
 interface LoadedRegister { register: SemanticsRegister | null; source: string | null }
 
-/** 404 or any non-OK → no register. A body that is not JSON is the host's fallback page for a missing file: no register
- *  either. A JSON body that does not parse as a register ends the run: a corrupt register is not "unregistered". */
+/** `registerFromFetch` reads the response: no register only on a 404 or the host's HTML fallback; anything else that is not
+ *  this rate's and bpm's register throws, and the run ends in `error:`. */
 async function fetchRegister(): Promise<LoadedRegister> {
   const response = await fetch(REGISTER_PATH);
-  if (!response.ok) return { register: null, source: null };
-  const type = response.headers.get("content-type") ?? "";
-  if (!type.includes("json")) return { register: null, source: null };
-  const register = parseSemanticsRegister(await response.json());
-  return { register, source: REGISTER_PATH };
+  let register: SemanticsRegister | null;
+  try {
+    register = registerFromFetch(
+      { status: response.status, contentType: response.headers.get("content-type") ?? "", body: await response.text() },
+      { sampleRate: RATE, bpm: PATTERN_BPM }, REGISTER_PATH,
+    );
+  } catch (error) {
+    throw new RunAbort(`register: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+  }
+  return { register, source: register === null ? null : REGISTER_PATH };
 }
-
-const badgeColor = (verdict: string): "green" | "amber" | "red" => {
-  if (verdict === "error" || verdict.includes("rule broken")) return "red";
-  if (verdict === "as-registered" || verdict === "rule holds, unregistered") return "green";
-  return "amber";
-};
 
 const recordFigure = (row: SemanticsRowRecord): string => {
   const parts: string[] = [];
@@ -154,6 +154,7 @@ const App: React.FC = () => {
     const { register, source: loadedSource } = await fetchRegister();
     setRegisterSource(loadedSource);
     let calibrated: Calibration = { referencePeak: 1, instrumentOffsetFrames: 0 };
+    let calibrationRan = false;
 
     const useRowPattern = (row: SemanticsRow): void => {
       if (patternRef.current === row.pattern) return;
@@ -212,12 +213,13 @@ const App: React.FC = () => {
         const renderMs = performance.now() - renderStart;
         const channel = channels[0];
         const notes = readNotes(channel, RATE, READER_DEFAULTS);
-        if (row.id === CALIBRATION_ROW) {
+        if (row.id === CALIBRATION_ROW_ID) {
           try {
             calibrated = calibrationFrom(notes, RATE, PPQN.pulsesToSeconds(REGION_POSITION_PPQN, PATTERN_BPM), CALIBRATION_NOTES);
           } catch (error) {
             throw new RunAbort(`${row.id}: ${error instanceof Error ? error.message : String(error)}`);
           }
+          calibrationRan = true;
           setCalibration(calibrated);
         }
         const cal = calibrated;
@@ -227,11 +229,12 @@ const App: React.FC = () => {
           deviations: variant.deviations,
           predicted: toPredictedFigures(markReadability(variant.notes, PATTERN_BPM, MARK_OPTIONS), PATTERN_BPM),
         }));
-        const intent = judged.find((variant) => variant.deviations.size === 0) ?? judged[0];
+        const intent = judged.find((variant) => variant.deviations.size === 0);
+        if (intent === undefined) throw new Error("the rule gave no intent variant");
         // a render that is silent where the rule predicts sound did not play the row: an error, not a judgement
         const silent = silentRenderError(channelPeak(channel), judged);
         if (silent !== null) throw new Error(silent);
-        const unreadable = intent === undefined ? 0 : intent.predicted.filter((p) => p.readability !== "readable").length;
+        const unreadable = intent.predicted.filter((p) => p.readability !== "readable").length;
         const rule = judgeRule(read, judged, TOLERANCES, readAt);
         const registered = compareRegister({ notes: read, unreadable }, register?.rows[row.id], TOLERANCES);
         const enabledChain = row.chain.filter((stage) => stage.enabled).map((stage) => stage.setting);
@@ -239,7 +242,7 @@ const App: React.FC = () => {
         const mismatch = rule.kind === "broken" && rule.mismatch !== null ? rule.mismatch : registered.mismatch;
         record = {
           id: row.id, label: row.label, group: row.group, pattern: row.pattern, chain: row.chain.map((stage) => ({ ...stage })),
-          predicted: intent?.predicted ?? [], ruleSentence: ruleSentenceOf(row), read, unreadable, rule: rule.kind,
+          predicted: intent.predicted, ruleSentence: ruleSentenceOf(row), read, unreadable, rule: rule.kind,
           deviations: rule.deviations, questions: questionsFor(enabledChain, context, rowNotes(row)), register: registered.kind,
           verdict, figure: mismatch === null ? null : describeMismatch(mismatch), error: null, renderMs,
         };
@@ -247,7 +250,7 @@ const App: React.FC = () => {
         const message = error instanceof Error ? error.message : String(error);
         console.error(`[midi-semantics] ${row.id} failed: ${message}`);
         record = errorRecord(row, message, performance.now() - renderStart);
-        if (error instanceof RunAbort || row.id === CALIBRATION_ROW) {
+        if (error instanceof RunAbort || row.id === CALIBRATION_ROW_ID) {
           out.push(record);
           setRecords([...out]);
           let removal = "";
@@ -271,6 +274,8 @@ const App: React.FC = () => {
       console.log(`[midi-semantics] ${record.id}: ${record.verdict}${recordFigure(record) === "" ? "" : " — " + recordFigure(record)}`);
       setRecords([...out]);
     }
+    // every figure after the calibration row is read against its reference peak and offset: without it the run means nothing
+    if (!calibrationRan) throw new RunAbort(`the calibration row ${CALIBRATION_ROW_ID} did not run`);
 
     const summary: SemanticsSummary = {
       schemaVersion: MIDI_SEMANTICS_SCHEMA_VERSION,
@@ -337,7 +342,7 @@ const App: React.FC = () => {
             <Callout.Icon><InfoCircledIcon /></Callout.Icon>
             <Callout.Text>
               Status: {status}{" "}
-              <Badge id="audit-state" data-audit-state={auditState} color={auditState.startsWith("error") ? "red" : auditState === "done" ? "green" : "amber"}>
+              <Badge id="audit-state" data-audit-state={auditState} data-error-rows={records.filter((row) => row.error !== null).length} color={auditState.startsWith("error") ? "red" : auditState === "done" ? "green" : "amber"}>
                 {auditState}
               </Badge>
             </Callout.Text>
@@ -349,7 +354,7 @@ const App: React.FC = () => {
               <>
                 A note is read from the render as the first frame above {READER_DEFAULTS.onsetThreshold} absolute until a
                 {" "}{READER_DEFAULTS.gapMs} ms gap; its pitch is a zero-crossing fit, its velocity the peak over the dry
-                sixteenths' loudest. <Code>{CALIBRATION_ROW}</Code> gives the reference peak and the sampler's own offset.
+                sixteenths' loudest. <Code>{CALIBRATION_ROW_ID}</Code> gives the reference peak and the sampler's own offset.
               </>
             }
             actions={
@@ -376,7 +381,7 @@ const App: React.FC = () => {
                   {records.map((row) => (
                     <Table.Row key={row.id}>
                       <Table.Cell>{row.id}</Table.Cell>
-                      <Table.Cell><Badge color={badgeColor(row.verdict)}>{row.verdict}</Badge></Table.Cell>
+                      <Table.Cell><Badge color={verdictColor(row.verdict)}>{row.verdict}</Badge></Table.Cell>
                       <Table.Cell>{row.read.length} / {readable(row)} ({row.unreadable})</Table.Cell>
                       <Table.Cell>{recordFigure(row) === "" ? "—" : recordFigure(row)}</Table.Cell>
                       <Table.Cell>{row.renderMs.toFixed(0)}</Table.Cell>

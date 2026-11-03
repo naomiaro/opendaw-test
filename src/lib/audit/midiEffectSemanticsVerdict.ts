@@ -193,6 +193,13 @@ export function verdictOf(rule: RuleJudgement, register: RegisterJudgement, erro
   return rule.kind === "holds" ? "as-registered" : `as-registered, ${body}`;
 }
 
+/** A verdict's badge: red for an error or a broken rule, green only for a row that holds as registered, amber for every
+ *  other (a deviation, no rule, a change, and an unregistered row: each deserves a look). */
+export function verdictColor(verdict: string): "green" | "amber" | "red" {
+  if (verdict === "error" || verdict.includes("rule broken")) {return "red";}
+  return verdict === "as-registered" ? "green" : "amber";
+}
+
 /**
  * The spec's `error` for a render that is silent where the rule predicts sound: `peak` is the rendered channel's largest
  * `|x|`, `variants` the intent and each known-deviation subset as judged. Null unless the peak is 0 and EVERY variant

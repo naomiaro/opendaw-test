@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { NoteFigure } from "./midiEffectSemanticsReader";
 import type { PredictedFigure } from "./midiEffectSemanticsRules";
 import {
-  compareRegister, describeMismatch, judgeRule, silentRenderError, TOLERANCES, verdictOf,
+  compareRegister, describeMismatch, judgeRule, silentRenderError, TOLERANCES, verdictColor, verdictOf,
   type Mismatch, type RuleJudgement, type Variant
 } from "./midiEffectSemanticsVerdict";
 
@@ -295,5 +295,19 @@ describe("describeMismatch", () => {
   });
   it("an index of -1 on a count is the unreadable count", () => {
     expect(describeMismatch(m("count", -1, 0, 2, "register"))).toBe("unreadable 2 expected 0");
+  });
+});
+
+describe("verdictColor", () => {
+  it.each([
+    ["as-registered", "green"],
+    ["as-registered, matches-known-deviation arpeggio-velocity-matrix", "amber"],
+    ["rule holds, unregistered", "amber"],
+    ["no rule, unregistered", "amber"],
+    ["changed, rule holds", "amber"],
+    ["as-registered, rule broken", "red"],
+    ["error", "red"],
+  ] as const)("%s is %s: only a row that holds as registered is green", (verdict, color) => {
+    expect(verdictColor(verdict)).toBe(color);
   });
 });

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   MIDI_SEMANTICS_SCHEMA_VERSION, SUMMARY_NAME, parseSemanticsRegister, partialParams, parseSemanticsSummary, registerDiff,
-  registerFromSummary, roundFigure, summaryFileName, type SemanticsRowRecord, type SemanticsSummary
+  registerFromFetch, registerFromSummary, roundFigure, summaryFileName, type SemanticsRowRecord, type SemanticsSummary
 } from "./midiEffectSemanticsArtifacts";
 import type { NoteFigure } from "./midiEffectSemanticsReader";
 
@@ -186,5 +186,29 @@ describe("midiEffectSemanticsArtifacts", () => {
     const near = registerFromSummary(summary([record("keep", { read: [note(0.5)] }), record("gone"), record("moves")]), { force: false, acceptedAt });
     expect(registerDiff(previous, near).changed).toEqual([]);
     expect(registerDiff(null, next)).toEqual({ added: ["keep", "moves", "new"], removed: [], changed: [] });
+  });
+
+  describe("registerFromFetch", () => {
+    const path = "/debug/2026-11-03-midi-effect-semantics/register/48000.json";
+    const expected = { sampleRate: 48000, bpm: 120 };
+    const body = JSON.stringify(registerFromSummary(summary([record("a")]), { force: false, acceptedAt }));
+    const json = (over: Partial<{ status: number; contentType: string; body: string }> = {}) => ({ status: 200, contentType: "application/json", body, ...over });
+    it("a 404 or the host's HTML fallback is no register", () => {
+      expect(registerFromFetch(json({ status: 404, contentType: "text/html", body: "Not found" }), expected, path)).toBeNull();
+      expect(registerFromFetch(json({ contentType: "text/html", body: "  <!doctype html><html></html>" }), expected, path)).toBeNull();
+    });
+    it("a register of the page's rate and bpm parses", () => {
+      expect(registerFromFetch(json(), expected, path)!.rows.a!.notes).toHaveLength(1);
+    });
+    it("any other status, a body that is not JSON, or a corrupt register throws, naming the path", () => {
+      expect(() => registerFromFetch(json({ status: 500, contentType: "text/plain", body: "boom" }), expected, path)).toThrow(`${path}: HTTP 500`);
+      expect(() => registerFromFetch(json({ contentType: "text/plain", body: "rows: none" }), expected, path)).toThrow(`${path}: content type text/plain, not JSON`);
+      expect(() => registerFromFetch(json({ body: "{ not json" }), expected, path)).toThrow(path);
+      expect(() => registerFromFetch(json({ body: JSON.stringify({ schemaVersion: 1 }) }), expected, path)).toThrow(/register: sdkVersion/);
+    });
+    it("a register of another rate or bpm throws: it must not be judged against", () => {
+      expect(() => registerFromFetch(json(), { sampleRate: 44100, bpm: 120 }, path)).toThrow(`${path}: a register of 48000 Hz and 120 bpm, the page renders 44100 Hz and 120 bpm`);
+      expect(() => registerFromFetch(json(), { sampleRate: 48000, bpm: 100 }, path)).toThrow(/the page renders 48000 Hz and 100 bpm/);
+    });
   });
 });
