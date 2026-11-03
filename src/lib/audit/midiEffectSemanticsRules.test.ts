@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { GrooveShuffleBoxAdapter, ParameterFieldAdapters, VelocityDeviceBoxAdapter, type BoxAdaptersContext } from "@opendaw/studio-adapters";
 import { graphWithZeitgeist, midiEffectFixture, transact } from "@/lib/testing/boxGraphFixtures";
+import { READER_DEFAULTS, frequencyToPitch, readNotes } from "./midiEffectSemanticsReader";
 import {
   ARPEGGIO_RATE_PPQN, DEVIATIONS, DEVIATION_SUBSETS, QUESTIONS, RULE_SENTENCES, arpeggioIntentVelocity, arpeggioMatrixVelocity,
   arpeggioRule, clipToRange, composeRules, markReadability, pitchRule, questionsFor, toPredictedFigures, velocityRule, zeitgeistRule,
@@ -218,11 +219,46 @@ describe("markReadability", () => {
     expect(marked.map((n) => [n.position, n.pitch])).toEqual([[0, 70], [960, 60], [960, 64]]);
     expect(marked[0]).toMatchObject({ duration: 480, cent: 0, velocity: 1 });
   });
-  it("a short span is judged on its own pitch: 13 ms is too short at 60 and enough at 96", () => {
-    // threshold = 2 × 1 ms + 3 cycles; C4 (261.6 Hz) 13.47 ms, C7 (2093 Hz) 3.43 ms; 26 pulses = 13.54 ms; 10 pulses = 5.2 ms
-    expect(markReadability([at(0, 25, 60)], 120, options)[0].readability).toBe("too-short");
-    expect(markReadability([at(0, 26, 60)], 120, options)[0].readability).toBe("readable");
+  it("a short span is judged on its own pitch: 18.3 ms is too short at 60 and enough at 96", () => {
+    // threshold = 3 × 1 ms + 4 periods; C4 (261.6 Hz) 18.29 ms, C7 (2093 Hz) 4.91 ms; 35 pulses = 18.23 ms, 36 = 18.75 ms; 10 pulses = 5.2 ms
+    expect(markReadability([at(0, 35, 60)], 120, options)[0].readability).toBe("too-short");
+    expect(markReadability([at(0, 36, 60)], 120, options)[0].readability).toBe("readable");
     expect(markReadability([at(0, 10, 96)], 120, options)[0].readability).toBe("readable");
+  });
+  it("a thirty-second at G#1 is too short: three periods fit, the reader's window needs four crossings", () => {
+    // pitch 32 = 51.9 Hz, period 19.27 ms; 120 pulses = 62.5 ms, window 59.5 ms (run 1793741626351, pitch-st-36-chromatic read no pitch)
+    expect(markReadability([at(0, 120, 32)], 120, options)[0].readability).toBe("too-short");
+    expect(markReadability([at(0, 120, 40)], 120, options)[0].readability).toBe("readable");
+  });
+  it("every span it marks readable, the reader reads at its pitch, at any phase", () => {
+    // the voice as the sampler renders it: sin × env², env a 1 ms linear attack and release
+    const rate = 48000;
+    const voice = (pitch: number, durationMs: number, phase: number): Float32Array => {
+      const hz = 440 * 2 ** ((pitch - 69) / 12);
+      const lead = 480;
+      const length = Math.round(durationMs * rate / 1000);
+      const ramp = rate / 1000;
+      const out = new Float32Array(lead + length + ramp + 480);
+      for (let i = 0; i < length + ramp; i++) {
+        const env = i < ramp ? i / ramp : i < length ? 1 : Math.max(0, 1 - (i - length) / ramp);
+        out[lead + i] = Math.sin(2 * Math.PI * hz * i / rate + phase) * env * env;
+      }
+      return out;
+    };
+    let checked = 0;
+    for (let pitch = 24; pitch <= 96; pitch += 4) {
+      for (let pulses = 8; pulses <= 160; pulses += 4) {
+        if (markReadability([at(0, pulses, pitch)], 120, options)[0].readability !== "readable") continue;
+        for (const phase of [0, 1, 2, 3, 4, 5]) {
+          const notes = readNotes(voice(pitch, pulses * 500 / 960, phase), rate, READER_DEFAULTS);
+          expect(notes).toHaveLength(1);
+          expect(notes[0].frequencyHz, `pitch ${pitch}, ${pulses} pulses, phase ${phase}`).not.toBeNull();
+          expect(frequencyToPitch(notes[0].frequencyHz!).pitch).toBe(pitch);
+          checked++;
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(1000);
   });
   it("converts to figures in milliseconds at the tempo", () => {
     const figures = toPredictedFigures(markReadability([{ position: 960, duration: 480, pitch: 60, cent: 12.5, velocity: 0.5 }], 120, options), 120);
@@ -241,10 +277,10 @@ describe("DEVIATION_SUBSETS", () => {
 });
 
 describe("clipToRange", () => {
-  const range = { from: 3840, to: 11520 };
+  const range = { from: 3840, to: 12000 };
   const note = (position: number, duration: number): RuleNote => ({ position, duration, pitch: 60, cent: 0, velocity: 1 });
-  it("clips a note crossing the end, drops one starting at it, leaves one inside", () => {
-    const out = clipToRange([note(11400, 240), note(11520, 120), note(4000, 240)], range);
-    expect(out).toEqual([note(11400, 120), note(4000, 240)]);
+  it("clips a note crossing the render's end, drops one starting at it, leaves one inside", () => {
+    const out = clipToRange([note(11880, 240), note(12000, 120), note(4000, 240)], range);
+    expect(out).toEqual([note(11880, 120), note(4000, 240)]);
   });
 });

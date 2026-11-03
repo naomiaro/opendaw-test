@@ -8,7 +8,7 @@ import { zeitgeistGrooveBox } from "./midiEffectChain";
 import { arpeggioRule, type RuleContext } from "./midiEffectSemanticsRules";
 import {
   ARPEGGIO_BASE, AUDIT_PATTERNS, FACTORY_KEYS, HELD_NOTE, PITCH_BASE, REGION_DURATION_PPQN, REGION_POSITION_PPQN, SAMPLE_SECONDS,
-  SEMANTICS_ROWS, VELOCITY_BASE, ZEITGEIST_BASE, applySettings, predictedVariants, renderSeconds, resolveRows, rowNotes,
+  SEMANTICS_ROWS, VELOCITY_BASE, ZEITGEIST_BASE, applySettings, predictedVariants, renderRange, renderSeconds, resolveRows, rowNotes,
   type RowGroup, type SemanticsRow,
 } from "./midiEffectSemanticsRows";
 
@@ -174,5 +174,19 @@ describe("applySettings", () => {
     expect(() => transact(pitch.boxGraph, () => applySettings(pitch.box, { device: "velocity", settings: VELOCITY_BASE }))).toThrow();
     expect(PITCH_BASE).toEqual({ semiTones: 0, cents: 0, octaves: 0 });
     expect(ZEITGEIST_BASE).toEqual({ amount: 0.6, duration: 480 });
+  });
+});
+
+describe("renderRange", () => {
+  it("runs from the region's start to the render's end: 12000 pulses at 120 bpm, a quarter second past the region", () => {
+    expect(renderRange(120)).toEqual({ from: REGION_POSITION_PPQN, to: REGION_POSITION_PPQN + REGION_DURATION_PPQN + 480 });
+  });
+  it("keeps a note a device moved past the region's end and clips one crossing the render's end", () => {
+    // a warp that moves every note 660 pulses later: 11040 lands at 11700, past the region; the last sixteenth (11280) at 11940, crossing 12000
+    const row = SEMANTICS_ROWS.find((r) => r.id === "zg-amount0.75-dur480-sixteenths")!;
+    const late = { ...context, range: renderRange(120), warp: (position: number) => position + 660 };
+    const [intent] = predictedVariants(row, late);
+    const tail = intent!.notes.filter((note) => note.position >= REGION_POSITION_PPQN + REGION_DURATION_PPQN);
+    expect(tail.map((note) => [note.position, note.duration])).toEqual([[11700, 120], [11940, 60]]);
   });
 });

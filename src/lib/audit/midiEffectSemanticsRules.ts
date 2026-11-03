@@ -36,6 +36,7 @@ export type DeviceSetting =
 
 /** The adapter functions a chain needs, bound by the caller; a chain holds at most one Velocity and one Zeitgeist. */
 export interface RuleContext {
+  /** The transport span the render covers: the engine runs every device over it, past the region's end too. */
   range: { from: number; to: number };
   computeVelocity: (position: number, original: number) => number;
   warp: (position: number) => number;
@@ -181,7 +182,12 @@ function applyStage(stage: DeviceSetting, context: RuleContext, deviations: Read
   }
 }
 
-/** Measured: the offline render ends a note that crosses the region end at the region end (5999.9 ms for a note due to ring to 6060 ms, run 1793740770955). `playback.truncateNotesAtRegionEnd`, default false (`EnginePreferencesSchema.ts:27`), only shortens the note's own duration at scheduling (`note_sequencer.rs:199-200`), so it is not the cut; the sequencer releases every retained note at once when the block is not playing or is discontinuous (`note_sequencer.rs:131-135`), which is the candidate and not shown. A note starting at or past the end is never heard. */
+/**
+ * The render's window, not the engine: a note starting at or past `range.to` is not in the buffer, one crossing it is
+ * read to the buffer's end. The region's end cuts nothing a device emits: the sequencer reads the region's notes, and a
+ * device may place them past its end, where they sound through the render's tail (measured: run 1793741626351,
+ * `zg-amount0.75-dur61440-sixteenths` reads notes at 6072.7 and 6243.7 ms against a region ending at 6000 ms).
+ */
 export function clipToRange(notes: readonly RuleNote[], range: { from: number; to: number }): RuleNote[] {
   return notes
     .filter((note) => note.position < range.to)
@@ -235,8 +241,10 @@ export function toPredictedFigures(notes: readonly PredictedNote[], bpm: number)
  * Whether a monophonic reader can judge each predicted note. Audible span = `[pos, end + releaseMs]`.
  * Two spans intersecting by more than `releaseMs` make both notes `overlap` (same pitch) or `polyphonic`;
  * by at most `releaseMs` (a step ending where the next begins) both `abutting`; spans that do not intersect but
- * sit less than `gapMs` apart are `abutting` too (the reader cannot separate them). A span shorter than the
- * attack twice plus `minCycles` periods is `too-short`, a velocity below `minVelocity` `too-quiet`.
+ * sit less than `gapMs` apart are `abutting` too (the reader cannot separate them). A note is `too-short` unless its
+ * duration less three attacks (the reader's pitch window starts two attacks after the onset and stops one before the
+ * end) holds `minCycles + 1` periods: only then does a window of that length hold the `minCycles + 1` rising zero
+ * crossings the reader needs whatever the phase. A velocity below `minVelocity` is `too-quiet`.
  * Precedence: overlap, polyphonic, too-short, too-quiet, abutting (a note too short or too quiet to read is unreadable whatever its neighbours; abutting applies to the rest). Sorted by position, then pitch.
  */
 export function markReadability(
@@ -265,7 +273,7 @@ export function markReadability(
   }
   return sorted.map((note, i) => {
     const hz = 440 * 2 ** ((note.pitch - 69 + note.cent / 100) / 12);
-    const shortest = options.attackMs * 2 + options.minCycles * 1000 / hz;
+    const shortest = options.attackMs * 3 + (options.minCycles + 1) * 1000 / hz;
     const readability: Readability =
       overlap.has(i) ? "overlap"
       : polyphonic.has(i) ? "polyphonic"

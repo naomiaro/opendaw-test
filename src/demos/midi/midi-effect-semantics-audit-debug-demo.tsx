@@ -33,7 +33,7 @@ import {
 } from "@/lib/audit/midiEffectSemanticsRules";
 import {
   applySettings, FACTORY_KEYS, NANO_ATTACK_SECONDS, NANO_RELEASE_SECONDS, predictedVariants, REGION_DURATION_PPQN,
-  REGION_POSITION_PPQN, renderSeconds, resolveRows, ROOT_KEY, rowNotes, SAMPLE_HZ, SAMPLE_SECONDS, AUDIT_PATTERNS, type SemanticsRow,
+  REGION_POSITION_PPQN, renderRange, renderSeconds, resolveRows, ROOT_KEY, rowNotes, SAMPLE_HZ, SAMPLE_SECONDS, AUDIT_PATTERNS, type SemanticsRow,
 } from "@/lib/audit/midiEffectSemanticsRows";
 import { compareRegister, describeMismatch, judgeRule, TOLERANCES, verdictOf, type Variant } from "@/lib/audit/midiEffectSemanticsVerdict";
 import {
@@ -69,7 +69,7 @@ const MARK_OPTIONS = {
   minCycles: READER_DEFAULTS.minCycles,
   minVelocity: 0.01,
 };
-const RULE_RANGE = { from: REGION_POSITION_PPQN, to: REGION_POSITION_PPQN + REGION_DURATION_PPQN };
+const RULE_RANGE = renderRange(PATTERN_BPM);
 
 interface LoadedRegister { register: SemanticsRegister | null; source: string | null }
 

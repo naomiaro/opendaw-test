@@ -276,6 +276,11 @@ export function renderSeconds(bpm: number): number {
   return PPQN.pulsesToSeconds(REGION_POSITION_PPQN + REGION_DURATION_PPQN, bpm) + RENDER_TAIL_SECONDS;
 }
 
+/** The rules' range: from the region's start to the render's end, the span over which the engine runs the chain and the reader reads. */
+export function renderRange(bpm: number): { from: number; to: number } {
+  return { from: REGION_POSITION_PPQN, to: PPQN.secondsToPulses(renderSeconds(bpm), bpm) };
+}
+
 /** The row's pattern as the engine receives it: absolute pulses, no detune. */
 export function rowNotes(row: SemanticsRow): RuleNote[] {
   const pattern = AUDIT_PATTERNS.find((p) => p.id === row.pattern);
