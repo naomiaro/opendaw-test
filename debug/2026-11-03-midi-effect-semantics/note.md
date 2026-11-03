@@ -66,7 +66,10 @@ monophonic, so each predicted note is marked:
 - `too-short`: the note's duration less three attacks does not hold four periods of its pitch, so the
   reader's pitch window cannot be sure of four rising crossings at any phase (18.3 ms at C4, 64.2 ms
   at C2, 4.9 ms at C7). Not judged.
-- `too-quiet`: velocity below 0.01. Not judged; a row whose every note is too quiet is read as silence.
+- `too-quiet`: velocity above 0 and below 0.01. Not judged. A velocity of exactly 0 is silence, not a
+  quiet note: the Nano's voice gain is `gain × velocity` (`device-nano/src/voice.rs:129`), so the note
+  leaves the prediction before anything is marked (it neither sounds nor touches a neighbour), and a row
+  whose every note is at 0 is predicted silent and judged on the empty list.
 - `abutting`: notes that touch within the 1 ms release (gate 1 in the Arpeggio, gate 1 being a step
   ending where the next begins) or sit less than the reader's 2 ms gap apart. The reader cannot
   separate them, so the judge reads each through `readWindow` at its PREDICTED span and judges
@@ -75,7 +78,9 @@ monophonic, so each predicted note is marked:
   (±0.01) and end (±2 ms).
 
 Precedence: overlap > polyphonic > too-short > too-quiet > abutting. A read note whose onset falls
-inside a non-readable predicted span is set aside; one outside every predicted span is an extra note.
+inside a non-readable predicted span is set aside; one outside every predicted span is an extra note,
+in a row with nothing to judge too: a read note outside every predicted span of every variant makes a
+row that would read `no rule` read `rule broken`.
 
 **The two judgements.** Against the RULE: the read notes against the rule's intent, then against
 each subset of the known deviations of the row's devices, smallest first; the first variant that
@@ -84,7 +89,10 @@ broken` with the first intent mismatch, and a row with no judgeable note in any 
 Against the REGISTER: the read notes and the intent's unreadable count against the accepted run of the
 same rate (`as-registered`, `changed`, `unregistered`). The verdict joins them: `as-registered`,
 `as-registered, matches-known-deviation …`, `changed, rule holds|…|rule broken`, `<rule>,
-unregistered`, `no rule`, `error`. The envelope and the table carry the INTENT variant's predicted
+unregistered`, `no rule` (with the register axis: `changed, no rule`, `no rule, unregistered`), `error`
+(a failed render, or a render silent at peak 0 where every variant predicts a readable or abutting note;
+a silence one variant predicts, the Arpeggio at −100 % under the velocity matrix, is judged). The
+envelope and the table carry the INTENT variant's predicted
 notes, so a deviation row's "readable" count is the intent's, not the matching variant's.
 
 **The rules' range.** The rules run over the span the render covers, from the region's start to the
@@ -215,14 +223,67 @@ read the register rule requires.
 No row changed: the offline render is deterministic at both rates, the Velocity random rows included
 (the seed is the box default).
 
-Verdicts per group (both rates alike):
+### 2026-11-03, re-accepted after the final review (SDK 0.0.180, Chrome, macOS, the Mac's output device at 44.1 kHz)
+
+The final review of the branch changed the judge and the reader in four ways that move the register,
+each with tests:
+
+- **A velocity-0 note is silence** and leaves the prediction (it was `too-quiet`). The four rows whose
+  every note lands at velocity 0, `vel-offset-1-sixteenths`, `vel-offset-1-melody`,
+  `vel-magnet0x1-sixteenths` and `vel-magnet0x1-melody`, moved from `no rule` to `rule holds` on an
+  empty prediction, the render silent; an engine that starts sounding there reads `rule broken`.
+  `vel-random1-*` and `vel-offset-0.5-melody` lost their 3 or 4 velocity-0 notes from the unreadable
+  count.
+- **A `no rule` row keeps both judgements:** it reads the register (`changed, no rule`, `no rule,
+  unregistered`), and a read note outside every predicted span of every variant makes it `rule
+  broken`. No row reads `rule broken`.
+- **The reader's peak refinement stays inside its window.** A max on the window's edge was lifted
+  through the parabola of a larger sample outside the window, which overshot (reads of 1.005 at
+  44.1 kHz on notes of velocity 1). Read velocities moved on notes the rule does not judge, merged
+  polyphonic spans and notes too short under the matching variant: 0.99 to 0.96 at 48 kHz, 1.005 or
+  0.97 to 0.955 at 44.1 kHz, one 2.4 ms note of velocity 0.6 from 0.605 to 0.57 (48 kHz) and 0.61
+  to 0.565 (44.1 kHz). No judged figure moved.
+- **The Arpeggio velocity question** is raised only where the manual's blend and the crate's matrix
+  give a different velocity for a note that reaches the device: `arp-vel0-held-note` and
+  `arp-vel0.5-held-note` (velocity-1 notes, 1.0 under both) are no longer questioned.
+
+A render silent where every variant predicts a judgeable note is now an `error` row; none reads it.
+
+**Runs against the first registers:** run 1793744029767 (48 kHz) and run 1793744117203 (44.1 kHz),
+holds 149, deviation 63, broken 0, no rule 18, error 0 at both rates; 13 rows `changed` at 48 kHz and
+14 at 44.1 kHz (the same 13 plus `zg-amount0-dur15360-sixteenths`, `changed, no rule`, a merged note's
+velocity 0.97 to 0.955). Every changed row is one of the causes above, and every row reads the same
+rule verdict at both rates.
+
+**Accepted, 48 kHz: run 1793744029767; 44.1 kHz: run 1793744117203.** `--accept` without `--force`
+(full runs, nothing broken). The diffs it printed:
+
+```
+48 kHz   changed: vel-magnet0x1-melody, vel-magnet0x1-sixteenths, vel-offset-0.5-melody, vel-offset-1-melody, vel-offset-1-sixteenths, vel-random1-melody, vel-random1-sixteenths, zg-amount0-dur7680-sixteenths, zg-amount1-dur1920-sixteenths, zg-amount1-dur3840-sixteenths, zg-amount1-dur480-sixteenths, zg-amount1-dur7680-sixteenths, zg-amount1-dur960-sixteenths
+44.1 kHz changed: vel-magnet0x1-melody, vel-magnet0x1-sixteenths, vel-offset-0.5-melody, vel-offset-1-melody, vel-offset-1-sixteenths, vel-random1-melody, vel-random1-sixteenths, zg-amount0-dur15360-sixteenths, zg-amount0-dur7680-sixteenths, zg-amount1-dur1920-sixteenths, zg-amount1-dur3840-sixteenths, zg-amount1-dur480-sixteenths, zg-amount1-dur7680-sixteenths, zg-amount1-dur960-sixteenths
+```
+
+Both registers were re-accepted by the implementing agent, an AI, after its own read of every row
+that did not read `as-registered`: each changed row's read notes against the previous register's,
+field by field, with the envelope's predicted notes to say which moved notes the rule judges. No
+person has read the rows yet: the user's review of the pull request is the person's read the register
+rule requires.
+
+**Re-runs against the new registers:** run 1793744167477 (48 kHz) and run 1793744211868 (44.1 kHz):
+
+| rate | `as-registered` | `as-registered, matches-known-deviation …` | `no rule` | `changed` | `error` |
+|---|---|---|---|---|---|
+| 48 kHz | 149 | 63 | 18 | 0 | 0 |
+| 44.1 kHz | 149 | 63 | 18 | 0 | 0 |
+
+Verdicts per group, the current registers (both rates alike):
 
 | group | rows | holds | deviation | no rule |
 |---|---|---|---|---|
 | dry | 4 | 4 | 0 | 0 |
 | arpeggio | 88 | 39 | 37 | 12 |
 | pitch | 40 | 38 | 0 | 2 |
-| velocity | 38 | 34 | 0 | 4 |
+| velocity | 38 | 38 | 0 | 0 |
 | zeitgeist | 50 | 22 | 24 | 4 |
 | order | 6 | 4 | 2 | 0 |
 | disabled | 4 | 4 | 0 | 0 |
@@ -237,10 +298,15 @@ Why each `no rule` row has nothing to judge:
 - `arp-rate12-gate0.25-held-note`, `arp-rate14-gate0.25-held-note`, `arp-rate14-gate0.5-held-note`:
   steps of 15 or 30 pulses, under the floor;
 - `pitch-st-36-chromatic`, `pitch-oct-3-chromatic`: a thirty-second at C1–B1, under the floor;
-- `vel-magnet0x1-*`, `vel-offset-1-*`: velocity 0 on every note (read: silence, nothing extra);
 - `zg-amount0-dur480`, `…15360`, `…30720`, `…61440-sixteenths`: at amount 0 the off-beats ease onto
   the cell start and overlap the on-beats, or the long cells squeeze the notes onto one another.
 
+Rows that hold on an EMPTY prediction, so a sound there reads `rule broken`: the four velocity-0 rows
+above; `pitch-oct7-*` and `pitch-oct-7-*`, every note dropped; `arp-vel-1-*` under the velocity
+matrix; and `zg-amount1-dur15360-sixteenths`, `…30720` and `…61440`, where the groove at amount 1
+(0.99 squashed) pushes every note past the render's end: the first sixteenth, at 3840 pulses, warps to
+14908, 28691 and 53356 pulses against the render's 12000 (computed through the cell's ease), and
+the render reads nothing in its window.
 The table (`node scripts/audit/midi-effect-semantics/table.ts <runToken>`): verdict, the first
 mismatch or the questioned behaviours, read / readable (unreadable) of the intent, the largest
 deltas where read and readable pair one to one, render time.
@@ -270,14 +336,15 @@ deltas where read and readable pair one to one, render time.
   residual alone and prints 100 for those rows).
 - **The Velocity device computes every note's velocity as the adapter's `computeVelocity`, at every
   magnet, random, offset and mix setting**, the random rows included (seeded, the same at both rates
-  and on every run). A velocity-0 result is silence.
+  and on every run). A velocity-0 result is silence, predicted as such: the four rows whose every
+  note lands at 0 hold on a silent render.
 - **The Zeitgeist starts every note where the groove warps it, at every amount and every cell length,
   and moves its note-off by the same warp** (`zeitgeist-warps-note-off`, 25 rows: every row where the
   warp changes a judged note's length by more than the 2 ms end tolerance, or changes which notes can be
   read). At 75 % on 1/8 cells
   the on-beat's note-off moves from 2062.5 to 2123.3 ms and the off-beat's from 2248.75 to 2224.4 ms
   (computed through the warp at the squashed amount 0.745; the reads at 48 kHz end at 2124.0 and
-  2225.2 ms, the 0.7 ms release later, as the dry notes do). The groove may move a note past the region's end; it sounds there.
+  2225.2 ms, the 0.8 ms release later, as the dry notes do). The groove may move a note past the region's end; it sounds there.
 - **A disabled device is left out**, all four alike; **order composes** as the chain's index order says
   (Arpeggio and Zeitgeist, Pitch and Arpeggio, Velocity and Arpeggio, both ways, judged as composed).
 - **48 and 44.1 kHz read the same verdict on every row**, and a re-run at each rate reproduces the
@@ -300,8 +367,10 @@ user's call; nothing is drafted under `drafts/`.
   the input, +100 % keeps the note's own, 0 % a blend (`arpeggio.md:84-92`). The engine: silence at
   −100 %, 1.0 at 0 %, the note's own only at +100 % (`device-arpeggio/src/lib.rs:108-118`, the
   `arpeggio-velocity-matrix` deviation; the crate's comment says it mirrors the TS device). Rows:
-  `arp-vel-1-*`, `arp-vel-0.5-*`, `arp-vel0-*`, `arp-vel0.5-*` (held chord and held note); on the
-  chord at velocity 0.8 the gap is 1.0 at −100 %, 0.45 at −50 %, 0.1 at 0 %, 0.05 at +50 %.
+  `arp-vel-1-*` and `arp-vel-0.5-*` (held chord and held note), `arp-vel0-held-chord`,
+  `arp-vel0.5-held-chord`; on the chord at velocity 0.8 the gap is 1.0 at −100 %, 0.45 at −50 %,
+  0.1 at 0 %, 0.05 at +50 %. On the held note (velocity 1) at 0 % and +50 % the blend and the matrix
+  both give 1.0, so those two rows are not questioned.
 
 ## Status
 
@@ -311,13 +380,15 @@ matches-known-deviation …` or `no rule`. A `changed` row is the finding: read 
 against the crate before anything else. A `matches-known-deviation` the register lists is not a
 finding; a deviation that stops showing (the row reads `changed, rule holds`) is a fix landing: retire
 the deviation in the table above with the release. `--accept` only after a person's read; a broken
-row needs `--force` and a line here naming it.
+row needs `--force` and a line here naming it; so does a partial run, which then merges into the
+register instead of replacing it.
 
 ## Open items
 
 - **Gate 2 and other true overlaps are tracked only.** A monophonic reader cannot judge two notes
   sounding at once; those rows and notes are in the register, so a change in what they render still
-  reads `changed`, but no rule is checked on them.
+  reads `changed, no rule`, but no rule is checked on them (a read note outside every predicted span
+  still reads `rule broken`).
 - **The Arpeggio velocity gap** between the manual and the engine (silence at −100 % where the manual
   says full velocity) is a candidate upstream issue, the user's call; drafted under
   `drafts/TO-REVIEW-…` only if asked.
@@ -340,248 +411,251 @@ row needs `--force` and a line here naming it.
 
 ## Tables
 
-<details><summary>Accepted 48 kHz table, run 1793741953204</summary>
+<details><summary>Accepted 48 kHz table, run 1793744029767 (judged against the first register, so the
+rows the re-accept moved read <code>changed</code>)</summary>
 
 ```
 id | verdict | figure | read / readable (unreadable) | max |Δonset| ms | max |Δcents| | max |Δvel| | render ms
-dry-sixteenths | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 154
-dry-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 142
-dry-chromatic | rule holds, unregistered | — | 12 / 12 (0) | 0.00 | 0.0 | 0.000 | 125
-dry-held-note | rule holds, unregistered | — | 1 / 1 (0) | 0.00 | 0.0 | 0.000 | 128
-arp-mode0-oct1-held-chord | matches-known-deviation arpeggio-uncapped-note-off, unregistered | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 124
-arp-mode0-oct2-held-chord | matches-known-deviation arpeggio-uncapped-note-off, unregistered | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 125
-arp-mode0-oct3-held-chord | matches-known-deviation arpeggio-uncapped-note-off, unregistered | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 125
-arp-mode0-oct4-held-chord | matches-known-deviation arpeggio-uncapped-note-off, unregistered | — | 8 / 8 (0) | 0.10 | 0.0 | 0.000 | 124
-arp-mode0-oct5-held-chord | matches-known-deviation arpeggio-uncapped-note-off, unregistered | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 151
-arp-mode1-oct1-held-chord | matches-known-deviation arpeggio-uncapped-note-off, unregistered | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 146
-arp-mode1-oct2-held-chord | matches-known-deviation arpeggio-uncapped-note-off, unregistered | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 136
-arp-mode1-oct3-held-chord | matches-known-deviation arpeggio-uncapped-note-off, unregistered | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 127
-arp-mode1-oct4-held-chord | matches-known-deviation arpeggio-uncapped-note-off, unregistered | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 125
-arp-mode1-oct5-held-chord | matches-known-deviation arpeggio-uncapped-note-off, unregistered | — | 8 / 8 (0) | 0.10 | 0.0 | 0.000 | 130
-arp-mode2-oct1-held-chord | matches-known-deviation arpeggio-uncapped-note-off, unregistered | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 125
-arp-mode2-oct2-held-chord | matches-known-deviation arpeggio-uncapped-note-off, unregistered | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 124
-arp-mode2-oct3-held-chord | matches-known-deviation arpeggio-uncapped-note-off, unregistered | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 149
-arp-mode2-oct4-held-chord | matches-known-deviation arpeggio-uncapped-note-off, unregistered | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 147
-arp-mode2-oct5-held-chord | matches-known-deviation arpeggio-uncapped-note-off, unregistered | — | 8 / 8 (0) | 0.10 | 0.0 | 0.000 | 135
-arp-mode0-oct1-chords | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 127
-arp-mode0-oct2-chords | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 125
-arp-mode0-oct3-chords | rule holds, unregistered | — | 32 / 32 (0) | 0.10 | 0.0 | 0.000 | 126
-arp-mode0-oct4-chords | rule holds, unregistered | — | 32 / 32 (0) | 0.10 | 0.0 | 0.000 | 129
-arp-mode0-oct5-chords | rule holds, unregistered | — | 32 / 32 (0) | 0.10 | 0.0 | 0.000 | 128
-arp-mode1-oct1-chords | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 148
-arp-mode1-oct2-chords | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 151
-arp-mode1-oct3-chords | rule holds, unregistered | — | 32 / 32 (0) | 0.10 | 0.0 | 0.000 | 136
-arp-mode1-oct4-chords | rule holds, unregistered | — | 32 / 32 (0) | 0.10 | 0.0 | 0.000 | 126
-arp-mode1-oct5-chords | rule holds, unregistered | — | 32 / 32 (0) | 0.10 | 0.0 | 0.000 | 131
-arp-mode2-oct1-chords | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 129
-arp-mode2-oct2-chords | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 130
-arp-mode2-oct3-chords | rule holds, unregistered | — | 32 / 32 (0) | 0.10 | 0.0 | 0.000 | 129
-arp-mode2-oct4-chords | rule holds, unregistered | — | 32 / 32 (0) | 0.10 | 0.0 | 0.000 | 150
-arp-mode2-oct5-chords | rule holds, unregistered | — | 32 / 32 (0) | 0.10 | 0.0 | 0.000 | 153
-arp-oct1-held-note | matches-known-deviation arpeggio-uncapped-note-off, unregistered | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 133
-arp-oct2-held-note | matches-known-deviation arpeggio-uncapped-note-off, unregistered | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 127
-arp-oct3-held-note | matches-known-deviation arpeggio-uncapped-note-off, unregistered | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 125
-arp-oct4-held-note | matches-known-deviation arpeggio-uncapped-note-off, unregistered | — | 8 / 8 (0) | 0.10 | 0.0 | 0.000 | 125
-arp-oct5-held-note | matches-known-deviation arpeggio-uncapped-note-off, unregistered | — | 8 / 8 (0) | 0.10 | 0.0 | 0.000 | 126
-arp-rate3-gate0.25-held-note | rule holds, unregistered | — | 2 / 2 (0) | 0.00 | 0.0 | 0.000 | 126
-arp-rate3-gate0.5-held-note | rule holds, unregistered | — | 2 / 2 (0) | 0.00 | 0.0 | 0.000 | 149
-arp-rate3-gate1-held-note | rule holds, unregistered | — | 1 / 0 (2) | — | — | — | 154
-arp-rate3-gate2-held-note | no rule | — | 1 / 0 (2) | — | — | — | 133
-arp-rate6-gate0.25-held-note | rule holds, unregistered | — | 4 / 4 (0) | 0.00 | 0.0 | 0.000 | 127
-arp-rate6-gate0.5-held-note | rule holds, unregistered | — | 4 / 4 (0) | 0.00 | 0.0 | 0.000 | 127
-arp-rate6-gate1-held-note | rule holds, unregistered | — | 1 / 0 (4) | — | — | — | 126
-arp-rate6-gate2-held-note | no rule | — | 1 / 0 (4) | — | — | — | 129
-arp-rate9-gate0.25-held-note | rule holds, unregistered | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 126
-arp-rate9-gate0.5-held-note | matches-known-deviation arpeggio-uncapped-note-off, unregistered | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 150
-arp-rate9-gate1-held-note | rule holds, unregistered | — | 1 / 0 (8) | — | — | — | 153
-arp-rate9-gate2-held-note | no rule | — | 1 / 0 (8) | — | — | — | 145
-arp-rate12-gate0.25-held-note | no rule | — | 15 / 0 (15) | — | — | — | 126
-arp-rate12-gate0.5-held-note | rule holds, unregistered | — | 15 / 15 (0) | 0.00 | 0.0 | 0.000 | 127
-arp-rate12-gate1-held-note | rule holds, unregistered | — | 1 / 0 (15) | — | — | — | 126
-arp-rate12-gate2-held-note | no rule | — | 1 / 0 (15) | — | — | — | 126
-arp-rate14-gate0.25-held-note | no rule | — | 30 / 0 (30) | — | — | — | 126
-arp-rate14-gate0.5-held-note | no rule | — | 30 / 0 (30) | — | — | — | 151
-arp-rate14-gate1-held-note | rule holds, unregistered | — | 1 / 0 (30) | — | — | — | 152
-arp-rate14-gate2-held-note | no rule | — | 1 / 0 (30) | — | — | — | 132
-arp-rate2-gate0.25-held-note | rule holds, unregistered | — | 2 / 2 (0) | 0.03 | 0.0 | 0.000 | 130
-arp-rate2-gate0.5-held-note | matches-known-deviation arpeggio-uncapped-note-off, unregistered | — | 2 / 2 (0) | 0.03 | 0.0 | 0.000 | 131
-arp-rate2-gate1-held-note | rule holds, unregistered | — | 1 / 0 (2) | — | — | — | 127
-arp-rate2-gate2-held-note | no rule | — | 1 / 0 (2) | — | — | — | 126
-arp-rate8-gate0.25-held-note | rule holds, unregistered | — | 6 / 6 (0) | 0.03 | 0.0 | 0.000 | 128
-arp-rate8-gate0.5-held-note | matches-known-deviation arpeggio-uncapped-note-off, unregistered | — | 6 / 6 (0) | 0.03 | 0.0 | 0.000 | 150
-arp-rate8-gate1-held-note | rule holds, unregistered | — | 1 / 0 (6) | — | — | — | 153
+dry-sixteenths | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 149
+dry-melody | as-registered | — | 1 / 0 (16) | — | — | — | 140
+dry-chromatic | as-registered | — | 12 / 12 (0) | 0.00 | 0.0 | 0.000 | 125
+dry-held-note | as-registered | — | 1 / 1 (0) | 0.00 | 0.0 | 0.000 | 125
+arp-mode0-oct1-held-chord | as-registered, matches-known-deviation arpeggio-uncapped-note-off | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 126
+arp-mode0-oct2-held-chord | as-registered, matches-known-deviation arpeggio-uncapped-note-off | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 125
+arp-mode0-oct3-held-chord | as-registered, matches-known-deviation arpeggio-uncapped-note-off | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 127
+arp-mode0-oct4-held-chord | as-registered, matches-known-deviation arpeggio-uncapped-note-off | — | 8 / 8 (0) | 0.10 | 0.0 | 0.000 | 128
+arp-mode0-oct5-held-chord | as-registered, matches-known-deviation arpeggio-uncapped-note-off | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 147
+arp-mode1-oct1-held-chord | as-registered, matches-known-deviation arpeggio-uncapped-note-off | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 146
+arp-mode1-oct2-held-chord | as-registered, matches-known-deviation arpeggio-uncapped-note-off | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 140
+arp-mode1-oct3-held-chord | as-registered, matches-known-deviation arpeggio-uncapped-note-off | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 129
+arp-mode1-oct4-held-chord | as-registered, matches-known-deviation arpeggio-uncapped-note-off | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 127
+arp-mode1-oct5-held-chord | as-registered, matches-known-deviation arpeggio-uncapped-note-off | — | 8 / 8 (0) | 0.10 | 0.0 | 0.000 | 127
+arp-mode2-oct1-held-chord | as-registered, matches-known-deviation arpeggio-uncapped-note-off | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 124
+arp-mode2-oct2-held-chord | as-registered, matches-known-deviation arpeggio-uncapped-note-off | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 127
+arp-mode2-oct3-held-chord | as-registered, matches-known-deviation arpeggio-uncapped-note-off | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 153
+arp-mode2-oct4-held-chord | as-registered, matches-known-deviation arpeggio-uncapped-note-off | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 153
+arp-mode2-oct5-held-chord | as-registered, matches-known-deviation arpeggio-uncapped-note-off | — | 8 / 8 (0) | 0.10 | 0.0 | 0.000 | 134
+arp-mode0-oct1-chords | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 130
+arp-mode0-oct2-chords | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 125
+arp-mode0-oct3-chords | as-registered | — | 32 / 32 (0) | 0.10 | 0.0 | 0.000 | 127
+arp-mode0-oct4-chords | as-registered | — | 32 / 32 (0) | 0.10 | 0.0 | 0.000 | 128
+arp-mode0-oct5-chords | as-registered | — | 32 / 32 (0) | 0.10 | 0.0 | 0.000 | 126
+arp-mode1-oct1-chords | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 150
+arp-mode1-oct2-chords | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 147
+arp-mode1-oct3-chords | as-registered | — | 32 / 32 (0) | 0.10 | 0.0 | 0.000 | 137
+arp-mode1-oct4-chords | as-registered | — | 32 / 32 (0) | 0.10 | 0.0 | 0.000 | 134
+arp-mode1-oct5-chords | as-registered | — | 32 / 32 (0) | 0.10 | 0.0 | 0.000 | 128
+arp-mode2-oct1-chords | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 128
+arp-mode2-oct2-chords | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 130
+arp-mode2-oct3-chords | as-registered | — | 32 / 32 (0) | 0.10 | 0.0 | 0.000 | 126
+arp-mode2-oct4-chords | as-registered | — | 32 / 32 (0) | 0.10 | 0.0 | 0.000 | 149
+arp-mode2-oct5-chords | as-registered | — | 32 / 32 (0) | 0.10 | 0.0 | 0.000 | 153
+arp-oct1-held-note | as-registered, matches-known-deviation arpeggio-uncapped-note-off | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 133
+arp-oct2-held-note | as-registered, matches-known-deviation arpeggio-uncapped-note-off | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 125
+arp-oct3-held-note | as-registered, matches-known-deviation arpeggio-uncapped-note-off | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 124
+arp-oct4-held-note | as-registered, matches-known-deviation arpeggio-uncapped-note-off | — | 8 / 8 (0) | 0.10 | 0.0 | 0.000 | 125
+arp-oct5-held-note | as-registered, matches-known-deviation arpeggio-uncapped-note-off | — | 8 / 8 (0) | 0.10 | 0.0 | 0.000 | 125
+arp-rate3-gate0.25-held-note | as-registered | — | 2 / 2 (0) | 0.00 | 0.0 | 0.000 | 124
+arp-rate3-gate0.5-held-note | as-registered | — | 2 / 2 (0) | 0.00 | 0.0 | 0.000 | 148
+arp-rate3-gate1-held-note | as-registered | — | 1 / 0 (2) | — | — | — | 149
+arp-rate3-gate2-held-note | no rule | — | 1 / 0 (2) | — | — | — | 132
+arp-rate6-gate0.25-held-note | as-registered | — | 4 / 4 (0) | 0.00 | 0.0 | 0.000 | 127
+arp-rate6-gate0.5-held-note | as-registered | — | 4 / 4 (0) | 0.00 | 0.0 | 0.000 | 124
+arp-rate6-gate1-held-note | as-registered | — | 1 / 0 (4) | — | — | — | 125
+arp-rate6-gate2-held-note | no rule | — | 1 / 0 (4) | — | — | — | 128
+arp-rate9-gate0.25-held-note | as-registered | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 133
+arp-rate9-gate0.5-held-note | as-registered, matches-known-deviation arpeggio-uncapped-note-off | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 151
+arp-rate9-gate1-held-note | as-registered | — | 1 / 0 (8) | — | — | — | 150
+arp-rate9-gate2-held-note | no rule | — | 1 / 0 (8) | — | — | — | 131
+arp-rate12-gate0.25-held-note | no rule | — | 15 / 0 (15) | — | — | — | 127
+arp-rate12-gate0.5-held-note | as-registered | — | 15 / 15 (0) | 0.00 | 0.0 | 0.000 | 132
+arp-rate12-gate1-held-note | as-registered | — | 1 / 0 (15) | — | — | — | 127
+arp-rate12-gate2-held-note | no rule | — | 1 / 0 (15) | — | — | — | 127
+arp-rate14-gate0.25-held-note | no rule | — | 30 / 0 (30) | — | — | — | 125
+arp-rate14-gate0.5-held-note | no rule | — | 30 / 0 (30) | — | — | — | 152
+arp-rate14-gate1-held-note | as-registered | — | 1 / 0 (30) | — | — | — | 152
+arp-rate14-gate2-held-note | no rule | — | 1 / 0 (30) | — | — | — | 129
+arp-rate2-gate0.25-held-note | as-registered | — | 2 / 2 (0) | 0.03 | 0.0 | 0.000 | 128
+arp-rate2-gate0.5-held-note | as-registered, matches-known-deviation arpeggio-uncapped-note-off | — | 2 / 2 (0) | 0.03 | 0.0 | 0.000 | 134
+arp-rate2-gate1-held-note | as-registered | — | 1 / 0 (2) | — | — | — | 128
+arp-rate2-gate2-held-note | no rule | — | 1 / 0 (2) | — | — | — | 128
+arp-rate8-gate0.25-held-note | as-registered | — | 6 / 6 (0) | 0.03 | 0.0 | 0.000 | 129
+arp-rate8-gate0.5-held-note | as-registered, matches-known-deviation arpeggio-uncapped-note-off | — | 6 / 6 (0) | 0.03 | 0.0 | 0.000 | 153
+arp-rate8-gate1-held-note | as-registered | — | 1 / 0 (6) | — | — | — | 153
 arp-rate8-gate2-held-note | no rule | — | 1 / 0 (6) | — | — | — | 133
-arp-rate4-gate0.25-held-note | rule holds, unregistered | — | 2 / 2 (0) | 0.00 | 0.0 | 0.000 | 129
-arp-rate4-gate0.5-held-note | rule holds, unregistered | — | 2 / 2 (0) | 0.00 | 0.0 | 0.000 | 126
-arp-rate4-gate1-held-note | rule holds, unregistered | — | 1 / 0 (2) | — | — | — | 126
-arp-rate4-gate2-held-note | no rule | — | 1 / 0 (2) | — | — | — | 130
-arp-rate7-gate0.25-held-note | rule holds, unregistered | — | 5 / 5 (0) | 0.00 | 0.0 | 0.000 | 129
-arp-rate7-gate0.5-held-note | rule holds, unregistered | — | 5 / 5 (0) | 0.00 | 0.0 | 0.000 | 154
-arp-rate7-gate1-held-note | rule holds, unregistered | — | 1 / 0 (5) | — | — | — | 153
+arp-rate4-gate0.25-held-note | as-registered | — | 2 / 2 (0) | 0.00 | 0.0 | 0.000 | 127
+arp-rate4-gate0.5-held-note | as-registered | — | 2 / 2 (0) | 0.00 | 0.0 | 0.000 | 128
+arp-rate4-gate1-held-note | as-registered | — | 1 / 0 (2) | — | — | — | 128
+arp-rate4-gate2-held-note | no rule | — | 1 / 0 (2) | — | — | — | 127
+arp-rate7-gate0.25-held-note | as-registered | — | 5 / 5 (0) | 0.00 | 0.0 | 0.000 | 126
+arp-rate7-gate0.5-held-note | as-registered | — | 5 / 5 (0) | 0.00 | 0.0 | 0.000 | 151
+arp-rate7-gate1-held-note | as-registered | — | 1 / 0 (5) | — | — | — | 152
 arp-rate7-gate2-held-note | no rule | — | 1 / 0 (5) | — | — | — | 133
-arp-repeat1-held-chord | matches-known-deviation arpeggio-uncapped-note-off, unregistered | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 127
-arp-repeat2-held-chord | matches-known-deviation arpeggio-uncapped-note-off, unregistered | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 126
-arp-repeat4-held-chord | matches-known-deviation arpeggio-uncapped-note-off, unregistered | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 128
-arp-repeat16-held-chord | matches-known-deviation arpeggio-uncapped-note-off, unregistered | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 130
-arp-mode0-oct2-gate1-held-chord | rule holds, unregistered | — | 1 / 0 (8) | — | — | — | 129
-arp-mode1-oct2-gate1-held-chord | rule holds, unregistered | — | 1 / 0 (8) | — | — | — | 153
-arp-mode2-oct2-gate1-held-chord | rule holds, unregistered | — | 1 / 0 (8) | — | — | — | 163
-arp-vel-1-held-chord | matches-known-deviation arpeggio-velocity-matrix, unregistered | — questioned: arpeggio-velocity-manual-gap | 0 / 8 (0) | — | — | — | 131
-arp-vel-1-held-note | matches-known-deviation arpeggio-velocity-matrix, unregistered | — questioned: arpeggio-velocity-manual-gap | 0 / 8 (0) | — | — | — | 138
-arp-vel-0.5-held-chord | matches-known-deviation arpeggio-uncapped-note-off+arpeggio-velocity-matrix, unregistered | — questioned: arpeggio-velocity-manual-gap | 8 / 8 (0) | 0.00 | 0.0 | 0.450 | 126
-arp-vel-0.5-held-note | matches-known-deviation arpeggio-uncapped-note-off+arpeggio-velocity-matrix, unregistered | — questioned: arpeggio-velocity-manual-gap | 8 / 8 (0) | 0.00 | 0.0 | 0.500 | 125
-arp-vel0-held-chord | matches-known-deviation arpeggio-uncapped-note-off+arpeggio-velocity-matrix, unregistered | — questioned: arpeggio-velocity-manual-gap | 8 / 8 (0) | 0.00 | 0.0 | 0.100 | 126
-arp-vel0-held-note | matches-known-deviation arpeggio-uncapped-note-off, unregistered | — questioned: arpeggio-velocity-manual-gap | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 126
-arp-vel0.5-held-chord | matches-known-deviation arpeggio-uncapped-note-off+arpeggio-velocity-matrix, unregistered | — questioned: arpeggio-velocity-manual-gap | 8 / 8 (0) | 0.00 | 0.0 | 0.050 | 158
-arp-vel0.5-held-note | matches-known-deviation arpeggio-uncapped-note-off, unregistered | — questioned: arpeggio-velocity-manual-gap | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 152
-arp-vel1-held-chord | matches-known-deviation arpeggio-uncapped-note-off, unregistered | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 126
-arp-vel1-held-note | matches-known-deviation arpeggio-uncapped-note-off, unregistered | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 126
-pitch-st-36-chromatic | no rule | — | 12 / 0 (12) | — | — | — | 129
-pitch-st-12-chromatic | rule holds, unregistered | — | 12 / 12 (0) | 0.00 | 0.0 | 0.000 | 133
-pitch-st-7-chromatic | rule holds, unregistered | — | 12 / 12 (0) | 0.00 | 0.0 | 0.000 | 130
-pitch-st0-chromatic | rule holds, unregistered | — | 12 / 12 (0) | 0.00 | 0.0 | 0.000 | 127
-pitch-st7-chromatic | rule holds, unregistered | — | 12 / 12 (0) | 0.00 | 0.0 | 0.000 | 157
-pitch-st12-chromatic | rule holds, unregistered | — | 12 / 12 (0) | 0.00 | 0.0 | 0.000 | 157
-pitch-st36-chromatic | rule holds, unregistered | — | 12 / 12 (0) | 0.10 | 0.0 | 0.000 | 127
-pitch-oct-7-chromatic | rule holds, unregistered | — questioned: pitch-drops-out-of-range | 0 / 0 (0) | — | — | — | 127
-pitch-oct-3-chromatic | no rule | — | 12 / 0 (12) | — | — | — | 129
-pitch-oct-1-chromatic | rule holds, unregistered | — | 12 / 12 (0) | 0.00 | 0.0 | 0.000 | 129
-pitch-oct0-chromatic | rule holds, unregistered | — | 12 / 12 (0) | 0.00 | 0.0 | 0.000 | 142
-pitch-oct1-chromatic | rule holds, unregistered | — | 12 / 12 (0) | 0.00 | 0.0 | 0.000 | 131
-pitch-oct3-chromatic | rule holds, unregistered | — | 12 / 12 (0) | 0.10 | 0.0 | 0.000 | 161
-pitch-oct7-chromatic | rule holds, unregistered | — questioned: pitch-drops-out-of-range | 0 / 0 (0) | — | — | — | 155
-pitch-ct-50-chromatic | rule holds, unregistered | — | 12 / 12 (0) | 0.00 | 100.0 | 0.000 | 129
-pitch-ct-12.5-chromatic | rule holds, unregistered | — | 12 / 12 (0) | 0.00 | 0.0 | 0.000 | 132
-pitch-ct0-chromatic | rule holds, unregistered | — | 12 / 12 (0) | 0.00 | 0.0 | 0.000 | 131
-pitch-ct12.5-chromatic | rule holds, unregistered | — | 12 / 12 (0) | 0.00 | 0.0 | 0.000 | 130
-pitch-ct50-chromatic | rule holds, unregistered | — | 12 / 12 (0) | 0.00 | 100.0 | 0.000 | 129
-pitch-combined-chromatic | rule holds, unregistered | — | 12 / 12 (0) | 0.00 | 0.0 | 0.000 | 130
-pitch-st-36-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 159
-pitch-st-12-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 155
-pitch-st-7-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 130
-pitch-st0-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 133
-pitch-st7-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 135
-pitch-st12-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 130
-pitch-st36-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 131
-pitch-oct-7-melody | rule holds, unregistered | — questioned: pitch-drops-out-of-range | 0 / 0 (0) | — | — | — | 129
-pitch-oct-3-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 158
-pitch-oct-1-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 155
-pitch-oct0-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 130
-pitch-oct1-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 130
-pitch-oct3-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 131
-pitch-oct7-melody | rule holds, unregistered | — questioned: pitch-drops-out-of-range | 0 / 0 (0) | — | — | — | 130
-pitch-ct-50-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 135
-pitch-ct-12.5-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 130
-pitch-ct0-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 162
-pitch-ct12.5-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 160
-pitch-ct50-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 149
-pitch-combined-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 132
-vel-magnet0x0-sixteenths | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 131
-vel-magnet0x0.5-sixteenths | rule holds, unregistered | — | 32 / 32 (0) | 0.10 | 0.0 | 0.000 | 132
-vel-magnet0x1-sixteenths | no rule | — | 0 / 0 (32) | — | — | — | 132
-vel-magnet0.5x0-sixteenths | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 165
-vel-magnet0.5x0.5-sixteenths | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 158
-vel-magnet0.5x1-sixteenths | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 131
-vel-magnet1x0-sixteenths | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 134
-vel-magnet1x0.5-sixteenths | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 134
-vel-magnet1x1-sixteenths | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 134
-vel-random0-sixteenths | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 133
-vel-random0.5-sixteenths | rule holds, unregistered | — | 32 / 32 (0) | 0.10 | 0.0 | 0.002 | 134
-vel-random1-sixteenths | rule holds, unregistered | — | 29 / 29 (3) | 0.30 | 0.0 | 0.002 | 170
-vel-offset-1-sixteenths | no rule | — | 0 / 0 (32) | — | — | — | 155
-vel-offset-0.5-sixteenths | rule holds, unregistered | — | 32 / 32 (0) | 0.10 | 0.0 | 0.000 | 131
-vel-offset0-sixteenths | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 134
-vel-offset0.5-sixteenths | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 135
-vel-mix0-sixteenths | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 132
-vel-mix0.5-sixteenths | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 132
-vel-mix1-sixteenths | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 134
-vel-magnet0x0-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 164
-vel-magnet0x0.5-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 156
-vel-magnet0x1-melody | no rule | — | 0 / 0 (16) | — | — | — | 131
-vel-magnet0.5x0-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 135
-vel-magnet0.5x0.5-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 132
-vel-magnet0.5x1-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 133
-vel-magnet1x0-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 141
-vel-magnet1x0.5-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 174
-vel-magnet1x1-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 156
-vel-random0-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 136
-vel-random0.5-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 133
-vel-random1-melody | rule holds, unregistered | — | 3 / 0 (16) | — | — | — | 132
-vel-offset-1-melody | no rule | — | 0 / 0 (16) | — | — | — | 131
-vel-offset-0.5-melody | rule holds, unregistered | — | 2 / 0 (16) | — | — | — | 132
-vel-offset0-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 169
-vel-offset0.5-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 159
-vel-mix0-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 135
-vel-mix0.5-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 135
-vel-mix1-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 134
-zg-amount0-dur480-sixteenths | no rule | — | 16 / 0 (32) | — | — | — | 134
-zg-amount0-dur960-sixteenths | rule holds, unregistered | — | 16 / 0 (32) | — | — | — | 140
-zg-amount0-dur1920-sixteenths | rule holds, unregistered | — | 16 / 0 (32) | — | — | — | 170
-zg-amount0-dur3840-sixteenths | matches-known-deviation zeitgeist-warps-note-off, unregistered | — | 16 / 2 (30) | — | — | — | 156
-zg-amount0-dur7680-sixteenths | matches-known-deviation zeitgeist-warps-note-off, unregistered | — | 16 / 3 (29) | — | — | — | 132
-zg-amount0-dur15360-sixteenths | no rule | — | 15 / 0 (32) | — | — | — | 133
-zg-amount0-dur30720-sixteenths | no rule | — | 1 / 0 (32) | — | — | — | 133
-zg-amount0-dur61440-sixteenths | no rule | — | 1 / 0 (32) | — | — | — | 133
-zg-amount0.25-dur480-sixteenths | matches-known-deviation zeitgeist-warps-note-off, unregistered | — | 32 / 0 (32) | — | — | — | 133
-zg-amount0.25-dur960-sixteenths | matches-known-deviation zeitgeist-warps-note-off, unregistered | — | 32 / 16 (16) | — | — | — | 134
-zg-amount0.25-dur1920-sixteenths | matches-known-deviation zeitgeist-warps-note-off, unregistered | — | 32 / 20 (12) | — | — | — | 172
-zg-amount0.25-dur3840-sixteenths | matches-known-deviation zeitgeist-warps-note-off, unregistered | — | 32 / 20 (12) | — | — | — | 156
-zg-amount0.25-dur7680-sixteenths | matches-known-deviation zeitgeist-warps-note-off, unregistered | — | 32 / 22 (10) | — | — | — | 135
-zg-amount0.25-dur15360-sixteenths | matches-known-deviation zeitgeist-warps-note-off, unregistered | — | 32 / 28 (4) | — | — | — | 133
-zg-amount0.25-dur30720-sixteenths | matches-known-deviation zeitgeist-warps-note-off, unregistered | — | 32 / 10 (22) | — | — | — | 134
-zg-amount0.25-dur61440-sixteenths | rule holds, unregistered | — | 32 / 0 (32) | — | — | — | 138
-zg-amount0.5-dur480-sixteenths | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 134
-zg-amount0.5-dur960-sixteenths | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 171
-zg-amount0.5-dur1920-sixteenths | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 156
-zg-amount0.5-dur3840-sixteenths | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 135
-zg-amount0.5-dur7680-sixteenths | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 137
-zg-amount0.5-dur15360-sixteenths | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 136
-zg-amount0.5-dur30720-sixteenths | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 135
-zg-amount0.5-dur61440-sixteenths | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 136
-zg-amount0.75-dur480-sixteenths | matches-known-deviation zeitgeist-warps-note-off, unregistered | — | 32 / 2 (30) | — | — | — | 174
-zg-amount0.75-dur960-sixteenths | matches-known-deviation zeitgeist-warps-note-off, unregistered | — | 32 / 18 (14) | — | — | — | 158
-zg-amount0.75-dur1920-sixteenths | matches-known-deviation zeitgeist-warps-note-off, unregistered | — | 32 / 21 (11) | — | — | — | 135
-zg-amount0.75-dur3840-sixteenths | matches-known-deviation zeitgeist-warps-note-off, unregistered | — | 32 / 21 (11) | — | — | — | 135
-zg-amount0.75-dur7680-sixteenths | matches-known-deviation zeitgeist-warps-note-off, unregistered | — | 26 / 16 (10) | — | — | — | 141
-zg-amount0.75-dur15360-sixteenths | matches-known-deviation zeitgeist-warps-note-off, unregistered | — | 20 / 19 (1) | — | — | — | 133
-zg-amount0.75-dur30720-sixteenths | matches-known-deviation zeitgeist-warps-note-off, unregistered | — | 8 / 7 (1) | — | — | — | 132
-zg-amount0.75-dur61440-sixteenths | matches-known-deviation zeitgeist-warps-note-off, unregistered | — | 4 / 4 (0) | 0.04 | 0.0 | 0.000 | 172
-zg-amount1-dur480-sixteenths | matches-known-deviation zeitgeist-warps-note-off, unregistered | — | 17 / 2 (30) | — | — | — | 155
-zg-amount1-dur960-sixteenths | matches-known-deviation zeitgeist-warps-note-off, unregistered | — | 17 / 1 (31) | — | — | — | 138
-zg-amount1-dur1920-sixteenths | matches-known-deviation zeitgeist-warps-note-off, unregistered | — | 17 / 1 (31) | — | — | — | 135
-zg-amount1-dur3840-sixteenths | matches-known-deviation zeitgeist-warps-note-off, unregistered | — | 16 / 3 (29) | — | — | — | 135
-zg-amount1-dur7680-sixteenths | rule holds, unregistered | — | 1 / 0 (17) | — | — | — | 135
-zg-amount1-dur15360-sixteenths | rule holds, unregistered | — | 0 / 0 (0) | — | — | — | 136
-zg-amount1-dur30720-sixteenths | rule holds, unregistered | — | 0 / 0 (0) | — | — | — | 173
-zg-amount1-dur61440-sixteenths | rule holds, unregistered | — | 0 / 0 (0) | — | — | — | 156
-zg-amount0-dur480-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 134
-zg-amount0-dur3840-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 139
-zg-amount0.25-dur480-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 136
-zg-amount0.25-dur3840-melody | matches-known-deviation zeitgeist-warps-note-off, unregistered | — | 1 / 4 (12) | — | — | — | 134
-zg-amount0.5-dur480-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 137
-zg-amount0.5-dur3840-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 175
-zg-amount0.75-dur480-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 156
-zg-amount0.75-dur3840-melody | matches-known-deviation zeitgeist-warps-note-off, unregistered | — | 1 / 5 (11) | — | — | — | 137
-zg-amount1-dur480-melody | rule holds, unregistered | — | 1 / 0 (16) | — | — | — | 134
-zg-amount1-dur3840-melody | matches-known-deviation zeitgeist-warps-note-off, unregistered | — | 1 / 1 (15) | 0.00 | 43.7 | 0.000 | 134
-order-arpeggio-zeitgeist | matches-known-deviation zeitgeist-warps-note-off, unregistered | — | 32 / 2 (30) | — | — | — | 135
-order-zeitgeist-arpeggio | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 136
-order-pitch-arpeggio | matches-known-deviation arpeggio-drops-cent, unregistered | — | 32 / 32 (0) | 0.00 | 12.5 | 0.000 | 176
-order-arpeggio-pitch | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 154
-order-velocity-arpeggio | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 136
-order-arpeggio-velocity | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 135
-disabled-arpeggio | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 150
-disabled-pitch | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 140
-disabled-velocity | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 135
-disabled-zeitgeist | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 179
-run 1793741953204 | sdk 0.0.180 | 48000 Hz | 120 bpm | reference peak 0.7078585456111496 | instrument offset 6 frames | register none | rows 230 | holds 145 deviation 63 broken 0 none 22 error 0
+arp-repeat1-held-chord | as-registered, matches-known-deviation arpeggio-uncapped-note-off | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 129
+arp-repeat2-held-chord | as-registered, matches-known-deviation arpeggio-uncapped-note-off | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 126
+arp-repeat4-held-chord | as-registered, matches-known-deviation arpeggio-uncapped-note-off | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 127
+arp-repeat16-held-chord | as-registered, matches-known-deviation arpeggio-uncapped-note-off | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 131
+arp-mode0-oct2-gate1-held-chord | as-registered | — | 1 / 0 (8) | — | — | — | 128
+arp-mode1-oct2-gate1-held-chord | as-registered | — | 1 / 0 (8) | — | — | — | 155
+arp-mode2-oct2-gate1-held-chord | as-registered | — | 1 / 0 (8) | — | — | — | 156
+arp-vel-1-held-chord | as-registered, matches-known-deviation arpeggio-velocity-matrix | — questioned: arpeggio-velocity-manual-gap | 0 / 8 (0) | — | — | — | 126
+arp-vel-1-held-note | as-registered, matches-known-deviation arpeggio-velocity-matrix | — questioned: arpeggio-velocity-manual-gap | 0 / 8 (0) | — | — | — | 128
+arp-vel-0.5-held-chord | as-registered, matches-known-deviation arpeggio-uncapped-note-off+arpeggio-velocity-matrix | — questioned: arpeggio-velocity-manual-gap | 8 / 8 (0) | 0.00 | 0.0 | 0.450 | 128
+arp-vel-0.5-held-note | as-registered, matches-known-deviation arpeggio-uncapped-note-off+arpeggio-velocity-matrix | — questioned: arpeggio-velocity-manual-gap | 8 / 8 (0) | 0.00 | 0.0 | 0.500 | 133
+arp-vel0-held-chord | as-registered, matches-known-deviation arpeggio-uncapped-note-off+arpeggio-velocity-matrix | — questioned: arpeggio-velocity-manual-gap | 8 / 8 (0) | 0.00 | 0.0 | 0.100 | 130
+arp-vel0-held-note | as-registered, matches-known-deviation arpeggio-uncapped-note-off | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 130
+arp-vel0.5-held-chord | as-registered, matches-known-deviation arpeggio-uncapped-note-off+arpeggio-velocity-matrix | — questioned: arpeggio-velocity-manual-gap | 8 / 8 (0) | 0.00 | 0.0 | 0.050 | 157
+arp-vel0.5-held-note | as-registered, matches-known-deviation arpeggio-uncapped-note-off | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 154
+arp-vel1-held-chord | as-registered, matches-known-deviation arpeggio-uncapped-note-off | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 127
+arp-vel1-held-note | as-registered, matches-known-deviation arpeggio-uncapped-note-off | — | 8 / 8 (0) | 0.00 | 0.0 | 0.000 | 128
+pitch-st-36-chromatic | no rule | — | 12 / 0 (12) | — | — | — | 130
+pitch-st-12-chromatic | as-registered | — | 12 / 12 (0) | 0.00 | 0.0 | 0.000 | 134
+pitch-st-7-chromatic | as-registered | — | 12 / 12 (0) | 0.00 | 0.0 | 0.000 | 129
+pitch-st0-chromatic | as-registered | — | 12 / 12 (0) | 0.00 | 0.0 | 0.000 | 131
+pitch-st7-chromatic | as-registered | — | 12 / 12 (0) | 0.00 | 0.0 | 0.000 | 163
+pitch-st12-chromatic | as-registered | — | 12 / 12 (0) | 0.00 | 0.0 | 0.000 | 154
+pitch-st36-chromatic | as-registered | — | 12 / 12 (0) | 0.10 | 0.0 | 0.000 | 131
+pitch-oct-7-chromatic | as-registered | — questioned: pitch-drops-out-of-range | 0 / 0 (0) | — | — | — | 129
+pitch-oct-3-chromatic | no rule | — | 12 / 0 (12) | — | — | — | 131
+pitch-oct-1-chromatic | as-registered | — | 12 / 12 (0) | 0.00 | 0.0 | 0.000 | 130
+pitch-oct0-chromatic | as-registered | — | 12 / 12 (0) | 0.00 | 0.0 | 0.000 | 130
+pitch-oct1-chromatic | as-registered | — | 12 / 12 (0) | 0.00 | 0.0 | 0.000 | 131
+pitch-oct3-chromatic | as-registered | — | 12 / 12 (0) | 0.10 | 0.0 | 0.000 | 159
+pitch-oct7-chromatic | as-registered | — questioned: pitch-drops-out-of-range | 0 / 0 (0) | — | — | — | 158
+pitch-ct-50-chromatic | as-registered | — | 12 / 12 (0) | 0.00 | 100.0 | 0.000 | 130
+pitch-ct-12.5-chromatic | as-registered | — | 12 / 12 (0) | 0.00 | 0.0 | 0.000 | 131
+pitch-ct0-chromatic | as-registered | — | 12 / 12 (0) | 0.00 | 0.0 | 0.000 | 130
+pitch-ct12.5-chromatic | as-registered | — | 12 / 12 (0) | 0.00 | 0.0 | 0.000 | 130
+pitch-ct50-chromatic | as-registered | — | 12 / 12 (0) | 0.00 | 100.0 | 0.000 | 130
+pitch-combined-chromatic | as-registered | — | 12 / 12 (0) | 0.00 | 0.0 | 0.000 | 131
+pitch-st-36-melody | as-registered | — | 1 / 0 (16) | — | — | — | 169
+pitch-st-12-melody | as-registered | — | 1 / 0 (16) | — | — | — | 159
+pitch-st-7-melody | as-registered | — | 1 / 0 (16) | — | — | — | 132
+pitch-st0-melody | as-registered | — | 1 / 0 (16) | — | — | — | 132
+pitch-st7-melody | as-registered | — | 1 / 0 (16) | — | — | — | 131
+pitch-st12-melody | as-registered | — | 1 / 0 (16) | — | — | — | 132
+pitch-st36-melody | as-registered | — | 1 / 0 (16) | — | — | — | 130
+pitch-oct-7-melody | as-registered | — questioned: pitch-drops-out-of-range | 0 / 0 (0) | — | — | — | 130
+pitch-oct-3-melody | as-registered | — | 1 / 0 (16) | — | — | — | 161
+pitch-oct-1-melody | as-registered | — | 1 / 0 (16) | — | — | — | 156
+pitch-oct0-melody | as-registered | — | 1 / 0 (16) | — | — | — | 132
+pitch-oct1-melody | as-registered | — | 1 / 0 (16) | — | — | — | 133
+pitch-oct3-melody | as-registered | — | 1 / 0 (16) | — | — | — | 133
+pitch-oct7-melody | as-registered | — questioned: pitch-drops-out-of-range | 0 / 0 (0) | — | — | — | 130
+pitch-ct-50-melody | as-registered | — | 1 / 0 (16) | — | — | — | 132
+pitch-ct-12.5-melody | as-registered | — | 1 / 0 (16) | — | — | — | 133
+pitch-ct0-melody | as-registered | — | 1 / 0 (16) | — | — | — | 172
+pitch-ct12.5-melody | as-registered | — | 1 / 0 (16) | — | — | — | 159
+pitch-ct50-melody | as-registered | — | 1 / 0 (16) | — | — | — | 134
+pitch-combined-melody | as-registered | — | 1 / 0 (16) | — | — | — | 134
+vel-magnet0x0-sixteenths | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 133
+vel-magnet0x0.5-sixteenths | as-registered | — | 32 / 32 (0) | 0.10 | 0.0 | 0.000 | 132
+vel-magnet0x1-sixteenths | changed, rule holds | unreadable 0 expected 32 | 0 / 0 (0) | — | — | — | 134
+vel-magnet0.5x0-sixteenths | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 164
+vel-magnet0.5x0.5-sixteenths | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 158
+vel-magnet0.5x1-sixteenths | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 132
+vel-magnet1x0-sixteenths | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 132
+vel-magnet1x0.5-sixteenths | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 132
+vel-magnet1x1-sixteenths | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 135
+vel-random0-sixteenths | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 135
+vel-random0.5-sixteenths | as-registered | — | 32 / 32 (0) | 0.10 | 0.0 | 0.002 | 131
+vel-random1-sixteenths | changed, rule holds | unreadable 0 expected 3 | 29 / 29 (0) | 0.30 | 0.0 | 0.002 | 181
+vel-offset-1-sixteenths | changed, rule holds | unreadable 0 expected 32 | 0 / 0 (0) | — | — | — | 156
+vel-offset-0.5-sixteenths | as-registered | — | 32 / 32 (0) | 0.10 | 0.0 | 0.000 | 133
+vel-offset0-sixteenths | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 132
+vel-offset0.5-sixteenths | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 135
+vel-mix0-sixteenths | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 132
+vel-mix0.5-sixteenths | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 134
+vel-mix1-sixteenths | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 168
+vel-magnet0x0-melody | as-registered | — | 1 / 0 (16) | — | — | — | 156
+vel-magnet0x0.5-melody | as-registered | — | 1 / 0 (16) | — | — | — | 132
+vel-magnet0x1-melody | changed, rule holds | unreadable 0 expected 16 | 0 / 0 (0) | — | — | — | 132
+vel-magnet0.5x0-melody | as-registered | — | 1 / 0 (16) | — | — | — | 131
+vel-magnet0.5x0.5-melody | as-registered | — | 1 / 0 (16) | — | — | — | 132
+vel-magnet0.5x1-melody | as-registered | — | 1 / 0 (16) | — | — | — | 131
+vel-magnet1x0-melody | as-registered | — | 1 / 0 (16) | — | — | — | 133
+vel-magnet1x0.5-melody | as-registered | — | 1 / 0 (16) | — | — | — | 169
+vel-magnet1x1-melody | as-registered | — | 1 / 0 (16) | — | — | — | 160
+vel-random0-melody | as-registered | — | 1 / 0 (16) | — | — | — | 141
+vel-random0.5-melody | as-registered | — | 1 / 0 (16) | — | — | — | 132
+vel-random1-melody | changed, rule holds | unreadable 13 expected 16 | 3 / 0 (13) | — | — | — | 134
+vel-offset-1-melody | changed, rule holds | unreadable 0 expected 16 | 0 / 0 (0) | — | — | — | 133
+vel-offset-0.5-melody | changed, rule holds | unreadable 12 expected 16 | 2 / 0 (12) | — | — | — | 133
+vel-offset0-melody | as-registered | — | 1 / 0 (16) | — | — | — | 169
+vel-offset0.5-melody | as-registered | — | 1 / 0 (16) | — | — | — | 154
+vel-mix0-melody | as-registered | — | 1 / 0 (16) | — | — | — | 134
+vel-mix0.5-melody | as-registered | — | 1 / 0 (16) | — | — | — | 134
+vel-mix1-melody | as-registered | — | 1 / 0 (16) | — | — | — | 134
+zg-amount0-dur480-sixteenths | no rule | — | 16 / 0 (32) | — | — | — | 135
+zg-amount0-dur960-sixteenths | as-registered | — | 16 / 0 (32) | — | — | — | 135
+zg-amount0-dur1920-sixteenths | as-registered | — | 16 / 0 (32) | — | — | — | 170
+zg-amount0-dur3840-sixteenths | as-registered, matches-known-deviation zeitgeist-warps-note-off | — | 16 / 2 (30) | — | — | — | 157
+zg-amount0-dur7680-sixteenths | changed, matches-known-deviation zeitgeist-warps-note-off | note 0 velocity 0.960 expected 0.990 | 16 / 3 (29) | — | — | — | 134
+zg-amount0-dur15360-sixteenths | no rule | — | 15 / 0 (32) | — | — | — | 135
+zg-amount0-dur30720-sixteenths | no rule | — | 1 / 0 (32) | — | — | — | 137
+zg-amount0-dur61440-sixteenths | no rule | — | 1 / 0 (32) | — | — | — | 134
+zg-amount0.25-dur480-sixteenths | as-registered, matches-known-deviation zeitgeist-warps-note-off | — | 32 / 0 (32) | — | — | — | 134
+zg-amount0.25-dur960-sixteenths | as-registered, matches-known-deviation zeitgeist-warps-note-off | — | 32 / 16 (16) | — | — | — | 174
+zg-amount0.25-dur1920-sixteenths | as-registered, matches-known-deviation zeitgeist-warps-note-off | — | 32 / 20 (12) | — | — | — | 158
+zg-amount0.25-dur3840-sixteenths | as-registered, matches-known-deviation zeitgeist-warps-note-off | — | 32 / 20 (12) | — | — | — | 134
+zg-amount0.25-dur7680-sixteenths | as-registered, matches-known-deviation zeitgeist-warps-note-off | — | 32 / 22 (10) | — | — | — | 135
+zg-amount0.25-dur15360-sixteenths | as-registered, matches-known-deviation zeitgeist-warps-note-off | — | 32 / 28 (4) | — | — | — | 137
+zg-amount0.25-dur30720-sixteenths | as-registered, matches-known-deviation zeitgeist-warps-note-off | — | 32 / 10 (22) | — | — | — | 133
+zg-amount0.25-dur61440-sixteenths | as-registered | — | 32 / 0 (32) | — | — | — | 136
+zg-amount0.5-dur480-sixteenths | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 171
+zg-amount0.5-dur960-sixteenths | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 157
+zg-amount0.5-dur1920-sixteenths | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 134
+zg-amount0.5-dur3840-sixteenths | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 137
+zg-amount0.5-dur7680-sixteenths | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 143
+zg-amount0.5-dur15360-sixteenths | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 135
+zg-amount0.5-dur30720-sixteenths | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 136
+zg-amount0.5-dur61440-sixteenths | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 175
+zg-amount0.75-dur480-sixteenths | as-registered, matches-known-deviation zeitgeist-warps-note-off | — | 32 / 2 (30) | — | — | — | 157
+zg-amount0.75-dur960-sixteenths | as-registered, matches-known-deviation zeitgeist-warps-note-off | — | 32 / 18 (14) | — | — | — | 140
+zg-amount0.75-dur1920-sixteenths | as-registered, matches-known-deviation zeitgeist-warps-note-off | — | 32 / 21 (11) | — | — | — | 140
+zg-amount0.75-dur3840-sixteenths | as-registered, matches-known-deviation zeitgeist-warps-note-off | — | 32 / 21 (11) | — | — | — | 135
+zg-amount0.75-dur7680-sixteenths | as-registered, matches-known-deviation zeitgeist-warps-note-off | — | 26 / 16 (10) | — | — | — | 135
+zg-amount0.75-dur15360-sixteenths | as-registered, matches-known-deviation zeitgeist-warps-note-off | — | 20 / 19 (1) | — | — | — | 136
+zg-amount0.75-dur30720-sixteenths | as-registered, matches-known-deviation zeitgeist-warps-note-off | — | 8 / 7 (1) | — | — | — | 173
+zg-amount0.75-dur61440-sixteenths | as-registered, matches-known-deviation zeitgeist-warps-note-off | — | 4 / 4 (0) | 0.04 | 0.0 | 0.000 | 158
+zg-amount1-dur480-sixteenths | changed, matches-known-deviation zeitgeist-warps-note-off | note 16 velocity 0.570 expected 0.605 | 17 / 2 (30) | — | — | — | 134
+zg-amount1-dur960-sixteenths | changed, matches-known-deviation zeitgeist-warps-note-off | note 2 velocity 0.960 expected 0.990 | 17 / 1 (31) | — | — | — | 135
+zg-amount1-dur1920-sixteenths | changed, matches-known-deviation zeitgeist-warps-note-off | note 4 velocity 0.960 expected 0.990 | 17 / 1 (31) | — | — | — | 136
+zg-amount1-dur3840-sixteenths | changed, matches-known-deviation zeitgeist-warps-note-off | note 8 velocity 0.960 expected 0.990 | 16 / 3 (29) | — | — | — | 140
+zg-amount1-dur7680-sixteenths | changed, rule holds | note 0 velocity 0.960 expected 0.990 | 1 / 0 (17) | — | — | — | 137
+zg-amount1-dur15360-sixteenths | as-registered | — | 0 / 0 (0) | — | — | — | 175
+zg-amount1-dur30720-sixteenths | as-registered | — | 0 / 0 (0) | — | — | — | 160
+zg-amount1-dur61440-sixteenths | as-registered | — | 0 / 0 (0) | — | — | — | 133
+zg-amount0-dur480-melody | as-registered | — | 1 / 0 (16) | — | — | — | 137
+zg-amount0-dur3840-melody | as-registered | — | 1 / 0 (16) | — | — | — | 135
+zg-amount0.25-dur480-melody | as-registered | — | 1 / 0 (16) | — | — | — | 134
+zg-amount0.25-dur3840-melody | as-registered, matches-known-deviation zeitgeist-warps-note-off | — | 1 / 4 (12) | — | — | — | 135
+zg-amount0.5-dur480-melody | as-registered | — | 1 / 0 (16) | — | — | — | 177
+zg-amount0.5-dur3840-melody | as-registered | — | 1 / 0 (16) | — | — | — | 157
+zg-amount0.75-dur480-melody | as-registered | — | 1 / 0 (16) | — | — | — | 137
+zg-amount0.75-dur3840-melody | as-registered, matches-known-deviation zeitgeist-warps-note-off | — | 1 / 5 (11) | — | — | — | 134
+zg-amount1-dur480-melody | as-registered | — | 1 / 0 (16) | — | — | — | 135
+zg-amount1-dur3840-melody | as-registered, matches-known-deviation zeitgeist-warps-note-off | — | 1 / 1 (15) | 0.00 | 43.7 | 0.000 | 136
+order-arpeggio-zeitgeist | as-registered, matches-known-deviation zeitgeist-warps-note-off | — | 32 / 2 (30) | — | — | — | 137
+order-zeitgeist-arpeggio | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 178
+order-pitch-arpeggio | as-registered, matches-known-deviation arpeggio-drops-cent | — | 32 / 32 (0) | 0.00 | 12.5 | 0.000 | 156
+order-arpeggio-pitch | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 137
+order-velocity-arpeggio | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 134
+order-arpeggio-velocity | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 140
+disabled-arpeggio | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 136
+disabled-pitch | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 137
+disabled-velocity | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 177
+disabled-zeitgeist | as-registered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 156
+run 1793744029767 | sdk 0.0.180 | 48000 Hz | 120 bpm | reference peak 0.7078585456111496 | instrument offset 6 frames | register /debug/2026-11-03-midi-effect-semantics/register/48000.json | rows 230 | holds 149 deviation 63 broken 0 none 18 error 0 | as-registered 217 changed 13 unregistered 0
 ```
 
 </details>
 
-Accepted 44.1 kHz, run 1793742021509: every row read the same verdict as at 48 kHz;
+Accepted 44.1 kHz, run 1793744117203: every row read the same rule verdict as at 48 kHz;
 `register/44100.json` holds its figures.
 
 ```
-run 1793742021509 | sdk 0.0.180 | 44100 Hz | 120 bpm | reference peak 0.7078102259681298 | instrument offset 6 frames | register none | rows 230 | holds 145 deviation 63 broken 0 none 22 error 0
+run 1793744117203 | sdk 0.0.180 | 44100 Hz | 120 bpm | reference peak 0.7078102259681298 | instrument offset 6 frames | register /debug/2026-11-03-midi-effect-semantics/register/44100.json | rows 230 | holds 149 deviation 63 broken 0 none 18 error 0 | as-registered 216 changed 14 unregistered 0
 ```
+
+The first registers' tables (runs 1793741953204 and 1793742021509) are in this note's history.

@@ -773,12 +773,13 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
 - After SDK upgrades, also run the MIDI effect semantics audit:
   `midi-effect-semantics-audit-debug-demo.html` then `?rate=44100` — a real click on Run,
   deterministic, no hardware, about 35 seconds per rate (230 rows). Expect every row
-  `as-registered`, `as-registered, matches-known-deviation …` or `no rule` (measured 145 / 63 / 22
-  at both rates on 0.0.180). A `changed` row is the finding; a `matches-known-deviation` the register
+  `as-registered`, `as-registered, matches-known-deviation …` or `no rule` (the counts per rate are
+  in the note's Runs section). A `changed` row is the finding; a `matches-known-deviation` the register
   lists is not (a deviation that stops matching is a fix landing: retire it in the note). Register
   `debug/2026-11-03-midi-effect-semantics/note.md` and `register/<rate>.json` beside it, table
   `node scripts/audit/midi-effect-semantics/table.ts [runToken]`; `--accept` writes the register,
-  only after a person's read (`--force` for a broken row, named in the note). Reading recipe:
+  only after a person's read (`--force` for a broken row, named in the note, or a partial run, which
+  then merges into the register). Reading recipe:
   `src/demos/midi/CLAUDE.md`.
 - After SDK upgrades, also re-run the standing combined MIDI + audio sweep:
   `midi-audio-combined-audit-debug-demo.html?scenario=all&bpm=120` — Chrome, a real click on
