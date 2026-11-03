@@ -115,7 +115,7 @@ export function writePattern(
   project: Pick<Project, "editing" | "api">,
   regionBox: NoteRegionBox,
   held: readonly NoteEventBox[],
-  pattern: Pattern
+  pattern: Pick<Pattern, "notes">
 ): NoteEventBox[] {
   project.editing.modify(() => {
     for (const box of held) if (box.isAttached()) box.delete();
