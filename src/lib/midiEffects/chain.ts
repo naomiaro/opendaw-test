@@ -8,7 +8,7 @@ import type { Editing } from "@opendaw/lib-std";
 import type { Pointers } from "@opendaw/studio-enums";
 import type { EffectBox, EffectFactory, Project } from "@opendaw/studio-core";
 import { removeMidiEffect } from "@/lib/audit/midiEffectChain";
-import { DEVICES, type DeviceId, type FactoryKey } from "./devices";
+import { DEVICES, deviceIdOf, type DeviceId, type FactoryKey } from "./devices";
 
 export type MidiEffectsField = Field<Pointers.MIDIEffectHost>;
 /** `EffectFactories[key]`, resolved by the page: the factories cannot be imported here (see `devices.ts`). */
@@ -46,4 +46,40 @@ export function moveDevice(editing: Editing, field: MidiEffectsField, fromIndex:
   if (fromIndex === toIndex) return;
   const dropIndex = fromIndex < toIndex ? toIndex + 1 : toIndex;
   editing.modify(() => IndexedBox.moveIndices(field, [fromIndex], dropIndex));
+}
+
+/**
+ * Make the chain read `desired`, in that order: remove boxes whose device is not wanted, insert the
+ * missing ones, then move until the order matches. `changed` is false when nothing was written, so a
+ * caller re-seeks the transport only on a real change.
+ */
+export function reconcileChain(
+  project: Pick<Project, "editing" | "api">,
+  field: MidiEffectsField,
+  desired: readonly DeviceId[],
+  factories: Factories
+): { changed: boolean } {
+  let changed = false;
+  for (const box of chainBoxes(field)) {
+    const id = deviceIdOf(box);
+    if (id === null || !desired.includes(id)) {
+      removeDevice(project.editing, box);
+      changed = true;
+    }
+  }
+  const present = new Set(chainBoxes(field).map(deviceIdOf));
+  for (const id of desired) {
+    if (!present.has(id)) {
+      insertDevice(project, field, id, factories);
+      changed = true;
+    }
+  }
+  for (let target = 0; target < desired.length; target++) {
+    const current = chainBoxes(field).map(deviceIdOf).indexOf(desired[target]);
+    if (current !== target) {
+      moveDevice(project.editing, field, current, target);
+      changed = true;
+    }
+  }
+  return { changed };
 }

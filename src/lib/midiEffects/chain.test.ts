@@ -4,10 +4,10 @@ import { BoxEditing } from "@opendaw/lib-box";
 import { ArpeggioDeviceBox, PitchDeviceBox, VelocityDeviceBox, type AudioUnitBox } from "@opendaw/studio-boxes";
 import { AudioUnitFactory, ProjectSkeleton } from "@opendaw/studio-adapters";
 import { AudioUnitType } from "@opendaw/studio-enums";
-import type { EffectBox } from "@opendaw/studio-core";
+import type { EffectBox, EffectFactory, Project } from "@opendaw/studio-core";
 import { graphWithZeitgeist, transact } from "@/lib/testing/boxGraphFixtures";
 import { deviceIdOf } from "./devices";
-import { chainBoxes, moveDevice, removeDevice, setDeviceEnabled } from "./chain";
+import { chainBoxes, moveDevice, reconcileChain, removeDevice, setDeviceEnabled, type Factories, type MidiEffectsField } from "./chain";
 
 /** Pitch at 0, Velocity at 1, Arpeggio at 2 on one unit's MIDI chain. */
 function threeDevices(): { unit: AudioUnitBox; boxes: EffectBox[]; editing: BoxEditing } {
@@ -65,5 +65,59 @@ describe("chain", () => {
     removeDevice(new BoxEditing(boxGraph), device);
     expect(chainBoxes(unit.midiEffects)).toHaveLength(0);
     expect(groove.isAttached()).toBe(false);
+  });
+});
+
+describe("reconcileChain", () => {
+  /** A Project double: `insertEffect` creates the device box by hand on the field, as the SDK factories do. */
+  function double(): { unit: AudioUnitBox; project: Pick<Project, "editing" | "api">; factories: Factories } {
+    const skeleton = ProjectSkeleton.empty({ createOutputMaximizer: false, createDefaultUser: false });
+    const { boxGraph } = skeleton;
+    const unit = transact(boxGraph, () => AudioUnitFactory.create(skeleton, AudioUnitType.Instrument, Option.None));
+    const editing = new BoxEditing(boxGraph);
+    const classes = { Arpeggio: ArpeggioDeviceBox, Pitch: PitchDeviceBox, Velocity: VelocityDeviceBox } as const;
+    const factoryFor = (key: keyof typeof classes): EffectFactory =>
+      ({ type: "midi", create: () => { throw new Error("unused"); }, boxName: key } as unknown as EffectFactory & { boxName: string });
+    const factories = { Arpeggio: factoryFor("Arpeggio"), Pitch: factoryFor("Pitch"), Velocity: factoryFor("Velocity"), Zeitgeist: factoryFor("Arpeggio") };
+    const api = {
+      insertEffect: (field: MidiEffectsField, factory: EffectFactory): EffectBox => {
+        const key = (factory as unknown as { boxName: keyof typeof classes }).boxName;
+        const index = chainBoxes(field).length;
+        return classes[key].create(boxGraph, UUID.generate(), (box) => {
+          box.index.setValue(index);
+          box.host.refer(field);
+        });
+      },
+    } as unknown as Project["api"];
+    return { unit, project: { editing, api }, factories };
+  }
+
+  it("inserts one device into an empty chain", () => {
+    const { unit, project, factories } = double();
+    const { changed } = reconcileChain(project, unit.midiEffects, ["arpeggio"], factories);
+    expect(changed).toBe(true);
+    expect(ids(unit)).toEqual(["arpeggio"]);
+  });
+
+  it("swaps a single device", () => {
+    const { unit, project, factories } = double();
+    reconcileChain(project, unit.midiEffects, ["arpeggio"], factories);
+    reconcileChain(project, unit.midiEffects, ["pitch"], factories);
+    expect(ids(unit)).toEqual(["pitch"]);
+  });
+
+  it("reorders without inserting or removing", () => {
+    const { unit, project, factories } = double();
+    reconcileChain(project, unit.midiEffects, ["pitch", "velocity", "arpeggio"], factories);
+    const before = chainBoxes(unit.midiEffects);
+    reconcileChain(project, unit.midiEffects, ["arpeggio", "velocity", "pitch"], factories);
+    expect(ids(unit)).toEqual(["arpeggio", "velocity", "pitch"]);
+    expect(new Set(chainBoxes(unit.midiEffects))).toEqual(new Set(before));
+  });
+
+  it("reports no change for the same list twice", () => {
+    const { unit, project, factories } = double();
+    reconcileChain(project, unit.midiEffects, ["pitch", "velocity"], factories);
+    expect(reconcileChain(project, unit.midiEffects, ["pitch", "velocity"], factories).changed).toBe(false);
   });
 });
