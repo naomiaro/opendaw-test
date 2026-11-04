@@ -130,8 +130,10 @@ const CONTEXT_2D_PROPERTIES = new Set([
  * misspelt call fails here as it would on a real canvas. All canvases share
  * the one list of calls.
  */
-export function installFakeContext2d(): { calls: string[] } {
+export function installFakeContext2d(): { calls: string[]; sets: { at: number; set: string }[] } {
   const calls: string[] = [];
+  // property sets, each with the number of calls made before it, so a test can order them against `calls`
+  const sets: { at: number; set: string }[] = [];
   const values: Record<string, unknown> = {};
   const context = new Proxy({} as Record<string, unknown>, {
     get: (_target, property) => {
@@ -149,12 +151,12 @@ export function installFakeContext2d(): { calls: string[] } {
         throw new Error(`A 2D canvas context has no "${String(property)}"`);
       }
       values[property] = value;
-      calls.push(`${property}=${value}`);
+      sets.push({ at: calls.length, set: `${property}=${value}` });
       return true;
     },
   });
   HTMLCanvasElement.prototype.getContext = (() => context) as unknown as HTMLCanvasElement["getContext"];
-  return { calls };
+  return { calls, sets };
 }
 
 /** Give an element a size and a place, as a browser's layout would */

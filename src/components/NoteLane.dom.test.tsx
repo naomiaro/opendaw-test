@@ -86,7 +86,7 @@ describe("NoteLane", () => {
     const { ctx } = showShaded(() => [{ pitch: 60, from: 1920, to: 3840, velocity: 0.6 }]);
     const i = ctx.calls.findIndex((c) => c.startsWith("fillRect(100,"));
     expect(i).toBeGreaterThan(0);
-    expect(ctx.calls.slice(0, i).filter((c) => c.startsWith("fillStyle=")).at(-1)).toBe(`fillStyle=${velocityColor(0.6)}`);
+    expect(ctx.sets.filter((s) => s.at <= i && s.set.startsWith("fillStyle=")).at(-1)?.set).toBe(`fillStyle=${velocityColor(0.6)}`);
   });
   it("draws a hollow note as an outline and no fill", () => {
     const { ctx } = show(() => [{ pitch: 60, from: 1920, to: 3840, hollow: true }]);

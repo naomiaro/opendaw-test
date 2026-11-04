@@ -105,6 +105,7 @@ export const NoteLane = forwardRef<NoteLaneHandle, NoteLaneProps>(function NoteL
         const barHeight = Math.max(rowHeight - 1, 1);
         if (note.hollow) {
           context.strokeStyle = CANVAS_COLORS.structural;
+          context.lineWidth = 1;
           context.strokeRect(left, top, barWidth, barHeight);
         } else {
           context.fillStyle = fill;
