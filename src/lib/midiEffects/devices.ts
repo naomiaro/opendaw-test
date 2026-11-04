@@ -56,7 +56,7 @@ export const DEVICES: { readonly [K in DeviceId]: DeviceSpec & { readonly id: K 
     listenFor: "On Chords, the held triads become running sixteenths. Raise the octaves and the run climbs; drop the gate and the steps get short.",
     laneNote: {
       effects: null,
-      rendered: "A gate under 100 % makes every step's timing measured; at 100 % the steps touch and their boundaries come from the device rule, drawn dashed.",
+      rendered: "A gate under 100 % lets the reader measure the steps' edges (a step shorter than the reader's floor, 1/64 at 120 bpm, still reads too short); at 100 % the steps touch and their boundaries come from the device rule, drawn dashed.",
     },
     snippet: `${insert("Arpeggio")}
 const arp = project.boxAdapters.adapterFor(box, ArpeggioDeviceBoxAdapter);
@@ -95,7 +95,7 @@ project.editing.modify(() => vel.namedParameter.magnetStrength.setValue(1));`,
     listenFor: "On Sixteenths at 60%, every other note drags late by about 24 ms (47 pulses at 120 bpm). Below 50% the off-beats rush instead.",
     laneNote: {
       effects: "The 24 ms drag is one and a half frames on a 60 Hz display, so the emitted lane shows it only roughly; the placement audit (debug/2026-10-21-midi-effect-placement/note.md) measures it to the frame.",
-      rendered: "The rendered lane places every note to the sample: at 60 % on Sixteenths the off-beats sit 47 pulses late.",
+      rendered: "The rendered lane places every note to the sample where the notes do not touch: at 60 % on Sixteenths the off-beats sit 47 pulses late.",
     },
     snippet: `${insert("Zeitgeist")}
 const zeit = project.boxAdapters.adapterFor(box, ZeitgeistDeviceBoxAdapter);

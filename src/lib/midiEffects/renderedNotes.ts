@@ -3,6 +3,8 @@
  * and the spans the monophonic reader cannot read. Every value drawn solid (pitch, cents, velocity,
  * edges) comes from the render; the device rule is used only to window and mark: which read figure
  * answers which predicted note, which notes overlap, which are too short, too quiet or silenced.
+ * Two placements come from the rule: an abutting note's edges (drawn dashed) and its velocity stem,
+ * which sits at its PREDICTED onset because the reader cannot find that note's edges.
  * The prediction applies EVERY known deviation of the enabled devices, the engine's variant, so its
  * windows and silences are the ones the render has (the audit's intent variant would predict full
  * velocity where an Arpeggio at −100 % is silent). Pure: the only SDK import is `PPQN`.

@@ -39,7 +39,12 @@ import { PlayIcon, StopIcon } from "@radix-ui/react-icons";
 const FACTORIES: Factories = EffectFactories.MidiNamed;
 
 const RATE = 48000;
-/** Long enough that no note of the two-bar pattern outlives the sample (the Nano does not loop it). */
+/**
+ * The bootstrap sets the Nano's loop off, so a note far above the root runs out of the sample. At 20 s a gapped Chords
+ * note holds to pitch 122 and every other pattern note to 127; a held Chords note at the top of the range, or a slow
+ * Arpeggio step above pitch 96 (4 s at 1/1 and gate 200 %), can outlive it, and the reader then reads the sample's end
+ * as the note's end (the page does not detect it).
+ */
 const SAMPLE_SECONDS = 20;
 /** Every note shortened to 90 % of its written length, so the reader finds the gap between notes. */
 const GAP_RATIO = 0.9;
@@ -52,7 +57,8 @@ const PITCH_HIGH = 96;
 const LANE_HEIGHT = 224;
 const STRIP_HEIGHT = 64;
 
-const DASHED_SENTENCE = "dashed edges: the step boundaries come from the device rule; a gate under 100 % makes them measured";
+const DASHED_SENTENCE =
+  "dashed edges: the step boundaries come from the device rule; a gate under 100 % lets the reader measure the steps' edges (a step shorter than the reader's floor, 1/64 at 120 bpm, still reads too short)";
 
 interface Built {
   project: Project;
@@ -370,7 +376,7 @@ const figures = readNotes(channels[0], rate).map((note) =>
           <Text as="p" size="2" color="gray" style={{ marginTop: 8 }}>
             Every device parameter, the Velocity seed, the chain and the pattern ask for a render. Requests settle
             for 300 ms before a render starts, so a slider drag costs one render, not one per step; a change that
-            arrives while a render runs queues exactly one more, which starts when the running one ends.
+            arrives while a render runs queues exactly one more, which re-settles 300 ms after the running one ends.
           </Text>
         </section>
         <MoisesLogo />

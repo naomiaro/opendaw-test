@@ -120,8 +120,9 @@ function MidiEffectsOverview() {
               Two devices differ from their manuals, and the pages show what the engine
               does. The Arpeggio&apos;s velocity control is{" "}
               <a href="https://github.com/andremichelle/openDAW/issues/524">openDAW#524</a>:
-              the manual says &minus;100 % is full velocity, while the engine is silent at
-              &minus;100 % and plays the note&apos;s own velocity at 0 %. Zeitgeist is{" "}
+              the manual says &minus;100 % is full velocity and +100 % the note&apos;s own,
+              while the engine is silent at &minus;100 %, plays every note at full velocity at
+              0 % and reaches the note&apos;s own velocity only at +100 %. Zeitgeist is{" "}
               <a href="https://github.com/andremichelle/openDAW/issues/525">openDAW#525</a>:
               it moves note-offs as well as note-ons, while the manual says durations stay.
             </p>
