@@ -6,12 +6,12 @@
 import { Option } from "@opendaw/lib-std";
 import { BoxEditing, type BoxGraph, type Int32Field, type PointerField, type StringField } from "@opendaw/lib-box";
 import {
-  ArpeggioDeviceBox, GrooveShuffleBox, PitchDeviceBox, VelocityDeviceBox, ZeitgeistDeviceBox,
+  ArpeggioDeviceBox, GrooveShuffleBox, NoteFilterDeviceBox, PitchDeviceBox, VelocityDeviceBox, ZeitgeistDeviceBox,
   type AudioUnitBox, type BoxIO, type NanoDeviceBox,
 } from "@opendaw/studio-boxes";
 import {
   ArpeggioDeviceBoxAdapter, AudioUnitFactory, BoxAdapters, InstrumentFactories, NanoDeviceBoxAdapter,
-  ParameterFieldAdapters, PitchDeviceBoxAdapter, ProjectSkeleton, VelocityDeviceBoxAdapter, ZeitgeistDeviceBoxAdapter,
+  NoteFilterDeviceBoxAdapter, ParameterFieldAdapters, PitchDeviceBoxAdapter, ProjectSkeleton, VelocityDeviceBoxAdapter, ZeitgeistDeviceBoxAdapter,
   type BoxAdaptersContext, type MidiEffectDeviceAdapter,
 } from "@opendaw/studio-adapters";
 import type { EffectBox } from "@opendaw/studio-core";
@@ -135,6 +135,7 @@ export function midiEffectFixture(id: DeviceId): MidiEffectFixture {
     };
     switch (id) {
       case "arpeggio": return { unit, box: ArpeggioDeviceBox.create(boxGraph, UUID.generate(), common("Arpeggio")) };
+      case "note-filter": return { unit, box: NoteFilterDeviceBox.create(boxGraph, UUID.generate(), common("Note Filter")) };
       case "pitch": return { unit, box: PitchDeviceBox.create(boxGraph, UUID.generate(), common("Pitch")) };
       case "velocity": return { unit, box: VelocityDeviceBox.create(boxGraph, UUID.generate(), common("Velocity")) };
       case "zeitgeist": {
@@ -159,6 +160,7 @@ export function midiEffectFixture(id: DeviceId): MidiEffectFixture {
   context.boxAdapters = new BoxAdapters(context as BoxAdaptersContext);
   const adapter: MidiEffectDeviceAdapter =
     box instanceof ArpeggioDeviceBox ? new ArpeggioDeviceBoxAdapter(context, box)
+    : box instanceof NoteFilterDeviceBox ? new NoteFilterDeviceBoxAdapter(context, box)
     : box instanceof PitchDeviceBox ? new PitchDeviceBoxAdapter(context, box)
     : box instanceof VelocityDeviceBox ? new VelocityDeviceBoxAdapter(context, box)
     : new ZeitgeistDeviceBoxAdapter(context, box as ZeitgeistDeviceBox);

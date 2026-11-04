@@ -103,7 +103,7 @@ describe("reconcileChain", () => {
     const classes = { Arpeggio: ArpeggioDeviceBox, Pitch: PitchDeviceBox, Velocity: VelocityDeviceBox } as const;
     const factoryFor = (key: keyof typeof classes): EffectFactory =>
       ({ type: "midi", create: () => { throw new Error("unused"); }, boxName: key } as unknown as EffectFactory & { boxName: string });
-    const factories = { Arpeggio: factoryFor("Arpeggio"), Pitch: factoryFor("Pitch"), Velocity: factoryFor("Velocity"), Zeitgeist: factoryFor("Arpeggio") };
+    const factories = { Arpeggio: factoryFor("Arpeggio"), NoteFilter: factoryFor("Pitch"), Pitch: factoryFor("Pitch"), Velocity: factoryFor("Velocity"), Zeitgeist: factoryFor("Arpeggio") };
     const api = {
       insertEffect: (field: MidiEffectsField, factory: EffectFactory): EffectBox => {
         const key = (factory as unknown as { boxName: keyof typeof classes }).boxName;

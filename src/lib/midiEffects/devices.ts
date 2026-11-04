@@ -1,31 +1,31 @@
 /**
- * The MIDI effects demo's device registry: the four stock MIDI effects, their copy, and the
+ * The MIDI effects demo's device registry: the five stock MIDI effects, their copy, and the
  * parameters each card renders, read through the SDK's device adapters so the sliders print the
  * SDK's own strings ("Up", "1/16", "+7 st") instead of raw field values.
  */
 import {
-  ArpeggioDeviceBox, PitchDeviceBox, VelocityDeviceBox, ZeitgeistDeviceBox,
+  ArpeggioDeviceBox, NoteFilterDeviceBox, PitchDeviceBox, VelocityDeviceBox, ZeitgeistDeviceBox,
 } from "@opendaw/studio-boxes";
 import {
-  ArpeggioDeviceBoxAdapter, GrooveShuffleBoxAdapter, PitchDeviceBoxAdapter, VelocityDeviceBoxAdapter,
-  ZeitgeistDeviceBoxAdapter, type MidiEffectDeviceAdapter,
+  ArpeggioDeviceBoxAdapter, GrooveShuffleBoxAdapter, NoteFilterDeviceBoxAdapter, PitchDeviceBoxAdapter,
+  VelocityDeviceBoxAdapter, ZeitgeistDeviceBoxAdapter, type MidiEffectDeviceAdapter,
 } from "@opendaw/studio-adapters";
 import type { EffectBox, EffectFactories } from "@opendaw/studio-core";
 import type { Editing } from "@opendaw/lib-std";
 import type { UnitParameter } from "@/lib/parameterBinding";
 
-export type DeviceId = "arpeggio" | "pitch" | "velocity" | "zeitgeist";
+export type DeviceId = "arpeggio" | "note-filter" | "pitch" | "velocity" | "zeitgeist";
 
 /** The two pages whose lanes a device card describes: the MIDI Effects page and the Rendered page. */
 export type LanePage = "effects" | "rendered";
 
-/** Tab order on the page. */
-export const DEVICE_IDS: readonly DeviceId[] = ["arpeggio", "pitch", "velocity", "zeitgeist"];
+/** Tab order on the page: the SDK's own order in `EffectFactories.MidiNamed`. */
+export const DEVICE_IDS: readonly DeviceId[] = ["arpeggio", "note-filter", "pitch", "velocity", "zeitgeist"];
 
 /** The entry's name in `EffectFactories`. Kept as a key, not the factory: a value import of
  *  `@opendaw/studio-core` pulls the engine worklet in, which Node (the tests) cannot load. The page
  *  resolves `EffectFactories[factoryKey]`. */
-export type FactoryKey = Extract<EffectFactories.MidiEffectKeys, "Arpeggio" | "Pitch" | "Velocity" | "Zeitgeist">;
+export type FactoryKey = Extract<EffectFactories.MidiEffectKeys, "Arpeggio" | "NoteFilter" | "Pitch" | "Velocity" | "Zeitgeist">;
 
 export interface DeviceSpec {
   readonly id: DeviceId;
@@ -61,6 +61,20 @@ export const DEVICES: { readonly [K in DeviceId]: DeviceSpec & { readonly id: K 
     snippet: `${insert("Arpeggio")}
 const arp = project.boxAdapters.adapterFor(box, ArpeggioDeviceBoxAdapter);
 project.editing.modify(() => arp.namedParameter.numOctaves.setValue(2));`,
+  },
+  "note-filter": {
+    id: "note-filter",
+    label: "Note Filter",
+    factoryKey: "NoteFilter",
+    what: "Lets only the notes between Min and Max through, both ends included, then either moves them by Semitones or plays every one of them as Key. A result outside the keyboard (C-2 to G8) is dropped, not clamped; velocity and cents pass through. Key names here are the SDK's, middle C printed as C3.",
+    listenFor: "On Chords, raise Min to D3 and the stack thins to one, none, two and one notes: the F chord goes silent, a keyboard split. On Bass, switch Set on and every root plays as the Key, the one-shot trigger the manual describes. On Melody, Semitones moves the tune; push it past G8 and the top notes drop out instead of clamping.",
+    laneNote: {
+      effects: "A dropped note simply vanishes from the emitted lane; a moved or set one appears on its new key.",
+      rendered: "A dropped note is a written ghost with no rendered bar; a moved or set one sits on its new key, its velocity and cents as written.",
+    },
+    snippet: `${insert("NoteFilter")}
+const filter = project.boxAdapters.adapterFor(box, NoteFilterDeviceBoxAdapter);
+project.editing.modify(() => filter.namedParameter.min.setValue(62)); // D3: nothing below passes`,
   },
   pitch: {
     id: "pitch",
@@ -111,11 +125,16 @@ export interface DeviceParameter {
   readonly parameter: UnitParameter;
   /** Number of whole values of an integer parameter, so a slider steps over them. */
   readonly positions?: number;
+  /** The control the card renders; a slider when absent. */
+  readonly control?: "switch";
+  /** Dimmed (still operable) while the parameter named `key` reads on / off: the device ignores it then. */
+  readonly dimWhen?: { readonly key: string; readonly on: boolean };
 }
 
 /** Which registry entry a box on the chain is, or null for a device the demo does not handle. */
 export function deviceIdOf(box: EffectBox): DeviceId | null {
   if (box instanceof ArpeggioDeviceBox) return "arpeggio";
+  if (box instanceof NoteFilterDeviceBox) return "note-filter";
   if (box instanceof PitchDeviceBox) return "pitch";
   if (box instanceof VelocityDeviceBox) return "velocity";
   if (box instanceof ZeitgeistDeviceBox) return "zeitgeist";
@@ -133,6 +152,16 @@ export function deviceParameters(adapter: MidiEffectDeviceAdapter): DeviceParame
       { key: "gate", label: "Gate", parameter: p.gate },
       { key: "repeat", label: "Repeat", parameter: p.repeat, positions: 16 },
       { key: "velocity", label: "Velocity", parameter: p.velocity },
+    ];
+  }
+  if (adapter instanceof NoteFilterDeviceBoxAdapter) {
+    const p = adapter.namedParameter;
+    return [
+      { key: "min", label: "Min", parameter: p.min, positions: 128 },
+      { key: "max", label: "Max", parameter: p.max, positions: 128 },
+      { key: "set", label: "Set", parameter: p.set, control: "switch" },
+      { key: "transpose", label: "Semitones", parameter: p.transpose, positions: 255, dimWhen: { key: "set", on: true } },
+      { key: "key", label: "Key", parameter: p.key, positions: 128, dimWhen: { key: "set", on: false } },
     ];
   }
   if (adapter instanceof PitchDeviceBoxAdapter) {
