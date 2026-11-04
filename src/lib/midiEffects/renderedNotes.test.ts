@@ -177,7 +177,7 @@ describe("renderedRows", () => {
     expect(rows.stems).toEqual([]);
   });
 
-  it("a figure inside a too-short note's span is absorbed before a readable neighbour 3.5 ms away can match it", () => {
+  it("a figure inside a too-short note's span is absorbed before a readable neighbour 3.1 ms away can match it", () => {
     // too short: 0..20 pulses (2000..2010.4 ms); readable from 26 pulses (2013.5 ms), 3.1 ms after, past the reader's gap
     const prediction = predict([note(0, 20, 60), note(26, 480, 64)]);
     expect(prediction.predicted.map((n) => n.readability)).toEqual(["too-short", "readable"]);

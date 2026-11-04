@@ -56,7 +56,7 @@ export const VelocityStrip = forwardRef<VelocityStripHandle, VelocityStripProps>
       const height = canvas.clientHeight;
       if (rangePpqn <= 0 || beatPpqn <= 0 || barPpqn <= 0) return;
       const x = (ppqn: number) => (ppqn / rangePpqn) * width;
-      const stemHeight = (velocity: number) => velocity * (height - TITLE_ROOM);
+      const stemHeight = (velocity: number) => Math.min(1, Math.max(0, velocity)) * (height - TITLE_ROOM);
 
       context.fillStyle = CANVAS_COLORS.bg;
       context.fillRect(0, 0, width, height);

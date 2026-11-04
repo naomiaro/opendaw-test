@@ -480,7 +480,7 @@ rule's prediction. The overview page is `midi-effects-overview.tsx`.
   without it). The render copy drops it through `renderOfflineSlice`'s `mutateCopy` option
   (`src/lib/offlineScan.ts`); `renderChannel` throws unless exactly one was removed.
 - **Gapped patterns.** `withGaps(pattern, 0.9)` (`src/lib/midiEffects/patterns.ts`) shortens notes to
-  90 % so the reader finds the gap (Melody 25 ms, Bass 100 ms); the shared patterns and the audit's
+  90 % so the reader finds the gap (Melody 25 ms, Bass 50 ms); the shared patterns and the audit's
   register are untouched. The one abutting case left is an Arpeggio at gate 100 %: its steps' onset
   AND end come from the device rule (drawn dashed, `measured: false`). Above 100 % the steps overlap
   and read unreadable.

@@ -33,6 +33,13 @@ describe("VelocityStrip", () => {
     expect(rects[0][3]).toBeCloseTo(0.5 * (HEIGHT - 14), 1);
   });
 
+  it("clamps a velocity above 1 to the full stem height", () => {
+    const { ctx } = show(() => [], () => [{ at: 1920, velocity: 1.5 }]);
+    const rects = fillRects(ctx.calls).map(args).filter(([x]) => x >= 100 && x <= 104);
+    expect(rects.length).toBe(1);
+    expect(rects[0][3]).toBeCloseTo(HEIGHT - 14, 1);
+  });
+
   it("draws a ghost before the stem at the same onset, in the structural colour", () => {
     const { ctx } = show(() => [{ at: 1920, velocity: 1 }], () => [{ at: 1920, velocity: 0.5 }]);
     const styles = ctx.sets.map((s) => s.set).filter((s) => s.startsWith("fillStyle="));
