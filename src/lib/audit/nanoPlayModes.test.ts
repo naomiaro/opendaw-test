@@ -4,7 +4,7 @@ import { samplerFixture } from "@/lib/testing/boxGraphFixtures";
 import {
   applyPlayModeSettings, DEFAULT_SETTINGS, instrumentOffsetFrames, judgePlayModeRow, MONO_FADE_BAND_MS, MONO_FADE_MS, noteOnsetFrame,
   overlapFigures, panLaw, PLAY_MODE_BPM, PLAY_MODE_REGION_POSITION_PPQN, PLAY_MODE_ROWS, PLAY_MODE_SAMPLE_HZ, renderSeconds, resolveRows,
-  toneEnvelope, type PlayModeRow,
+  toDb, toneEnvelope, type PlayModeRow,
 } from "./nanoPlayModes";
 
 const RATE = 48000;
@@ -93,6 +93,17 @@ describe("toneEnvelope", () => {
     expect(Math.abs(withOctave[ms(200)] - alone[ms(200)])).toBeLessThan(0.005);
   });
 
+  // the period is a fractional frame count at both rates (109.09 and 100.23); a window rounded to whole frames
+  // left the octave at −47 dB at 44.1 kHz, which the mono rows then measured as "the fade"
+  it.each([48000, 44100])("averages a pure octave above out to under −80 dB at %i Hz", (rate) => {
+    const samples = new Float32Array(rate);
+    for (let n = 0; n < rate; n++) samples[n] = 0.8 * Math.sin((2 * Math.PI * 880 * n) / rate);
+    const envelope = toneEnvelope(samples, rate, 440);
+    let peak = 0;
+    for (let n = Math.round(rate * 0.01); n < rate; n++) peak = Math.max(peak, envelope[n]);
+    expect(toDb(peak / 0.8)).toBeLessThan(-80);
+  });
+
   it("reads silence as silence", () => {
     expect(Math.max(...toneEnvelope(new Float32Array(4800), RATE, 440))).toBe(0);
   });
@@ -100,12 +111,13 @@ describe("toneEnvelope", () => {
 
 describe("overlapFigures", () => {
   it("reads a kept note as level and a faded one as gone after the fade", () => {
-    const kept = overlapFigures(overlapRender(true)[0], RATE, PLAY_MODE_SAMPLE_HZ, B);
+    const kept = overlapFigures(overlapRender(true)[0], RATE, PLAY_MODE_SAMPLE_HZ, 2 * PLAY_MODE_SAMPLE_HZ, B);
     expect(kept.beforeDb).toBeCloseTo(20 * Math.log10(0.8), 0);
     expect(Math.abs(kept.afterDb)).toBeLessThan(0.5);
     expect(kept.cut40Ms).toBeNull();
-    const cut = overlapFigures(overlapRender(false)[0], RATE, PLAY_MODE_SAMPLE_HZ, B);
-    expect(cut.afterDb).toBeLessThan(-40);
+    expect(kept.secondDb).toBeCloseTo(20 * Math.log10(0.8), 0);
+    const cut = overlapFigures(overlapRender(false)[0], RATE, PLAY_MODE_SAMPLE_HZ, 2 * PLAY_MODE_SAMPLE_HZ, B);
+    expect(cut.afterDb).toBeLessThan(-60);
     expect(cut.cut40Ms).not.toBeNull();
     expect(cut.cut40Ms!).toBeGreaterThanOrEqual(MONO_FADE_BAND_MS[0]);
     expect(cut.cut40Ms!).toBeLessThanOrEqual(MONO_FADE_BAND_MS[1]);
@@ -118,6 +130,36 @@ describe("judgePlayModeRow", () => {
     expect(judgePlayModeRow(row("mono-cut"), overlapRender(false), RATE, 0).status).toBe("as-expected");
     expect(judgePlayModeRow(row("poly-overlap"), overlapRender(false), RATE, 0).status).toBe("investigate");
     expect(judgePlayModeRow(row("mono-cut"), overlapRender(true), RATE, 0).status).toBe("investigate");
+  });
+
+  // a relative reading on silence is 0 dB: both overlap rows must refuse a render where a note does not sound
+  it("reads a silent or faint render as investigate on both overlap rows, not as kept", () => {
+    const silent = [new Float32Array(LENGTH), new Float32Array(LENGTH)];
+    const faint = silent.map((channel) => Float32Array.from(channel));
+    tone(faint[0], 440, A, ms(500), 0.0001);
+    tone(faint[0], 880, B, ms(250), 0.0001);
+    for (const render of [silent, faint]) {
+      for (const id of ["poly-overlap", "mono-cut"]) {
+        const verdict = judgePlayModeRow(row(id), render, RATE, 0);
+        expect(verdict.status, id).toBe("investigate");
+        expect(verdict.figure, id).toContain("first note not sounding");
+      }
+    }
+  });
+
+  it("reads a dropped second note as investigate, not as the first note kept", () => {
+    const firstOnly = new Float32Array(LENGTH);
+    tone(firstOnly, 440, A, ms(500));
+    const verdict = judgePlayModeRow(row("poly-overlap"), [firstOnly, firstOnly], RATE, 0);
+    expect(verdict.status).toBe("investigate");
+    expect(verdict.figure).toContain("second note not sounding");
+  });
+
+  it("refuses an overlap row whose offset was never read, instead of assuming zero", () => {
+    const verdict = judgePlayModeRow(row("mono-cut"), overlapRender(false), RATE, null);
+    expect(verdict.status).toBe("investigate");
+    expect(verdict.figure).toContain("offset");
+    expect(judgePlayModeRow(row("one-shot-off"), overlapRender(false), RATE, null).figure).not.toContain("offset");
   });
 
   it("judges a note's length", () => {
@@ -162,6 +204,12 @@ describe("judgePlayModeRow", () => {
     expect(judgePlayModeRow(row("pan-half-right"), [half, full], RATE, 0).status).toBe("as-expected");
     expect(judgePlayModeRow(row("pan-half-right"), [full, full], RATE, 0).status).toBe("investigate");
     expect(judgePlayModeRow(row("pan-centre"), [silent, silent], RATE, 0).status).toBe("investigate");
+    // a faint render has a ratio too: the row must refuse it, not read the ratio
+    const faint = new Float32Array(LENGTH);
+    tone(faint, 440, A, ms(250), 0.001);
+    const verdict = judgePlayModeRow(row("pan-centre"), [faint, faint], RATE, 0);
+    expect(verdict.status).toBe("investigate");
+    expect(verdict.figure).toContain("a sounding note");
   });
 
   it("reads the sampler's offset from the first note", () => {

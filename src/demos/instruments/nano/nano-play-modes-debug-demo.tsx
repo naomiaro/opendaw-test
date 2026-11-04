@@ -117,18 +117,22 @@ const App: React.FC = () => {
           notes: row.notes.map((note) => ({ position: note.position as ppqn, duration: note.duration as ppqn, pitch: note.pitch, velocity: 1 })),
         });
         project.editing.modify(() => applyPlayModeSettings(nanoBox, row.settings));
-        const { channels } = await renderOfflineSlice(project, 0, renderSeconds(), RATE);
-        if (offsetFrames === null) {
-          offsetFrames = instrumentOffsetFrames(row, channels[0], RATE);
-          setOffset(offsetFrames);
-        }
-        const verdict = judgePlayModeRow(row, channels, RATE, offsetFrames ?? 0);
-        out.push({ id: row.id, label: row.label, status: verdict.status, figure: verdict.figure, values: verdict.values, renderMs: Math.round(performance.now() - started) });
       } catch (error) {
+        // the row's own pattern or settings refused: a red row, the later rows stand on their own
         const message = error instanceof Error ? error.message : String(error);
         console.error(`[nano-play-modes] ${row.id}: ${message}`);
         out.push({ id: row.id, label: row.label, status: "error", figure: message, values: {}, renderMs: Math.round(performance.now() - started), error: message });
+        setRows([...out]);
+        continue;
       }
+      // a render that throws is the shared machinery (worker, engine), which would fail every later row: it ends the run in error:
+      const { channels } = await renderOfflineSlice(project, 0, renderSeconds(), RATE);
+      if (offsetFrames === null && channels.length === 2) {
+        offsetFrames = instrumentOffsetFrames(row, channels[0], RATE);
+        setOffset(offsetFrames);
+      }
+      const verdict = judgePlayModeRow(row, channels, RATE, offsetFrames);
+      out.push({ id: row.id, label: row.label, status: verdict.status, figure: verdict.figure, values: verdict.values, renderMs: Math.round(performance.now() - started) });
       setRows([...out]);
     }
     const summary: PlayModeSummary = {
@@ -139,10 +143,12 @@ const App: React.FC = () => {
       await uploadSummary(`nano-play-modes-summary-${runToken}.json`, summary);
       setStatus(`Done — nano-play-modes-summary-${runToken}.json`);
     } catch (error) {
-      // the sink exists on the dev server only; the public host answers 404 or 405 and the run still stands
+      // the sink exists on the dev server only: the public host answers 404 or 405 and the run still stands; any other
+      // failure (a 500, a deadline) ends the run in error:, so a harness polling for done never reads a missing file
       const message = error instanceof Error ? error.message : String(error);
-      console.warn(`[nano-play-modes] summary not uploaded: ${message}`);
-      setStatus(`Done (summary not uploaded: ${message})`);
+      if (!/HTTP 40[45]\b/.test(message)) throw error;
+      console.warn(`[nano-play-modes] summary not uploaded: no /__verify sink on this host (${message})`);
+      setStatus(`Done (no /__verify sink on this host: ${message})`);
     }
     setAuditState("done");
   }, []);
@@ -151,6 +157,7 @@ const App: React.FC = () => {
     if (built === null || running) return;
     setRunning(true);
     setRows([]);
+    setOffset(null);
     runAudit(built)
       .catch((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);

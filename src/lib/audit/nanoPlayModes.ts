@@ -32,6 +32,11 @@ export const MONO_FADE_BAND_MS: readonly [number, number] = [3, 9];
 export const KEPT_TOLERANCE_DB = 1;
 /** A cut voice reads at least this far down once the fade has run. */
 export const CUT_FLOOR_DB = -40;
+/** A note that is meant to sound reads at least this loud (dBFS): a velocity-1 sine renders near −3 dBFS, and a
+ *  relative reading on silence would otherwise pass (0 − 0 = 0 dB). */
+export const SOUNDING_FLOOR_DB = -20;
+/** The louder channel's peak in a pan row must clear this, or the ratio is read on nothing. */
+export const SOUNDING_FLOOR_PEAK = 10 ** (SOUNDING_FLOOR_DB / 20);
 /** A read frequency may miss its expectation by this much (the zero-crossing reader on a 1 ms-enveloped sine). */
 export const PITCH_TOLERANCE_CENTS = 5;
 /** A note's read length may miss its expectation by this much: the 1 ms release plus the reader's gap. */
@@ -132,30 +137,43 @@ export function renderSeconds(): number {
 }
 
 /**
- * The amplitude of the `hz` component, frame by frame: the signal demodulated at `hz` and averaged over one period
- * of it, so a tone at a multiple of `hz` (the second note an octave up) averages out. Entry `i` is the amplitude of
- * the period ENDING at frame `i`; the first period reads as a ramp. Returns the whole buffer's length.
+ * The amplitude of the `hz` component, frame by frame: the signal demodulated at `hz` and averaged over exactly
+ * `periods` periods of it. A tone averages out of the window when the window holds a whole number of ITS periods too:
+ * one 440 Hz period holds two of 880 Hz, so the octave above averages out of a 440 Hz read, but a 440 Hz tone does not
+ * average out of a one-period 880 Hz read (half a period of it), which is what `periods` is for. The period is a
+ * fractional frame count (109.09 at 48 kHz, 100.23 at 44.1 kHz), so the window's ends are interpolated (a cubic
+ * through the prefix sums) rather than rounded to frames: a pure 880 Hz sine reads under −80 dB at 440 Hz at both
+ * rates, where rounding left it at −47 dB at 44.1 kHz. Entry `i` is the amplitude of the window ENDING at frame `i`;
+ * the first window reads as a ramp. Returns the whole buffer's length.
  */
-export function toneEnvelope(samples: Float32Array, rate: number, hz: number): Float32Array {
-  const period = Math.max(1, Math.round(rate / hz));
-  const out = new Float32Array(samples.length);
-  const i = new Float32Array(samples.length);
-  const q = new Float32Array(samples.length);
+export function toneEnvelope(samples: Float32Array, rate: number, hz: number, periods: number = 1): Float32Array {
+  const span = (periods * rate) / hz;
+  const length = samples.length;
+  const out = new Float32Array(length);
+  // prefix sums of the demodulated signal, in doubles: the window is a difference of two of them
+  const cumI = new Float64Array(length + 1);
+  const cumQ = new Float64Array(length + 1);
   const w = (2 * Math.PI * hz) / rate;
-  for (let n = 0; n < samples.length; n++) {
-    i[n] = samples[n] * Math.cos(w * n);
-    q[n] = -samples[n] * Math.sin(w * n);
+  for (let n = 0; n < length; n++) {
+    cumI[n + 1] = cumI[n] + samples[n] * Math.cos(w * n);
+    cumQ[n + 1] = cumQ[n] - samples[n] * Math.sin(w * n);
   }
-  let sumI = 0;
-  let sumQ = 0;
-  for (let n = 0; n < samples.length; n++) {
-    sumI += i[n];
-    sumQ += q[n];
-    if (n >= period) {
-      sumI -= i[n - period];
-      sumQ -= q[n - period];
-    }
-    out[n] = (2 * Math.hypot(sumI, sumQ)) / period;
+  // the prefix sum at a fractional index: a Catmull-Rom cubic through its four neighbours (linear at the edges)
+  const at = (cum: Float64Array, x: number): number => {
+    const k = Math.floor(x);
+    const t = x - k;
+    if (k >= length) return cum[length];
+    if (k < 1 || k + 2 > length) return cum[k] + t * (cum[k + 1] - cum[k]);
+    const p0 = cum[k - 1];
+    const p1 = cum[k];
+    const p2 = cum[k + 1];
+    const p3 = cum[k + 2];
+    return 0.5 * (2 * p1 + (p2 - p0) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (3 * p1 - p0 - 3 * p2 + p3) * t * t * t);
+  };
+  for (let n = 0; n < length; n++) {
+    const end = n + 1;
+    const start = Math.max(0, end - span);
+    out[n] = (2 * Math.hypot(cumI[end] - at(cumI, start), cumQ[end] - at(cumQ, start))) / span;
   }
   return out;
 }
@@ -173,16 +191,18 @@ function meanOver(values: Float32Array, from: number, to: number): number {
 }
 
 export interface OverlapFigures {
-  /** The 440 Hz level over the 100 ms before the second note, dB. */
+  /** The first note's level (at `hz`) over the 100 ms before the second note, dBFS. */
   beforeDb: number;
-  /** The 440 Hz level over 20..40 ms after the second note's onset, relative to before, dB. */
+  /** The first note's level over 20..40 ms after the second note's onset, relative to before, dB. */
   afterDb: number;
-  /** Ms after the second note's onset where the 440 Hz level first reads 40 dB under `before`; null when it never does. */
+  /** Ms after the second note's onset where the first note's level first reads 40 dB under `before`; null when it never does. */
   cut40Ms: number | null;
+  /** The second note's level (at `secondHz`) over the same 20..40 ms, dBFS: the second note must itself be sounding. */
+  secondDb: number;
 }
 
-/** The first note's level before and after the second note starts (`secondOnsetFrame`), and when it is gone. */
-export function overlapFigures(samples: Float32Array, rate: number, hz: number, secondOnsetFrame: number): OverlapFigures {
+/** The first note's level before and after the second note starts (`secondOnsetFrame`), when it is gone, and the second note's own level. */
+export function overlapFigures(samples: Float32Array, rate: number, hz: number, secondHz: number, secondOnsetFrame: number): OverlapFigures {
   const envelope = toneEnvelope(samples, rate, hz);
   const ms = (n: number): number => Math.round((n * rate) / 1000);
   const before = meanOver(envelope, secondOnsetFrame - ms(100), secondOnsetFrame);
@@ -196,7 +216,10 @@ export function overlapFigures(samples: Float32Array, rate: number, hz: number, 
       break;
     }
   }
-  return { beforeDb, afterDb: toDb(after) - beforeDb, cut40Ms };
+  // the window holds one period of the LOWER tone, so the other note averages out of this read too
+  const periods = Math.max(1, Math.round(secondHz / hz));
+  const second = meanOver(toneEnvelope(samples, rate, secondHz, periods), secondOnsetFrame + ms(20), secondOnsetFrame + ms(40));
+  return { beforeDb, afterDb: toDb(after) - beforeDb, cut40Ms, secondDb: toDb(second) };
 }
 
 export type PlayModeStatus = "as-expected" | "investigate";
@@ -216,20 +239,31 @@ export function noteOnsetFrame(note: PlayModeNote, rate: number): number {
   return Math.round(PPQN.pulsesToSeconds(PLAY_MODE_REGION_POSITION_PPQN + note.position, PLAY_MODE_BPM) * rate);
 }
 
-function judgeOverlap(row: PlayModeRow, expected: Extract<PlayModeExpectation, { kind: "overlap" }>, left: Float32Array, rate: number, offsetFrames: number): PlayModeVerdict {
-  const second = row.notes[1];
-  const figures = overlapFigures(left, rate, PLAY_MODE_SAMPLE_HZ, noteOnsetFrame(second, rate) + offsetFrames);
-  const values = { beforeDb: round(figures.beforeDb), afterDb: round(figures.afterDb), cut40Ms: figures.cut40Ms === null ? null : round(figures.cut40Ms) };
+/** The frequency a key plays the 440 Hz sample at, with the row's octave. */
+function keyHz(pitch: number, octave: number): number {
+  return PLAY_MODE_SAMPLE_HZ * 2 ** ((pitch - PLAY_MODE_ROOT_KEY) / 12 + octave);
+}
+
+function judgeOverlap(row: PlayModeRow, expected: Extract<PlayModeExpectation, { kind: "overlap" }>, left: Float32Array, rate: number, offsetFrames: number | null): PlayModeVerdict {
+  if (offsetFrames === null) return { status: "investigate", figure: "no note read for the sampler's offset, so the second note's onset cannot be placed", values: { offsetFrames: null } };
+  const [first, second] = row.notes;
+  const figures = overlapFigures(left, rate, keyHz(first.pitch, row.settings.octave), keyHz(second.pitch, row.settings.octave), noteOnsetFrame(second, rate) + offsetFrames);
+  const values = {
+    offsetFrames, beforeDb: round(figures.beforeDb), afterDb: round(figures.afterDb), cut40Ms: figures.cut40Ms === null ? null : round(figures.cut40Ms), secondDb: round(figures.secondDb),
+  };
+  // both notes must sound, or a relative reading on silence passes
+  if (figures.beforeDb < SOUNDING_FLOOR_DB) return { status: "investigate", figure: `first note not sounding before the second: ${values.beforeDb} dBFS (expected ≥ ${SOUNDING_FLOOR_DB})`, values };
+  if (figures.secondDb < SOUNDING_FLOOR_DB) return { status: "investigate", figure: `second note not sounding: ${values.secondDb} dBFS at 20..40 ms (expected ≥ ${SOUNDING_FLOOR_DB})`, values };
   if (expected.firstKeepsSounding) {
     const kept = Math.abs(figures.afterDb) <= KEPT_TOLERANCE_DB;
-    return { status: kept ? "as-expected" : "investigate", figure: `first note ${figures.afterDb >= 0 ? "+" : ""}${values.afterDb} dB across the second's onset (kept within ±${KEPT_TOLERANCE_DB} dB)`, values };
+    return { status: kept ? "as-expected" : "investigate", figure: `first note ${figures.afterDb >= 0 ? "+" : ""}${values.afterDb} dB across the second's onset (kept within ±${KEPT_TOLERANCE_DB} dB), first ${values.beforeDb} dBFS, second ${values.secondDb} dBFS`, values };
   }
   const gone = figures.afterDb <= CUT_FLOOR_DB;
   const inBand = figures.cut40Ms !== null && figures.cut40Ms >= MONO_FADE_BAND_MS[0] && figures.cut40Ms <= MONO_FADE_BAND_MS[1];
   const cut = values.cut40Ms === null ? "never" : `${values.cut40Ms} ms`;
   return {
     status: gone && inBand ? "as-expected" : "investigate",
-    figure: `first note ${values.afterDb} dB at 20..40 ms (expected ≤ ${CUT_FLOOR_DB}), 40 dB down after ${cut} (expected ${MONO_FADE_BAND_MS[0]}..${MONO_FADE_BAND_MS[1]} ms)`,
+    figure: `first note ${values.afterDb} dB at 20..40 ms (expected ≤ ${CUT_FLOOR_DB}), 40 dB down after ${cut} (expected ${MONO_FADE_BAND_MS[0]}..${MONO_FADE_BAND_MS[1]} ms), second ${values.secondDb} dBFS`,
     values,
   };
 }
@@ -247,16 +281,20 @@ function judgePitches(expected: Extract<PlayModeExpectation, { kind: "pitches" }
   if (notes.length !== expected.hz.length) return { status: "investigate", figure: `${notes.length} notes read, expected ${expected.hz.length}`, values };
   const cents = notes.map((note, index) => (note.frequencyHz === null ? null : 1200 * Math.log2(note.frequencyHz / expected.hz[index])));
   const within = cents.every((c) => c !== null && Math.abs(c) <= PITCH_TOLERANCE_CENTS);
-  const read = notes.map((note, index) => `${note.frequencyHz === null ? "unreadable" : round(note.frequencyHz, 1)} Hz (expected ${round(expected.hz[index], 1)}${cents[index] === null ? "" : `, ${cents[index]! >= 0 ? "+" : ""}${round(cents[index]!, 1)} ct`})`);
+  const read = notes.map((note, index) => {
+    const c = cents[index];
+    return `${note.frequencyHz === null ? "unreadable" : round(note.frequencyHz, 1)} Hz (expected ${round(expected.hz[index], 1)}${c === null ? "" : `, ${c >= 0 ? "+" : ""}${round(c, 1)} ct`})`;
+  });
   return { status: within ? "as-expected" : "investigate", figure: read.join("; "), values };
 }
 
 function judgePan(expected: Extract<PlayModeExpectation, { kind: "pan" }>, leftPeak: number, rightPeak: number): PlayModeVerdict {
   const louder = Math.max(leftPeak, rightPeak);
-  const left = louder === 0 ? 0 : leftPeak / louder;
-  const right = louder === 0 ? 0 : rightPeak / louder;
-  const within = louder > 0 && Math.abs(left - expected.left) <= PAN_TOLERANCE && Math.abs(right - expected.right) <= PAN_TOLERANCE;
-  return { status: within ? "as-expected" : "investigate", figure: `left ${round(left, 3)} / right ${round(right, 3)} of the louder (expected ${expected.left} / ${expected.right})`, values: { left: round(left, 3), right: round(right, 3), peak: round(louder, 4) } };
+  const values = { left: round(louder === 0 ? 0 : leftPeak / louder, 3), right: round(louder === 0 ? 0 : rightPeak / louder, 3), peak: round(louder, 4) };
+  // the ratio is read on nothing when neither channel sounds
+  if (louder < SOUNDING_FLOOR_PEAK) return { status: "investigate", figure: `the louder channel peaks at ${values.peak} (expected ≥ ${round(SOUNDING_FLOOR_PEAK, 3)}, a sounding note)`, values };
+  const within = Math.abs(leftPeak / louder - expected.left) <= PAN_TOLERANCE && Math.abs(rightPeak / louder - expected.right) <= PAN_TOLERANCE;
+  return { status: within ? "as-expected" : "investigate", figure: `left ${values.left} / right ${values.right} of the louder (expected ${expected.left} / ${expected.right}), peak ${values.peak}`, values };
 }
 
 function peakOf(samples: Float32Array): number {
@@ -267,9 +305,10 @@ function peakOf(samples: Float32Array): number {
 
 /**
  * Judge one row's render. `offsetFrames` is the sampler's own latency, frames between a note's pulse and its read
- * onset, taken from the first row's first note (the overlap reader places its windows on the second note's pulse).
+ * onset, taken from the first row's first note (the overlap reader places its windows on the second note's pulse);
+ * null when no note was read for it, which an overlap row reports instead of assuming zero.
  */
-export function judgePlayModeRow(row: PlayModeRow, channels: readonly Float32Array[], rate: number, offsetFrames: number): PlayModeVerdict {
+export function judgePlayModeRow(row: PlayModeRow, channels: readonly Float32Array[], rate: number, offsetFrames: number | null): PlayModeVerdict {
   const [left, right] = channels;
   if (left === undefined || right === undefined) return { status: "investigate", figure: `${channels.length} channels rendered, expected 2`, values: {} };
   const expected = row.expected;

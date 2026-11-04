@@ -83,7 +83,7 @@
   sine, both page rates; rows and readers `src/lib/audit/nanoPlayModes.ts`, note
   `debug/2026-11-04-nano-play-modes/note.md`): Mono fades the sounding voice out when a
   new note starts (the crate's 5 ms linear level fade, squared: 40 dB down 6.1 ms after the
-  second note's onset, −50 to −59 dB by 20 ms); One-shot ignores the note-off and plays to
+  second note's onset, below −100 dB by 20 ms); One-shot ignores the note-off and plays to
   the region's end (an eighth note sounds the whole 1 s sample), but with the loop on the
   note-off still stops it (250.8 ms, the eighth plus the 1 ms release); Fixed pitch plays
   every key at the root key with Octave still applied (keys 60 and 67 both read 440 Hz,
@@ -92,6 +92,13 @@
   measured here: a pan move glides over 5 ms; `polyphone` is read at note-on, `oneShot`
   at note-off and every block (`voice.rs:168`: switching it off after the note-off
   releases the note), `fixedPitch` and `panning` every block.
+- **A tone reader's window must hold a whole number of periods of EVERY tone present.**
+  `toneEnvelope` demodulates at one frequency and averages over its period; the period is
+  a fractional frame count (100.23 at 44.1 kHz), and rounding it to whole frames left the
+  octave above at −47 dB, which the Mono rows then reported as "the level after the fade"
+  (a review catch). The window's ends are interpolated instead, and a read at the HIGHER
+  of two tones spans one period of the lower one. A relative figure (after − before) on
+  silence is 0 dB: every judge needs an absolute floor on the level it compares.
 - `adapter.file()` is `Option<AudioFileBoxAdapter>`; its `peaks` and `data` are Options
   too. Peaks arrive after the loader finishes — invalidate the waveform painter from
   `watchSampleLoad`'s `onLoaded`.
