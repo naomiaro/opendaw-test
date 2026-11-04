@@ -4,7 +4,7 @@
 >
 > **Prerequisites:** [Ch. 04 (Box System)](./04-box-system-and-reactivity.md), [Ch. 08 (Recording)](./08-recording.md) for capture, [Ch. 11 (Effects)](./11-effects.md) for the MIDI-effect API surface.
 
-MIDI surfaces in openDAW are split across several layers: the box-graph data model (notes are boxes), the live engine (hardware capture and instrument routing), and the studio adapters (typed accessors). This chapter consolidates them into one reference, plus walks through the patterns for programmatic note creation, hardware capture, and the five built-in MIDI effects.
+MIDI surfaces in openDAW are split across several layers: the box-graph data model (notes are boxes), the live engine (hardware capture and instrument routing), and the studio adapters (typed accessors). This chapter consolidates them into one reference, plus walks through the patterns for programmatic note creation, hardware capture, and the six MIDI effects that ship with the SDK.
 
 **Honest about gaps:** the SDK is strong on programmatic note creation and hardware *input*, with a working MIDI-effects pipeline. MIDI *output* to external gear and standalone MIDI Clock configuration exist in the codebase but don't have a documented consumer API yet — flagged inline where they come up.
 
@@ -247,7 +247,7 @@ If you need to slave external gear to openDAW's transport today, the practical w
 
 ## MIDI effects
 
-Five MIDI effects ship with the SDK, inserted into a track's MIDI device chain (before the instrument). Use `EffectFactories` from `@opendaw/studio-core` (the MIDI factories live in `EffectFactories.MidiNamed`) to add them in a transaction — resolve the chain field via the adapter layer (`audioUnitAdapter.midiEffectsField.unwrap()`; the `DeviceHost` chain getters are `Option`-wrapped) and pass it to `project.api.insertEffect(field, EffectFactories.Arpeggio)` — same pattern as audio effects, see [Ch. 11](./11-effects.md#adding-an-effect).
+Six MIDI effects ship with the SDK, inserted into a track's MIDI device chain (before the instrument). Use `EffectFactories` from `@opendaw/studio-core` (the MIDI factories live in `EffectFactories.MidiNamed`, which also holds `WclapMidi`, the WebCLAP MIDI host, covered in [Ch. 11](./11-effects.md)) to add them in a transaction — resolve the chain field via the adapter layer (`audioUnitAdapter.midiEffectsField.unwrap()`; the `DeviceHost` chain getters are `Option`-wrapped) and pass it to `project.api.insertEffect(field, EffectFactories.Arpeggio)` — same pattern as audio effects, see [Ch. 11](./11-effects.md#adding-an-effect).
 
 ### Arpeggio
 
@@ -261,6 +261,20 @@ Plays notes in patterns over a configurable rate and number of octaves. It also 
 | `gate` | `Float32Field` | 0–2 | Gate time as a fraction of step length |
 | `repeat` | `Int32Field` | 1–16 | Repeats of each note |
 | `velocity` | `Float32Field` | −1.0 to 1.0 | Velocity offset |
+
+### Note Filter
+
+Passes only the notes in a key range, then transposes them or plays them all as one key. A keyboard split is one Note Filter per layer; a single drum pulled from a loop is a one-key range.
+
+| Field | Type | Range | Meaning |
+|---|---|---|---|
+| `min` | `Int32Field` | 0–127 | Lowest key that passes, included |
+| `max` | `Int32Field` | 0–127 | Highest key that passes, included (Min above Max passes nothing) |
+| `set` | `BooleanField` | — | Off: add `transpose`; on: play every passing note as `key` |
+| `transpose` | `Int32Field` | −127 to +127 | Semitones added when `set` is off; a result outside 0–127 is dropped, not clamped |
+| `key` | `Int32Field` | 0–127 | The key every passing note plays as when `set` is on |
+
+Velocity and cents pass through. A note ends on the key it started with, even if the parameters change while it sounds. The adapter (`NoteFilterDeviceBoxAdapter.namedParameter`) prints `min`, `max` and `key` as key names.
 
 ### Pitch
 
@@ -303,7 +317,7 @@ User-written JavaScript MIDI processor. The full programming model is covered in
 | `parameters` | `Field<Parameter>` | Declared parameters (registered automatically when the script is compiled) |
 | `samples` | `Field<Sample>` | Declared samples (likewise) |
 
-Spielwerk is the right tool when none of the four built-in effects above match your need — algorithmic patterns, generative sequences, custom mappings.
+Spielwerk is the right tool when none of the five built-in effects above match your need — algorithmic patterns, generative sequences, custom mappings.
 
 ## How notes reach the instrument
 

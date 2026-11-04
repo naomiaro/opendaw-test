@@ -228,7 +228,7 @@ function SpielwerkDemo() {
           <p className="mc-intro">
             A MIDI effect you write in JavaScript: a <code>Processor</code> class whose <code>process()</code> generator
             receives the block's note events and yields notes to the synth. Browse the scripts, edit one, compile it,
-            turn the knobs it declares, and watch the lower lane read what the chain emits from the engine. The four
+            turn the knobs it declares, and watch the lower lane read what the chain emits from the engine. The five
             fixed devices are on the{" "}
             <a href="/midi-effects-demo.html" style={{ color: "var(--mc-amber)" }}>MIDI Effects demo</a>, and all
             three pages are on the{" "}

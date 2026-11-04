@@ -8,7 +8,7 @@ import { midiEffectFixture, transact } from "@/lib/testing/boxGraphFixtures";
 import { zeitgeistGrooveBox } from "./midiEffectChain";
 import { arpeggioRule, type DeviceSetting, type RuleContext } from "./midiEffectSemanticsRules";
 import {
-  ARPEGGIO_BASE, AUDIT_PATTERNS, CALIBRATION_ROW_ID, FACTORY_KEYS, QUICK_IDS, HELD_NOTE, PITCH_BASE, REGION_DURATION_PPQN, REGION_POSITION_PPQN, SAMPLE_SECONDS,
+  ARPEGGIO_BASE, AUDIT_PATTERNS, CALIBRATION_ROW_ID, FACTORY_KEYS, QUICK_IDS, HELD_NOTE, NOTE_FILTER_BASE, PITCH_BASE, REGION_DURATION_PPQN, REGION_POSITION_PPQN, SAMPLE_SECONDS,
   SEMANTICS_ROWS, VELOCITY_BASE, ZEITGEIST_BASE, applySettings, settingsOf, predictedVariants, renderRange, renderSeconds, resolveRows, rowNotes,
   type RowGroup, type SemanticsRow,
 } from "./midiEffectSemanticsRows";
@@ -125,8 +125,8 @@ describe("SEMANTICS_ROWS", () => {
     expect(renderSeconds(120)).toBeCloseTo(PPQN.pulsesToSeconds(BAR_PPQN + PATTERN_PPQN, 120) + 0.25, 12);
     expect(renderSeconds(120)).toBeCloseTo(6.25, 9);
   });
-  it("FACTORY_KEYS names the four factories", () => {
-    expect(FACTORY_KEYS).toEqual({ arpeggio: "Arpeggio", pitch: "Pitch", velocity: "Velocity", zeitgeist: "Zeitgeist" });
+  it("FACTORY_KEYS names the five factories", () => {
+    expect(FACTORY_KEYS).toEqual({ arpeggio: "Arpeggio", "note-filter": "NoteFilter", pitch: "Pitch", velocity: "Velocity", zeitgeist: "Zeitgeist" });
   });
   it("labels are sentences from the settings", () => {
     expect(rowById("arp-mode2-oct3-held-chord").label).toBe("Arpeggio UpDown, 3 octaves — held chord");
@@ -187,6 +187,14 @@ describe("applySettings", () => {
 });
 
 describe("settingsOf", () => {
+  it("reads a Note Filter at its defaults and reads back what applySettings wrote", () => {
+    const nf = midiEffectFixture("note-filter");
+    expect(settingsOf(nf.box)).toEqual({ device: "note-filter", settings: NOTE_FILTER_BASE });
+    const settings = { min: 36, max: 48, set: true, transpose: -5, key: 72 };
+    transact(nf.boxGraph, () => applySettings(nf.box, { device: "note-filter", settings }));
+    expect(settingsOf(nf.box)).toEqual({ device: "note-filter", settings });
+    expect(() => transact(nf.boxGraph, () => applySettings(nf.box, { device: "pitch", settings: PITCH_BASE }))).toThrow();
+  });
   it("round-trips every device through applySettings", () => {
     for (const setting of [
       { device: "arpeggio", settings: { modeIndex: 2, numOctaves: 3, rateIndex: 5, gate: 0.75, repeat: 3, velocity: 0.5 } },

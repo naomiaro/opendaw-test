@@ -21,13 +21,13 @@
  */
 import { PPQN } from "@opendaw/lib-dsp";
 import { GrooveShuffleBoxAdapter, ArpeggioDeviceBoxAdapter } from "@opendaw/studio-adapters";
-import { ArpeggioDeviceBox, PitchDeviceBox, VelocityDeviceBox, ZeitgeistDeviceBox } from "@opendaw/studio-boxes";
+import { ArpeggioDeviceBox, NoteFilterDeviceBox, PitchDeviceBox, VelocityDeviceBox, ZeitgeistDeviceBox } from "@opendaw/studio-boxes";
 import type { EffectBox } from "@opendaw/studio-core";
 import { PATTERN_PPQN, REGION_START_PPQN, patternById, type Pattern } from "@/lib/midiEffects/patterns";
 import { zeitgeistGrooveBox } from "./midiEffectChain";
 import {
   DEVIATIONS, DEVIATION_SUBSETS, clipToRange, composeRules,
-  type ArpeggioSettings, type DeviationName, type DeviceSetting, type PitchSettings, type RuleContext, type RuleNote,
+  type ArpeggioSettings, type DeviationName, type DeviceSetting, type NoteFilterSettings, type PitchSettings, type RuleContext, type RuleNote,
   type SemanticsDevice, type VelocitySettings, type ZeitgeistSettings,
 } from "./midiEffectSemanticsRules";
 
@@ -93,11 +93,12 @@ export interface SemanticsRow {
 
 export const ARPEGGIO_BASE: ArpeggioSettings = { modeIndex: 0, numOctaves: 1, rateIndex: 9, gate: 0.5, repeat: 1, velocity: 1 };
 export const PITCH_BASE: PitchSettings = { semiTones: 0, cents: 0, octaves: 0 };
+export const NOTE_FILTER_BASE: NoteFilterSettings = { min: 0, max: 127, set: false, transpose: 0, key: 60 };
 export const VELOCITY_BASE: VelocitySettings = { magnetPosition: 0.5, magnetStrength: 0, randomAmount: 0, offset: 0, mix: 1 };
 export const ZEITGEIST_BASE: ZeitgeistSettings = { amount: 0.6, duration: 480 };
 
-export const FACTORY_KEYS: Record<SemanticsDevice, "Arpeggio" | "Pitch" | "Velocity" | "Zeitgeist"> = {
-  arpeggio: "Arpeggio", pitch: "Pitch", velocity: "Velocity", zeitgeist: "Zeitgeist",
+export const FACTORY_KEYS: Record<SemanticsDevice, "Arpeggio" | "NoteFilter" | "Pitch" | "Velocity" | "Zeitgeist"> = {
+  arpeggio: "Arpeggio", "note-filter": "NoteFilter", pitch: "Pitch", velocity: "Velocity", zeitgeist: "Zeitgeist",
 };
 
 const MODE_NAMES = ["Up", "Down", "UpDown"] as const;
@@ -113,6 +114,7 @@ const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? "" 
 
 const arp = (settings: ArpeggioSettings): DeviceSetting => ({ device: "arpeggio", settings });
 const pitch = (settings: PitchSettings): DeviceSetting => ({ device: "pitch", settings });
+const noteFilter = (settings: NoteFilterSettings): DeviceSetting => ({ device: "note-filter", settings });
 const velocity = (settings: VelocitySettings): DeviceSetting => ({ device: "velocity", settings });
 const zeitgeist = (settings: ZeitgeistSettings): DeviceSetting => ({ device: "zeitgeist", settings });
 
@@ -223,6 +225,7 @@ function zeitgeistRows(): RowDraft[] {
 
 const NON_IDENTITY: Record<SemanticsDevice, DeviceSetting> = {
   arpeggio: arp(ARPEGGIO_BASE),
+  "note-filter": noteFilter({ ...NOTE_FILTER_BASE, min: 60 }),
   pitch: pitch({ ...PITCH_BASE, semiTones: 7, cents: 12.5 }),
   velocity: velocity({ ...VELOCITY_BASE, magnetPosition: 1, magnetStrength: 1 }),
   zeitgeist: zeitgeist({ amount: 0.75, duration: 480 }),
@@ -318,6 +321,16 @@ export function applySettings(box: EffectBox, setting: DeviceSetting): void {
       box.velocity.setValue(s.velocity);
       return;
     }
+    case "note-filter": {
+      if (!(box instanceof NoteFilterDeviceBox)) return mismatch();
+      const s = setting.settings;
+      box.min.setValue(s.min);
+      box.max.setValue(s.max);
+      box.set.setValue(s.set);
+      box.transpose.setValue(s.transpose);
+      box.key.setValue(s.key);
+      return;
+    }
     case "pitch": {
       if (!(box instanceof PitchDeviceBox)) return mismatch();
       box.semiTones.setValue(setting.settings.semiTones);
@@ -354,6 +367,12 @@ export function settingsOf(box: EffectBox): DeviceSetting {
         modeIndex: box.modeIndex.getValue() as 0 | 1 | 2, numOctaves: box.numOctaves.getValue(), rateIndex: box.rateIndex.getValue(),
         gate: box.gate.getValue(), repeat: box.repeat.getValue(), velocity: box.velocity.getValue(),
       },
+    };
+  }
+  if (box instanceof NoteFilterDeviceBox) {
+    return {
+      device: "note-filter",
+      settings: { min: box.min.getValue(), max: box.max.getValue(), set: box.set.getValue(), transpose: box.transpose.getValue(), key: box.key.getValue() },
     };
   }
   if (box instanceof PitchDeviceBox) {

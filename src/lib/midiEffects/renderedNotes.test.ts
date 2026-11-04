@@ -88,6 +88,17 @@ describe("predictChain", () => {
   });
 });
 
+describe("predictChain through a stage that drops notes", () => {
+  it("a Note Filter at min 64 on Melody predicts the 12 surviving notes on their keys and silences none", () => {
+    const chain: ChainSetting[] = [{ setting: { device: "note-filter", settings: { min: 64, max: 127, set: false, transpose: 0, key: 60 } }, enabled: true }];
+    const { predicted, silenced } = predictChain(chain, context, withGaps(patternById("melody"), 0.9), PATTERN_BPM, mark);
+    expect(predicted).toHaveLength(12);
+    expect(predicted.every((n) => n.pitch >= 64)).toBe(true);
+    expect(predicted.every((n) => n.readability === "readable")).toBe(true);
+    expect(silenced).toEqual([]);
+  });
+});
+
 describe("renderedRows", () => {
   it("a matched readable note takes the read onset, end, pitch and velocity and gets a stem", () => {
     const prediction = predict([note(0, 480, 60, 0.8)]);

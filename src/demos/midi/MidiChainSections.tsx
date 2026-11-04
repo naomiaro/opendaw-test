@@ -25,7 +25,8 @@ export const MidiChainSections: React.FC<MidiChainSectionsProps> = ({ state, dis
     <>
       <section style={{ marginBottom: 28 }}>
         <div className="mc-kicker" style={{ marginBottom: 10 }}>One at a time</div>
-        <div style={{ opacity: state.mode === "stack" ? 0.4 : 1, pointerEvents: state.mode === "stack" ? "none" : undefined }}>
+        {/* Six tabs are wider than a phone: the strip scrolls sideways inside its row rather than widening the page. */}
+        <div style={{ opacity: state.mode === "stack" ? 0.4 : 1, pointerEvents: state.mode === "stack" ? "none" : undefined, overflowX: "auto", maxWidth: "100%" }}>
           <SegmentedControl.Root value={state.tab} onValueChange={(v) => dispatch({ type: "selectTab", tab: v as Tab })} size="2">
             <SegmentedControl.Item value="dry">Dry</SegmentedControl.Item>
             {DEVICE_IDS.map((id) => <SegmentedControl.Item key={id} value={id}>{DEVICES[id].label}</SegmentedControl.Item>)}

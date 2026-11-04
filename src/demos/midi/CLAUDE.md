@@ -527,7 +527,14 @@ rule's prediction. The overview page is `midi-effects-overview.tsx`.
   rows stay dimmed). `RenderedState` is a union on `status`; read the last render through
   `lastRenderOf`. A figure that is not a number draws hollow, labelled "unreadable", with no stem.
 - **Cards.** The device cards carry a per-page `laneNote` (`DeviceSpec.laneNote.effects` /
-  `.rendered`), because the shared `listenFor` must not describe either page's lane.
+  `.rendered`), because the shared `listenFor` must not describe either page's lane. The registry
+  (`src/lib/midiEffects/devices.ts`, `DEVICE_IDS` in the SDK's `MidiNamed` order) holds all five
+  stock devices; a `DeviceParameter` names its control (`control: "switch"` renders a `ParamSwitch`,
+  `src/components/ParamSwitch.tsx`, else a `ParamSlider`) and `dimWhen: { key, on }` dims it, still
+  operable, while the named switch reads on / off (Note Filter: Semitones under Set on, Key under
+  Set off). Key readouts print the SDK's names (`MidiKeys.toFullString`, middle C as C3, unlike the
+  MIDI recording demo's keyboard). The Rendered page predicts a Note Filter through `noteFilterRule`
+  in the semantics rule layer; the audit has no Note Filter ROWS yet.
 - **Lane.** `velocityColor` squares the velocity (openDAW's `PitchPainter` does) from a dim tint to
   the amber accent. `NoteLane` (`src/components/NoteLane.tsx`) labels a note only where the bar fits
   the label; `VelocityStrip.tsx` is the strip. Both lanes on the Rendered page are 224 px so the

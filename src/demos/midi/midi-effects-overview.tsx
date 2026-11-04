@@ -30,7 +30,7 @@ const PAGES = [
     cannot: "Show emitted velocity, or timing finer than a frame",
     href: "/midi-effects-demo.html",
     prose:
-      "Hear Arpeggio, Pitch, Velocity and Zeitgeist on a synth, one at a time or stacked in any order. The written lane follows the conventions. The emitted lane is read from the engine's held notes once per frame: it shows pitch and timing coarsely and cannot show velocity, so it draws every bar one colour.",
+      "Hear Arpeggio, Note Filter, Pitch, Velocity and Zeitgeist on a synth, one at a time or stacked in any order. The written lane follows the conventions. The emitted lane is read from the engine's held notes once per frame: it shows pitch and timing coarsely and cannot show velocity, so it draws every bar one colour.",
   },
   {
     index: "02",

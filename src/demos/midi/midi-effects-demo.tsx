@@ -208,10 +208,10 @@ function MidiEffectsDemo() {
           <div className="mc-kicker">MIDI 01 — Effects · OpenDAW SDK</div>
           <h1 className="mc-title" style={{ fontSize: "clamp(28px, 4.5vw, 44px)" }}>MIDI Effects</h1>
           <p className="mc-intro">
-            A two-bar pattern loops on a Vaporisateur. Put one of the four stock MIDI effects on the unit's MIDI
+            A two-bar pattern loops on a Vaporisateur. Put one of the five stock MIDI effects on the unit's MIDI
             chain and hear what it does to the notes before they reach the synth, then stack several and drag them
             into an order. The lower lane reads the notes the chain emits from the engine, not from a model of the
-            device. For the fifth device, the scriptable one, see the{" "}
+            device. For the sixth device, the scriptable one, see the{" "}
             <a href="/spielwerk-demo.html" style={{ color: "var(--mc-amber)" }}>Spielwerk demo</a>.
             For the exact view, velocity included, see the{" "}
             <a href="/midi-effects-rendered-demo.html" style={{ color: "var(--mc-amber)" }}>Rendered page</a>; all

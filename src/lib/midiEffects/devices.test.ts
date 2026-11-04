@@ -1,12 +1,40 @@
 import { describe, expect, it } from "vitest";
 import { midiEffectFixture } from "@/lib/testing/boxGraphFixtures";
 import { VelocityDeviceBoxAdapter } from "@opendaw/studio-adapters";
+import { noteFilterRule } from "@/lib/audit/midiEffectSemanticsRules";
+import { NOTE_FILTER_BASE } from "@/lib/audit/midiEffectSemanticsRows";
+import { BAR_PPQN, patternById } from "./patterns";
 import { DEVICES, DEVICE_IDS, deviceIdOf, deviceParameters, reseedVelocity } from "./devices";
 
 describe("devices", () => {
-  it("registers the four devices, each naming its factory", () => {
-    expect(DEVICE_IDS).toEqual(["arpeggio", "pitch", "velocity", "zeitgeist"]);
-    expect(DEVICE_IDS.map((id) => DEVICES[id].factoryKey)).toEqual(["Arpeggio", "Pitch", "Velocity", "Zeitgeist"]);
+  it("registers the five devices in the SDK's order, each naming its factory", () => {
+    expect(DEVICE_IDS).toEqual(["arpeggio", "note-filter", "pitch", "velocity", "zeitgeist"]);
+    expect(DEVICE_IDS.map((id) => DEVICES[id].factoryKey)).toEqual(["Arpeggio", "NoteFilter", "Pitch", "Velocity", "Zeitgeist"]);
+  });
+
+  it("note filter parameters: card order, key names, the Set switch and what it dims", () => {
+    const { adapter } = midiEffectFixture("note-filter");
+    const params = deviceParameters(adapter);
+    expect(params.map((p) => p.key)).toEqual(["min", "max", "set", "transpose", "key"]);
+    expect(params.map((p) => p.positions)).toEqual([128, 128, undefined, 255, 128]);
+    expect(params[0].parameter.getPrintValue().value).toBe("C-2");
+    expect(params[4].parameter.getPrintValue().value).toBe("C3"); // MidiKeys.toFullString: C-2 is key 0
+    expect(params[2].control).toBe("switch");
+    expect(params[3].dimWhen).toEqual({ key: "set", on: true });
+    expect(params[4].dimWhen).toEqual({ key: "set", on: false });
+    expect(params.filter((p) => p.key !== "set").every((p) => p.control === undefined)).toBe(true);
+  });
+
+  it("the note filter listen-for copy holds: Min at D3 (62) leaves one, none, two and one notes of the Chords triads", () => {
+    expect(DEVICES["note-filter"].listenFor).toContain("one, none, two and one");
+    const notes = patternById("chords").notes.map((n) => ({ position: n.position, duration: n.duration, pitch: n.pitch, cent: 0, velocity: n.velocity }));
+    const kept = noteFilterRule(notes, { ...NOTE_FILTER_BASE, min: 62 });
+    const perHalfBar = [0, 1, 2, 3].map((i) => kept.filter((n) => n.position === (i * BAR_PPQN) / 2).length);
+    expect(perHalfBar).toEqual([1, 0, 2, 1]);
+  });
+
+  it("deviceIdOf names a note filter box", () => {
+    expect(deviceIdOf(midiEffectFixture("note-filter").box)).toBe("note-filter");
   });
 
   it("arpeggio parameters carry the SDK's string mappings", () => {
