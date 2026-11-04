@@ -4,12 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { PPQN } from "@opendaw/lib-dsp";
 import { Option } from "@opendaw/lib-std";
-import type { AudioUnitBox } from "@opendaw/studio-boxes";
+import type { ZeitgeistDeviceBoxAdapter } from "@opendaw/studio-adapters";
+import type { AudioUnitBox, VelocityDeviceBox } from "@opendaw/studio-boxes";
 import type { Project } from "@opendaw/studio-core";
 import { sineSample, type Calibration } from "@/lib/audit/midiEffectSemanticsReader";
 import { REGION_POSITION_PPQN, renderSeconds } from "@/lib/audit/midiEffectSemanticsRows";
 import type { Pattern } from "@/lib/midiEffects/patterns";
 import { renderOfflineSlice } from "@/lib/offlineScan";
+import { midiEffectFixture, type MidiEffectFixture } from "@/lib/testing/boxGraphFixtures";
 import type { ChainEntry } from "./useMidiChain";
 import {
   calibrateRendered, lastRenderOf, renderChannel, useRenderedNotes, type RenderedNotesOptions, type RenderedState, type RenderFn,
@@ -210,6 +212,104 @@ describe("useRenderedNotes", () => {
     unmount();
     await settle();
     expect(render).not.toHaveBeenCalled();
+  });
+});
+
+/** The hook reads a project only through `boxAdapters.adapterFor`; the stub answers with the fixture's real SDK adapter. */
+const projectFor = (fixture: MidiEffectFixture): Project =>
+  ({ boxAdapters: { adapterFor: () => fixture.adapter } }) as unknown as Project;
+
+/** A render with one 440 Hz tone of `pulses` at each region-local (float) pulse position. */
+function channelWithTones(positions: readonly number[], pulses: number): Float32Array {
+  const channel = new Float32Array(Math.ceil(renderSeconds(BPM) * RATE));
+  const tone = sineSample(RATE, PPQN.pulsesToSeconds(pulses, BPM), 440);
+  for (const position of positions) channel.set(tone, Math.round(PPQN.pulsesToSeconds(REGION_POSITION_PPQN + position, BPM) * RATE));
+  return channel;
+}
+
+describe("useRenderedNotes on live device adapters", () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+
+  it("a Zeitgeist's groove reaches the prediction: the off-beat sixteenth reads at its warped onset, no silent outline on the grid", async () => {
+    // the fixture's groove: 1/8 at 60 %, so the sixteenth between eighths drags late
+    const fixture = midiEffectFixture("zeitgeist");
+    const sixteenth = PPQN.SemiQuaver;
+    const pattern: Pattern = {
+      id: "sixteenths", label: "two sixteenths", blurb: "",
+      notes: [{ position: 0, duration: sixteenth / 2, pitch: 69, velocity: 1 }, { position: sixteenth, duration: sixteenth / 2, pitch: 69, velocity: 1 }],
+    };
+    const groove = (fixture.adapter as ZeitgeistDeviceBoxAdapter).groove();
+    const warped = groove.warp((REGION_POSITION_PPQN + sixteenth) as never) - REGION_POSITION_PPQN;
+    expect(Math.round(warped - sixteenth)).toBe(47);
+
+    const render = vi.fn<RenderFn>(async () => channelWithTones([0, warped], 100));
+    const entries: readonly ChainEntry[] = [{ box: fixture.box, id: "zeitgeist", enabled: true }];
+    // one project object for every render, as the page's: a new one re-subscribes, and the catch-up asks for a render again
+    const project = projectFor(fixture);
+    const { result } = renderHook(() => useRenderedNotes(options({ project, entries, pattern, render })));
+    await settle();
+    await flush();
+    expect(render).toHaveBeenCalledTimes(1);
+    expect(result.current.status).toBe("idle");
+    const rows = rowsOf(result.current);
+    if (rows === null) throw new Error("no rows after a finished render");
+    // without the warp the prediction would sit on the grid: a hollow "silent" at 240 and an extra read note at the warped onset
+    expect(rows.notes.map((note) => note.hollow === true)).toEqual([false, false]);
+    expect(rows.notes.some((note) => note.label === "silent")).toBe(false);
+    expect(rows.notes[1].from).toBeCloseTo(warped, 0);
+  });
+
+  it("a parameter write and a Velocity seed write each ask for one more render; once the entry is gone a write asks for none", async () => {
+    const fixture = midiEffectFixture("velocity");
+    const box = fixture.box as VelocityDeviceBox;
+    const render = vi.fn<RenderFn>(async () => channelWithNotes([0]));
+    const entries: readonly ChainEntry[] = [{ box, id: "velocity", enabled: true }];
+    const project = projectFor(fixture);
+    const { result, rerender } = renderHook((props: RenderedNotesOptions) => useRenderedNotes(props), {
+      initialProps: options({ project, entries, render }),
+    });
+    await settle();
+    await flush();
+    expect(render).toHaveBeenCalledTimes(1);
+    expect(result.current.status).toBe("idle");
+
+    act(() => { fixture.editing.modify(() => box.offset.setValue(-0.25)); });
+    expect(result.current.status).toBe("stale");
+    await settle();
+    await flush();
+    expect(render).toHaveBeenCalledTimes(2);
+    expect(result.current.status).toBe("idle");
+
+    act(() => { fixture.editing.modify(() => box.randomSeed.setValue(box.randomSeed.getValue() + 1)); });
+    expect(result.current.status).toBe("stale");
+    await settle();
+    await flush();
+    expect(render).toHaveBeenCalledTimes(3);
+
+    // the chain change itself asks for a render; after that the old box is no longer watched
+    rerender(options({ project, entries: NO_ENTRIES, render }));
+    await settle();
+    await flush();
+    expect(render).toHaveBeenCalledTimes(4);
+    act(() => { fixture.editing.modify(() => box.offset.setValue(0.25)); });
+    act(() => { fixture.editing.modify(() => box.randomSeed.setValue(box.randomSeed.getValue() + 1)); });
+    expect(result.current.status).toBe("idle");
+    await settle();
+    await flush();
+    expect(render).toHaveBeenCalledTimes(4);
+  });
+
+  it("a device whose parameters cannot be watched reads as an error naming it, not a thrown effect", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const fixture = midiEffectFixture("pitch");
+    const project = { boxAdapters: { adapterFor: () => { throw new Error("no adapter"); } } } as unknown as Project;
+    const render = vi.fn<RenderFn>(async () => channelWithNotes([0]));
+    const entries: readonly ChainEntry[] = [{ box: fixture.box, id: "pitch", enabled: true }];
+    const { result } = renderHook(() => useRenderedNotes(options({ project, entries, render })));
+    expect(result.current.status).toBe("error");
+    expect(errorOf(result.current)).toContain("pitch");
+    expect(consoleError).toHaveBeenCalledWith("[midi-rendered] subscribing to pitch failed: no adapter");
   });
 });
 
