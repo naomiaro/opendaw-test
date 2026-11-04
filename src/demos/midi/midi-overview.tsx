@@ -27,7 +27,7 @@ const PAGES = [
     chip: "var(--mc-amber)",
     name: "MIDI Effects",
     direction: "HEAR NOTES CHANGE",
-    limit: "The lane of what came out cannot show velocity (every bar is one colour) or timing finer than a frame",
+    limit: "The lane of what came out cannot show velocity (every block is one colour) or timing finer than a frame",
     href: "/midi-effects-demo.html",
     prose:
       "Run a pattern through Arpeggio, Note Filter, Pitch, Velocity and Zeitgeist on a synth, one at a time or stacked in any order, and watch what comes out next to what went in.",
@@ -50,7 +50,7 @@ const PAGES = [
     limit: "Its lane of what came out cannot show velocity either",
     href: "/spielwerk-demo.html",
     prose:
-      "Write an effect in JavaScript: a Processor whose generator receives the block's note events and yields notes to the synth. Start from a pre-built echo, chord, humanize or strum script, compile it, and turn the knobs it declares.",
+      "Write an effect in JavaScript: a Processor whose generator receives note events and yields notes to the synth. Start from a pre-built echo, chord, humanize or strum script, compile it, and turn the knobs it declares.",
   },
 ] as const;
 
@@ -92,19 +92,19 @@ function MidiOverview() {
           <section className="mc-anchors mc-reveal" style={{ animationDelay: "240ms" }}>
             <h2 className="mc-anchors-head">The same notes as data</h2>
             <p>
-              Every bar is one object in your code. <code>position</code> and{" "}
+              Every block is one object in your code. <code>position</code> and{" "}
               <code>duration</code> are in pulses. openDAW uses 960 pulses per quarter note,
               so 480 here is an eighth note. That resolution is openDAW&apos;s choice and other
               DAWs can use a different one, so read the handbook&apos;s{" "}
               <a href="/docs/02-timing-and-tempo.html#what-is-ppqn">guide to PPQN</a> before
               moving these numbers between programs. <code>pitch</code> is the row and{" "}
               <code>velocity</code> runs from 0 to 1. The numbers along the top count musical bars and
-              beats: 1.3 is bar 1, beat 3, which is position 1920. Move over a line or a bar to
-              see which is which.
+              beats: 1.3 is bar 1, beat 3, which is position 1920. Move over a line or a block
+              to see which is which.
             </p>
             <NoteDataLink />
             <p>
-              A real note has more fields that the bar doesn&apos;t draw, such as{" "}
+              A real note has more fields that the block doesn&apos;t draw, such as{" "}
               <code>cent</code> for fine tuning, <code>chance</code> for how likely it is to
               play, and <code>playCount</code> for repeats. The handbook&apos;s{" "}
               <a href="/docs/16-midi.html">MIDI deep dive</a> has the full list.

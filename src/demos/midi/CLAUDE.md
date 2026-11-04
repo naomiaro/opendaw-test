@@ -485,7 +485,7 @@ other answer, a corrupt register, or one of another rate or bpm ends the run in 
 `src/demos/midi/midi-effects-rendered-demo.tsx` (hook `useRenderedNotes.ts`; pure modules
 `src/lib/midiEffects/renderedNotes.ts`, `renderScheduler.ts`, `velocityColor.ts`) draws what the
 engine DID: the chain is rendered offline and the left channel read back as notes, laid over the
-rule's prediction. The overview page is `midi-overview.tsx` (`midi-demos.html`; piano-roll primer `PianoRollExplainer.tsx`).
+rule's prediction. The overview page is `midi-overview.tsx` (`midi-demos.html`; piano-roll primer `PianoRollExplainer.tsx`). In page text a note's rectangle is a "block" and a "bar" is only ever a musical bar; the overview also avoids "block" for an audio block.
 - **Sample.** The audit's Nano sine (root key 69, 1 ms attack/release) with a 20 s sample (the
   audit's is 4 s). The bootstrap sets `nanoBox.loop` false, so a note far above the root runs out of
   the sample: a gapped Bass quarter at +84 st needs 8.6 s. At 20 s a gapped Chords note holds to

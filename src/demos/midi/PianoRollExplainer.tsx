@@ -1,6 +1,6 @@
 /**
  * The MIDI overview's piano-roll primer: four small rolls that each add one idea, then the note
- * objects beside the bars they draw. Static SVG, no engine. The Melody is the demos' own pattern and
+ * objects beside the blocks they draw. Static SVG, no engine. The Melody is the demos' own pattern and
  * the shading is the lanes' own `velocityColor`, so what this page teaches is what the demos draw.
  */
 import { useState } from "react";
@@ -37,23 +37,23 @@ interface Step {
 
 const STEPS: readonly Step[] = [
   {
-    heading: "1. A note is a bar",
-    text: "It starts sounding at the bar's left edge and stops at its right edge.",
-    label: "One bar in the middle of the roll, two beats long",
+    heading: "1. A note is a block",
+    text: "It starts sounding at the block's left edge and stops at its right edge.",
+    label: "One block in the middle of the roll, two beats long",
     notes: [flatNote(Quarter, 2 * Quarter, 64)],
     stems: false,
   },
   {
     heading: "2. Height is pitch",
     text: "Each row is one piano key. Up one row is one key higher.",
-    label: "Four bars one after another, each on a higher row than the last",
+    label: "Four blocks one after another, each on a higher row than the last",
     notes: [flatNote(0, Quarter, 60), flatNote(Quarter, Quarter, 64), flatNote(2 * Quarter, Quarter, 67), flatNote(3 * Quarter, Quarter, 69)],
     stems: false,
   },
   {
     heading: "3. Width is length",
-    text: "A wider bar is held longer: the same key, for more time.",
-    label: "Three bars on one row, each twice as wide as the last",
+    text: "A wider block is held longer: the same key, for more time.",
+    label: "Three blocks on one row, each twice as wide as the last",
     notes: [flatNote(0, EIGHTH, 64), flatNote(EIGHTH, Quarter, 64), flatNote(EIGHTH + Quarter, 2 * Quarter, 64)],
     stems: false,
   },
@@ -204,8 +204,8 @@ const SoundWave: React.FC = () => {
 
 const CHAIN_STAGES: readonly { heading: string; text: string; label: string; notes?: readonly PatternNote[] }[] = [
   { heading: "Notes", text: "Four notes, as they were written.", label: "Four rising notes, played hard", notes: CHAIN_NOTES },
-  { heading: "Pitch", text: "Set to +5: every bar moves up five rows.", label: "The same four notes, five keys higher", notes: AFTER_PITCH },
-  { heading: "Velocity", text: "Set softer: the same bars, dimmer, with shorter stems.", label: "The same four notes, five keys higher and softer", notes: AFTER_VELOCITY },
+  { heading: "Pitch", text: "Set to +5: every block moves up five rows.", label: "The same four notes, five keys higher", notes: AFTER_PITCH },
+  { heading: "Velocity", text: "Set softer: the same blocks, dimmer, with shorter stems.", label: "The same four notes, five keys higher and softer", notes: AFTER_VELOCITY },
   { heading: "Instrument", text: "Turns whatever reaches it into sound.", label: "" },
 ];
 
@@ -291,7 +291,7 @@ export const NoteDataLink: React.FC = () => {
           ))}
         </div>
         <Roll
-          label="The same eight notes as bars, each lit together with its line of data"
+          label="The same eight notes as blocks, each lit together with its line of data"
           notes={MELODY_BAR}
           stems
           geometry={DATA_GEOMETRY}

@@ -260,7 +260,7 @@ function MidiEffectsDemo() {
           <NoteLane
             ref={emittedLane}
             title="As the chain emits it"
-            caption="frame-sampled from the engine's held-note set: shows Arpeggio steps and Pitch moves; carries no velocity, so every bar is one colour (the Rendered page shows it); Zeitgeist's shift only roughly"
+            caption="frame-sampled from the engine's held-note set: shows Arpeggio steps and Pitch moves; carries no velocity, so every block is one colour (the Rendered page shows it); Zeitgeist's shift only roughly"
             notes={emittedNotes}
             rangePpqn={PATTERN_PPQN}
             pitchLow={PITCH_LOW}
