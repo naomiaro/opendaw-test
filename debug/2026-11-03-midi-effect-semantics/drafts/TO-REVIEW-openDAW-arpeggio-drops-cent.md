@@ -8,11 +8,12 @@ The Arpeggio keeps `(pitch, velocity)` per held note and emits every step with `
 note's detune never reaches the instrument through an Arpeggio. A Pitch device set to +12.5 cents
 BEFORE an Arpeggio has no audible effect on the cents; the same Pitch AFTER the Arpeggio detunes every
 step as expected. The manual (`packages/app/manual/public/devices/midi/arpeggio.md`) says nothing
-about cents either way, so this is a question: is an arpeggiator meant to retune nothing, or is the
-cent an omission in what the stack keeps?
+about cents either way, so this is a question: is an arpeggiator meant to retune nothing, or was the
+cent left behind unintentionally?
 
-**Measured** (a Nano playing a sine, root key 69, four held C-major triads at velocity 0.8 one per
-half bar, the render read back note by note; the reader resolves 0.5 cents):
+**Measured** (a Nano playing a sine, root key 69, four held triads (Am, F, C, G around C4) at velocity
+0.8, one per half bar, the render read back note by note; the reader is tested to 0.5 cents and the
+judge allows 2):
 
 | chain (index order) | pitch read | cents read |
 |---|---|---|

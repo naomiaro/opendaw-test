@@ -154,7 +154,7 @@ error; a row that matches only with a deviation on reads `matches-known-deviatio
 |---|---|---|---|---|
 | `arpeggio-velocity-matrix` (retired) | One fixed velocity `1 + v` below 0, a blend `velocity × v + (1 − v)` above it, where the manual of the time blended full velocity with the note's own; the engine still does exactly this, and it is the rule since 2026-11-04. | `device-arpeggio/src/lib.rs:108-118` | 0.0.180 (first run) | 2026-11-04: openDAW#524 closed, the manual corrected (`0b371e0b3`); the matrix is the rule |
 | `arpeggio-drops-cent` | Emits every arpeggiated note-on with cent 0, so a source note's detune is lost. | `device-arpeggio/src/lib.rs:304` | 0.0.180 | — |
-| `arpeggio-uncapped-note-off` (retired) | Ends a step at its position plus its length, never at the end of the source note, so the last step outlasts the held note; the engine still does exactly this, and it is the rule since 2026-11-04. | `device-arpeggio/src/lib.rs:303-306` | 0.0.180 | 2026-11-04: the manual's gate definition (`arpeggio.md:76`) matches the engine; the cap was this audit's reading. Asked upstream in one line of the dropped-cent draft |
+| `arpeggio-uncapped-note-off` (retired) | Ends a step at its position plus its length, never at the end of the source note, so the last step outlasts the held note; the engine still does exactly this, and it is the rule since 2026-11-04. | `device-arpeggio/src/lib.rs:303-306` | 0.0.180 | 2026-11-04: the manual's gate definition (`arpeggio.md:76`) matches the engine; the cap was this audit's reading. Asked in one line of the drafted dropped-cent question (waiting for a read) |
 | `zeitgeist-warps-note-off` (retired) | Warps the note-off like any other record, so a duration stretches or shrinks with the groove, where the manual of the time said durations remain unchanged; the engine still does exactly this, and it is the rule since 2026-11-04. | `device-zeitgeist/src/lib.rs:124-138` | 0.0.180 | 2026-11-04: openDAW#525 closed, the manual corrected (`2922ba25d`); the warped note-off is the rule |
 
 ## Row sampling
@@ -529,7 +529,9 @@ row is never accepted, forced or not: it keeps its registered entry, or stays ou
 ## Tables
 
 <details><summary>Accepted 48 kHz table, run 1793770618258 (the rules on the corrected manuals, judged against the
-2026-11-03 register, so the 24 rows whose intent readability count moved read <code>changed</code>)</summary>
+2026-11-03 register, so the 24 rows whose intent readability count moved read <code>changed</code>; the verdict
+column is as judged before <code>arpeggio-uncapped-note-off</code> was retired later that day: its 35 rows read
+<code>as-registered</code> on runs 1793772102826 / 1793772168668)</summary>
 
 ```
 id | verdict | figure | read / readable (unreadable) | max |Δonset| ms | max |Δcents| | max |Δvel| | render ms

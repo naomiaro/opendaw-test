@@ -95,7 +95,7 @@ function walk(mode: 0 | 1 | 2, count: number, octaves: number, step: number): { 
 }
 
 /**
- * Arpeggio per `process` (`device-arpeggio/src/lib.rs:261-312`): a note-on at every absolute grid line in range with at least
+ * Arpeggio per the grid loop in `process` (`device-arpeggio/src/lib.rs:261-312`): a note-on at every absolute grid line in range with at least
  * one held note, each `gate × rate` long (the manual, "5. Gate": note length as a percentage of the step rate; the held
  * note's end does not cut it, `lib.rs:303-306`).
  */
