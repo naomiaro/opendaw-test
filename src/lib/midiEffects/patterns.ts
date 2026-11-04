@@ -11,6 +11,8 @@ import type { Project } from "@opendaw/studio-core";
 export const PATTERN_BPM = 120;
 export const BAR_PPQN = PPQN.fromSignature(4, 4);
 export const PATTERN_PPQN = 2 * BAR_PPQN;
+/** Where the note region starts: bar 1, so nothing sounds in bar 0 and the render's start is clear of every onset. */
+export const REGION_START_PPQN: ppqn = BAR_PPQN;
 
 export type PatternId = "chords" | "sixteenths" | "melody" | "bass";
 
@@ -99,6 +101,16 @@ export const PATTERNS: readonly Pattern[] = [
     notes: bass,
   },
 ];
+
+/** The pattern with every note shortened to `ratio` of its length, so the reader hears the gap between notes. */
+export function withGaps(pattern: Pattern, ratio: number): Pattern {
+  return {
+    id: pattern.id,
+    label: pattern.label,
+    blurb: pattern.blurb,
+    notes: pattern.notes.map((note) => ({ ...note, duration: Math.round(note.duration * ratio) })),
+  };
+}
 
 export function patternById(id: PatternId): Pattern {
   const pattern = PATTERNS.find((p) => p.id === id);

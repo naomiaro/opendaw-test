@@ -19,16 +19,15 @@ import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
 import { NoteLane, type LaneNote, type NoteLaneHandle } from "@/components/NoteLane";
 import { CONSOLE_STYLES, CODE_BLOCK_STYLE } from "@/lib/design/consoleTheme";
-import { PATTERNS, PATTERN_BPM, PATTERN_PPQN, BAR_PPQN, patternById, writePattern, type Pattern, type PatternId } from "@/lib/midiEffects/patterns";
-import { DEVICES, DEVICE_IDS } from "@/lib/midiEffects/devices";
+import { PATTERNS, PATTERN_BPM, PATTERN_PPQN, BAR_PPQN, REGION_START_PPQN, patternById, writePattern, type Pattern, type PatternId } from "@/lib/midiEffects/patterns";
 import { reconcileChain, setDeviceEnabled, type Factories } from "@/lib/midiEffects/chain";
-import { INITIAL_STATE, desiredChain, pageReducer, type Tab } from "@/lib/midiEffects/pageState";
+import { INITIAL_STATE, desiredChain, pageReducer } from "@/lib/midiEffects/pageState";
 import { EmittedBars } from "@/lib/midiEffects/emittedNotes";
 import { useMidiChain } from "./useMidiChain";
 import { MidiEffectCard } from "./MidiEffectCard";
-import { MidiEffectStack } from "./MidiEffectStack";
+import { MidiChainSections } from "./MidiChainSections";
 import "@radix-ui/themes/styles.css";
-import { Theme, Container, Text, Button, Flex, Select, SegmentedControl, Callout, Code } from "@radix-ui/themes";
+import { Theme, Container, Text, Button, Flex, Select, Callout, Code } from "@radix-ui/themes";
 import { PlayIcon, StopIcon } from "@radix-ui/react-icons";
 
 const FACTORIES: Factories = EffectFactories.MidiNamed;
@@ -62,7 +61,7 @@ function MidiEffectsDemo() {
   const project = built?.project ?? null;
   const audioUnitBox = built?.audioUnitBox ?? null;
   const entries = useMidiChain(project, audioUnitBox);
-  useTimelineLoop(project, { from: 0, to: PATTERN_PPQN, enabled: true });
+  useTimelineLoop(project, { from: REGION_START_PPQN, to: REGION_START_PPQN + PATTERN_PPQN, enabled: true });
 
   const heldRef = useRef<NoteEventBox[]>([]);
   const patternRef = useRef<Pattern>(patternById(DEFAULT_PATTERN));
@@ -90,7 +89,7 @@ function MidiEffectsDemo() {
             const synth = instrumentBox as VaporisateurDeviceBox;
             synth.attack.setValue(0.005);
             synth.release.setValue(0.2);
-            return project.api.createNoteRegion({ trackBox, position: 0, duration: PATTERN_PPQN, name: "pattern" });
+            return project.api.createNoteRegion({ trackBox, position: REGION_START_PPQN, duration: PATTERN_PPQN, name: "pattern" });
           })
           .unwrap("createNoteRegion");
         heldRef.current = writePattern(project, regionBox, [], patternRef.current);
@@ -118,7 +117,7 @@ function MidiEffectsDemo() {
   }, []);
 
   const reseekIfPlaying = useCallback(() => {
-    if (project && project.engine.isPlaying.getValue()) project.engine.setPosition(0);
+    if (project && project.engine.isPlaying.getValue()) project.engine.setPosition(REGION_START_PPQN);
   }, [project]);
 
   // The chain follows the page state; a real change restarts the pattern (the engine drops sounding voices on a chain
@@ -145,7 +144,7 @@ function MidiEffectsDemo() {
     const bars = barsRef.current;
     const frame = AnimationFrame.add(() => {
       if (!project.engine.isPlaying.getValue()) return;
-      bars.sample((pitch) => receiver.isNoteOn(pitch), project.engine.position.getValue());
+      bars.sample((pitch) => receiver.isNoteOn(pitch), project.engine.position.getValue() - REGION_START_PPQN);
       emittedLane.current?.requestUpdate();
     });
     return () => {
@@ -164,15 +163,18 @@ function MidiEffectsDemo() {
     reseekIfPlaying();
   }, [built, reseekIfPlaying]);
 
-  const handlePlay = useCallback(() => project?.engine.play(), [project]);
+  const handlePlay = useCallback(() => {
+    if (!project) return;
+    // The region starts one bar in: a transport at 0 would run a silent bar first.
+    if (project.engine.position.getValue() < REGION_START_PPQN) project.engine.setPosition(REGION_START_PPQN);
+    project.engine.play();
+  }, [project]);
   const handleStop = useCallback(() => project?.engine.stop(true), [project]);
 
-  const position = useMemo(() => (project ? () => project.engine.position.getValue() : undefined), [project]);
+  const position = useMemo(() => (project ? () => Math.max(0, project.engine.position.getValue() - REGION_START_PPQN) : undefined), [project]);
   const writtenNotes = useCallback(() => laneNotes(patternRef.current), []);
   const emittedNotes = useCallback(() => barsRef.current.bars, []);
 
-  const singleEntry = state.mode === "single" ? entries.find((e) => e.id === state.tab) ?? null : null;
-  const stackEntries = state.mode === "stack" ? entries : [];
   const currentPattern = patternById(patternId);
 
   const renderCard = (entry: (typeof entries)[number], compact: boolean) => (
@@ -180,8 +182,16 @@ function MidiEffectsDemo() {
       project={project!}
       entry={entry}
       compact={compact}
+      page="effects"
       onEnabledChange={(enabled) => {
-        setDeviceEnabled(project!.editing, entry.box, enabled);
+        try {
+          setDeviceEnabled(project!.editing, entry.box, enabled);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          console.error(`[midi-effects] ${enabled ? "enabling" : "bypassing"} ${entry.id} failed: ${message}`);
+          setChainError(`The ${entry.id} device could not be ${enabled ? "enabled" : "bypassed"}: ${message}`);
+          return;
+        }
         reseekIfPlaying();
       }}
       onChainChange={reseekIfPlaying}
@@ -195,7 +205,7 @@ function MidiEffectsDemo() {
       <Container size="3" style={{ padding: "48px 16px 64px" }}>
         <BackLink />
         <header style={{ marginBottom: 28 }}>
-          <div className="mc-kicker">MIDI — Effects on the chain · OpenDAW SDK</div>
+          <div className="mc-kicker">MIDI 01 — Effects · OpenDAW SDK</div>
           <h1 className="mc-title" style={{ fontSize: "clamp(28px, 4.5vw, 44px)" }}>MIDI Effects</h1>
           <p className="mc-intro">
             A two-bar pattern loops on a Vaporisateur. Put one of the four stock MIDI effects on the unit's MIDI
@@ -203,6 +213,10 @@ function MidiEffectsDemo() {
             into an order. The lower lane reads the notes the chain emits from the engine, not from a model of the
             device. For the fifth device, the scriptable one, see the{" "}
             <a href="/spielwerk-demo.html" style={{ color: "var(--mc-amber)" }}>Spielwerk demo</a>.
+            For the exact view, velocity included, see the{" "}
+            <a href="/midi-effects-rendered-demo.html" style={{ color: "var(--mc-amber)" }}>Rendered page</a>; all
+            three pages are on the{" "}
+            <a href="/midi-effects-demos.html" style={{ color: "var(--mc-amber)" }}>MIDI Effects overview</a>.
           </p>
         </header>
 
@@ -246,7 +260,7 @@ function MidiEffectsDemo() {
           <NoteLane
             ref={emittedLane}
             title="As the chain emits it"
-            caption="frame-sampled from the engine's held-note set: shows Arpeggio steps and Pitch moves; cannot show velocity; Zeitgeist's shift only roughly"
+            caption="frame-sampled from the engine's held-note set: shows Arpeggio steps and Pitch moves; carries no velocity, so every bar is one colour (the Rendered page shows it); Zeitgeist's shift only roughly"
             notes={emittedNotes}
             rangePpqn={PATTERN_PPQN}
             pitchLow={PITCH_LOW}
@@ -258,41 +272,7 @@ function MidiEffectsDemo() {
           />
         </Flex>
 
-        <section style={{ marginBottom: 28 }}>
-          <div className="mc-kicker" style={{ marginBottom: 10 }}>One at a time</div>
-          <div style={{ opacity: state.mode === "stack" ? 0.4 : 1, pointerEvents: state.mode === "stack" ? "none" : undefined }}>
-            <SegmentedControl.Root value={state.tab} onValueChange={(v) => dispatch({ type: "selectTab", tab: v as Tab })} size="2">
-              <SegmentedControl.Item value="dry">Dry</SegmentedControl.Item>
-              {DEVICE_IDS.map((id) => <SegmentedControl.Item key={id} value={id}>{DEVICES[id].label}</SegmentedControl.Item>)}
-            </SegmentedControl.Root>
-          </div>
-          <div style={{ marginTop: 12 }}>
-            {state.mode === "stack" ? (
-              <Text size="2" color="gray">The stack below owns the chain. Clear it to come back to one device at a time.</Text>
-            ) : singleEntry && project ? (
-              renderCard(singleEntry, false)
-            ) : (
-              <Text size="2" color="gray">No device: the pattern as written.</Text>
-            )}
-          </div>
-        </section>
-
-        <section style={{ marginBottom: 32 }}>
-          <div className="mc-kicker" style={{ marginBottom: 10 }}>Stack them</div>
-          <Text size="2" color="gray" style={{ display: "block", marginBottom: 10 }}>
-            Add devices to build a chain and drag them into an order. Order matters: an Arpeggio before a Zeitgeist
-            grooves the steps, after it arpeggiates grooved chords.
-            {state.mode === "single" && state.tab !== "dry" && ` Adding carries ${DEVICES[state.tab].label} over as the first chip.`}
-          </Text>
-          <MidiEffectStack
-            entries={stackEntries}
-            onMove={(from, to) => dispatch({ type: "moveInStack", from, to })}
-            onRemove={(id) => dispatch({ type: "removeFromStack", id })}
-            onAdd={(id) => dispatch({ type: "addToStack", id })}
-            onClear={() => dispatch({ type: "clearStack" })}
-            renderCard={(entry) => renderCard(entry, true)}
-          />
-        </section>
+        <MidiChainSections state={state} dispatch={dispatch} entries={entries} project={project} renderCard={renderCard} />
 
         <section className="mc-anchors">
           <h2 className="mc-anchors-head">SDK reference</h2>
@@ -319,8 +299,8 @@ AnimationFrame.add(() => { if (notes.isNoteOn(60)) { /* C4 is sounding */ } });`
           <Text size="2" weight="bold" style={{ display: "block", marginTop: 16 }}>A chain change drops sounding voices:</Text>
           <Code size="2" style={CODE_BLOCK_STYLE}>
 {`// insert, remove, reorder or an enabled toggle: the instrument's voices stop.
-// This page restarts the pattern so the lanes and the sound stay in step.
-if (project.engine.isPlaying.getValue()) project.engine.setPosition(0);`}
+// This page restarts the pattern (at its region, one bar in) so the lanes and the sound stay in step.
+if (project.engine.isPlaying.getValue()) project.engine.setPosition(regionStartPpqn);`}
           </Code>
         </section>
         <MoisesLogo />

@@ -36,6 +36,14 @@ describe("devices", () => {
     expect(after).toBeLessThanOrEqual(0xffff);
   });
 
+  it("every device carries a lane note per page, and the shared listen-for names no page's lane", () => {
+    for (const id of DEVICE_IDS) {
+      const { laneNote, listenFor } = DEVICES[id];
+      expect(Object.keys(laneNote).sort()).toEqual(["effects", "rendered"]);
+      expect(listenFor).not.toMatch(/lane|Rendered page/);
+    }
+  });
+
   it("the zeitgeist snippet narrows the groove before reading its parameters", () => {
     expect(DEVICES.zeitgeist.snippet).toContain("instanceof GrooveShuffleBoxAdapter");
   });

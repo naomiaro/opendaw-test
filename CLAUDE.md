@@ -165,6 +165,8 @@ if (audioContext.state !== "running") {
 The engine worklet outputs main audio on output 0 and monitoring on output 1.
 Always use `engineWorklet.connect(destination, 0)` — bare `.connect(destination)`
 routes both outputs, causing unexpected channels in offline renders.
+`renderOfflineSlice` takes `mutateCopy?: (copy: Project) => void`, run on the copy before the renderer is
+created: the way to drop the master Maximizer for a level-true render while the live project keeps it.
 
 ### Output Device Enumeration
 `AudioDevices` only handles inputs. For output devices:

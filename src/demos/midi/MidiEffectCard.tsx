@@ -8,7 +8,7 @@ import { Devices, VelocityDeviceBoxAdapter } from "@opendaw/studio-adapters";
 import type { Project } from "@opendaw/studio-core";
 import { ParamSlider } from "@/components/ParamSlider";
 import { CODE_BLOCK_STYLE } from "@/lib/design/consoleTheme";
-import { DEVICES, deviceParameters, reseedVelocity } from "@/lib/midiEffects/devices";
+import { DEVICES, deviceParameters, reseedVelocity, type LanePage } from "@/lib/midiEffects/devices";
 import type { ChainEntry } from "./useMidiChain";
 
 export interface MidiEffectCardProps {
@@ -19,9 +19,11 @@ export interface MidiEffectCardProps {
   onChainChange(): void;
   /** Without the prose and the snippet: the compact form a stack chip expands to. */
   compact?: boolean;
+  /** Which page's lanes the card's lane note describes. */
+  page: LanePage;
 }
 
-export const MidiEffectCard: React.FC<MidiEffectCardProps> = ({ project, entry, onEnabledChange, onChainChange, compact = false }) => {
+export const MidiEffectCard: React.FC<MidiEffectCardProps> = ({ project, entry, onEnabledChange, onChainChange, compact = false, page }) => {
   const spec = DEVICES[entry.id];
   const adapter = useMemo(() => project.boxAdapters.adapterFor(entry.box, Devices.isMidiEffect), [project, entry.box]);
   const parameters = useMemo(() => deviceParameters(adapter), [adapter]);
@@ -56,6 +58,7 @@ export const MidiEffectCard: React.FC<MidiEffectCardProps> = ({ project, entry, 
         <>
           <p className="mc-prose" style={{ marginTop: 4 }}>{spec.what}</p>
           <p className="mc-prose" style={{ marginTop: 6 }}><strong style={{ color: "var(--mc-text)" }}>Listen for:</strong> {spec.listenFor}</p>
+          {spec.laneNote[page] !== null && <p className="mc-prose" style={{ marginTop: 6 }}>{spec.laneNote[page]}</p>}
           <details style={{ marginTop: 8 }}>
             <summary style={{ cursor: "pointer", fontSize: 12, color: "var(--mc-label)" }}>Code</summary>
             <pre style={{ ...CODE_BLOCK_STYLE, marginTop: 8, fontSize: 12, overflowX: "auto" }}>{spec.snippet}</pre>

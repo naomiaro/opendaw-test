@@ -2,13 +2,14 @@ import { describe, expect, it } from "vitest";
 import { PPQN } from "@opendaw/lib-dsp";
 import { ArpeggioDeviceBoxAdapter, GrooveShuffleBoxAdapter } from "@opendaw/studio-adapters";
 import { ArpeggioDeviceBox, PitchDeviceBox, VelocityDeviceBox, ZeitgeistDeviceBox } from "@opendaw/studio-boxes";
+import type { EffectBox } from "@opendaw/studio-core";
 import { BAR_PPQN, PATTERN_BPM, PATTERN_PPQN } from "@/lib/midiEffects/patterns";
 import { midiEffectFixture, transact } from "@/lib/testing/boxGraphFixtures";
 import { zeitgeistGrooveBox } from "./midiEffectChain";
-import { arpeggioRule, type RuleContext } from "./midiEffectSemanticsRules";
+import { arpeggioRule, type DeviceSetting, type RuleContext } from "./midiEffectSemanticsRules";
 import {
   ARPEGGIO_BASE, AUDIT_PATTERNS, CALIBRATION_ROW_ID, FACTORY_KEYS, QUICK_IDS, HELD_NOTE, PITCH_BASE, REGION_DURATION_PPQN, REGION_POSITION_PPQN, SAMPLE_SECONDS,
-  SEMANTICS_ROWS, VELOCITY_BASE, ZEITGEIST_BASE, applySettings, predictedVariants, renderRange, renderSeconds, resolveRows, rowNotes,
+  SEMANTICS_ROWS, VELOCITY_BASE, ZEITGEIST_BASE, applySettings, settingsOf, predictedVariants, renderRange, renderSeconds, resolveRows, rowNotes,
   type RowGroup, type SemanticsRow,
 } from "./midiEffectSemanticsRows";
 
@@ -192,6 +193,25 @@ describe("applySettings", () => {
     expect(() => transact(pitch.boxGraph, () => applySettings(pitch.box, { device: "velocity", settings: VELOCITY_BASE }))).toThrow();
     expect(PITCH_BASE).toEqual({ semiTones: 0, cents: 0, octaves: 0 });
     expect(ZEITGEIST_BASE).toEqual({ amount: 0.6, duration: 480 });
+  });
+});
+
+describe("settingsOf", () => {
+  it("round-trips every device through applySettings", () => {
+    for (const setting of [
+      { device: "arpeggio", settings: { modeIndex: 2, numOctaves: 3, rateIndex: 5, gate: 0.75, repeat: 3, velocity: 0.5 } },
+      { device: "pitch", settings: { semiTones: 7, cents: -25, octaves: -1 } },
+      { device: "velocity", settings: { magnetPosition: 0.25, magnetStrength: 0.5, randomAmount: 0.5, offset: -0.25, mix: 0.75 } },
+      { device: "zeitgeist", settings: { amount: 0.75, duration: 960 } },
+    ] as DeviceSetting[]) {
+      const fixture = midiEffectFixture(setting.device);
+      transact(fixture.boxGraph, () => applySettings(fixture.box, setting));
+      expect(settingsOf(fixture.box)).toEqual(setting);
+    }
+  });
+  it("throws for a box it does not know", () => {
+    class MaximizerDeviceBox {}
+    expect(() => settingsOf(new MaximizerDeviceBox() as unknown as EffectBox)).toThrow(/no settings reader for MaximizerDeviceBox/);
   });
 });
 

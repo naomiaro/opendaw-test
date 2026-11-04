@@ -223,14 +223,16 @@ function SpielwerkDemo() {
       <Container size="3" style={{ padding: "48px 16px 64px" }}>
         <BackLink />
         <header style={{ marginBottom: 28 }}>
-          <div className="mc-kicker">MIDI — Spielwerk, the scriptable effect · OpenDAW SDK</div>
+          <div className="mc-kicker">MIDI 03 — Spielwerk · OpenDAW SDK</div>
           <h1 className="mc-title" style={{ fontSize: "clamp(28px, 4.5vw, 44px)" }}>Spielwerk</h1>
           <p className="mc-intro">
             A MIDI effect you write in JavaScript: a <code>Processor</code> class whose <code>process()</code> generator
             receives the block's note events and yields notes to the synth. Browse the scripts, edit one, compile it,
             turn the knobs it declares, and watch the lower lane read what the chain emits from the engine. The four
             fixed devices are on the{" "}
-            <a href="/midi-effects-demo.html" style={{ color: "var(--mc-amber)" }}>MIDI Effects demo</a>.
+            <a href="/midi-effects-demo.html" style={{ color: "var(--mc-amber)" }}>MIDI Effects demo</a>, and all
+            three pages are on the{" "}
+            <a href="/midi-effects-demos.html" style={{ color: "var(--mc-amber)" }}>MIDI Effects overview</a>.
           </p>
         </header>
 

@@ -8,6 +8,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { CanvasPainter } from "@/lib/CanvasPainter";
+import { velocityColor } from "@/lib/midiEffects/velocityColor";
 import { CANVAS_COLORS, CANVAS_FONT_SMALL } from "@/lib/design/consoleTheme";
 
 export interface LaneNote {
@@ -18,6 +19,12 @@ export interface LaneNote {
   readonly to: number | null;
   /** 0..1; shades the bar when the lane shades by velocity */
   readonly velocity?: number;
+  /** outline only, no fill */
+  readonly hollow?: boolean;
+  /** the bar's left and right edges drawn as dashed lines over the fill */
+  readonly dashedEdges?: boolean;
+  /** drawn just right of the bar's left edge, inside its row, and only where the bar is wide enough to hold it */
+  readonly label?: string;
 }
 
 export interface NoteLaneHandle {
@@ -40,13 +47,15 @@ export interface NoteLaneProps {
   /** pulses per beat and per bar, for the grid */
   beatPpqn?: number;
   barPpqn?: number;
+  /** ppqn spans shaded over the lane's full height, under the grid and the notes (read inside the paint) */
+  shadedSpans?: () => readonly { readonly from: number; readonly to: number }[];
 }
 
 const MARK_HEIGHT = 3;
 const BORDER = "1px solid var(--mc-line)";
 
 export const NoteLane = forwardRef<NoteLaneHandle, NoteLaneProps>(function NoteLane(
-  { title, caption, notes, rangePpqn, pitchLow, pitchHigh, height, shadeByVelocity, position, beatPpqn = 960, barPpqn = 3840 },
+  { title, caption, notes, rangePpqn, pitchLow, pitchHigh, height, shadeByVelocity, position, beatPpqn = 960, barPpqn = 3840, shadedSpans },
   ref
 ) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -54,8 +63,8 @@ export const NoteLane = forwardRef<NoteLaneHandle, NoteLaneProps>(function NoteL
   const outOfRangeRef = useRef<HTMLSpanElement>(null);
   const painterRef = useRef<CanvasPainter | null>(null);
   // Props the paint reads, kept current without re-creating the painter.
-  const propsRef = useRef({ notes, rangePpqn, pitchLow, pitchHigh, shadeByVelocity, position, beatPpqn, barPpqn });
-  propsRef.current = { notes, rangePpqn, pitchLow, pitchHigh, shadeByVelocity, position, beatPpqn, barPpqn };
+  const propsRef = useRef({ notes, rangePpqn, pitchLow, pitchHigh, shadeByVelocity, position, beatPpqn, barPpqn, shadedSpans });
+  propsRef.current = { notes, rangePpqn, pitchLow, pitchHigh, shadeByVelocity, position, beatPpqn, barPpqn, shadedSpans };
 
   useImperativeHandle(ref, () => ({ requestUpdate: () => painterRef.current?.requestUpdate() }), []);
 
@@ -63,7 +72,7 @@ export const NoteLane = forwardRef<NoteLaneHandle, NoteLaneProps>(function NoteL
     const canvas = canvasRef.current;
     if (!canvas) return undefined;
     const painter = new CanvasPainter(canvas, (_painter, context) => {
-      const { notes, rangePpqn, pitchLow, pitchHigh, shadeByVelocity, position, beatPpqn, barPpqn } = propsRef.current;
+      const { notes, rangePpqn, pitchLow, pitchHigh, shadeByVelocity, position, beatPpqn, barPpqn, shadedSpans } = propsRef.current;
       const width = canvas.clientWidth;
       const height = canvas.clientHeight;
       if (rangePpqn <= 0 || beatPpqn <= 0 || barPpqn <= 0 || pitchHigh < pitchLow) return;
@@ -73,6 +82,10 @@ export const NoteLane = forwardRef<NoteLaneHandle, NoteLaneProps>(function NoteL
 
       context.fillStyle = CANVAS_COLORS.bg;
       context.fillRect(0, 0, width, height);
+      if (shadedSpans) {
+        context.fillStyle = CANVAS_COLORS.shade;
+        for (const span of shadedSpans()) context.fillRect(x(span.from), 0, Math.max(x(span.to) - x(span.from), 1), height);
+      }
       for (let p = 0; p < rangePpqn; p += beatPpqn) {
         context.strokeStyle = p % barPpqn === 0 ? CANVAS_COLORS.gridSupporting : CANVAS_COLORS.gridTertiary;
         context.beginPath();
@@ -87,19 +100,45 @@ export const NoteLane = forwardRef<NoteLaneHandle, NoteLaneProps>(function NoteL
         const to = note.to ?? Math.max(note.from, end);
         const left = x(note.from);
         const barWidth = Math.max(x(to) - left, 1);
-        const alpha = shadeByVelocity && note.velocity !== undefined ? 0.35 + 0.65 * note.velocity : 1;
-        context.fillStyle = CANVAS_COLORS.amber;
-        context.globalAlpha = alpha;
-        if (note.pitch < pitchLow) {
+        const fill = shadeByVelocity && note.velocity !== undefined ? velocityColor(note.velocity) : CANVAS_COLORS.amber;
+        if (note.pitch < pitchLow || note.pitch > pitchHigh) {
           outOfRange++;
-          context.fillRect(left, height - MARK_HEIGHT, barWidth, MARK_HEIGHT);
-        } else if (note.pitch > pitchHigh) {
-          outOfRange++;
-          context.fillRect(left, 0, barWidth, MARK_HEIGHT);
-        } else {
-          context.fillRect(left, (pitchHigh - note.pitch) * rowHeight, barWidth, Math.max(rowHeight - 1, 1));
+          context.fillStyle = fill;
+          context.fillRect(left, note.pitch < pitchLow ? height - MARK_HEIGHT : 0, barWidth, MARK_HEIGHT);
+          continue;
         }
-        context.globalAlpha = 1;
+        const top = (pitchHigh - note.pitch) * rowHeight;
+        const barHeight = Math.max(rowHeight - 1, 1);
+        if (note.hollow) {
+          context.strokeStyle = CANVAS_COLORS.structural;
+          context.lineWidth = 1;
+          context.strokeRect(left, top, barWidth, barHeight);
+        } else {
+          context.fillStyle = fill;
+          context.fillRect(left, top, barWidth, barHeight);
+        }
+        if (note.dashedEdges) {
+          context.strokeStyle = CANVAS_COLORS.playhead;
+          context.globalAlpha = 0.7;
+          context.setLineDash([2, 2]);
+          context.beginPath();
+          context.moveTo(left + 0.5, top);
+          context.lineTo(left + 0.5, top + barHeight);
+          context.moveTo(left + barWidth - 0.5, top);
+          context.lineTo(left + barWidth - 0.5, top + barHeight);
+          context.stroke();
+          context.setLineDash([]);
+          context.globalAlpha = 1;
+        }
+        if (note.label) {
+          context.font = CANVAS_FONT_SMALL;
+          // a label wider than its bar would spill over the neighbours' bars and labels
+          if (barWidth >= context.measureText(note.label).width + 4) {
+            context.fillStyle = CANVAS_COLORS.label;
+            context.textBaseline = "top";
+            context.fillText(note.label, left + 2, top + 1);
+          }
+        }
       }
 
       context.fillStyle = CANVAS_COLORS.label;

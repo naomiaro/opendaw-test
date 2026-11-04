@@ -128,15 +128,24 @@ const CONTEXT_2D_PROPERTIES = new Set([
  *
  * It knows the names a real 2D context has and throws for any other, so a
  * misspelt call fails here as it would on a real canvas. All canvases share
- * the one list of calls.
+ * the one list of calls. `measureText` answers a width of 6 px per character.
  */
-export function installFakeContext2d(): { calls: string[] } {
+export function installFakeContext2d(): { calls: string[]; sets: { at: number; set: string }[] } {
   const calls: string[] = [];
+  // property sets, each with the number of calls made before it, so a test can order them against `calls`
+  const sets: { at: number; set: string }[] = [];
   const values: Record<string, unknown> = {};
   const context = new Proxy({} as Record<string, unknown>, {
     get: (_target, property) => {
       if (typeof property !== "string") return undefined;
       if (CONTEXT_2D_PROPERTIES.has(property)) return values[property];
+      if (property === "measureText") {
+        // no fonts here: every character measures 6 px wide
+        return (text: string) => {
+          calls.push(`measureText(${text})`);
+          return { width: 6 * text.length };
+        };
+      }
       if (CONTEXT_2D_METHODS.has(property)) {
         return (...args: unknown[]) => {
           calls.push(`${property}(${args.join(",")})`);
@@ -149,11 +158,12 @@ export function installFakeContext2d(): { calls: string[] } {
         throw new Error(`A 2D canvas context has no "${String(property)}"`);
       }
       values[property] = value;
+      sets.push({ at: calls.length, set: `${property}=${value}` });
       return true;
     },
   });
   HTMLCanvasElement.prototype.getContext = (() => context) as unknown as HTMLCanvasElement["getContext"];
-  return { calls };
+  return { calls, sets };
 }
 
 /** Give an element a size and a place, as a browser's layout would */

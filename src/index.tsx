@@ -163,16 +163,10 @@ const GROUPS: Group[] = [
           "Record MIDI notes with device selection, channel filtering, an on-screen piano keyboard, and step-recording mode for precise note-by-note entry.",
       },
       {
-        href: "/midi-effects-demo.html",
+        href: "/midi-effects-demos.html",
         title: "MIDI Effects",
         blurb:
-          "Hear and see what Arpeggio, Pitch, Velocity and Zeitgeist do to a looping synth pattern — one device at a time, then stacked and reordered by drag. The emitted-notes lane reads the engine, not a model.",
-      },
-      {
-        href: "/spielwerk-demo.html",
-        title: "Spielwerk",
-        blurb:
-          "Write a MIDI effect in JavaScript: a Processor whose generator receives note events and yields notes. Pre-built echo, chord, humanize, octave-jump, strum and filter scripts, an editor that compiles on demand, knobs from // @param lines, and an API reference whose examples load into the editor.",
+          "Three demos on the MIDI chain: hear Arpeggio, Pitch, Velocity and Zeitgeist on a synth, see what the engine emits from them on a rendered sine (velocity and cents included), and write your own device in JavaScript with Spielwerk.",
       },
     ],
   },
