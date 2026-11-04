@@ -37,11 +37,11 @@ const PAGES = [
     chip: "var(--mc-cyan)",
     name: "Rendered",
     direction: "SEE IT EXACTLY",
-    see: "Every emitted note's onset, end, pitch with cents and velocity, to the sample",
+    see: "Pitch with cents and velocity on every note; onsets and ends to the sample where notes do not touch",
     cannot: "Read overlapping notes: one voice at a time",
     href: "/midi-effects-rendered-demo.html",
     prose:
-      "The same chain on a pure sine, rendered offline after each change and read back note by note. The read is exact: velocity, cents and timing. The reader follows one voice at a time, and the pattern's notes are shortened to 90 % of their length so it finds the gap between them.",
+      "The same chain on a pure sine, rendered offline after each change and read back note by note. Pitch with cents and velocity are read on every note, onsets and ends to the sample wherever the notes do not touch. Where they touch, at an Arpeggio gate of 100 %, the edges come from the device rule and are drawn dashed. The reader follows one voice at a time, and the pattern's notes are shortened to 90 % of their length so it finds the gap between them.",
   },
   {
     index: "03",

@@ -166,7 +166,7 @@ const GROUPS: Group[] = [
         href: "/midi-effects-demos.html",
         title: "MIDI Effects",
         blurb:
-          "Three demos on the MIDI chain: hear Arpeggio, Pitch, Velocity and Zeitgeist on a synth, see exactly what the engine emits from them on a rendered sine (velocity and cents included), and write your own device in JavaScript with Spielwerk.",
+          "Three demos on the MIDI chain: hear Arpeggio, Pitch, Velocity and Zeitgeist on a synth, see what the engine emits from them on a rendered sine (velocity and cents included), and write your own device in JavaScript with Spielwerk.",
       },
     ],
   },
