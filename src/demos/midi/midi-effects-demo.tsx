@@ -20,7 +20,7 @@ import { BackLink } from "@/components/BackLink";
 import { NoteLane, type LaneNote, type NoteLaneHandle } from "@/components/NoteLane";
 import { CONSOLE_STYLES, CODE_BLOCK_STYLE } from "@/lib/design/consoleTheme";
 import { PATTERNS, PATTERN_BPM, PATTERN_PPQN, BAR_PPQN, REGION_START_PPQN, patternById, writePattern, type Pattern, type PatternId } from "@/lib/midiEffects/patterns";
-import { reconcileChain, setDeviceEnabled, type Factories } from "@/lib/midiEffects/chain";
+import { reconcileChain, tryDeviceEnabled, type Factories } from "@/lib/midiEffects/chain";
 import { INITIAL_STATE, desiredChain, pageReducer } from "@/lib/midiEffects/pageState";
 import { EmittedBars } from "@/lib/midiEffects/emittedNotes";
 import { useMidiChain } from "./useMidiChain";
@@ -54,6 +54,7 @@ function MidiEffectsDemo() {
   const [status, setStatus] = useState("Starting engine…");
   const [initError, setInitError] = useState<string | null>(null);
   const [chainError, setChainError] = useState<string | null>(null);
+  const [toggleError, setToggleError] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [patternId, setPatternId] = useState<PatternId>(DEFAULT_PATTERN);
   const [state, dispatch] = useReducer(pageReducer, INITIAL_STATE);
@@ -184,15 +185,10 @@ function MidiEffectsDemo() {
       compact={compact}
       page="effects"
       onEnabledChange={(enabled) => {
-        try {
-          setDeviceEnabled(project!.editing, entry.box, enabled);
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          console.error(`[midi-effects] ${enabled ? "enabling" : "bypassing"} ${entry.id} failed: ${message}`);
-          setChainError(`The ${entry.id} device could not be ${enabled ? "enabled" : "bypassed"}: ${message}`);
-          return;
-        }
-        reseekIfPlaying();
+        // a toggle's failure stands until the next toggle; the chain reconcile keeps its own sentence
+        const error = tryDeviceEnabled(project!.editing, entry.id, entry.box, enabled, "midi-effects");
+        setToggleError(error);
+        if (error === null) reseekIfPlaying();
       }}
       onChainChange={reseekIfPlaying}
     />
@@ -220,9 +216,9 @@ function MidiEffectsDemo() {
           </p>
         </header>
 
-        {(initError ?? chainError) && (
+        {(initError ?? chainError ?? toggleError) && (
           <Callout.Root color="red" style={{ marginBottom: 16 }}>
-            <Callout.Text>{initError ?? chainError}</Callout.Text>
+            <Callout.Text>{initError ?? chainError ?? toggleError}</Callout.Text>
           </Callout.Root>
         )}
 

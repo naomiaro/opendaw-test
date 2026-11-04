@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Option, UUID } from "@opendaw/lib-std";
 import { BoxEditing } from "@opendaw/lib-box";
 import { ArpeggioDeviceBox, PitchDeviceBox, VelocityDeviceBox, type AudioUnitBox } from "@opendaw/studio-boxes";
@@ -7,7 +7,9 @@ import { AudioUnitType } from "@opendaw/studio-enums";
 import type { EffectBox, EffectFactory, Project } from "@opendaw/studio-core";
 import { graphWithZeitgeist, transact } from "@/lib/testing/boxGraphFixtures";
 import { deviceIdOf } from "./devices";
-import { chainBoxes, moveDevice, reconcileChain, removeDevice, setDeviceEnabled, type Factories, type MidiEffectsField } from "./chain";
+import {
+  chainBoxes, moveDevice, reconcileChain, removeDevice, setDeviceEnabled, tryDeviceEnabled, type Factories, type MidiEffectsField,
+} from "./chain";
 
 /** Pitch at 0, Velocity at 1, Arpeggio at 2 on one unit's MIDI chain. */
 function threeDevices(): { unit: AudioUnitBox; boxes: EffectBox[]; editing: BoxEditing } {
@@ -52,6 +54,23 @@ describe("chain", () => {
     const { boxes, editing } = threeDevices();
     setDeviceEnabled(editing, boxes[0], false);
     expect(boxes[0].enabled.getValue()).toBe(false);
+  });
+
+  it("tryDeviceEnabled writes the field and answers null", () => {
+    const { boxes, editing } = threeDevices();
+    expect(tryDeviceEnabled(editing, "pitch", boxes[0], false, "midi-test")).toBeNull();
+    expect(boxes[0].enabled.getValue()).toBe(false);
+  });
+
+  it("tryDeviceEnabled answers the page's sentence on a failed write and logs it under the tag", () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { boxes } = threeDevices();
+    const editing = { modify: () => { throw new Error("no graph"); } } as unknown as BoxEditing;
+    expect(tryDeviceEnabled(editing, "pitch", boxes[0], true, "midi-test")).toBe("The pitch device could not be enabled: no graph");
+    expect(tryDeviceEnabled(editing, "pitch", boxes[0], false, "midi-test")).toBe("The pitch device could not be bypassed: no graph");
+    expect(consoleError).toHaveBeenCalledWith("[midi-test] enabling pitch failed: no graph");
+    expect(consoleError).toHaveBeenCalledWith("[midi-test] bypassing pitch failed: no graph");
+    consoleError.mockRestore();
   });
 
   it("removeDevice leaves the chain without it", () => {

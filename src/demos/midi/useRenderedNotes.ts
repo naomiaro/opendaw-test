@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { PPQN } from "@opendaw/lib-dsp";
 import type { Terminable } from "@opendaw/lib-std";
 import { Devices, VelocityDeviceBoxAdapter, ZeitgeistDeviceBoxAdapter } from "@opendaw/studio-adapters";
-import type { AudioUnitBox, VelocityDeviceBox } from "@opendaw/studio-boxes";
+import type { AudioUnitBox } from "@opendaw/studio-boxes";
 import type { Project } from "@opendaw/studio-core";
 import { renderOfflineSlice } from "@/lib/offlineScan";
 import { removeMasterMaximizer } from "@/lib/audit/midiEffectChain";
@@ -151,6 +151,8 @@ export function useRenderedNotes(options: RenderedNotesOptions): RenderedState {
     return () => {
       schedulerRef.current = null;
       scheduler.dispose();
+      // the rows are no longer the chain's, and a failure of this scheduler's is not the next one's
+      setState((previous) => ({ ...previous, scheduler: "stale", error: null }));
     };
   }, [active]);
 
@@ -170,7 +172,7 @@ export function useRenderedNotes(options: RenderedNotesOptions): RenderedState {
         watching = entry;
         const adapter = project.boxAdapters.adapterFor(entry.box, Devices.isMidiEffect);
         for (const { parameter } of deviceParameters(adapter)) subscriptions.push(parameter.catchupAndSubscribe(request));
-        if (entry.id === "velocity") subscriptions.push((entry.box as VelocityDeviceBox).randomSeed.subscribe(request));
+        if (adapter instanceof VelocityDeviceBoxAdapter) subscriptions.push(adapter.box.randomSeed.subscribe(request));
       }
     } catch (error) {
       subscriptions.forEach((subscription) => subscription.terminate());

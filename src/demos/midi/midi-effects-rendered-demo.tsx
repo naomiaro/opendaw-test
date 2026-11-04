@@ -25,7 +25,7 @@ import {
 import {
   PATTERNS, PATTERN_BPM, PATTERN_PPQN, BAR_PPQN, REGION_START_PPQN, patternById, withGaps, writePattern, type Pattern, type PatternId,
 } from "@/lib/midiEffects/patterns";
-import { reconcileChain, setDeviceEnabled, type Factories } from "@/lib/midiEffects/chain";
+import { reconcileChain, tryDeviceEnabled, type Factories } from "@/lib/midiEffects/chain";
 import { INITIAL_STATE, desiredChain, pageReducer } from "@/lib/midiEffects/pageState";
 import type { RenderedRows } from "@/lib/midiEffects/renderedNotes";
 import { useMidiChain } from "./useMidiChain";
@@ -101,6 +101,7 @@ function MidiEffectsRenderedDemo() {
   const [status, setStatus] = useState("Starting engine…");
   const [initError, setInitError] = useState<string | null>(null);
   const [chainError, setChainError] = useState<string | null>(null);
+  const [toggleError, setToggleError] = useState<string | null>(null);
   const [patternError, setPatternError] = useState<string | null>(null);
   const [calibration, setCalibration] = useState<Calibration | null>(null);
   const [calibrationError, setCalibrationError] = useState<string | null>(null);
@@ -243,7 +244,7 @@ function MidiEffectsRenderedDemo() {
   // the rows on show are not the chain's while a render is due or running, before calibration, and after a failure
   const dimmed = rendered.status !== "idle";
   const calibrationNotice = calibrationError === null ? null : `${calibrationError}. The rendered rows are unavailable; reload the page.`;
-  const pageErrors = [initError, chainError, patternError, calibrationNotice].filter((message): message is string => message !== null);
+  const pageErrors = [initError, chainError, toggleError, patternError, calibrationNotice].filter((message): message is string => message !== null);
 
   const renderCard = (entry: (typeof entries)[number], compact: boolean) => (
     <MidiEffectCard
@@ -252,15 +253,10 @@ function MidiEffectsRenderedDemo() {
       compact={compact}
       page="rendered"
       onEnabledChange={(enabled) => {
-        try {
-          setDeviceEnabled(project!.editing, entry.box, enabled);
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          console.error(`[midi-rendered] ${enabled ? "enabling" : "bypassing"} ${entry.id} failed: ${message}`);
-          setChainError(`The ${entry.id} device could not be ${enabled ? "enabled" : "bypassed"}: ${message}`);
-          return;
-        }
-        reseekIfPlaying();
+        // a toggle's failure stands until the next toggle; the chain reconcile keeps its own sentence
+        const error = tryDeviceEnabled(project!.editing, entry.id, entry.box, enabled, "midi-rendered");
+        setToggleError(error);
+        if (error === null) reseekIfPlaying();
       }}
       onChainChange={reseekIfPlaying}
     />
