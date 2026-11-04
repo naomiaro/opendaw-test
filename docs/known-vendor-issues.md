@@ -97,7 +97,7 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   worker (lib-fusion's `OpfsWorker`) writes through sync access handles (`createSyncAccessHandle` on its
   write path) and deletes through `removeEntry` on its delete paths with no `truncate(0)` before them,
   so the demos' page-load sweep lowers the saved figure by every sample it removes (the dist lines are
-  in the note). An upstream issue is drafted for review. (`clearStoredSamples()` in `src/lib/storedSamples.ts` also checks
+  in the note). Filed upstream as [openDAW#527](https://github.com/andremichelle/openDAW/issues/527) on 2026-11-04. (`clearStoredSamples()` in `src/lib/storedSamples.ts` also checks
   with `Workers.Opfs.exists` after a delete because `Workers.Opfs.delete` reports nothing when it fails
   — an SDK quirk, not the browser's.)
 - **Evidence:** root CLAUDE.md, "Stored Samples Are Swept at Page Load" ([repo PR #132](https://github.com/naomiaro/opendaw-test/pull/132));
