@@ -72,6 +72,10 @@ export function applyParams(adapter: NanoDeviceBoxAdapter, params: NanoParams): 
   writeChecked(named.loopFade, params.loopFade);
   writeChecked(named.loopStart, params.loopStart);
   writeChecked(named.loopEnd, params.loopEnd);
+  writeChecked(named.panning, params.panning);
+  writeChecked(named.polyphone, params.polyphone);
+  writeChecked(named.oneShot, params.oneShot);
+  writeChecked(named.fixedPitch, params.fixedPitch);
 }
 
 /**

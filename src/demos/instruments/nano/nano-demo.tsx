@@ -13,6 +13,7 @@ import { BackLink } from "@/components/BackLink";
 import { MidiSupportNotice } from "@/components/MidiSupportNotice";
 import { DropZone } from "@/components/DropZone";
 import { ParamSlider, useSliderThumbLabel } from "@/components/ParamSlider";
+import { ParamSwitch } from "@/components/ParamSwitch";
 import { PianoKeyboard, PIANO_STYLES } from "@/demos/midi/PianoKeyboard";
 import { CANVAS_COLORS, CODE_BLOCK_STYLE, CONSOLE_STYLES } from "@/lib/design/consoleTheme";
 import { CanvasPainter } from "@/lib/CanvasPainter";
@@ -586,10 +587,14 @@ const App: React.FC = () => {
                 </Card>
                 <Card>
                   <Flex direction="column" gap="3">
-                    <Text size="2" weight="bold" color="gray">Envelope and gain</Text>
+                    <Text size="2" weight="bold" color="gray">Envelope and output</Text>
                     <ParamSlider project={project} parameter={setup.adapter.namedParameter.attack} label="Attack" />
                     <ParamSlider project={project} parameter={setup.adapter.namedParameter.release} label="Release" />
                     <ParamSlider project={project} parameter={setup.adapter.namedParameter.volume} label="Gain" />
+                    <ParamSlider project={project} parameter={setup.adapter.namedParameter.panning} label="Pan" />
+                    <Text size="1" color="gray">
+                      Pan keeps the near side at full level and turns the far side down. A move glides over 5 ms.
+                    </Text>
                   </Flex>
                 </Card>
                 <Card>
@@ -615,6 +620,21 @@ const App: React.FC = () => {
                     <Text size="1" color="gray">
                       The loop is kept inside the region, and the fade is capped at half the loop.
                       Loop changes are heard at once, on notes that are already sounding.
+                    </Text>
+                  </Flex>
+                </Card>
+                <Card style={{ gridColumn: "1 / -1" }}>
+                  <Flex direction="column" gap="3">
+                    <Text size="2" weight="bold" color="gray">Play mode</Text>
+                    <Flex gap="4" wrap="wrap">
+                      <ParamSwitch project={project} parameter={setup.adapter.namedParameter.polyphone} label="Mode" />
+                      <ParamSwitch project={project} parameter={setup.adapter.namedParameter.oneShot} label="One-shot" />
+                      <ParamSwitch project={project} parameter={setup.adapter.namedParameter.fixedPitch} label="Fixed pitch" />
+                    </Flex>
+                    <Text size="1" color="gray">
+                      Mono fades the sounding note out over 5 ms when the next one starts. One-shot plays the
+                      region to its end whatever the note length; with the loop on, the note-off still stops it.
+                      Fixed pitch plays every key at the root key, with Octave and Tune still applied.
                     </Text>
                   </Flex>
                 </Card>
