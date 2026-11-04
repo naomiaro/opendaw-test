@@ -146,6 +146,7 @@ Access via `audioUnitBoxAdapter.midiEffects` — an
 `Option<IndexedBoxAdapterCollection>` (unwrap first; `None` means the host has no
 midi chain, e.g. an effect-composite branch):
 - **ArpeggioDeviceBoxAdapter** — arpeggiator patterns (up, down, random, etc.)
+- **NoteFilterDeviceBoxAdapter** — key range (`min` / `max`, both included) then `transpose` semitones or one `key` (`set`); a transposed note outside 0..127 is dropped, velocity and cent pass through, a note ends on the key it started with; `EffectFactories.NoteFilter`
 - **PitchDeviceBoxAdapter** — pitch transpose/shift
 - **VelocityDeviceBoxAdapter** — velocity curve mapping
 - **SpielwerkDeviceBoxAdapter** — scriptable MIDI effect (JavaScript)
@@ -302,10 +303,16 @@ register `debug/2026-10-23-midi-output-timing/note.md`. Chrome only; a real clic
   a receipt with the time the sender ASKED for, so the figure is what the SDK requested; it says
   nothing about physical delivery (a hardware session with audio capture would).
 - **What the SDK does.** The engine times a note as its offset inside the quantum being
-  rendered plus `delayInMs`; the worklet drains that into a ring and posts a wake-up; the main
-  thread adds the output and compensation latency and sends at `performance.now()` plus that
-  (`Project.receivedMIDIFromEngine`). The base is the moment the main thread read the ring, so
-  a late handler lands on the note, in one direction, and `delayInMs` absorbs none of it.
+  rendered plus `delayInMs`; the worklet drains that into a ring as a context time in ms
+  (`quantumStartMs + offset`, a `Float64` beside the packed message) and posts a wake-up; the main
+  thread maps each time through one `getOutputTimestamp()` pair per ring read plus the
+  compensation latency (`MIDIReceiver.outputClock`) and hands it to `MIDIOutput.send` as the
+  timestamp (`Project.sendMIDIFromEngine`). The base is the audio clock, so a late handler no
+  longer moves a note. Before this fix the base was the moment the main thread read the
+  ring plus the reported output latency, rounded to whole ms: a late handler landed on the note,
+  in one direction, and `delayInMs` absorbed none of it. That old base is the band
+  `midi-out-main-thread-base` below; on the new base a janked engine cell is expected `on-time`,
+  and the band then only catches a regression (re-measure owed: the IAC rows need a hand).
 - **The clock rule.** The anchor is `engine.recordingStart` from a recording with NOTHING armed
   (`Recording.start` reaches `prepareRecordingState` with zero captures; the engine stamps the
   start and records nothing). ONE `getOutputTimestamp` pair per repeat bridges to the Web MIDI
@@ -365,10 +372,13 @@ table `node scripts/audit/midi-effect-placement/table.ts`.
   pulses, and the instrument resolves them to sample offsets. A live key is pushed into the
   same sequencer that plays the regions, so one offline render covers live playing and
   playback. A disabled effect is left out of the chain. A change to an instrument's MIDI
-  chain (an effect bypassed, removed, added or reordered) drops the instrument's sounding voices, and a
-  MIDI Output sends note offs for the notes it holds, so no note hangs; a change that leaves
-  the MIDI effects as they were (an audio effect added) keeps them. The audit sets
-  `enabled` before it renders, so a row never sees the drop.
+  chain (an effect bypassed, removed, added or reordered) drops the instrument's sounding voices, every
+  effect that left the chain ends the notes it started (its `release_all` export, Arpeggio / Spielwerk /
+  Note Filter / WebCLAP MIDI; the note-offs come out first on the instrument's next pull, for an
+  instrument that keeps its voices), and a MIDI Output sends note offs for the notes it holds, so no
+  note hangs; Arpeggio and Spielwerk start clean when enabled again. A change that leaves the MIDI
+  effects as they were (an audio effect added) keeps them. The audit sets `enabled` before it
+  renders, so a row never sees the drop or the release.
 - **Two judgements.** A device meant to pass timing through (Pitch, Velocity, a Spielwerk that
   forwards or re-yields, every device disabled) is read by cross-correlation against the dry
   render of the same run: expected lag 0. A device meant to move notes (Arpeggio, Zeitgeist,
@@ -378,18 +388,20 @@ table `node scripts/audit/midi-effect-placement/table.ts`.
   the mechanism, not a finding; nothing in the pull chain quantizes an event to the quantum.
   Zeitgeist's expected positions are read through the device adapter's `groove()` and kept
   as float pulses.
-- **Sample length.** A sample of 1200 frames or fewer never loads (the peaks fit returns no
-  stage, the peak worker throws), on the fetch path and on the recording import path alike;
-  the burst sits at the head of a one-second sample. `?sampleMs=20` reproduces the load
-  failure in `#audit-state`; `?importMs=20` runs a synthetic take of that length through
-  `sampleService.importRecording` first and reports it.
-- **A script that throws at module load "compiles".** Chrome's `addModule` resolves for a module
-  whose top level throws (a misnamed `Processor`, a bare `throw`), so `ScriptCompiler.compile`
-  resolves after writing `code` and the parameter boxes while the worklet keeps the previous script
-  and sends no device message (measured 0.0.180, `debug/2026-11-03-spielwerk-addmodule-resolves/`;
-  filed as openDAW#523; reported fixed upstream for SDK 0.0.181, the maintainer's answer: the error then
-  arrives through `subscribeDeviceMessage` and the device is silenced, `compile` still resolves; not
-  re-measured on the installed 0.0.180, the upgrade re-runs the note's steps).
+- **Sample length.** A sample of 1200 frames or fewer used to never load (the peaks fit returned
+  no stage, the peak worker threw), on the fetch path and on the recording import path alike:
+  openDAW#494, fixed (a short sample gets one peak stage; re-measured: a 20 ms sample loads and
+  a 20 ms take imports). The burst still sits at the head of a one-second sample so the register's
+  frames stay comparable. `?sampleMs=20` now loads and renders; `?importMs=20` runs a synthetic
+  take of that length through `sampleService.importRecording` first and reports it (`ok`).
+- **A script that throws at module load still "compiles", and is now reported.** Chrome's `addModule`
+  resolves for a module whose top level throws (a misnamed `Processor`, a bare `throw`), so
+  `ScriptCompiler.compile` resolves after writing `code` and the parameter boxes; the SDK's wrapper now
+  catches the load error, registers the version anyway and rethrows it from the processor's constructor,
+  so the device is silenced and the error arrives through `subscribeDeviceMessage` ("Failed to
+  instantiate Processor: …") about half a second after Compile (openDAW#523, filed from
+  `debug/2026-11-03-spielwerk-addmodule-resolves/`, fixed and re-measured). Before the fix the worklet kept
+  the previous script behind the new parameters and nothing was reported.
   Build and construct the Processor on the main thread first (`preflightScript`,
   `src/lib/midiEffects/spielwerkCompile.ts`); runtime failures (a yield in the past, the 128-note
   scheduler) do arrive through `engine.subscribeDeviceMessage(uuid, …)` and silence the device until

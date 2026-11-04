@@ -2365,7 +2365,7 @@ const spielwerkBox = effectBox as SpielwerkDeviceBox;
 - `external`: false
 - `type`: "midi"
 
-Listed in `EffectFactories.MidiNamed` alongside Arpeggio, Pitch, Velocity, and Zeitgeist.
+Listed in `EffectFactories.MidiNamed` alongside Arpeggio, Note Filter, Pitch, Velocity, and Zeitgeist.
 
 #### Box Fields
 

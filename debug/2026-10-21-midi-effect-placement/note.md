@@ -7,6 +7,11 @@ sounds, and does one move where the recorder places a recorded note
 
 **Filed (2026-10-21):** [openDAW#494](https://github.com/andremichelle/openDAW/issues/494) a sample
 of 1200 frames or fewer never loads (`drafts/posted-openDAW-494-short-sample-never-loads.md`).
+**Closed 2026-11-02, fixed in SDK 0.0.181** (`Peaks` no longer returns an empty stage list for a first-stage
+ratio at or under 1; a short sample gets one stage). **Re-measured here 2026-11-04 on 0.0.181:**
+`?sampleMs=20&importMs=20&device=pitch` loads the 20 ms (960-frame) sample (state `idle`, was
+`error:sample load failed`), the 20 ms recording import reads `ok`, and the Pitch rows render `as-predicted`
+on that sample.
 
 **Harness:** unlisted debug demo
 `midi-effect-placement-audit-debug-demo.html[?rate=48000|44100][&bpm=<n>][&device=all|pitch|velocity|arpeggio|zeitgeist|spielwerk][&sampleMs=<n>][&importMs=<n>]`

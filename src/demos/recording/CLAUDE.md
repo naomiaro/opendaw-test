@@ -53,7 +53,8 @@ if (capture instanceof CaptureAudio) {
   // deviceId, requestChannels, gainDb are box graph fields — require transaction
   project.editing.modify(() => {
     capture.captureBox.deviceId.setValue(deviceId);
-    capture.requestChannels = 1;        // 1 = mono, 2 = stereo
+    capture.requestChannels = 1;        // 1 = mono (inputs 1+2 mixed), 2 = stereo; clears the masks below
+    // capture.channelMapping = ChannelMapping.mono(1); // one input on its own (captureBox.leftInputs / rightInputs, bit n = input n)
     capture.captureBox.gainDb.setValue(0); // dB
   });
   // monitoringMode manipulates Web Audio nodes — set outside transaction
@@ -275,8 +276,8 @@ if (!peaksOption.isEmpty()) {
 ### Capture Settings Require editing.modify()
 `captureBox.deviceId.setValue()` and `captureBox.gainDb.setValue()` write box graph fields
 directly. `capture.requestChannels = 1` is a `CaptureAudio` setter that writes the
-underlying `captureBox.requestChannels` (Int32Field) — also a box graph mutation. All
-three need `editing.modify()`. `capture.monitoringMode` is NOT a box graph field (it
+underlying `captureBox.requestChannels` (Int32Field) and zeroes `leftInputs` / `rightInputs` — also a
+box graph mutation; so is `capture.channelMapping = …` (the three fields). All need `editing.modify()`. `capture.monitoringMode` is NOT a box graph field (it
 manipulates Web Audio nodes), so set it outside the transaction. As of SDK 0.0.133,
 `monitoringMode` is properly typed — no `(capture as any)` cast needed.
 Setting any non-`"off"` monitoring mode auto-arms the capture (`armed.setValue(true)`).

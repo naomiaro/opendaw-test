@@ -13,7 +13,8 @@
 // carries data-audit-state walking setup → running:<row> → done | error:<message>; a row that
 // failed on its own is a red row under `done`, a failure that voids the later rows (a device that
 // could not be removed) ends the run in `error:`. `?sampleMs=` sets the loaded sample's length
-// (the loader refuses 1200 frames or fewer: the page then reads `error:sample load failed: …`);
+// (a loader that refuses it, as the SDK's did for 1200 frames or fewer before openDAW#494 was fixed, reads
+// `error:sample load failed: …`);
 // `?importMs=` first runs a synthetic recording of that length through the sample service's
 // recording import and reports it in the status line, `error:` when it fails.
 import React, { useCallback, useEffect, useRef, useState } from "react";
