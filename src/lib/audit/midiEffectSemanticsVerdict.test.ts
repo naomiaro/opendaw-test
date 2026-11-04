@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { NoteFigure } from "./midiEffectSemanticsReader";
-import type { PredictedFigure } from "./midiEffectSemanticsRules";
+import type { DeviationName, PredictedFigure } from "./midiEffectSemanticsRules";
 import {
   compareRegister, describeMismatch, judgeRule, silentRenderError, TOLERANCES, verdictColor, verdictOf,
   type Mismatch, type RuleJudgement, type Variant
 } from "./midiEffectSemanticsVerdict";
+
+// the judge compares deviation sets by size and membership only, so two labels stand in for two deviations
+const A = "a-deviation" as unknown as DeviationName;
+const B = "b-deviation" as unknown as DeviationName;
 
 const note = (onsetMs: number, over: Partial<NoteFigure> = {}): NoteFigure =>
   ({ onsetMs, endMs: onsetMs + 100, pitch: 60, cents: 0, velocity: 0.8, jitterCents: 0.1, ...over });
@@ -29,12 +33,12 @@ describe("judgeRule", () => {
     const read = [note(1000, { velocity: 0.8 })];
     const variants: Variant[] = [
       { deviations: new Set(), predicted: [a] },
-      { deviations: new Set(["arpeggio-uncapped-note-off"]), predicted: [b] },
-      { deviations: new Set(["arpeggio-uncapped-note-off", "arpeggio-drops-cent"]), predicted: [b] }
+      { deviations: new Set([A]), predicted: [b] },
+      { deviations: new Set([A, B]), predicted: [b] }
     ];
     const j = judgeRule(read, variants, TOLERANCES, never);
     expect(j.kind).toBe("deviation");
-    expect(j.deviations).toEqual(["arpeggio-uncapped-note-off"]);
+    expect(j.deviations).toEqual([A]);
     const empty = judgeRule([note(1000, { velocity: 0.5 })], variants, TOLERANCES, never);
     expect(empty.kind).toBe("holds");
     expect(empty.deviations).toEqual([]);
@@ -42,7 +46,7 @@ describe("judgeRule", () => {
   it("none of the variants matching is broken, carrying the empty set's first mismatch", () => {
     const variants: Variant[] = [
       intent([pred(1000, { velocity: 0.5 })]),
-      { deviations: new Set(["arpeggio-drops-cent"]), predicted: [pred(1000, { velocity: 0.3 })] }
+      { deviations: new Set([B]), predicted: [pred(1000, { velocity: 0.3 })] }
     ];
     const j = judgeRule([note(1000)], variants, TOLERANCES, never);
     expect(j.kind).toBe("broken");
@@ -50,7 +54,7 @@ describe("judgeRule", () => {
   });
   it("broken carries the empty set's mismatch even when that variant is not first", () => {
     const variants: Variant[] = [
-      { deviations: new Set(["arpeggio-drops-cent"]), predicted: [pred(1000, { velocity: 0.3 })] },
+      { deviations: new Set([B]), predicted: [pred(1000, { velocity: 0.3 })] },
       intent([pred(1000, { velocity: 0.5 })])
     ];
     const j = judgeRule([note(1000)], variants, TOLERANCES, never);
@@ -90,7 +94,7 @@ describe("judgeRule", () => {
   it("a no-rule row is none when any variant's spans cover every read note, broken when none does", () => {
     const covering: Variant[] = [
       intent([pred(1000, { readability: "too-short", endMs: 1010 })]),
-      { deviations: new Set(["arpeggio-uncapped-note-off"]), predicted: [pred(1000, { readability: "too-short", endMs: 1010 }), pred(3000, { readability: "too-short", endMs: 3010 })] }
+      { deviations: new Set([A]), predicted: [pred(1000, { readability: "too-short", endMs: 1010 }), pred(3000, { readability: "too-short", endMs: 3010 })] }
     ];
     expect(judgeRule([note(1000), note(3000)], covering, TOLERANCES, never).kind).toBe("none");
     expect(judgeRule([note(1000), note(4000)], covering, TOLERANCES, never)).toMatchObject({ kind: "broken", mismatch: { field: "extra", got: 4000 } });
@@ -155,18 +159,18 @@ describe("judgeRule", () => {
   it("an intent with nothing readable that reports an extra note gives way to a judgeable deviation that matches", () => {
     const variants: Variant[] = [
       intent([pred(1000, { readability: "too-short", endMs: 1010 })]),
-      { deviations: new Set(["arpeggio-uncapped-note-off"]), predicted: [pred(1000, { readability: "too-short", endMs: 1010 }), pred(3000)] }
+      { deviations: new Set([A]), predicted: [pred(1000, { readability: "too-short", endMs: 1010 }), pred(3000)] }
     ];
     const j = judgeRule([note(1000), note(3000)], variants, TOLERANCES, never);
     expect(j.kind).toBe("deviation");
-    expect(j.deviations).toEqual(["arpeggio-uncapped-note-off"]);
+    expect(j.deviations).toEqual([A]);
     // the intent alone reports the extra note
     expect(judgeRule([note(1000), note(3000)], [variants[0]!], TOLERANCES, never)).toMatchObject({ kind: "broken", mismatch: { field: "extra", got: 3000 } });
   });
   it("throws when no variant has an empty deviation set: the intent is never guessed", () => {
-    const deviationOnly: Variant[] = [{ deviations: new Set(["arpeggio-drops-cent"]), predicted: [pred(1000)] }];
+    const deviationOnly: Variant[] = [{ deviations: new Set([B]), predicted: [pred(1000)] }];
     expect(() => judgeRule([note(1000)], deviationOnly, TOLERANCES, never)).toThrow("judgeRule: no intent variant");
-    const unjudgeable: Variant[] = [{ deviations: new Set(["arpeggio-drops-cent"]), predicted: [pred(1000, { readability: "overlap" })] }];
+    const unjudgeable: Variant[] = [{ deviations: new Set([B]), predicted: [pred(1000, { readability: "overlap" })] }];
     expect(() => judgeRule([note(1000)], unjudgeable, TOLERANCES, never)).toThrow("judgeRule: no intent variant");
   });
   it("abutting predicted notes are judged through readAt on pitch and velocity, never on onset; a wrong pitch there breaks", () => {
@@ -235,13 +239,13 @@ describe("verdictOf", () => {
     ({ kind, deviations, readable: 0, unreadable: 0, mismatch: null });
   it.each([
     [rule("holds"), "as-registered", "as-registered"],
-    [rule("deviation", ["arpeggio-uncapped-note-off"]), "as-registered", "as-registered, matches-known-deviation arpeggio-uncapped-note-off"],
+    [rule("deviation", [A]), "as-registered", "as-registered, matches-known-deviation a-deviation"],
     [rule("broken"), "as-registered", "as-registered, rule broken"],
     [rule("holds"), "changed", "changed, rule holds"],
-    [rule("deviation", ["arpeggio-uncapped-note-off", "arpeggio-drops-cent"]), "changed", "changed, matches-known-deviation arpeggio-uncapped-note-off+arpeggio-drops-cent"],
+    [rule("deviation", [A, B]), "changed", "changed, matches-known-deviation a-deviation+b-deviation"],
     [rule("broken"), "changed", "changed, rule broken"],
     [rule("holds"), "unregistered", "rule holds, unregistered"],
-    [rule("deviation", ["arpeggio-drops-cent"]), "unregistered", "matches-known-deviation arpeggio-drops-cent, unregistered"],
+    [rule("deviation", [B]), "unregistered", "matches-known-deviation b-deviation, unregistered"],
     [rule("broken"), "unregistered", "rule broken, unregistered"],
     [rule("none"), "as-registered", "no rule"],
     [rule("none"), "changed", "changed, no rule"],
@@ -260,7 +264,7 @@ describe("silentRenderError", () => {
     const predicted = [pred(1000), pred(1100, { readability: "abutting" }), pred(1200, { readability: "too-short" })];
     expect(silentRenderError(0, [intent(predicted)])).toBe("render is silent (peak 0) where the rule predicts 2 notes");
     expect(silentRenderError(0, [intent([pred(1000)])])).toBe("render is silent (peak 0) where the rule predicts 1 note");
-    const bothSound: Variant[] = [intent([pred(1000)]), { deviations: new Set(["arpeggio-uncapped-note-off"]), predicted: [pred(1000), pred(2000)] }];
+    const bothSound: Variant[] = [intent([pred(1000)]), { deviations: new Set([A]), predicted: [pred(1000), pred(2000)] }];
     expect(silentRenderError(0, bothSound)).toBe("render is silent (peak 0) where the rule predicts 1 note");
   });
   it("is null when the render sounds or the rule predicts nothing judgeable", () => {
@@ -270,10 +274,10 @@ describe("silentRenderError", () => {
     expect(silentRenderError(0, [])).toBeNull();
   });
   it("throws when no variant has an empty deviation set", () => {
-    expect(() => silentRenderError(0, [{ deviations: new Set(["arpeggio-drops-cent"]), predicted: [pred(1000)] }])).toThrow("silentRenderError: no intent variant");
+    expect(() => silentRenderError(0, [{ deviations: new Set([B]), predicted: [pred(1000)] }])).toThrow("silentRenderError: no intent variant");
   });
   it("is null when a known deviation predicts the silence", () => {
-    const variants: Variant[] = [intent([pred(1000)]), { deviations: new Set(["arpeggio-uncapped-note-off"]), predicted: [] }];
+    const variants: Variant[] = [intent([pred(1000)]), { deviations: new Set([A]), predicted: [] }];
     expect(silentRenderError(0, variants)).toBeNull();
   });
 });
@@ -301,7 +305,7 @@ describe("describeMismatch", () => {
 describe("verdictColor", () => {
   it.each([
     ["as-registered", "green"],
-    ["as-registered, matches-known-deviation arpeggio-uncapped-note-off", "amber"],
+    ["as-registered, matches-known-deviation a-deviation", "amber"],
     ["rule holds, unregistered", "amber"],
     ["no rule, unregistered", "amber"],
     ["changed, rule holds", "amber"],

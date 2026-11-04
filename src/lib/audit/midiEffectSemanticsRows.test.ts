@@ -66,7 +66,7 @@ describe("SEMANTICS_ROWS", () => {
     expect(rowById("arp-rate9-gate1-held-note").quick).toBe(true);
     expect(rowById("arp-rate9-gate0.5-held-note").quick).toBe(false);
   });
-  it("every row's notes fit the sample: duration_s × 2^((pitch − 69)/12) ≤ 4 over every variant, including uncapped note-offs", () => {
+  it("every row's notes fit the sample: duration_s × 2^((pitch − 69)/12) ≤ 4 over every variant, a step running past the held note included", () => {
     for (const row of SEMANTICS_ROWS) {
       for (const variant of predictedVariants(row, context)) {
         for (const n of variant.notes) {
@@ -76,19 +76,13 @@ describe("SEMANTICS_ROWS", () => {
       }
     }
   });
-  it("the held-note pattern ends off the grid so the base Arpeggio row's last step is capped (70 pulses)", () => {
+  it("the held-note pattern ends off the grid (70 pulses into the last step) and the base Arpeggio row's last step runs its full 120", () => {
     const row = rowById("arp-oct1-held-note");
     expect(HELD_NOTE.notes[0].duration).toBe(1750);
-    const [capped, uncapped] = [new Set<never>(), new Set(["arpeggio-uncapped-note-off" as const])].map((deviations) =>
-      arpeggioRule(rowNotes(row), ARPEGGIO_BASE, deviations, context.range));
-    expect(capped.at(-1)?.duration).toBe(70);
-    expect(uncapped.at(-1)?.duration).toBe(120);
-    expect(predictedVariants(row, context).map((v) => [...v.deviations].sort().join("+")).sort()).toEqual([
-      "",
-      "arpeggio-drops-cent",
-      "arpeggio-drops-cent+arpeggio-uncapped-note-off",
-      "arpeggio-uncapped-note-off",
-    ]);
+    const steps = arpeggioRule(rowNotes(row), ARPEGGIO_BASE, new Set(), context.range);
+    expect(steps.at(-1)?.position).toBe(3840 + 1680);
+    expect(steps.at(-1)?.duration).toBe(120);
+    expect(predictedVariants(row, context).map((v) => [...v.deviations].sort().join("+")).sort()).toEqual(["", "arpeggio-drops-cent"]);
   });
   it("the zeitgeist rows cover each distinct duration once (8 values, 960 once)", () => {
     const distinct = [...new Set(GrooveShuffleBoxAdapter.DurationPPQNs)];

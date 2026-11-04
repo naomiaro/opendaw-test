@@ -42,7 +42,7 @@ export const SAMPLE_HZ = 440;
 export const ROOT_KEY = 69;
 export const NANO_ATTACK_SECONDS = 0.001;
 export const NANO_RELEASE_SECONDS = 0.001;
-/** 1750 pulses = 0.911 s at 120 bpm, and 3840 + 1750 = 5590 is not on the 1/16 grid (5520 + 70), so the held note ends 70 pulses into the last Arpeggio step: the row exercises `arpeggio-uncapped-note-off` (`DEVIATIONS` in the rules). */
+/** 1750 pulses = 0.911 s at 120 bpm, and 3840 + 1750 = 5590 is not on the 1/16 grid (5520 + 70), so the held note ends 70 pulses into the last Arpeggio step: the row shows that step running its full gate length past the held note. */
 export const HELD_NOTE_PPQN = 1750;
 
 export type SemanticsPatternId = "held-note" | "held-chord" | "chromatic" | "chords" | "sixteenths" | "melody";

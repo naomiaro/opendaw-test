@@ -428,8 +428,10 @@ other answer, a corrupt register, or one of another rate or bpm ends the run in 
   sits inside a tolerance.
 - **The rule** is the crate's and the manual's, intent first; each subset of the row's known
   deviations is tried after it, smallest first. Deviations (`DEVIATIONS` in the rules module, with
-  crate lines): `arpeggio-drops-cent`, `arpeggio-uncapped-note-off` (a step outlasts its held note).
-  Two more were retired on 2026-11-04 when openDAW#524 and #525 closed with the MANUALS corrected:
+  crate lines): `arpeggio-drops-cent` only (a question for upstream is drafted). A step runs its full
+  gate length past the held note's release by the rule (the manual: note length as a percentage of
+  the step; `arpeggio-uncapped-note-off` retired 2026-11-04 on that). Two more were retired the same
+  day when openDAW#524 and #525 closed with the MANUALS corrected:
   the Arpeggio's velocity (parameter −1..+1, the knob prints 0–100 %: one fixed velocity rising from
   silent at −100 % to full at 0 %, then a blend from full toward the note's own at +100 %) and the Zeitgeist's warped note-off (the groove
   moves note-offs too, so durations change) are the rule. The Arpeggio walks the ABSOLUTE grid:

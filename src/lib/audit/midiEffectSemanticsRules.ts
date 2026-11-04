@@ -14,7 +14,7 @@ import { PPQN } from "@opendaw/lib-dsp";
 /** The shape of `EventRecord`'s note-on (`crates/abi/src/lib.rs:39-51`), in absolute pulses. */
 export interface RuleNote { position: number; duration: number; pitch: number; cent: number; velocity: number }
 
-export type DeviationName = "arpeggio-drops-cent" | "arpeggio-uncapped-note-off";
+export type DeviationName = "arpeggio-drops-cent";
 
 export type QuestionName = "pitch-drops-out-of-range";
 
@@ -49,11 +49,6 @@ export const DEVIATIONS: readonly Deviation[] = [
     name: "arpeggio-drops-cent", device: "arpeggio",
     sentence: "The engine emits every arpeggiated note-on with cent 0, so a source note's detune is lost.",
     source: "device-arpeggio/src/lib.rs:304"
-  },
-  {
-    name: "arpeggio-uncapped-note-off", device: "arpeggio",
-    sentence: "The engine ends a step at its position plus its length, never at the end of the source note, so the last step can outlast the held note.",
-    source: "device-arpeggio/src/lib.rs:303-306"
   }
 ];
 
@@ -66,7 +61,7 @@ export const QUESTIONS: readonly Question[] = [
 ];
 
 export const RULE_SENTENCES: Record<SemanticsDevice, string> = {
-  arpeggio: "On the absolute rate grid, one note per step from the notes held at that step, walked up, down or up-down over the octaves, as long as the gate says and no longer than the held note; the velocity one fixed value rising from silent at -100 % to full at 0 %, then a blend from full toward the note's own at +100 %.",
+  arpeggio: "On the absolute rate grid, one note per step from the notes held at that step, walked up, down or up-down over the octaves, each as long as the gate says, past the held note's end too; the velocity one fixed value rising from silent at -100 % to full at 0 %, then a blend from full toward the note's own at +100 %.",
   pitch: "Every note moves by octaves × 12 + semitones, its cent by the cents setting; a note shifted outside 0..127 is dropped.",
   velocity: "Every note's velocity is the device's computeVelocity at the note's absolute position.",
   zeitgeist: "Every note starts where the groove warps its position to and ends where it warps its note-off to, so its duration changes with its place in the cell."
@@ -99,7 +94,11 @@ function walk(mode: 0 | 1 | 2, count: number, octaves: number, step: number): { 
   return { local: step % count, octave: Math.trunc((step % (count * octaves)) / count) };
 }
 
-/** Arpeggio per `process` (`device-arpeggio/src/lib.rs:261-312`): a note-on at every absolute grid line in range with at least one held note. */
+/**
+ * Arpeggio per the grid loop in `process` (`device-arpeggio/src/lib.rs:261-312`): a note-on at every absolute grid line in range with at least
+ * one held note, each `gate × rate` long (the manual, "5. Gate": note length as a percentage of the step rate; the held
+ * note's end does not cut it, `lib.rs:303-306`).
+ */
 export function arpeggioRule(
   notes: readonly RuleNote[], settings: ArpeggioSettings, deviations: ReadonlySet<DeviationName>, range: { from: number; to: number }
 ): RuleNote[] {
@@ -118,10 +117,9 @@ export function arpeggioRule(
     if (stack.length === 0) continue;
     const { local, octave } = walk(settings.modeIndex, stack.length, octaves, Math.floor(index / repeat));
     const source = stack[local];
-    const sourceEnd = source.position + source.duration;
     out.push({
       position,
-      duration: deviations.has("arpeggio-uncapped-note-off") ? length : Math.min(length, sourceEnd - position),
+      duration: length,
       pitch: source.pitch + 12 * octave,
       cent: deviations.has("arpeggio-drops-cent") ? 0 : source.cent,
       velocity: arpeggioVelocity(settings.velocity, source.velocity)

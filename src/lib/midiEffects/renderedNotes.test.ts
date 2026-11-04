@@ -45,8 +45,21 @@ describe("predictChain", () => {
     expect(silenced.every((n) => n.velocity === 0)).toBe(true);
   });
 
-  it("applies arpeggio-uncapped-note-off: a step outlasts its held note", () => {
-    // a 100-pulse note under a 1/16 grid at gate 0.5: the intent caps the step at 100, the engine plays 120
+  it("applies the known deviation of an enabled device: a Pitch's cents before an Arpeggio read 0 on every step", () => {
+    const chain: ChainSetting[] = [
+      { setting: { device: "pitch", settings: { semiTones: 0, cents: 12.5, octaves: 0 } }, enabled: true },
+      { setting: { device: "arpeggio", settings: { ...ARPEGGIO_BASE } }, enabled: true },
+    ];
+    const { predicted } = predictChain(chain, context, patternById("chords"), PATTERN_BPM, mark);
+    expect(predicted.length).toBeGreaterThan(0);
+    expect(predicted.every((n) => n.cent === 0)).toBe(true);
+    // the same Pitch after the Arpeggio keeps its cents
+    const swapped = predictChain([chain[1], chain[0]], context, patternById("chords"), PATTERN_BPM, mark);
+    expect(swapped.predicted.every((n) => n.cent === 12.5)).toBe(true);
+  });
+
+  it("a step outlasts its held note by the rule: the gate sets the length, not the held note's end", () => {
+    // a 100-pulse note under a 1/16 grid at gate 0.5: the step plays the gate's 120
     const pattern = { ...melody, notes: [{ position: 0, duration: 100, pitch: 60, velocity: 1 }] };
     const chain: ChainSetting[] = [{ setting: { device: "arpeggio", settings: { ...ARPEGGIO_BASE } }, enabled: true }];
     const { predicted } = predictChain(chain, context, pattern, bpm, mark);
