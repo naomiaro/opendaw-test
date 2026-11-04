@@ -93,9 +93,13 @@ function MidiOverview() {
             <h2 className="mc-anchors-head">The same notes as data</h2>
             <p>
               Every bar is one object in your code. <code>position</code> and{" "}
-              <code>duration</code> are in pulses, where a quarter note is 960.{" "}
-              <code>pitch</code> is the row and <code>velocity</code> runs from 0 to 1. Move
-              over a line or a bar to see which is which.
+              <code>duration</code> are in pulses. openDAW uses 960 pulses per quarter note,
+              so 480 here is an eighth note. That resolution is openDAW&apos;s choice and other
+              DAWs can use a different one, so read the handbook&apos;s{" "}
+              <a href="/docs/02-timing-and-tempo.html#what-is-ppqn">guide to PPQN</a> before
+              moving these numbers between programs. <code>pitch</code> is the row and{" "}
+              <code>velocity</code> runs from 0 to 1. Move over a line or a bar to see which is
+              which.
             </p>
             <NoteDataLink />
             <p>
