@@ -111,10 +111,10 @@ function unreadableSpans(predicted: readonly PredictedNote[]): UnreadableSpan[] 
 }
 
 /**
- * The page's rows from the render's read figures and the chain's prediction. A figure whose onset lies in the predicted span
- * (± the audit's onset tolerance) of a note that is not `readable` belongs to that note, as in the audit's judge: inside a
- * polyphonic or overlapping span it is a blob, not a note, and is dropped; inside an abutting, too-short or too-quiet note it
- * is that note's own reading and is not drawn a second time. A silenced note owns nothing: a figure there is drawn.
+ * The page's rows from the render's read figures and the chain's prediction.
+ * A read figure whose onset lies within `TOLERANCES.onsetMs` of the predicted span of any predicted note that is not
+ * `readable` (abutting, too-short, too-quiet, polyphonic, overlap) is that note's counterpart and is never drawn as an extra,
+ * and a silenced note absorbs nothing.
  */
 export function renderedRows(
   read: readonly NoteFigure[], prediction: Prediction, pattern: Pattern, bpm: number,
