@@ -4,7 +4,7 @@
 >
 > **Prerequisites:** [Ch. 04 (Box System)](./04-box-system-and-reactivity.md), [Ch. 08 (Recording)](./08-recording.md) for capture, [Ch. 11 (Effects)](./11-effects.md) for the MIDI-effect API surface.
 
-MIDI surfaces in openDAW are split across several layers: the box-graph data model (notes are boxes), the live engine (hardware capture and instrument routing), and the studio adapters (typed accessors). This chapter consolidates them into one reference, plus walks through the patterns for programmatic note creation, hardware capture, and the five built-in MIDI effects.
+MIDI surfaces in openDAW are split across several layers: the box-graph data model (notes are boxes), the live engine (hardware capture and instrument routing), and the studio adapters (typed accessors). This chapter consolidates them into one reference, plus walks through the patterns for programmatic note creation, hardware capture, and the six MIDI effects that ship with the SDK.
 
 **Honest about gaps:** the SDK is strong on programmatic note creation and hardware *input*, with a working MIDI-effects pipeline. MIDI *output* to external gear and standalone MIDI Clock configuration exist in the codebase but don't have a documented consumer API yet — flagged inline where they come up.
 
@@ -247,7 +247,7 @@ If you need to slave external gear to openDAW's transport today, the practical w
 
 ## MIDI effects
 
-Six MIDI effects ship with the SDK, inserted into a track's MIDI device chain (before the instrument). Use `EffectFactories` from `@opendaw/studio-core` (the MIDI factories live in `EffectFactories.MidiNamed`) to add them in a transaction — resolve the chain field via the adapter layer (`audioUnitAdapter.midiEffectsField.unwrap()`; the `DeviceHost` chain getters are `Option`-wrapped) and pass it to `project.api.insertEffect(field, EffectFactories.Arpeggio)` — same pattern as audio effects, see [Ch. 11](./11-effects.md#adding-an-effect).
+Six MIDI effects ship with the SDK, inserted into a track's MIDI device chain (before the instrument). Use `EffectFactories` from `@opendaw/studio-core` (the MIDI factories live in `EffectFactories.MidiNamed`, which also holds `WclapMidi`, the WebCLAP MIDI host, covered in [Ch. 11](./11-effects.md)) to add them in a transaction — resolve the chain field via the adapter layer (`audioUnitAdapter.midiEffectsField.unwrap()`; the `DeviceHost` chain getters are `Option`-wrapped) and pass it to `project.api.insertEffect(field, EffectFactories.Arpeggio)` — same pattern as audio effects, see [Ch. 11](./11-effects.md#adding-an-effect).
 
 ### Arpeggio
 

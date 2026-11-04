@@ -142,7 +142,7 @@ export function pitchRule(notes: readonly RuleNote[], settings: PitchSettings): 
   return out;
 }
 
-/** Note Filter per `output_pitch` and `transform` (`device-note-filter/src/lib.rs:45-49,105-118`): min..max both included, then transpose or set, a result outside 0..127 dropped. */
+/** Note Filter per `output_pitch` and `transform` (`device-note-filter/src/lib.rs:45-49,105-118`): min..max both included, then transpose or set, a result outside 0..127 dropped. Not modelled, as for Pitch: the 64 held-note cap (`MAX_HELD`), which no pattern reaches. */
 export function noteFilterRule(notes: readonly RuleNote[], settings: NoteFilterSettings): RuleNote[] {
   const out: RuleNote[] = [];
   for (const note of notes) {

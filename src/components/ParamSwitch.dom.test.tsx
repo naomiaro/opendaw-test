@@ -25,4 +25,18 @@ describe("ParamSwitch in the DOM", () => {
     expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("false");
     expect(screen.getByText("Off")).toBeDefined();
   });
+
+  it("a second click writes off", () => {
+    const { adapter, editing } = midiEffectFixture("note-filter");
+    if (!(adapter instanceof NoteFilterDeviceBoxAdapter)) throw new Error("not a note filter fixture");
+    const set = adapter.namedParameter.set;
+    render(<Theme><ParamSwitch project={{ editing }} parameter={set} label="Set" /></Theme>);
+
+    fireEvent.click(screen.getByRole("switch", { name: "Set" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Set" }));
+
+    expect(set.getUnitValue()).toBe(0);
+    expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("false");
+    expect(screen.getByText("Off")).toBeDefined();
+  });
 });

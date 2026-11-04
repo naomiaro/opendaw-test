@@ -115,7 +115,7 @@ export interface MidiEffectFixture {
   readonly box: EffectBox;
   /** The SDK's own adapter, so parameters carry their real value and string mappings */
   readonly adapter: MidiEffectDeviceAdapter;
-  /** The registry `adapter` was made beside, for code that resolves adapters itself (`project.boxAdapters.adapterFor`) */
+  /** A registry on the same context for code that resolves adapters itself (`project.boxAdapters.adapterFor`); it makes its own adapter for `box`, not `adapter`, so assert on the box, never on adapter identity */
   readonly boxAdapters: BoxAdapters;
   readonly editing: BoxEditing;
 }

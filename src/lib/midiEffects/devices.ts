@@ -1,7 +1,7 @@
 /**
  * The MIDI effects demo's device registry: the five stock MIDI effects, their copy, and the
- * parameters each card renders, read through the SDK's device adapters so the sliders print the
- * SDK's own strings ("Up", "1/16", "+7 st") instead of raw field values.
+ * parameters each card renders, read through the SDK's device adapters so the controls print the
+ * SDK's own strings ("Up", "1/16", "+7 st", "On") instead of raw field values.
  */
 import {
   ArpeggioDeviceBox, NoteFilterDeviceBox, PitchDeviceBox, VelocityDeviceBox, ZeitgeistDeviceBox,
@@ -127,7 +127,7 @@ export interface DeviceParameter {
   readonly positions?: number;
   /** The control the card renders; a slider when absent. */
   readonly control?: "switch";
-  /** Dimmed (still operable) while the parameter named `key` reads on / off: the device ignores it then. */
+  /** Dimmed (still operable) while the switch parameter whose `key` this names reads `on`: the device ignores this one then. */
   readonly dimWhen?: { readonly key: string; readonly on: boolean };
 }
 

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { Option, UUID } from "@opendaw/lib-std";
 import { BoxEditing } from "@opendaw/lib-box";
-import { ArpeggioDeviceBox, PitchDeviceBox, VelocityDeviceBox, type AudioUnitBox } from "@opendaw/studio-boxes";
+import { ArpeggioDeviceBox, NoteFilterDeviceBox, PitchDeviceBox, VelocityDeviceBox, type AudioUnitBox } from "@opendaw/studio-boxes";
 import { AudioUnitFactory, ProjectSkeleton } from "@opendaw/studio-adapters";
 import { AudioUnitType } from "@opendaw/studio-enums";
 import type { EffectBox, EffectFactory, Project } from "@opendaw/studio-core";
@@ -100,10 +100,10 @@ describe("reconcileChain", () => {
     const { boxGraph } = skeleton;
     const unit = transact(boxGraph, () => AudioUnitFactory.create(skeleton, AudioUnitType.Instrument, Option.None));
     const editing = new BoxEditing(boxGraph);
-    const classes = { Arpeggio: ArpeggioDeviceBox, Pitch: PitchDeviceBox, Velocity: VelocityDeviceBox } as const;
+    const classes = { Arpeggio: ArpeggioDeviceBox, NoteFilter: NoteFilterDeviceBox, Pitch: PitchDeviceBox, Velocity: VelocityDeviceBox } as const;
     const factoryFor = (key: keyof typeof classes): EffectFactory =>
       ({ type: "midi", create: () => { throw new Error("unused"); }, boxName: key } as unknown as EffectFactory & { boxName: string });
-    const factories = { Arpeggio: factoryFor("Arpeggio"), NoteFilter: factoryFor("Pitch"), Pitch: factoryFor("Pitch"), Velocity: factoryFor("Velocity"), Zeitgeist: factoryFor("Arpeggio") };
+    const factories = { Arpeggio: factoryFor("Arpeggio"), NoteFilter: factoryFor("NoteFilter"), Pitch: factoryFor("Pitch"), Velocity: factoryFor("Velocity"), Zeitgeist: factoryFor("Arpeggio") };
     const api = {
       insertEffect: (field: MidiEffectsField, factory: EffectFactory): EffectBox => {
         const key = (factory as unknown as { boxName: keyof typeof classes }).boxName;
@@ -122,6 +122,15 @@ describe("reconcileChain", () => {
     const { changed } = reconcileChain(project, unit.midiEffects, ["arpeggio"], factories);
     expect(changed).toBe(true);
     expect(ids(unit)).toEqual(["arpeggio"]);
+  });
+
+  it("holds a Note Filter beside a Pitch and reorders them", () => {
+    const { unit, project, factories } = double();
+    reconcileChain(project, unit.midiEffects, ["note-filter", "pitch"], factories);
+    expect(ids(unit)).toEqual(["note-filter", "pitch"]);
+    const { changed } = reconcileChain(project, unit.midiEffects, ["pitch", "note-filter"], factories);
+    expect(changed).toBe(true);
+    expect(ids(unit)).toEqual(["pitch", "note-filter"]);
   });
 
   it("swaps a single device", () => {

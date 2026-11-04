@@ -117,7 +117,8 @@ npm run preview   # Preview build locally
 ```
 src/
 ├── components/                        # Reusable UI components
-│   └── ParamSlider.tsx                # Labelled slider bound to an SDK parameter
+│   ├── ParamSlider.tsx                # Labelled slider bound to an SDK parameter
+│   └── ParamSwitch.tsx                # Labelled switch bound to a boolean SDK parameter
 ├── hooks/                             # Custom React hooks
 │   ├── useParameterUnit.ts            # React wrapper around the parameter binding
 │   └── useTimelineLoop.ts             # Timeline loop range and on/off as state, for a Loop switch
