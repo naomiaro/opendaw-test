@@ -303,7 +303,7 @@ User-written JavaScript MIDI processor. The full programming model is covered in
 | `parameters` | `Field<Parameter>` | Declared parameters (registered automatically when the script is compiled) |
 | `samples` | `Field<Sample>` | Declared samples (likewise) |
 
-Spielwerk is the right tool when none of the four built-in effects above match your need — algorithmic patterns, generative sequences, custom mappings.
+Spielwerk is the right tool when none of the five built-in effects above match your need — algorithmic patterns, generative sequences, custom mappings.
 
 ## How notes reach the instrument
 
