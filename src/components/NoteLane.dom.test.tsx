@@ -3,16 +3,17 @@ import { driveFrames, installFakeContext2d, layOut, resize } from "@/lib/testing
 import React, { createRef } from "react";
 import { describe, expect, it } from "vitest";
 import { act, render } from "@testing-library/react";
+import { velocityColor } from "@/lib/midiEffects/velocityColor";
 import { NoteLane, type LaneNote, type NoteLaneHandle } from "./NoteLane";
 
 const WIDTH = 400;
 const RANGE = 7680;
 
-function show(notes: () => readonly LaneNote[], ref?: React.Ref<NoteLaneHandle>, position?: () => number) {
+function show(notes: () => readonly LaneNote[], ref?: React.Ref<NoteLaneHandle>, position?: () => number, shadeByVelocity = false) {
   const ctx = installFakeContext2d();
   const frames = driveFrames();
   const { container } = render(
-    <NoteLane ref={ref} title="t" notes={notes} rangePpqn={RANGE} pitchLow={36} pitchHigh={96} height={96} shadeByVelocity={false} position={position} />
+    <NoteLane ref={ref} title="t" notes={notes} rangePpqn={RANGE} pitchLow={36} pitchHigh={96} height={96} shadeByVelocity={shadeByVelocity} position={position} />
   );
   const canvas = container.querySelector("canvas")!;
   layOut(canvas, { left: 0, top: 0, width: WIDTH, height: 96 });
@@ -20,6 +21,8 @@ function show(notes: () => readonly LaneNote[], ref?: React.Ref<NoteLaneHandle>,
   frames.tick();
   return { ctx, container, frames };
 }
+
+const showShaded = (notes: () => readonly LaneNote[]) => show(notes, undefined, undefined, true);
 
 const fillRects = (calls: string[]) => calls.filter((c) => c.startsWith("fillRect("));
 const args = (call: string) => call.slice("fillRect(".length, -1).split(",").map(Number);
@@ -77,5 +80,27 @@ describe("NoteLane", () => {
     resize(canvas);
     frames.tick();
     expect(ctx.calls.length).toBeGreaterThanOrEqual(0);
+  });
+
+  it("fills a shaded bar with the velocity ramp colour", () => {
+    const { ctx } = showShaded(() => [{ pitch: 60, from: 1920, to: 3840, velocity: 0.6 }]);
+    const i = ctx.calls.findIndex((c) => c.startsWith("fillRect(100,"));
+    expect(i).toBeGreaterThan(0);
+    expect(ctx.calls.slice(0, i).filter((c) => c.startsWith("fillStyle=")).at(-1)).toBe(`fillStyle=${velocityColor(0.6)}`);
+  });
+  it("draws a hollow note as an outline and no fill", () => {
+    const { ctx } = show(() => [{ pitch: 60, from: 1920, to: 3840, hollow: true }]);
+    expect(ctx.calls.some((c) => c.startsWith("strokeRect(100,"))).toBe(true);
+    expect(ctx.calls.some((c) => c.startsWith("fillRect(100,") && c.split(",")[2] === "100")).toBe(false);
+  });
+  it("dashes the edges of a rule-placed bar", () => {
+    const { ctx } = show(() => [{ pitch: 60, from: 1920, to: 3840, dashedEdges: true }]);
+    expect(ctx.calls.some((c) => c.startsWith("setLineDash(2,2"))).toBe(true);
+    const last = ctx.calls.filter((c) => c.startsWith("setLineDash(")).at(-1);
+    expect(last).toBe("setLineDash()");
+  });
+  it("writes a note's label beside it", () => {
+    const { ctx } = show(() => [{ pitch: 60, from: 1920, to: 3840, label: "+25¢" }]);
+    expect(ctx.calls.some((c) => c.startsWith("fillText(+25¢,"))).toBe(true);
   });
 });

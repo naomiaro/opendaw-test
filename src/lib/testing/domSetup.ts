@@ -149,6 +149,7 @@ export function installFakeContext2d(): { calls: string[] } {
         throw new Error(`A 2D canvas context has no "${String(property)}"`);
       }
       values[property] = value;
+      calls.push(`${property}=${value}`);
       return true;
     },
   });
