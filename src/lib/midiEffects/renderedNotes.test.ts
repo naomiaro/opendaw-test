@@ -37,7 +37,7 @@ describe("time conversions", () => {
 });
 
 describe("predictChain", () => {
-  it("applies every known deviation of the enabled devices", () => {
+  it("the rule silences an Arpeggio at −100 %: nothing predicted, every silenced note at velocity 0", () => {
     const chain: ChainSetting[] = [{ setting: { device: "arpeggio", settings: { ...ARPEGGIO_BASE, velocity: -1 } }, enabled: true }];
     const { silenced, predicted } = predictChain(chain, context, patternById("melody"), PATTERN_BPM, mark);
     expect(predicted).toEqual([]); // silent at −100 % (the manual since openDAW#524)

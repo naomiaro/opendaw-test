@@ -1,12 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Option } from "@opendaw/lib-std";
 import { OfflineEngineRenderer, type Project } from "@opendaw/studio-core";
+import { isWasmReady } from "@/lib/wasmEngine";
 import { renderOfflineSlice } from "./offlineScan";
 
 // The offline renderer needs the WASM worker, which Node has not (and `studio-core` itself needs `AudioWorkletNode` at
 // module load): the renderer is a stub that records what it was created on and answers the frames asked for, so the
 // contract around it (the copy, its loop write, `mutateCopy`) is testable.
-vi.mock("@/lib/wasmEngine", () => ({ isWasmReady: () => true }));
+vi.mock("@/lib/wasmEngine", () => ({ isWasmReady: vi.fn(() => true) }));
 vi.mock("@opendaw/studio-core", () => ({ OfflineEngineRenderer: { create: vi.fn() } }));
 
 const RATE = 1000;
@@ -41,7 +42,7 @@ function stubRenderer(log: string[]) {
       play: async () => {},
       waitForLoading: async () => {},
       step: async (frames: number) => [new Float32Array(frames), new Float32Array(frames)],
-      stop: () => {},
+      stop: () => log.push("renderer.stop"),
       terminate: () => log.push("renderer.terminate"),
       project,
     } as unknown as OfflineEngineRenderer;
@@ -56,8 +57,9 @@ describe("renderOfflineSlice", () => {
     stubRenderer(log);
     const seen: Project[] = [];
     await renderOfflineSlice(live, 0, 1, RATE, { mutateCopy: (project) => { seen.push(project); log.push("mutateCopy"); } });
-    expect(seen).toEqual([copy]);
-    expect(log).toEqual(["copy", "copy.loop=false", "mutateCopy", "create", "renderer.terminate", "copy.terminate"]);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toBe(copy);
+    expect(log).toEqual(["copy", "copy.loop=false", "mutateCopy", "create", "renderer.stop", "renderer.terminate", "copy.terminate"]);
     expect(vi.mocked(OfflineEngineRenderer.create)).toHaveBeenCalledWith(copy, Option.None, RATE);
   });
 
@@ -74,7 +76,16 @@ describe("renderOfflineSlice", () => {
     stubRenderer(log);
     const seen: Project[] = [];
     await renderOfflineSlice(live, 0, 1, RATE, { keepLoopEnabled: true, mutateCopy: (project) => { seen.push(project); } });
-    expect(seen).toEqual([copy]);
-    expect(log).toEqual(["copy", "create", "renderer.terminate", "copy.terminate"]);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toBe(copy);
+    expect(log).toEqual(["copy", "create", "renderer.stop", "renderer.terminate", "copy.terminate"]);
+  });
+
+  it("refuses before copying when the WASM engine is not ready", async () => {
+    vi.mocked(isWasmReady).mockReturnValueOnce(false);
+    const { live, log } = fakeProject();
+    stubRenderer(log);
+    await expect(renderOfflineSlice(live, 0, 1, RATE)).rejects.toThrow("WASM engine is not ready");
+    expect(log).toEqual([]);
   });
 });

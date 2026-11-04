@@ -151,8 +151,8 @@ export function useRenderedNotes(options: RenderedNotesOptions): RenderedState {
     return () => {
       schedulerRef.current = null;
       scheduler.dispose();
-      // the rows are no longer the chain's, and a failure of this scheduler's is not the next one's
-      setState((previous) => ({ ...previous, scheduler: "stale", error: null }));
+      // the rows are no longer the chain's; a stale scheduler also hides this scheduler's failure until the next one reports
+      setState((previous) => (previous.scheduler === "stale" ? previous : { ...previous, scheduler: "stale" }));
     };
   }, [active]);
 

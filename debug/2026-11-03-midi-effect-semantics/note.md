@@ -3,8 +3,11 @@
 **Title:** MIDI Effect Semantics Audit — does each stock MIDI effect emit what its documented rule
 says, across the whole range of every parameter, and has anything changed since the last accepted run
 
-**SDK Pin:** `@opendaw/studio-sdk@0.0.180` (installed npm package; WASM engine only). The crate and
-manual citations below are read in the openDAW checkout pinned to that release.
+**SDK Pin:** `@opendaw/studio-sdk@0.0.180` (installed npm package; WASM engine only). The crate
+citations below are read in the openDAW checkout pinned to that release; the two manual citations
+marked "as corrected" (`arpeggio.md:90-94`, `zeitgeist.md:59`) are read at upstream `0b371e0b3` and
+`2922ba25d`, the commits that answered openDAW#524 and #525, ahead of the pinned tag (at the tag those
+lines carry the old text).
 
 **Filed (2026-11-03) and closed (2026-11-04), the manuals corrected:**
 [openDAW#524](https://github.com/andremichelle/openDAW/issues/524) the Arpeggio's Velocity control is
@@ -14,13 +17,14 @@ the Zeitgeist warps note-offs too, so note lengths change with the groove where 
 durations remain unchanged (`drafts/posted-openDAW-525-zeitgeist-warps-note-offs-vs-manual.md`). The
 maintainer answered both the same way: the engine behaves as intended and the manual was wrong. The
 Arpeggio manual (upstream `0b371e0b3`) now says the lower half plays every note at one fixed velocity
-rising from silent at 0 % to full at 50 %, ignoring the input, and the upper half blends from full
-toward the input velocity; the Zeitgeist manual (`2922ba25d`) now says it warps time itself, note-ons
+rising from silent at 0 % to full at 50 % (the manual's displayed scale; the parameter, the rules and
+the row ids `arp-vel-1…` run −100 % to +100 %, silent at −100 %, full at 0 %), ignoring the input, and
+the upper half blends from full toward the input velocity; the Zeitgeist manual (`2922ba25d`) now says it warps time itself, note-ons
 and note-offs both move, and the automation clock of the devices after it is warped the same way. The
 rules here follow the corrected manuals since 2026-11-04: `arpeggio-velocity-matrix` and
 `zeitgeist-warps-note-off` are retired (the engine's arithmetic IS the rule), the
 `arpeggio-velocity-manual-gap` question is withdrawn, and both registers were re-accepted on the new
-rule (the `unreadable` counts of 24 Zeitgeist rows per rate changed, not one note; see the Runs).
+rule (the `unreadable` counts of 24 rows with a Zeitgeist per rate changed, not one note; see the Runs).
 
 **Harness:** unlisted debug demo
 `midi-effect-semantics-audit-debug-demo.html[?rate=48000|44100][&rows=all|quick|<id,id,…>][&device=all|arpeggio|pitch|velocity|zeitgeist|order|disabled][&pattern=<id>]`
@@ -107,7 +111,7 @@ same rate (`as-registered`, `changed`, `unregistered`). The verdict joins them: 
 `as-registered, matches-known-deviation …`, `changed, rule holds|…|rule broken`, `<rule>,
 unregistered`, `no rule` (with the register axis: `changed, no rule`, `no rule, unregistered`), `error`
 (a failed render, or a render silent at peak 0 where every variant predicts a readable or abutting note;
-a silence one variant predicts, the Arpeggio at −100 % under the velocity matrix, is judged). The
+a silence the rule predicts, the Arpeggio at −100 %, is judged). The
 envelope and the table carry the INTENT variant's predicted
 notes, so a deviation row's "readable" count is the intent's, not the matching variant's.
 
@@ -142,10 +146,10 @@ error; a row that matches only with a deviation on reads `matches-known-deviatio
 
 | name | what the engine does | crate line | first seen | retired on |
 |---|---|---|---|---|
-| `arpeggio-velocity-matrix` (retired) | Faded the note's velocity toward the constant `1 + v` below 0 and toward 1.0 above it, where the manual of the time blended full velocity with the note's own. | `device-arpeggio/src/lib.rs:108-118` | 0.0.180 (first run) | 2026-11-04: openDAW#524 closed, the manual corrected (`0b371e0b3`); the matrix is the rule |
+| `arpeggio-velocity-matrix` (retired) | One fixed velocity `1 + v` below 0, a blend `velocity × v + (1 − v)` above it, where the manual of the time blended full velocity with the note's own; the engine still does exactly this, and it is the rule since 2026-11-04. | `device-arpeggio/src/lib.rs:108-118` | 0.0.180 (first run) | 2026-11-04: openDAW#524 closed, the manual corrected (`0b371e0b3`); the matrix is the rule |
 | `arpeggio-drops-cent` | Emits every arpeggiated note-on with cent 0, so a source note's detune is lost. | `device-arpeggio/src/lib.rs:304` | 0.0.180 | — |
 | `arpeggio-uncapped-note-off` | Ends a step at its position plus its length, never at the end of the source note, so the last step can outlast the held note. | `device-arpeggio/src/lib.rs:303-306` | 0.0.180 | — |
-| `zeitgeist-warps-note-off` (retired) | Warped the note-off like any other record, so a duration stretched or shrank with the groove where the manual of the time said durations remain unchanged. | `device-zeitgeist/src/lib.rs:124-138` | 0.0.180 | 2026-11-04: openDAW#525 closed, the manual corrected (`2922ba25d`); the warped note-off is the rule |
+| `zeitgeist-warps-note-off` (retired) | Warps the note-off like any other record, so a duration stretches or shrinks with the groove, where the manual of the time said durations remain unchanged; the engine still does exactly this, and it is the rule since 2026-11-04. | `device-zeitgeist/src/lib.rs:124-138` | 0.0.180 | 2026-11-04: openDAW#525 closed, the manual corrected (`2922ba25d`); the warped note-off is the rule |
 
 ## Row sampling
 
@@ -293,7 +297,8 @@ rule requires.
 | 48 kHz | 149 | 63 | 18 | 0 | 0 |
 | 44.1 kHz | 149 | 63 | 18 | 0 | 0 |
 
-Verdicts per group, the current registers (both rates alike):
+Verdicts per group, the registers accepted 2026-11-03 (both rates alike; superseded by the 2026-11-04
+re-accept below, where the two retired deviations read as the rule):
 
 | group | rows | holds | deviation | no rule |
 |---|---|---|---|---|
@@ -305,9 +310,9 @@ Verdicts per group, the current registers (both rates alike):
 | order | 6 | 4 | 2 | 0 |
 | disabled | 4 | 4 | 0 | 0 |
 
-Deviations named, per rate: `arpeggio-uncapped-note-off` 31 rows, `arpeggio-uncapped-note-off +
+Deviations named then, per rate: `arpeggio-uncapped-note-off` 31 rows, `arpeggio-uncapped-note-off +
 arpeggio-velocity-matrix` 4, `arpeggio-velocity-matrix` 2, `arpeggio-drops-cent` 1,
-`zeitgeist-warps-note-off` 25.
+`zeitgeist-warps-note-off` 25 (the last two names retired on 2026-11-04).
 
 Why each `no rule` row has nothing to judge:
 
@@ -319,8 +324,8 @@ Why each `no rule` row has nothing to judge:
   the cell start and overlap the on-beats, or the long cells squeeze the notes onto one another.
 
 Rows that hold on an EMPTY prediction, so a sound there reads `rule broken`: the four velocity-0 rows
-above; `pitch-oct7-*` and `pitch-oct-7-*`, every note dropped; `arp-vel-1-*` under the velocity
-matrix; and `zg-amount1-dur15360-sixteenths`, `…30720` and `…61440`, where the groove at amount 1
+above; `pitch-oct7-*` and `pitch-oct-7-*`, every note dropped; `arp-vel-1-*` by the Arpeggio's velocity
+rule; and `zg-amount1-dur15360-sixteenths`, `…30720` and `…61440`, where the groove at amount 1
 (0.99 squashed) pushes every note past the render's end: the first sixteenth, at 3840 pulses, warps to
 14908, 28691 and 53356 pulses against the render's 12000 (computed through the cell's ease), and
 the render reads nothing in its window.

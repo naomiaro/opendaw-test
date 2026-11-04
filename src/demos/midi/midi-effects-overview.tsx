@@ -120,9 +120,9 @@ function MidiEffectsOverview() {
               Two devices once differed from their manuals, and the manuals were the ones
               corrected (<a href="https://github.com/andremichelle/openDAW/issues/524">openDAW#524</a>,{" "}
               <a href="https://github.com/andremichelle/openDAW/issues/525">openDAW#525</a>).
-              The Arpeggio&apos;s velocity control is silent at &minus;100 %, plays every note
-              at one fixed velocity rising to full at 0 %, and from there blends toward the
-              note&apos;s own velocity, reached at +100 %. Zeitgeist warps time itself: it
+              The Arpeggio&apos;s velocity control, as the card prints it, is silent at 0 %,
+              plays every note at one fixed velocity rising to full at 50 %, and from there
+              blends toward the note&apos;s own velocity, reached at 100 %. Zeitgeist warps time itself: it
               moves note-offs as well as note-ons, so a note&apos;s duration changes with its
               place in the groove cell. The pages show both.
             </p>

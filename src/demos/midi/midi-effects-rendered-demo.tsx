@@ -193,6 +193,8 @@ function MidiEffectsRenderedDemo() {
   const desired = useMemo(() => desiredChain(state), [state]);
   useEffect(() => {
     if (!project || !audioUnitBox) return;
+    // a rebuild supersedes a toggle, failed or not: its sentence would name a device that may be gone
+    setToggleError(null);
     try {
       const field = midiEffectsFieldOf(project, audioUnitBox);
       const { changed } = reconcileChain(project, field, desired, FACTORIES);
@@ -253,7 +255,7 @@ function MidiEffectsRenderedDemo() {
       compact={compact}
       page="rendered"
       onEnabledChange={(enabled) => {
-        // a toggle's failure stands until the next toggle; the chain reconcile keeps its own sentence
+        // a toggle's failure stands until the next toggle or chain rebuild; the reconcile keeps its own sentence
         const error = tryDeviceEnabled(project!.editing, entry.id, entry.box, enabled, "midi-rendered");
         setToggleError(error);
         if (error === null) reseekIfPlaying();
