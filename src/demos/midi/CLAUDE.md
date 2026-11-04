@@ -500,7 +500,7 @@ rule's prediction. The overview page is `midi-effects-overview.tsx`.
   to every device parameter through the adapters AND to the Velocity `randomSeed` field, which
   `DeviceSetting` excludes, so Reseed re-renders. Calibration (dry gapped Sixteenths,
   `calibrationFrom`) runs once at boot BEFORE the hook activates, so no two offline renders overlap.
-- **Measured** (2026-11-04, Chrome via Playwright, SDK 0.0.180, an M-series Mac; a
+- **Measured** (2026-11-03, Chrome via Playwright, SDK 0.0.180, an M-series Mac; a
   `requestAnimationFrame` gap probe and the `AudioContext` playback stats). While Sixteenths played,
   swinging Velocity's Random between 0 and 100 % for ten seconds ran about fifteen offline renders of
   about 150 ms each. The longest frame gap was 10.4 ms
