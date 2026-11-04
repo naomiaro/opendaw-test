@@ -1,6 +1,6 @@
 // MIDI Effect Placement Audit — unlisted page.
 //
-//   midi-effect-placement-audit-debug-demo.html[?rate=48000|44100][&bpm=<n>][&device=all|pitch|velocity|arpeggio|zeitgeist|spielwerk][&sampleMs=<n>][&importMs=<n>]
+//   midi-effect-placement-audit-debug-demo.html[?rate=48000|44100][&bpm=<n>][&device=all|pitch|velocity|note-filter|arpeggio|zeitgeist|spielwerk][&sampleMs=<n>][&importMs=<n>]
 //
 // One Nano sampler plays a 20 ms burst on a note pattern. The pattern is rendered offline dry,
 // then through each stock MIDI effect (and each effect disabled), and every row is read against
@@ -24,7 +24,7 @@ import { AudioData, type ppqn } from "@opendaw/lib-dsp";
 import { EffectFactories, type EffectBox, type Project } from "@opendaw/studio-core";
 import { OPENDAW_SDK_VERSION } from "@opendaw/studio-sdk";
 import {
-  ArpeggioDeviceBox, PitchDeviceBox, SpielwerkDeviceBox, VelocityDeviceBox, ZeitgeistDeviceBox, type NoteEventBox,
+  ArpeggioDeviceBox, NoteFilterDeviceBox, PitchDeviceBox, SpielwerkDeviceBox, VelocityDeviceBox, ZeitgeistDeviceBox, type NoteEventBox,
 } from "@opendaw/studio-boxes";
 import { ScriptCompiler, ZeitgeistDeviceBoxAdapter } from "@opendaw/studio-adapters";
 import { GitHubCorner } from "@/components/GitHubCorner";
@@ -74,6 +74,7 @@ const SPIELWERK_COMPILER = ScriptCompiler.create({ headerTag: "spielwerk", regis
 const FACTORIES = {
   pitch: EffectFactories.Pitch,
   velocity: EffectFactories.Velocity,
+  "note-filter": EffectFactories.NoteFilter,
   arpeggio: EffectFactories.Arpeggio,
   zeitgeist: EffectFactories.Zeitgeist,
   spielwerk: EffectFactories.Spielwerk,
@@ -133,6 +134,15 @@ function applySettings(box: EffectBox, device: MidiEffectDevice): void {
       velocity.randomAmount.setValue(0);
       velocity.offset.setValue(0);
       velocity.mix.setValue(1);
+      return;
+    }
+    case "note-filter": {
+      const filter = box as NoteFilterDeviceBox;
+      filter.min.setValue(0);
+      filter.max.setValue(127);
+      filter.set.setValue(false);
+      filter.transpose.setValue(0);
+      filter.key.setValue(60);
       return;
     }
     case "arpeggio": {

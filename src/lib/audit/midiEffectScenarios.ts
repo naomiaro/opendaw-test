@@ -47,12 +47,12 @@ export const RENDER_TAIL_SECONDS = 0.25;
 export const NANO_ATTACK_SECONDS = 0.001;
 export const NANO_RELEASE_SECONDS = 0.001;
 
-export const MIDI_EFFECT_DEVICES = ["pitch", "velocity", "arpeggio", "zeitgeist", "spielwerk"] as const;
+export const MIDI_EFFECT_DEVICES = ["pitch", "velocity", "note-filter", "arpeggio", "zeitgeist", "spielwerk"] as const;
 export type MidiEffectDevice = (typeof MIDI_EFFECT_DEVICES)[number];
 
 export const MIDI_EFFECT_ROW_IDS = [
-  "dry", "pitch", "velocity", "spielwerk-forward", "spielwerk-yield", "arpeggio", "zeitgeist", "spielwerk-echo",
-  "pitch-disabled", "velocity-disabled", "arpeggio-disabled", "zeitgeist-disabled", "spielwerk-disabled",
+  "dry", "pitch", "velocity", "note-filter", "spielwerk-forward", "spielwerk-yield", "arpeggio", "zeitgeist", "spielwerk-echo",
+  "pitch-disabled", "velocity-disabled", "note-filter-disabled", "arpeggio-disabled", "zeitgeist-disabled", "spielwerk-disabled",
 ] as const;
 export type MidiEffectRowId = (typeof MIDI_EFFECT_ROW_IDS)[number];
 
@@ -128,6 +128,7 @@ export const MIDI_EFFECT_SCENARIOS: readonly MidiEffectScenario[] = [
   { id: "dry", label: "dry (no device)", device: null, enabled: true, script: null, pattern: DRY_PATTERN, judge: "pass-through", rule: null },
   passThrough("pitch", "Pitch (0 st, 0 ct, 0 oct)", "pitch", true),
   passThrough("velocity", "Velocity (factory: identity)", "velocity", true),
+  passThrough("note-filter", "Note Filter (C-2..G8, 0 st, Set off)", "note-filter", true),
   passThrough("spielwerk-forward", "Spielwerk, forward (generator yields nothing)", "spielwerk", true, SPIELWERK_FORWARD),
   passThrough("spielwerk-yield", "Spielwerk, yield (@no-pass, every note re-yielded)", "spielwerk", true, SPIELWERK_YIELD),
   { id: "arpeggio", label: "Arpeggio (Up, 1 octave, 1/16, gate 1, repeat 1, velocity 0: every step at 1.0)", device: "arpeggio", enabled: true, script: null, pattern: HOLD_PATTERN, judge: "rule", rule: "arpeggio" },
@@ -135,6 +136,7 @@ export const MIDI_EFFECT_SCENARIOS: readonly MidiEffectScenario[] = [
   { id: "spielwerk-echo", label: `Spielwerk, echo (delay ${ECHO_DELAY_PPQN}, ${ECHO_REPEATS} repeats)`, device: "spielwerk", enabled: true, script: SPIELWERK_ECHO, pattern: ECHO_PATTERN, judge: "rule", rule: "echo" },
   passThrough("pitch-disabled", "Pitch, disabled", "pitch", false),
   passThrough("velocity-disabled", "Velocity, disabled", "velocity", false),
+  passThrough("note-filter-disabled", "Note Filter, disabled", "note-filter", false),
   passThrough("arpeggio-disabled", "Arpeggio, disabled", "arpeggio", false),
   passThrough("zeitgeist-disabled", "Zeitgeist, disabled", "zeitgeist", false),
   // The echo script: a disabled forward script would be indistinguishable from an enabled one.

@@ -794,7 +794,7 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   effect — the recorder reads the capture's raw note signals before the chain).
 - After SDK upgrades, also run the MIDI effect semantics audit:
   `midi-effect-semantics-audit-debug-demo.html` then `?rate=44100` — a real click on Run,
-  deterministic, no hardware, about 35 seconds per rate (230 rows). Expect every row
+  deterministic, no hardware, about 40 seconds per rate (263 rows). Expect every row
   `as-registered`, `as-registered, matches-known-deviation …` or `no rule` (the counts per rate are
   in the note's Runs section). A `changed` row is the finding; a `matches-known-deviation` the register
   lists is not (a deviation that stops matching is a fix landing: retire it in the note). Register

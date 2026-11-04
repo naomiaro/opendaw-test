@@ -358,7 +358,7 @@ register `debug/2026-10-23-midi-output-timing/note.md`. Chrome only; a real clic
   `src/` reload the page and lose a run.
 
 ### MIDI Effect Placement Audit (unlisted)
-`midi-effect-placement-audit-debug-demo.html[?rate=48000|44100][&bpm=<n>][&device=all|pitch|velocity|arpeggio|zeitgeist|spielwerk][&sampleMs=<n>][&importMs=<n>]`
+`midi-effect-placement-audit-debug-demo.html[?rate=48000|44100][&bpm=<n>][&device=all|pitch|velocity|note-filter|arpeggio|zeitgeist|spielwerk][&sampleMs=<n>][&importMs=<n>]`
 renders a Nano burst pattern offline dry and through each stock MIDI effect, enabled and
 disabled, and reads each row against what the device's own rule predicts. Register:
 `debug/2026-10-21-midi-effect-placement/note.md`; library `src/lib/audit/midiEffect*.ts`;
@@ -378,8 +378,8 @@ table `node scripts/audit/midi-effect-placement/table.ts`.
   `reset`, start clean when enabled again. A change that leaves the MIDI
   effects as they were (an audio effect added) keeps them. The audit sets `enabled` before it
   renders, so a row never sees the drop or the release.
-- **Two judgements.** A device meant to pass timing through (Pitch, Velocity, a Spielwerk that
-  forwards or re-yields, every device disabled) is read by cross-correlation against the dry
+- **Two judgements.** A device meant to pass timing through (Pitch, Velocity, the Note Filter, a Spielwerk
+  that forwards or re-yields, every device disabled) is read by cross-correlation against the dry
   render of the same run: expected lag 0. A device meant to move notes (Arpeggio, Zeitgeist,
   a Spielwerk echo) is read by its onsets against the frames its rule predicts, with the dry
   row's first onset as the sampler's own offset: expected within one frame. The engine splits
@@ -411,13 +411,13 @@ table `node scripts/audit/midi-effect-placement/table.ts`.
   pass-through, not as the script.
 
 ### MIDI Effect Semantics Audit (unlisted)
-`midi-effect-semantics-audit-debug-demo.html[?rate=48000|44100][&rows=all|quick|<id,id,…>][&device=all|arpeggio|pitch|velocity|zeitgeist|order|disabled][&pattern=<id>]`
-renders 230 rows offline (a Nano playing a 440 Hz sine, root key 69, 1 ms attack and release), each
+`midi-effect-semantics-audit-debug-demo.html[?rate=48000|44100][&rows=all|quick|<id,id,…>][&device=all|arpeggio|pitch|velocity|zeitgeist|note-filter|order|disabled][&pattern=<id>]`
+renders 263 rows offline (a Nano playing a 440 Hz sine, root key 69, 1 ms attack and release), each
 with a chain of stock MIDI effects at one setting, reads the left channel back as notes and judges
 them against what the devices DOCUMENT (the placement audit asks when; this one asks what). Register:
 `debug/2026-11-03-midi-effect-semantics/note.md` and `register/<rate>.json`; library
 `src/lib/audit/midiEffectSemantics*.ts`; table `node scripts/audit/midi-effect-semantics/table.ts
-[runToken] [--accept] [--force]`. `&rows=quick` is a 41-row subset; the dry rows always run and
+[runToken] [--accept] [--force]`. `&rows=quick` is a 50-row subset; the dry rows always run and
 `dry-sixteenths` calibrates (reference peak, instrument offset; 32 notes and a positive finite peak,
 or the run aborts; a run whose calibration row did not render ends in `error:` too). `#audit-state`
 reads `done` with `data-error-rows="<n>"` counting the rows that failed on their own (0 on a clean
@@ -534,7 +534,8 @@ rule's prediction. The overview page is `midi-effects-overview.tsx`.
   operable, while the named switch reads on / off (Note Filter: Semitones under Set on, Key under
   Set off). Key readouts print the SDK's names (`MidiKeys.toFullString`, middle C as C3, unlike the
   MIDI recording demo's keyboard). The Rendered page predicts a Note Filter through `noteFilterRule`
-  in the semantics rule layer; the audit has no Note Filter ROWS yet.
+  in the semantics rule layer; the audit's `note-filter` group samples it (range windows on the melody,
+  inclusive ends on the chromatic run, transposes, set).
 - **Lane.** `velocityColor` squares the velocity (openDAW's `PitchPainter` does) from a dim tint to
   the amber accent. `NoteLane` (`src/components/NoteLane.tsx`) labels a note only where the bar fits
   the label; `VelocityStrip.tsx` is the strip. Both lanes on the Rendered page are 224 px so the

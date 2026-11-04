@@ -1,6 +1,6 @@
 // MIDI Effect Semantics Audit — unlisted page.
 //
-//   midi-effect-semantics-audit-debug-demo.html[?rate=48000|44100][&rows=all|quick|<id,id,…>][&device=all|arpeggio|pitch|velocity|zeitgeist|order|disabled][&pattern=<id>]
+//   midi-effect-semantics-audit-debug-demo.html[?rate=48000|44100][&rows=all|quick|<id,id,…>][&device=all|arpeggio|pitch|velocity|zeitgeist|note-filter|order|disabled][&pattern=<id>]
 //
 // One Nano sampler plays a sine sample on a pattern; each row inserts its chain of MIDI effects, renders
 // offline, reads the notes that came out (onset, end, pitch, velocity) and judges them against the rule

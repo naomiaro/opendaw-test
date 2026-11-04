@@ -13,6 +13,11 @@
  * the longest step that falls twice on the 1750-pulse hold to the first under the reader's floor. Of the eight left
  * out, 1/1 and 1/2 give a single step on the hold, 1/6, 3/64, 1/24 and 1/48 repeat a kind already swept between two
  * swept neighbours, and 1/96 and 1/128 put a gate-0.5 step under the floor at C4, as 1/64 already does (`no rule`).
+ * The Note Filter's range is sampled as windows on the GAPPED melody (some notes filtered out, every survivor read on its own, so a
+ * leaked note starts a read note of its own; on the legato melody it would hide inside its neighbours' spans) and as
+ * inclusive ends on the chromatic run (an off-by-one drops exactly one note); its transposes on the melody, with two rows on
+ * the chromatic run that push every note past 127 or below 0 (predicted silent, judged on silence); its set on the gapped melody
+ * and the sixteenths.
  *
  * Id readings: a number prints as JavaScript prints it (`-0.5`, `12.5`), no padding, so `vel-offset-1-melody`
  * is offset -1. The Zeitgeist rows take every DISTINCT `GrooveShuffleBoxAdapter.DurationPPQNs` value, 8 of
@@ -23,7 +28,7 @@ import { PPQN } from "@opendaw/lib-dsp";
 import { GrooveShuffleBoxAdapter, ArpeggioDeviceBoxAdapter } from "@opendaw/studio-adapters";
 import { ArpeggioDeviceBox, NoteFilterDeviceBox, PitchDeviceBox, VelocityDeviceBox, ZeitgeistDeviceBox } from "@opendaw/studio-boxes";
 import type { EffectBox } from "@opendaw/studio-core";
-import { PATTERN_PPQN, REGION_START_PPQN, patternById, type Pattern } from "@/lib/midiEffects/patterns";
+import { PATTERN_PPQN, REGION_START_PPQN, patternById, withGaps, type Pattern } from "@/lib/midiEffects/patterns";
 import { zeitgeistGrooveBox } from "./midiEffectChain";
 import {
   DEVIATIONS, DEVIATION_SUBSETS, clipToRange, composeRules,
@@ -45,7 +50,7 @@ export const NANO_RELEASE_SECONDS = 0.001;
 /** 1750 pulses = 0.911 s at 120 bpm, and 3840 + 1750 = 5590 is not on the 1/16 grid (5520 + 70), so the held note ends 70 pulses into the last Arpeggio step: the row shows that step running its full gate length past the held note. */
 export const HELD_NOTE_PPQN = 1750;
 
-export type SemanticsPatternId = "held-note" | "held-chord" | "chromatic" | "chords" | "sixteenths" | "melody";
+export type SemanticsPatternId = "held-note" | "held-chord" | "chromatic" | "chords" | "sixteenths" | "melody" | "melody-gaps";
 
 export interface AuditPattern extends Omit<Pattern, "id"> { readonly id: SemanticsPatternId }
 
@@ -74,9 +79,12 @@ export const CHROMATIC: AuditPattern = {
 
 const demoPattern = (id: "chords" | "sixteenths" | "melody"): AuditPattern => ({ ...patternById(id), id });
 
-export const AUDIT_PATTERNS: readonly AuditPattern[] = [HELD_NOTE, HELD_CHORD, CHROMATIC, demoPattern("chords"), demoPattern("sixteenths"), demoPattern("melody")];
+/** The demo melody with every eighth at 90 % (432 pulses): a 48-pulse (25 ms) gap the one-voice reader splits on, so a note a filter should have dropped between two survivors starts a read note of its own instead of hiding inside its neighbours' legato (the Rendered page gaps its melody the same way). */
+export const MELODY_GAPS: AuditPattern = { ...withGaps(patternById("melody"), 0.9), id: "melody-gaps", label: "Melody, gapped", blurb: "The demo melody with every eighth at 90 %: every survivor of a filter is read on its own." };
 
-export type RowGroup = "dry" | "arpeggio" | "pitch" | "velocity" | "zeitgeist" | "order" | "disabled";
+export const AUDIT_PATTERNS: readonly AuditPattern[] = [HELD_NOTE, HELD_CHORD, CHROMATIC, demoPattern("chords"), demoPattern("sixteenths"), demoPattern("melody"), MELODY_GAPS];
+
+export type RowGroup = "dry" | "arpeggio" | "pitch" | "velocity" | "zeitgeist" | "note-filter" | "order" | "disabled";
 
 /** One device in a row's chain; a chain holds at most one Velocity and one Zeitgeist (`RuleContext` carries one of each). */
 export interface ChainStage { setting: DeviceSetting; enabled: boolean }
@@ -130,6 +138,7 @@ export const QUICK_IDS: ReadonlySet<string> = new Set([
   "pitch-st7-chromatic", "pitch-oct1-chromatic", "pitch-ct12.5-chromatic", "pitch-oct7-chromatic",
   "vel-magnet1x1-sixteenths", "vel-random0.5-sixteenths", "vel-offset-1-sixteenths", "vel-magnet1x1-melody",
   "zg-amount0.25-dur480-sixteenths", "zg-amount0.75-dur480-sixteenths", "zg-amount0.75-dur3840-sixteenths", "zg-amount1-dur480-sixteenths",
+  "nf-range62-67-melody-gaps", "nf-range61-127-chromatic", "nf-tr7-melody-gaps", "nf-set-key72-melody-gaps",
 ]);
 
 type RowDraft = Omit<SemanticsRow, "quick">;
@@ -223,28 +232,51 @@ function zeitgeistRows(): RowDraft[] {
   return rows;
 }
 
+function noteFilterRows(): RowDraft[] {
+  const rows: RowDraft[] = [];
+  const add = (id: string, label: string, pattern: SemanticsPatternId, settings: NoteFilterSettings): void => {
+    rows.push({ id: `${id}-${pattern}`, label: `Note Filter ${label} — ${patternLabel(pattern)}`, group: "note-filter", pattern, chain: [one(noteFilter(settings))] });
+  };
+  const ranges: readonly (readonly [number, number, SemanticsPatternId])[] = [
+    [0, 127, "melody-gaps"], [62, 67, "melody-gaps"], [65, 127, "melody-gaps"], [0, 64, "melody-gaps"], [64, 64, "melody-gaps"], [67, 62, "melody-gaps"],
+    [60, 127, "chromatic"], [61, 127, "chromatic"], [0, 71, "chromatic"], [0, 70, "chromatic"],
+  ];
+  for (const [min, max, pattern] of ranges) add(`nf-range${min}-${max}`, `${min}..${max}`, pattern, { ...NOTE_FILTER_BASE, min, max });
+  for (const transpose of [-12, -7, -1, 0, 1, 7, 12, 24]) add(`nf-tr${transpose}`, `${signed(transpose)} st`, "melody-gaps", { ...NOTE_FILTER_BASE, transpose });
+  for (const transpose of [68, -72]) add(`nf-tr${transpose}`, `${signed(transpose)} st`, "chromatic", { ...NOTE_FILTER_BASE, transpose });
+  for (const key of [48, 60, 72]) {
+    for (const pattern of ["melody-gaps", "sixteenths"] as const) add(`nf-set-key${key}`, `set to ${key}`, pattern, { ...NOTE_FILTER_BASE, set: true, key });
+  }
+  add("nf-set-key72-range62-67", "62..67, set to 72", "melody-gaps", { ...NOTE_FILTER_BASE, min: 62, max: 67, set: true, key: 72 });
+  add("nf-set-key72-tr7", "set to 72, +7 st", "melody-gaps", { ...NOTE_FILTER_BASE, set: true, key: 72, transpose: 7 });
+  return rows;
+}
+
 const NON_IDENTITY: Record<SemanticsDevice, DeviceSetting> = {
   arpeggio: arp(ARPEGGIO_BASE),
-  "note-filter": noteFilter({ ...NOTE_FILTER_BASE, min: 60 }),
+  "note-filter": noteFilter({ ...NOTE_FILTER_BASE, min: 62, max: 67 }),
   pitch: pitch({ ...PITCH_BASE, semiTones: 7, cents: 12.5 }),
   velocity: velocity({ ...VELOCITY_BASE, magnetPosition: 1, magnetStrength: 1 }),
   zeitgeist: zeitgeist({ amount: 0.75, duration: 480 }),
 };
 
-const ORDERS: readonly (readonly [SemanticsDevice, SemanticsDevice])[] = [
-  ["arpeggio", "zeitgeist"], ["zeitgeist", "arpeggio"], ["pitch", "arpeggio"], ["arpeggio", "pitch"], ["velocity", "arpeggio"], ["arpeggio", "velocity"],
+/** A pair with an Arpeggio sits on the chords (the Arpeggio makes single notes of the held triads); the Pitch and Note Filter pair sits on the gapped melody, where the one-voice reader judges every surviving note on its own. */
+const ORDERS: readonly (readonly [SemanticsDevice, SemanticsDevice, SemanticsPatternId])[] = [
+  ["arpeggio", "zeitgeist", "chords"], ["zeitgeist", "arpeggio", "chords"], ["pitch", "arpeggio", "chords"], ["arpeggio", "pitch", "chords"],
+  ["velocity", "arpeggio", "chords"], ["arpeggio", "velocity", "chords"],
+  ["pitch", "note-filter", "melody-gaps"], ["note-filter", "pitch", "melody-gaps"], ["arpeggio", "note-filter", "chords"], ["note-filter", "arpeggio", "chords"],
 ];
 
 function orderRows(): RowDraft[] {
-  return ORDERS.map(([first, second]) => ({
+  return ORDERS.map(([first, second, pattern]) => ({
     id: `order-${first}-${second}`,
-    label: `${FACTORY_KEYS[first]} then ${FACTORY_KEYS[second]} — chords`,
-    group: "order", pattern: "chords", chain: [one(NON_IDENTITY[first]), one(NON_IDENTITY[second])],
+    label: `${FACTORY_KEYS[first]} then ${FACTORY_KEYS[second]} — ${patternLabel(pattern)}`,
+    group: "order", pattern, chain: [one(NON_IDENTITY[first]), one(NON_IDENTITY[second])],
   }));
 }
 
 function disabledRows(): RowDraft[] {
-  return (["arpeggio", "pitch", "velocity", "zeitgeist"] as const).map((device) => ({
+  return (["arpeggio", "pitch", "velocity", "zeitgeist", "note-filter"] as const).map((device) => ({
     id: `disabled-${device}`,
     label: `${FACTORY_KEYS[device]} switched off — sixteenths`,
     group: "disabled", pattern: "sixteenths", chain: [one(NON_IDENTITY[device], false)],
@@ -252,12 +284,12 @@ function disabledRows(): RowDraft[] {
 }
 
 export const SEMANTICS_ROWS: readonly SemanticsRow[] = [
-  ...dryRows(), ...arpeggioRows(), ...pitchRows(), ...velocityRows(), ...zeitgeistRows(), ...orderRows(), ...disabledRows(),
+  ...dryRows(), ...arpeggioRows(), ...pitchRows(), ...velocityRows(), ...zeitgeistRows(), ...noteFilterRows(), ...orderRows(), ...disabledRows(),
 ].map((row) => ({ ...row, quick: QUICK_IDS.has(row.id) || row.group === "order" || row.group === "disabled" }));
 
 export interface RowParams { device: string | null; pattern: string | null; rows: string | null }
 
-const DEVICE_FILTERS: readonly string[] = ["all", "arpeggio", "pitch", "velocity", "zeitgeist", "order", "disabled"];
+const DEVICE_FILTERS: readonly string[] = ["all", "arpeggio", "pitch", "velocity", "zeitgeist", "note-filter", "order", "disabled"];
 
 /** `?rows=all|quick|<id,id,…>`, `?device=` filters by group, `?pattern=` by pattern id; the dry rows always stay, in table order, so `dry-sixteenths` leads. */
 export function resolveRows(params: RowParams): SemanticsRow[] {

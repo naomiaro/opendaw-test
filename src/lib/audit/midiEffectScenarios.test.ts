@@ -26,6 +26,13 @@ describe("MIDI_EFFECT_SCENARIOS", () => {
     expect(byId("arpeggio").pattern).toEqual([{ position: 0, duration: 1920 }]);
     expect(byId("zeitgeist").pattern).toBe(DRY_PATTERN);
   });
+  it("carries the Note Filter as a pass-through row after Velocity and its disabled twin after velocity-disabled", () => {
+    const ids = MIDI_EFFECT_SCENARIOS.map((s) => s.id);
+    expect(byId("note-filter")).toMatchObject({ device: "note-filter", enabled: true, judge: "pass-through", rule: null, script: null, pattern: DRY_PATTERN });
+    expect(byId("note-filter-disabled")).toMatchObject({ device: "note-filter", enabled: false, judge: "pass-through" });
+    expect(ids.indexOf("note-filter")).toBe(ids.indexOf("velocity") + 1);
+    expect(ids.indexOf("note-filter-disabled")).toBe(ids.indexOf("velocity-disabled") + 1);
+  });
   it("declares the pass-through directive only on the yield script", () => {
     expect(SPIELWERK_YIELD).toMatch(/^\/\/ @no-pass$/m);
     expect(SPIELWERK_FORWARD).not.toMatch(/@no-pass/);
@@ -35,8 +42,9 @@ describe("MIDI_EFFECT_SCENARIOS", () => {
 
 describe("resolveDevices", () => {
   it("keeps the dry row in every selection and rejects an unknown device", () => {
-    expect(resolveDevices(null).length).toBe(13);
+    expect(resolveDevices(null).length).toBe(15);
     expect(resolveDevices("pitch").map((s) => s.id)).toEqual(["dry", "pitch", "pitch-disabled"]);
+    expect(resolveDevices("note-filter").map((s) => s.id)).toEqual(["dry", "note-filter", "note-filter-disabled"]);
     expect(resolveDevices("spielwerk").map((s) => s.id)).toEqual(["dry", "spielwerk-forward", "spielwerk-yield", "spielwerk-echo", "spielwerk-disabled"]);
     expect(() => resolveDevices("compressor")).toThrow(/unknown \?device=/);
   });

@@ -4,7 +4,8 @@
 says, across the whole range of every parameter, and has anything changed since the last accepted run
 
 **SDK Pin:** `@opendaw/studio-sdk@0.0.181` (installed npm package; WASM engine only; first accepted on
-0.0.180, the registers unchanged by 0.0.181). The crate citations below are read in the openDAW checkout
+0.0.180, unchanged by 0.0.181; re-accepted on 0.0.181 on 2026-11-04 with the 33 Note Filter rows, the 230
+earlier entries unchanged, so both registers carry `sdkVersion` 0.0.181). The crate citations below are read in the openDAW checkout
 pinned to the installed release (the Arpeggio's shifted by one line in the header and by six from its
 `process` on 0.0.181, where `release_all` was added; Pitch, Velocity, Zeitgeist and the wiring fold are
 untouched); the two manual citations
@@ -37,9 +38,9 @@ question filed 2026-11-04 as [openDAW#526](https://github.com/andremichelle/open
 maintainer's answer settles both.
 
 **Harness:** unlisted debug demo
-`midi-effect-semantics-audit-debug-demo.html[?rate=48000|44100][&rows=all|quick|<id,id,…>][&device=all|arpeggio|pitch|velocity|zeitgeist|order|disabled][&pattern=<id>]`
-on the dev server, Chrome, a real click on "Run audit"; deterministic, no hardware, about 35
-seconds per rate for the 230 rows. The summary JSON (`midisem-summary-<runToken>.json`, one record
+`midi-effect-semantics-audit-debug-demo.html[?rate=48000|44100][&rows=all|quick|<id,id,…>][&device=all|arpeggio|pitch|velocity|zeitgeist|note-filter|order|disabled][&pattern=<id>]`
+on the dev server, Chrome, a real click on "Run audit"; deterministic, no hardware, about 40
+seconds per rate for the 263 rows. The summary JSON (`midisem-summary-<runToken>.json`, one record
 per row with every predicted and read note) lands in `.verify-output/` via the dev server's
 `/__verify` sink; `node scripts/audit/midi-effect-semantics/table.ts [runToken] [--accept] [--force]`
 prints the table below and, with `--accept`, writes the run as the register
@@ -144,6 +145,7 @@ mappings. Positions are absolute pulses.
 | Pitch | Every note moves by `octaves × 12 + semitones`, its cent by the cents setting; a note shifted outside 0..127 is dropped. | `device-pitch/src/lib.rs:101-133` (`transform`), `:8-11` (the drop) | `PitchDeviceBoxAdapter.ts:50-58` (octaves ±7, semitones ±36, cents ±50) |
 | Velocity | Every note's velocity is the adapter's `computeVelocity` at the note's absolute position (magnet, random from the seeded generator, offset, clamped, mixed). | `device-velocity/src/lib.rs:70-77` (`compute_velocity`, the adapter's formula ported) | `VelocityDeviceBoxAdapter.ts:31-39` |
 | Zeitgeist | Every note starts where the groove warps its position to and ends where it warps its note-off to, so its duration changes with its place in the cell (`zeitgeist.md:59`, as corrected for openDAW#525). The warp is the cell's Möbius ease at the squashed amount (`0.01 + 0.98 × amount`), read through the device adapter's `groove()` and kept as a float pulse. | `device-zeitgeist/src/lib.rs:124-138` (`process`: warp each record, clamp into the block's range) | `GrooveShuffleBoxAdapter.ts:31-32, 46` |
+| Note Filter | Only a note between min and max, both included, passes (`note-filter.md` §1: "The lowest key that passes, included", "The highest key that passes, included", "If Min is above Max, no note passes"); it then moves by the transpose semitones, or plays as the key when set is on (§2); a result outside 0..127 is ignored (§2). The 64 held-note cap (`MAX_HELD`) is not modelled; no pattern reaches it. | `device-note-filter/src/lib.rs:45-49` (`output_pitch`), `:105-118` (`transform`) | `NoteFilterDeviceBoxAdapter` (key and min/max 0..127, transpose −127..127) |
 
 A chain composes the rules in index order (`crates/engine/src/audio_unit/wiring.rs:1061-1066`); a
 disabled device is left out (`wiring.rs:1063`).
@@ -163,7 +165,7 @@ error; a row that matches only with a deviation on reads `matches-known-deviatio
 
 ## Row sampling
 
-230 rows, every one in the register. One parameter at a time across its whole range, the others at
+263 rows, every one in the register. One parameter at a time across its whole range, the others at
 their base, so a miss names its parameter; each parameter's identity setting is a row too, as the
 control.
 
@@ -185,9 +187,19 @@ control.
 - **Zeitgeist**: amounts 0, 0.25, 0.5, 0.75, 1 × every DISTINCT groove duration (8 of the 9 listed
   in `GrooveShuffleBoxAdapter.Durations`; 960 is listed twice), 1/8 to 16 bars, on the sixteenths;
   amounts × 1/8 and 1 bar on the melody.
+- **Note Filter**: range windows on the gapped melody (0..127, 62..67, 65..127, 0..64, 64..64, 67..62:
+  some notes filtered out, every survivor read on its own) and inclusive ends on the chromatic run (min 60 and 61, max
+  71 and 70: an off-by-one drops exactly one note); transpose −12, −7, −1, 0, +1, +7, +12, +24 on the
+  gapped melody and +68 / −72 on the chromatic run (every note dropped, predicted silent and judged on
+  silence); set on with key 48, 60, 72 on the gapped melody and the sixteenths, plus set under a window
+  (62..67, key 72: the filter runs before the set) and set over a transpose (key 72, +7 st: the transpose
+  is ignored under set) on the gapped melody.
 - **Order** (one row per ordered pair at one non-identity setting each: Arpeggio and Zeitgeist,
-  Pitch and Arpeggio, Velocity and Arpeggio, both ways, on the chords) and **disabled** (each device
-  off on the sixteenths, expected dry).
+  Pitch and Arpeggio, Velocity and Arpeggio, Arpeggio and Note Filter, both ways, on the chords; Pitch
+  and Note Filter both ways on the gapped melody, because the one-voice reader cannot judge a held
+  triad and the chords pairs are judgeable only through their Arpeggio) and **disabled** (each device
+  off on the sixteenths, expected dry). The Note Filter's non-identity is the 62..67 window (min 60
+  drops nothing on the sixteenths or the melody).
 - **Gate 1 and gate 2.** At gate 1 the Arpeggio's steps touch: they are `abutting`, read at their
   predicted spans for pitch and velocity; the placement audit holds their timing (every step on its
   grid frame). At gate 2 every step overlaps the next by a whole step: same-pitch overlaps on a held
@@ -195,8 +207,12 @@ control.
 
 The patterns (`midiEffectSemanticsRows.ts`): a held C4 (1750 pulses, off the 1/16 grid so a 1/16
 step crosses its end at 5590), a held C major triad at velocity 0.8 (the same length), a chromatic
-run C4–B4 (sixteenths held a thirty-second), and the MIDI effects demo's chords, sixteenths and
-melody.
+run C4–B4 (sixteenths held a thirty-second), the MIDI effects demo's chords, sixteenths and
+melody, and the melody gapped (every eighth at 90 %, 432 pulses, a 48-pulse, 25 ms gap). The gapped
+melody carries the Note Filter rows: on the legato melody a note the filter should have dropped
+between two survivors would run straight on from its neighbour, start no read note of its own and
+hide inside the abutting judgement, which reads an abutting note only at its predicted span; a gap
+the reader splits on makes a leak an extra note.
 
 ## Runs
 
@@ -424,6 +440,31 @@ live context's resampling never reaches a figure; this pass measures that. A `ch
 be a dependence of the sample or render path on the device, not of the engine's rules.
 
 
+### 2026-11-04, the Note Filter rows (SDK 0.0.181, Chrome, macOS, the Mac's output device at 44.1 kHz)
+
+The 33 rows added for the Note Filter (the `note-filter` group of 28, the four order rows pairing it
+with Pitch on the gapped melody and with Arpeggio on the chords, `disabled-note-filter`), run against
+the registers accepted on the 0.0.181 upgrade. Every new row reads `rule holds, unregistered` at both
+rates: the range windows keep exactly the notes the rule names and nothing else (the gapped melody
+would have shown a leak as an extra note), the inclusive ends drop exactly one note one step past each
+end, min above max and the two transposes past 127 and below 0 are silent, set collapses every
+passing note to the key after the range and ignoring the transpose, the order pairs keep 2 notes with
+Pitch first and 10 with the filter first. Every old row as registered; the 18 `no rule` rows unchanged.
+
+| rate | run | `as-registered` | `as-registered, matches-known-deviation …` | `no rule` | `rule holds, unregistered` | `changed` | `error` |
+|---|---|---|---|---|---|---|---|
+| 48 kHz | 1793823134245 | 211 | 1 (`arpeggio-drops-cent`, `order-pitch-arpeggio`) | 18 | 33 | 0 | 0 |
+| 44.1 kHz | 1793823187726 | 211 | 1 (the same row) | 18 | 33 | 0 | 0 |
+
+The verdict column is identical across the two rates, row for row. Reference peak 0.7079 / 0.7078,
+instrument offset 6 frames at both rates, as before.
+
+Both runs accepted as the registers (`register/48000.json` from 1793823134245, `register/44100.json`
+from 1793823187726): 263 rows each, the 230 earlier entries unchanged entry for entry. Re-run
+1793823764790 (48 kHz) against the new register: on the register axis 263 `as-registered`, 0 `changed`, 0
+`unregistered` (the verdict column reads 244 `rule holds`, 1 deviation, 18 `no rule`). The 44.1 kHz register has
+no re-run yet; its first standing run is the check.
+
 ## Reading
 
 - **The Arpeggio walks the absolute grid, in every mode, at every octave count, rate and repeat,
@@ -459,10 +500,15 @@ be a dependence of the sample or render path on the device, not of the engine's 
   the on-beat's note-off moves from 2062.5 to 2123.3 ms and the off-beat's from 2248.75 to 2224.4 ms
   (computed through the warp at the squashed amount 0.745; the reads at 48 kHz end at 2124.0 and
   2225.2 ms, the 0.8 ms release later, as the dry notes do). The groove may move a note past the region's end; it sounds there.
-- **A disabled device is left out**, all four alike; **order composes** as the chain's index order says
-  (Arpeggio and Zeitgeist, Pitch and Arpeggio, Velocity and Arpeggio, both ways, judged as composed).
-- **48 and 44.1 kHz read the same verdict on every row**, and a re-run at each rate reproduces the
-  register exactly.
+- **The Note Filter does what its manual says on every setting sampled**: a range passes only the notes between
+  min and max, both ends included, and nothing when min is above max; a transpose moves every passing note and
+  drops a result past 127 or below 0; set replaces every passing note's pitch with the key, after the range and
+  ignoring the transpose (33 rows, every one `rule holds` on first measurement, 2026-11-04).
+- **A disabled device is left out**, all five alike; **order composes** as the chain's index order says
+  (Arpeggio and Zeitgeist, Pitch and Arpeggio, Velocity and Arpeggio, Arpeggio and Note Filter, Pitch and Note
+  Filter, both ways, judged as composed).
+- **48 and 44.1 kHz read the same verdict on every row**, and a re-run reproduces the register exactly
+  (at each rate on the 0.0.180 registers; at 48 kHz on the current ones).
 
 ## Questions for upstream
 
@@ -496,8 +542,8 @@ runs its full gate length past the held note's release.
 ## Status
 
 **Standing regression check after SDK upgrades** (root CLAUDE.md, "Build & Verification"; the
-current registers are the 2026-11-04 re-accept on the corrected manuals; on the rule as it stands
-they read 211 holds / 1 deviation / 18 no rule per rate):
+current registers are the 2026-11-04 accept with the Note Filter rows, on the corrected manuals; on
+the rule as it stands they read 244 holds / 1 deviation / 18 no rule per rate, 263 rows):
 `?rows=all` at 48 kHz, then `?rate=44100`; expect every row `as-registered`, `as-registered,
 matches-known-deviation …` or `no rule`. A `changed` row is the finding: read its first mismatch
 against the crate before anything else. A `matches-known-deviation` the register lists is not a
@@ -508,6 +554,12 @@ register instead of replacing it, and only into a register of the same SDK, bpm 
 row is never accepted, forced or not: it keeps its registered entry, or stays out of the register.
 
 ## Open items
+
+- **`disabled-arpeggio` proves nothing.** The Arpeggio's non-identity (Up, 1 octave, 1/16, gate 0.5,
+  velocity 1) reproduces the sixteenths exactly (one 120-pulse step at pitch 60 per grid line, the
+  note's own velocity), so the row reads dry whether or not the engine skips the disabled device. A
+  different non-identity would move the registered order rows; left for a release that changes them
+  anyway. The guard test in `midiEffectSemanticsRows.test.ts` covers the Note Filter and Pitch stages.
 
 - **Gate 2 and other true overlaps are tracked only.** A monophonic reader cannot judge two notes
   sounding at once; those rows and notes are in the register, so a change in what they render still
@@ -802,3 +854,44 @@ No row changed; reference peak 0.7079 / 0.7078, instrument offset 6 frames, as o
 maintainer answered openDAW#526 the same morning: the dropped cent was a mistake and the fix ships
 with the next release, so `arpeggio-drops-cent` stays until `order-pitch-arpeggio` reads `changed,
 rule holds` there (the installed crate still emits `cent: 0.0`, `lib.rs:310`).
+
+<details><summary>The 33 Note Filter rows at 48 kHz, run 1793823134245 (accepted 2026-11-04; the 230 earlier rows read as the 0.0.181 block above, and the 44.1 kHz run 1793823187726 reads the same verdict on every row)</summary>
+
+```
+id | verdict | figure | read / readable (unreadable) | max |Δonset| ms | max |Δcents| | max |Δvel| | render ms
+nf-range0-127-melody-gaps | rule holds, unregistered | — | 16 / 16 (0) | 0.00 | 0.0 | 0.002 | 136
+nf-range62-67-melody-gaps | rule holds, unregistered | — | 10 / 10 (0) | 0.00 | 0.0 | 0.002 | 135
+nf-range65-127-melody-gaps | rule holds, unregistered | — | 8 / 8 (0) | 0.00 | 0.0 | 0.002 | 180
+nf-range0-64-melody-gaps | rule holds, unregistered | — | 8 / 8 (0) | 0.00 | 0.0 | 0.001 | 153
+nf-range64-64-melody-gaps | rule holds, unregistered | — | 4 / 4 (0) | 0.00 | 0.0 | 0.001 | 134
+nf-range67-62-melody-gaps | rule holds, unregistered | — | 0 / 0 (0) | — | — | — | 136
+nf-range60-127-chromatic | rule holds, unregistered | — | 12 / 12 (0) | 0.00 | 0.0 | 0.000 | 135
+nf-range61-127-chromatic | rule holds, unregistered | — | 11 / 11 (0) | 0.00 | 0.0 | 0.000 | 134
+nf-range0-71-chromatic | rule holds, unregistered | — | 12 / 12 (0) | 0.00 | 0.0 | 0.000 | 139
+nf-range0-70-chromatic | rule holds, unregistered | — | 11 / 11 (0) | 0.00 | 0.0 | 0.000 | 183
+nf-tr-12-melody-gaps | rule holds, unregistered | — | 16 / 16 (0) | 0.10 | 0.0 | 0.002 | 154
+nf-tr-7-melody-gaps | rule holds, unregistered | — | 16 / 16 (0) | 0.10 | 0.0 | 0.002 | 136
+nf-tr-1-melody-gaps | rule holds, unregistered | — | 16 / 16 (0) | 0.00 | 0.0 | 0.002 | 138
+nf-tr0-melody-gaps | rule holds, unregistered | — | 16 / 16 (0) | 0.00 | 0.0 | 0.002 | 138
+nf-tr1-melody-gaps | rule holds, unregistered | — | 16 / 16 (0) | 0.00 | 0.0 | 0.002 | 140
+nf-tr7-melody-gaps | rule holds, unregistered | — | 16 / 16 (0) | 0.00 | 0.0 | 0.002 | 140
+nf-tr12-melody-gaps | rule holds, unregistered | — | 16 / 16 (0) | 0.10 | 0.0 | 0.002 | 182
+nf-tr24-melody-gaps | rule holds, unregistered | — | 16 / 16 (0) | 0.10 | 0.0 | 0.002 | 152
+nf-tr68-chromatic | rule holds, unregistered | — | 0 / 0 (0) | — | — | — | 133
+nf-tr-72-chromatic | rule holds, unregistered | — | 0 / 0 (0) | — | — | — | 136
+nf-set-key48-melody-gaps | rule holds, unregistered | — | 16 / 16 (0) | 0.10 | 0.0 | 0.002 | 139
+nf-set-key48-sixteenths | rule holds, unregistered | — | 32 / 32 (0) | 0.10 | 0.0 | 0.000 | 136
+nf-set-key60-melody-gaps | rule holds, unregistered | — | 16 / 16 (0) | 0.00 | 0.0 | 0.002 | 136
+nf-set-key60-sixteenths | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 182
+nf-set-key72-melody-gaps | rule holds, unregistered | — | 16 / 16 (0) | 0.00 | 0.0 | 0.002 | 154
+nf-set-key72-sixteenths | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 140
+nf-set-key72-range62-67-melody-gaps | rule holds, unregistered | — | 10 / 10 (0) | 0.00 | 0.0 | 0.002 | 137
+nf-set-key72-tr7-melody-gaps | rule holds, unregistered | — | 16 / 16 (0) | 0.00 | 0.0 | 0.002 | 137
+order-pitch-note-filter | rule holds, unregistered | — | 2 / 2 (0) | 0.00 | 0.0 | 0.000 | 138
+order-note-filter-pitch | rule holds, unregistered | — | 10 / 10 (0) | 0.00 | 0.0 | 0.002 | 138
+order-arpeggio-note-filter | rule holds, unregistered | — | 11 / 11 (0) | 0.00 | 0.0 | 0.000 | 137
+order-note-filter-arpeggio | rule holds, unregistered | — | 24 / 24 (0) | 0.00 | 0.0 | 0.000 | 186
+disabled-note-filter | rule holds, unregistered | — | 32 / 32 (0) | 0.00 | 0.0 | 0.000 | 137
+```
+
+</details>
