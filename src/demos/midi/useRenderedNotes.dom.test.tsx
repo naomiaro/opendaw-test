@@ -181,6 +181,32 @@ describe("useRenderedNotes", () => {
     expect(errorOf(result.current)).toBeNull();
   });
 
+  it("a render failure does not show again after the calibration is lost and comes back", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { render, calls } = deferredRender();
+    const statuses: RenderedState["status"][] = [];
+    const { result, rerender } = renderHook((props: RenderedNotesOptions) => {
+      const state = useRenderedNotes(props);
+      statuses.push(state.status);
+      return state;
+    }, { initialProps: options({ render }) });
+    await settle();
+    await act(async () => { calls[0].reject(new Error("boom")); });
+    expect(result.current.status).toBe("error");
+
+    rerender(options({ render, calibration: null }));
+    expect(result.current.status).toBe("calibrating");
+    statuses.length = 0;
+    rerender(options({ render }));
+    await settle();
+    // every render pass from the calibration's return to the next render's start: due or running, never the old failure
+    expect(statuses).not.toContain("error");
+    expect(statuses).not.toContain("idle");
+    expect(result.current.status).toBe("rendering");
+    await act(async () => { calls[1].resolve(channelWithNotes([0])); });
+    expect(result.current.status).toBe("idle");
+  });
+
   it("a pattern change during a render leaves the rows stale until the follow-up lands", async () => {
     const { render, calls } = deferredRender();
     const { result, rerender } = renderHook((props: RenderedNotesOptions) => useRenderedNotes(props), {

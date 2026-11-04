@@ -49,6 +49,18 @@ export function setDeviceEnabled(editing: Editing, box: EffectBox, enabled: bool
   editing.modify(() => box.enabled.setValue(enabled));
 }
 
+/** `setDeviceEnabled` for a page: null on success, else the sentence the page shows, logged under `tag`. */
+export function tryDeviceEnabled(editing: Editing, id: DeviceId, box: EffectBox, enabled: boolean, tag: string): string | null {
+  try {
+    setDeviceEnabled(editing, box, enabled);
+    return null;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[${tag}] ${enabled ? "enabling" : "bypassing"} ${id} failed: ${message}`);
+    return `The ${id} device could not be ${enabled ? "enabled" : "bypassed"}: ${message}`;
+  }
+}
+
 /** The device at `fromIndex` ends at `toIndex` (`arrayMove` semantics). */
 export function moveDevice(editing: Editing, field: MidiEffectsField, fromIndex: number, toIndex: number): void {
   if (fromIndex === toIndex) return;

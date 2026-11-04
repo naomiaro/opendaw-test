@@ -48,6 +48,12 @@ describe("VelocityStrip", () => {
     expect(styles.indexOf(`fillStyle=${CANVAS_COLORS.structural}`)).toBeLessThan(styles.indexOf(`fillStyle=${velocityColor(0.5)}`));
   });
 
+  it("draws the stem one pixel right of its ghost at the same onset, both at the stem width", () => {
+    const { ctx } = show(() => [{ at: 1920, velocity: 1 }], () => [{ at: 1920, velocity: 0.5 }]);
+    const rects = fillRects(ctx.calls).map(args).filter(([x]) => x >= 100 && x <= 104);
+    expect(rects.map(([x, , w]) => [x, w])).toEqual([[100, 3], [101, 3]]);
+  });
+
   it("repaints on requestUpdate", () => {
     const ref = createRef<VelocityStripHandle>();
     let stems: Stem[] = [];

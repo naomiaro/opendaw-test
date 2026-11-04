@@ -1,4 +1,4 @@
-<!-- Posted 2026-11-03 as https://github.com/andremichelle/openDAW/issues/524 — the body below is as filed (the parenthetical on the page going live was dropped at posting). -->
+<!-- Posted 2026-11-03 as https://github.com/andremichelle/openDAW/issues/524 — the body below is as filed (the parenthetical on the page going live was dropped at posting). CLOSED 2026-11-04: the engine behaves as intended, the manual was wrong and is corrected upstream (0b371e0b3); the audit's rule follows it, see ../note.md. -->
 
 # Arpeggio: the Velocity control does not do what its manual says (−100 % is silent, 0 % is full)
 

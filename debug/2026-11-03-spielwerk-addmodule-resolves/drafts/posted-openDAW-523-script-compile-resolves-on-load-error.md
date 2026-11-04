@@ -1,4 +1,4 @@
-<!-- Posted 2026-11-03 as https://github.com/andremichelle/openDAW/issues/523 — the body below is as filed (the note link made absolute). -->
+<!-- Posted 2026-11-03 as https://github.com/andremichelle/openDAW/issues/523 — the body below is as filed (the note link made absolute). CLOSED 2026-11-04, fixed in SDK 0.0.181; see ../note.md. -->
 
 # `ScriptCompiler.compile` resolves for a script that throws at module load; the device keeps the previous script with the new script's parameters
 

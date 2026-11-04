@@ -387,7 +387,9 @@ table `node scripts/audit/midi-effect-placement/table.ts`.
   whose top level throws (a misnamed `Processor`, a bare `throw`), so `ScriptCompiler.compile`
   resolves after writing `code` and the parameter boxes while the worklet keeps the previous script
   and sends no device message (measured 0.0.180, `debug/2026-11-03-spielwerk-addmodule-resolves/`;
-  filed as openDAW#523).
+  filed as openDAW#523; reported fixed upstream for SDK 0.0.181, the maintainer's answer: the error then
+  arrives through `subscribeDeviceMessage` and the device is silenced, `compile` still resolves; not
+  re-measured on the installed 0.0.180, the upgrade re-runs the note's steps).
   Build and construct the Processor on the main thread first (`preflightScript`,
   `src/lib/midiEffects/spielwerkCompile.ts`); runtime failures (a yield in the past, the 128-note
   scheduler) do arrive through `engine.subscribeDeviceMessage(uuid, …)` and silence the device until
@@ -426,14 +428,14 @@ other answer, a corrupt register, or one of another rate or bpm ends the run in 
   sits inside a tolerance.
 - **The rule** is the crate's and the manual's, intent first; each subset of the row's known
   deviations is tried after it, smallest first. Deviations (`DEVIATIONS` in the rules module, with
-  crate lines): `arpeggio-velocity-matrix` (silence at −100 %, 1.0 at 0 %),
-  `arpeggio-drops-cent`, `arpeggio-uncapped-note-off` (a step outlasts its held note),
-  `zeitgeist-warps-note-off` (the groove moves note-offs too). The Arpeggio walks the ABSOLUTE grid:
+  crate lines): `arpeggio-drops-cent`, `arpeggio-uncapped-note-off` (a step outlasts its held note).
+  Two more were retired on 2026-11-04 when openDAW#524 and #525 closed with the MANUALS corrected:
+  the Arpeggio's velocity (parameter −1..+1, the knob prints 0–100 %: one fixed velocity rising from
+  silent at −100 % to full at 0 %, then a blend from full toward the note's own at +100 %) and the Zeitgeist's warped note-off (the groove
+  moves note-offs too, so durations change) are the rule. The Arpeggio walks the ABSOLUTE grid:
   `step_index = k / repeat` with `k` the absolute grid index, so a hold from bar 1 at 1/16 starts at
-  index 16. Questioned behaviours (`QUESTIONS`): the Pitch drops a note shifted outside 0..127, the
-  Arpeggio's velocity disagrees with its manual (raised only where the manual's blend and the crate's
-  matrix give a different velocity for a note that reaches it); a row that shows one carries
-  `questioned: <name>`.
+  index 16. Questioned behaviour (`QUESTIONS`): the Pitch drops a note shifted outside 0..127; a row
+  that shows it carries `questioned: <name>`.
 - **Readability** (a monophonic reader): `overlap` and `polyphonic` are not judged; `too-short` is a
   note whose duration less three attacks holds fewer than four periods (18.3 ms at C4; the reader's
   pitch window starts two attacks in, stops one before the end and needs four rising crossings);

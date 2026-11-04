@@ -3,7 +3,7 @@ import { ArpeggioDeviceBoxAdapter, GrooveShuffleBoxAdapter, ParameterFieldAdapte
 import { graphWithZeitgeist, midiEffectFixture, transact } from "@/lib/testing/boxGraphFixtures";
 import { READER_DEFAULTS, frequencyToPitch, readNotes } from "./midiEffectSemanticsReader";
 import {
-  ARPEGGIO_RATE_PPQN, DEVIATIONS, DEVIATION_SUBSETS, QUESTIONS, RULE_SENTENCES, arpeggioIntentVelocity, arpeggioMatrixVelocity,
+  ARPEGGIO_RATE_PPQN, DEVIATIONS, DEVIATION_SUBSETS, QUESTIONS, RULE_SENTENCES, arpeggioVelocity,
   arpeggioRule, clipToRange, composeRules, markReadability, pitchRule, questionsFor, toPredictedFigures, velocityRule, zeitgeistRule,
   type ArpeggioSettings, type DeviceSetting, type RuleContext, type RuleNote,
 } from "./midiEffectSemanticsRules";
@@ -80,20 +80,20 @@ describe("arpeggioRule", () => {
     const dev = arpeggioRule(held([60]), base, new Set(["arpeggio-uncapped-note-off"]), range);
     expect(dev[dev.length - 1].duration).toBe(120);
   });
-  it("velocity: the manual's blend against the crate's matrix; they agree only at +1", () => {
-    expect(arpeggioIntentVelocity(1, 0.8)).toBeCloseTo(0.8, 6);
-    expect(arpeggioMatrixVelocity(1, 0.8)).toBeCloseTo(0.8, 6);
-    expect(arpeggioIntentVelocity(-1, 0.8)).toBe(1);
-    expect(arpeggioMatrixVelocity(-1, 0.8)).toBe(0);
-    expect(arpeggioIntentVelocity(0, 0.8)).toBeCloseTo(0.9, 6);
-    expect(arpeggioMatrixVelocity(0, 0.8)).toBe(1);
-    expect(arpeggioIntentVelocity(0.5, 0.8)).toBeCloseTo(0.85, 6);
-    expect(arpeggioMatrixVelocity(0.5, 0.8)).toBeCloseTo(0.9, 6);
+  it("velocity per the manual: one fixed velocity rising from silent at -1 to full at 0, then a blend from full toward the note's own at +1", () => {
+    expect(arpeggioVelocity(-1, 0.8)).toBe(0);
+    expect(arpeggioVelocity(-0.5, 0.8)).toBeCloseTo(0.5, 6);
+    expect(arpeggioVelocity(0, 0.8)).toBe(1);
+    expect(arpeggioVelocity(0.5, 0.8)).toBeCloseTo(0.9, 6);
+    expect(arpeggioVelocity(1, 0.8)).toBeCloseTo(0.8, 6);
+    // the lower half ignores the input
+    expect(arpeggioVelocity(-0.5, 0.2)).toBeCloseTo(0.5, 6);
   });
-  it("applies the intent or the matrix velocity to the emitted notes", () => {
+  it("applies that velocity to the emitted notes, with no deviation to try", () => {
     const notes = held([60], 3840, 1750, 0.8);
-    expect(arpeggioRule(notes, { ...base, velocity: 0 }, new Set(), range)[0].velocity).toBeCloseTo(0.9, 6);
-    expect(arpeggioRule(notes, { ...base, velocity: 0 }, new Set(["arpeggio-velocity-matrix"]), range)[0].velocity).toBe(1);
+    expect(arpeggioRule(notes, { ...base, velocity: 0 }, new Set(), range)[0].velocity).toBe(1);
+    expect(arpeggioRule(notes, { ...base, velocity: -1 }, new Set(), range)[0].velocity).toBe(0);
+    expect(arpeggioRule(notes, { ...base, velocity: 0.5 }, new Set(), range)[0].velocity).toBeCloseTo(0.9, 6);
   });
   it("keeps the source cent unless the deviation drops it", () => {
     const notes = [{ position: 3840, duration: 1750, pitch: 60, cent: 12.5, velocity: 1 }];
@@ -134,25 +134,14 @@ describe("questionsFor", () => {
     expect(questionsFor([arp(1), pitch(100)], identityContext, [note(60)])).toEqual(["pitch-drops-out-of-range"]);
     expect(questionsFor([arp(1), pitch(10)], identityContext, [note(60)])).toEqual([]);
   });
-  it("names the velocity gap only where the manual's blend and the crate's matrix give different velocities for the row's notes", () => {
+  it("questions nothing about the Arpeggio's velocity: the manual now describes the engine (openDAW#524)", () => {
     const at = (velocity: number): RuleNote => ({ ...note(60), velocity });
-    // velocity 0.8 at +50 %: blend 0.85, matrix 0.9; at -100 % on a velocity-1 note: blend 1, matrix 0
-    expect(questionsFor([arp(0.5)], identityContext, [at(0.8)])).toEqual(["arpeggio-velocity-manual-gap"]);
-    expect(questionsFor([arp(-1)], identityContext, [at(1)])).toEqual(["arpeggio-velocity-manual-gap"]);
-    // a velocity-1 note at 0 % and +50 %: both give 1.0, nothing to question
-    expect(questionsFor([arp(0)], identityContext, [at(1)])).toEqual([]);
-    expect(questionsFor([arp(0.5)], identityContext, [at(1)])).toEqual([]);
-    expect(questionsFor([arp(1)], identityContext, [at(0.8)])).toEqual([]);
+    expect(questionsFor([arp(0.5)], identityContext, [at(0.8)])).toEqual([]);
+    expect(questionsFor([arp(-1)], identityContext, [at(1)])).toEqual([]);
   });
-  it("reads the velocities that reach the Arpeggio, after the stages before it", () => {
-    const toOne: RuleContext = { ...identityContext, computeVelocity: () => 1 };
-    const velocity: DeviceSetting = { device: "velocity", settings: { magnetPosition: 1, magnetStrength: 1, randomAmount: 0, offset: 0, mix: 1 } };
-    expect(questionsFor([velocity, arp(0.5)], toOne, [{ ...note(60), velocity: 0.8 }])).toEqual([]);
-    expect(questionsFor([arp(0.5)], toOne, [{ ...note(60), velocity: 0.8 }])).toEqual(["arpeggio-velocity-manual-gap"]);
-  });
-  it("registers both questions and the four deviations with a source each", () => {
-    expect(QUESTIONS.map((q) => q.name).sort()).toEqual(["arpeggio-velocity-manual-gap", "pitch-drops-out-of-range"]);
-    expect(DEVIATIONS.map((d) => d.name).sort()).toEqual(["arpeggio-drops-cent", "arpeggio-uncapped-note-off", "arpeggio-velocity-matrix", "zeitgeist-warps-note-off"]);
+  it("registers the one question and the two deviations with a source each", () => {
+    expect(QUESTIONS.map((q) => q.name)).toEqual(["pitch-drops-out-of-range"]);
+    expect(DEVIATIONS.map((d) => d.name).sort()).toEqual(["arpeggio-drops-cent", "arpeggio-uncapped-note-off"]);
     for (const d of DEVIATIONS) expect(d.source).toMatch(/lib\.rs:\d+/);
     expect(Object.keys(RULE_SENTENCES).sort()).toEqual(["arpeggio", "pitch", "velocity", "zeitgeist"]);
   });
@@ -177,17 +166,20 @@ const grooveAdapter = (amount: number, duration: number) => {
 };
 
 describe("zeitgeistRule", () => {
-  it("moves the off-beat to the eased midpoint, keeps the duration under the intent and warps the off under the deviation", () => {
+  it("moves the off-beat to the eased midpoint and its note-off through the same warp, so the duration changes (openDAW#525)", () => {
     const groove = grooveAdapter(0.75, 480);
     const input: RuleNote[] = [{ position: 4080, duration: 120, pitch: 60, cent: 0, velocity: 1 }];
     // amount 0.75 -> h = 0.01 + 0.98 × 0.75 = 0.745; x = 240 / 480 = 0.5; ease = xh / ((2h - 1)(x - 1) + h) = 0.3725 / 0.5 = 0.745; × 480 = 357.6
-    const [note] = zeitgeistRule(input, groove, new Set());
+    const [note] = zeitgeistRule(input, groove);
     expect(note.position).toBeCloseTo(3840 + 357.6, 9);
-    expect(note.duration).toBe(120);
-    const [dev] = zeitgeistRule(input, groove, new Set(["zeitgeist-warps-note-off"]));
-    expect(dev.position).toBeCloseTo(3840 + 357.6, 9);
-    expect(dev.duration).toBeCloseTo(groove.warp(4200) - groove.warp(4080), 9);
-    expect(dev.duration).not.toBe(120);
+    expect(note.duration).toBeCloseTo(groove.warp(4200) - groove.warp(4080), 9);
+    expect(note.duration).not.toBe(120);
+  });
+  it("leaves a note on a cell start untouched: the warp is the identity there", () => {
+    const groove = grooveAdapter(0.75, 480);
+    const [note] = zeitgeistRule([{ position: 3840, duration: 480, pitch: 60, cent: 0, velocity: 1 }], groove);
+    expect(note.position).toBeCloseTo(3840, 9);
+    expect(note.duration).toBeCloseTo(480, 9);
   });
 });
 
@@ -316,10 +308,10 @@ describe("markReadability", () => {
 
 describe("DEVIATION_SUBSETS", () => {
   it("lists the empty set first, then singletons, then pairs", () => {
-    expect(DEVIATION_SUBSETS(["arpeggio-drops-cent", "arpeggio-velocity-matrix"]).map((s) => [...s].sort().join("+"))).toEqual(["", "arpeggio-drops-cent", "arpeggio-velocity-matrix", "arpeggio-drops-cent+arpeggio-velocity-matrix"]);
+    expect(DEVIATION_SUBSETS(["arpeggio-drops-cent", "arpeggio-uncapped-note-off"]).map((s) => [...s].sort().join("+"))).toEqual(["", "arpeggio-drops-cent", "arpeggio-uncapped-note-off", "arpeggio-drops-cent+arpeggio-uncapped-note-off"]);
   });
   it("lists 2^n sets", () => {
-    expect(DEVIATION_SUBSETS(["arpeggio-drops-cent", "arpeggio-velocity-matrix", "arpeggio-uncapped-note-off"])).toHaveLength(8);
+    expect(DEVIATION_SUBSETS(["arpeggio-drops-cent", "arpeggio-uncapped-note-off"])).toHaveLength(4);
     expect(DEVIATION_SUBSETS([])).toHaveLength(1);
   });
 });

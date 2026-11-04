@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "sdkVersion": "0.0.180",
-  "acceptedRunToken": 1793744029767,
-  "acceptedAt": "2026-11-03T22:15:12.131Z",
+  "acceptedRunToken": 1793770618258,
+  "acceptedAt": "2026-11-04T05:38:45.608Z",
   "sampleRate": 48000,
   "bpm": 120,
   "rows": {
@@ -15078,7 +15078,7 @@
           "jitterCents": 0
         }
       ],
-      "unreadable": 32
+      "unreadable": 24
     },
     "zg-amount0-dur1920-sixteenths": {
       "notes": [
@@ -15211,7 +15211,7 @@
           "jitterCents": 0
         }
       ],
-      "unreadable": 32
+      "unreadable": 28
     },
     "zg-amount0-dur3840-sixteenths": {
       "notes": [
@@ -15344,7 +15344,7 @@
           "jitterCents": 0
         }
       ],
-      "unreadable": 30
+      "unreadable": 26
     },
     "zg-amount0-dur7680-sixteenths": {
       "notes": [
@@ -15477,7 +15477,7 @@
           "jitterCents": 1137
         }
       ],
-      "unreadable": 29
+      "unreadable": 27
     },
     "zg-amount0-dur15360-sixteenths": {
       "notes": [
@@ -15889,7 +15889,7 @@
           "jitterCents": 0
         }
       ],
-      "unreadable": 32
+      "unreadable": 0
     },
     "zg-amount0.25-dur960-sixteenths": {
       "notes": [
@@ -16150,7 +16150,7 @@
           "jitterCents": 0
         }
       ],
-      "unreadable": 16
+      "unreadable": 0
     },
     "zg-amount0.25-dur1920-sixteenths": {
       "notes": [
@@ -16411,7 +16411,7 @@
           "jitterCents": 0
         }
       ],
-      "unreadable": 12
+      "unreadable": 0
     },
     "zg-amount0.25-dur3840-sixteenths": {
       "notes": [
@@ -16672,7 +16672,7 @@
           "jitterCents": 0
         }
       ],
-      "unreadable": 12
+      "unreadable": 0
     },
     "zg-amount0.25-dur7680-sixteenths": {
       "notes": [
@@ -16933,7 +16933,7 @@
           "jitterCents": 0
         }
       ],
-      "unreadable": 10
+      "unreadable": 0
     },
     "zg-amount0.25-dur15360-sixteenths": {
       "notes": [
@@ -17194,7 +17194,7 @@
           "jitterCents": 0
         }
       ],
-      "unreadable": 4
+      "unreadable": 0
     },
     "zg-amount0.25-dur30720-sixteenths": {
       "notes": [
@@ -17455,7 +17455,7 @@
           "jitterCents": 0
         }
       ],
-      "unreadable": 22
+      "unreadable": 0
     },
     "zg-amount0.25-dur61440-sixteenths": {
       "notes": [
@@ -17716,7 +17716,7 @@
           "jitterCents": 0
         }
       ],
-      "unreadable": 32
+      "unreadable": 0
     },
     "zg-amount0.5-dur480-sixteenths": {
       "notes": [
@@ -20065,7 +20065,7 @@
           "jitterCents": 0
         }
       ],
-      "unreadable": 30
+      "unreadable": 0
     },
     "zg-amount0.75-dur960-sixteenths": {
       "notes": [
@@ -20326,7 +20326,7 @@
           "jitterCents": 0
         }
       ],
-      "unreadable": 14
+      "unreadable": 0
     },
     "zg-amount0.75-dur1920-sixteenths": {
       "notes": [
@@ -20587,7 +20587,7 @@
           "jitterCents": 0
         }
       ],
-      "unreadable": 11
+      "unreadable": 0
     },
     "zg-amount0.75-dur3840-sixteenths": {
       "notes": [
@@ -20848,7 +20848,7 @@
           "jitterCents": 0
         }
       ],
-      "unreadable": 11
+      "unreadable": 0
     },
     "zg-amount0.75-dur7680-sixteenths": {
       "notes": [
@@ -21061,7 +21061,7 @@
           "jitterCents": 0
         }
       ],
-      "unreadable": 10
+      "unreadable": 0
     },
     "zg-amount0.75-dur15360-sixteenths": {
       "notes": [
@@ -21473,7 +21473,7 @@
           "jitterCents": null
         }
       ],
-      "unreadable": 30
+      "unreadable": 31
     },
     "zg-amount1-dur960-sixteenths": {
       "notes": [
@@ -21755,7 +21755,7 @@
           "jitterCents": null
         }
       ],
-      "unreadable": 31
+      "unreadable": 27
     },
     "zg-amount1-dur3840-sixteenths": {
       "notes": [
@@ -21888,7 +21888,7 @@
           "jitterCents": 1445.8
         }
       ],
-      "unreadable": 29
+      "unreadable": 27
     },
     "zg-amount1-dur7680-sixteenths": {
       "notes": [
@@ -21965,7 +21965,7 @@
           "jitterCents": 1855.6
         }
       ],
-      "unreadable": 12
+      "unreadable": 16
     },
     "zg-amount0.5-dur480-melody": {
       "notes": [
@@ -22017,7 +22017,7 @@
           "jitterCents": 1564.5
         }
       ],
-      "unreadable": 11
+      "unreadable": 16
     },
     "zg-amount1-dur480-melody": {
       "notes": [
@@ -22043,7 +22043,7 @@
           "jitterCents": 1618
         }
       ],
-      "unreadable": 15
+      "unreadable": 16
     },
     "order-arpeggio-zeitgeist": {
       "notes": [
@@ -22304,7 +22304,7 @@
           "jitterCents": 0
         }
       ],
-      "unreadable": 30
+      "unreadable": 0
     },
     "order-zeitgeist-arpeggio": {
       "notes": [

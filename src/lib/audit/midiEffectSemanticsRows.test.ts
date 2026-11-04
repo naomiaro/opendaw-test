@@ -87,11 +87,7 @@ describe("SEMANTICS_ROWS", () => {
       "",
       "arpeggio-drops-cent",
       "arpeggio-drops-cent+arpeggio-uncapped-note-off",
-      "arpeggio-drops-cent+arpeggio-uncapped-note-off+arpeggio-velocity-matrix",
-      "arpeggio-drops-cent+arpeggio-velocity-matrix",
       "arpeggio-uncapped-note-off",
-      "arpeggio-uncapped-note-off+arpeggio-velocity-matrix",
-      "arpeggio-velocity-matrix",
     ]);
   });
   it("the zeitgeist rows cover each distinct duration once (8 values, 960 once)", () => {
@@ -118,11 +114,11 @@ describe("SEMANTICS_ROWS", () => {
     const variants = predictedVariants(disabled, context);
     expect(variants.length).toBe(1);
     expect(variants[0].notes.map((n) => n.position)).toEqual(rowNotes(disabled).map((n) => n.position));
+    // a Zeitgeist has no deviation: one variant, the note-off warped with the note-on
     const shifting: RuleContext = { ...context, warp: (position) => position + (position % 480 === 240 ? 60 : 0) };
     const zg = predictedVariants(rowById("zg-amount0.75-dur480-sixteenths"), shifting);
-    expect(zg.map((v) => [...v.deviations])).toEqual([[], ["zeitgeist-warps-note-off"]]);
-    expect(zg[0].notes[1].duration).toBe(120);
-    expect(zg[1].notes[1].duration).toBe(60);
+    expect(zg.map((v) => [...v.deviations])).toEqual([[]]);
+    expect(zg[0].notes[1].duration).toBe(60);
   });
   it("rowNotes makes the pattern absolute", () => {
     const notes = rowNotes(rowById("dry-sixteenths"));

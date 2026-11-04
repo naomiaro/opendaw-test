@@ -137,10 +137,11 @@ describe("withGaps", () => {
       expect(note.velocity).toBe(melody.notes[i].velocity);
     });
   });
-  it("leaves at least 25 ms between the Melody's eighths at 120 bpm", () => {
+  it("leaves 48 pulses, 25 ms at 120 bpm, between the Melody's eighths", () => {
     const [a, b] = withGaps(patternById("melody"), 0.9).notes;
-    const gapSeconds = PPQN.pulsesToSeconds(b.position - (a.position + a.duration), PATTERN_BPM);
-    expect(gapSeconds).toBeGreaterThanOrEqual(0.025);
+    const gapPulses = b.position - (a.position + a.duration);
+    expect(gapPulses).toBe(48);
+    expect(PPQN.pulsesToSeconds(gapPulses, PATTERN_BPM)).toBeCloseTo(0.025, 9);
   });
   it("does not touch the shared pattern", () => {
     const before = patternById("bass").notes.map((n) => n.duration);

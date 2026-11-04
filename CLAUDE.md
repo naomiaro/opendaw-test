@@ -1191,7 +1191,9 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   (exports, signatures, tag-vs-publish drift) — not as the default place to read code.
   The device MANUALS live in the same checkout, `packages/app/manual/public/devices/<kind>/<device>.md`:
   they are the first source of a device's documented intent (the adapter's mapping second, the
-  crate third); where manual and crate disagree, the crate is the deviation (openDAW#524, #525).
+  crate third); where manual and crate disagree, file it and let the maintainer say which is meant: both
+  times so far the manual was wrong and corrected (openDAW#524, #525), so the crate's arithmetic became
+  the rule and the audit's deviation was retired.
 - Before documenting an SDK method or field signature in any CLAUDE.md, verify it in
   `node_modules/@opendaw/<pkg>/dist/**/*.d.ts` (installed surface is the authority).
 - Verify SDK exports: check `node_modules/@opendaw/<package>/dist/*.d.ts` before writing imports
