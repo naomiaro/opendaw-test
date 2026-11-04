@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { PPQN } from "@opendaw/lib-dsp";
 import { ArpeggioDeviceBoxAdapter, GrooveShuffleBoxAdapter } from "@opendaw/studio-adapters";
 import { ArpeggioDeviceBox, PitchDeviceBox, VelocityDeviceBox, ZeitgeistDeviceBox } from "@opendaw/studio-boxes";
+import type { EffectBox } from "@opendaw/studio-core";
 import { BAR_PPQN, PATTERN_BPM, PATTERN_PPQN } from "@/lib/midiEffects/patterns";
 import { midiEffectFixture, transact } from "@/lib/testing/boxGraphFixtures";
 import { zeitgeistGrooveBox } from "./midiEffectChain";
-import type { EffectBox } from "@opendaw/studio-core";
 import { arpeggioRule, type DeviceSetting, type RuleContext } from "./midiEffectSemanticsRules";
 import {
   ARPEGGIO_BASE, AUDIT_PATTERNS, CALIBRATION_ROW_ID, FACTORY_KEYS, QUICK_IDS, HELD_NOTE, PITCH_BASE, REGION_DURATION_PPQN, REGION_POSITION_PPQN, SAMPLE_SECONDS,
@@ -199,9 +199,9 @@ describe("applySettings", () => {
 describe("settingsOf", () => {
   it("round-trips every device through applySettings", () => {
     for (const setting of [
-      { device: "arpeggio", settings: { ...ARPEGGIO_BASE, modeIndex: 2, gate: 0.75, repeat: 3 } },
+      { device: "arpeggio", settings: { modeIndex: 2, numOctaves: 3, rateIndex: 5, gate: 0.75, repeat: 3, velocity: 0.5 } },
       { device: "pitch", settings: { semiTones: 7, cents: -25, octaves: -1 } },
-      { device: "velocity", settings: { ...VELOCITY_BASE, randomAmount: 0.5, offset: -0.25 } },
+      { device: "velocity", settings: { magnetPosition: 0.25, magnetStrength: 0.5, randomAmount: 0.5, offset: -0.25, mix: 0.75 } },
       { device: "zeitgeist", settings: { amount: 0.75, duration: 960 } },
     ] as DeviceSetting[]) {
       const fixture = midiEffectFixture(setting.device);
