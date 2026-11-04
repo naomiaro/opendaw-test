@@ -458,6 +458,10 @@ Pitch first and 10 with the filter first. Every old row as registered; the 18 `n
 The verdict column is identical across the two rates, row for row. Reference peak 0.7079 / 0.7078,
 instrument offset 6 frames at both rates, as before.
 
+Both runs accepted as the registers (`register/48000.json` from 1793823134245, `register/44100.json`
+from 1793823187726): 263 rows each, the 230 earlier entries unchanged entry for entry. Re-run
+1793823764790 (48 kHz) against the new register: 263 `as-registered`, 0 `changed`, 0 `unregistered`.
+
 ## Reading
 
 - **The Arpeggio walks the absolute grid, in every mode, at every octave count, rate and repeat,
@@ -530,8 +534,8 @@ runs its full gate length past the held note's release.
 ## Status
 
 **Standing regression check after SDK upgrades** (root CLAUDE.md, "Build & Verification"; the
-current registers are the 2026-11-04 re-accept on the corrected manuals; on the rule as it stands
-they read 211 holds / 1 deviation / 18 no rule per rate):
+current registers are the 2026-11-04 accept with the Note Filter rows, on the corrected manuals; on
+the rule as it stands they read 244 holds / 1 deviation / 18 no rule per rate, 263 rows):
 `?rows=all` at 48 kHz, then `?rate=44100`; expect every row `as-registered`, `as-registered,
 matches-known-deviation …` or `no rule`. A `changed` row is the finding: read its first mismatch
 against the crate before anything else. A `matches-known-deviation` the register lists is not a
