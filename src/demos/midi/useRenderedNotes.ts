@@ -25,12 +25,20 @@ import { RenderScheduler, type SchedulerStatus } from "@/lib/midiEffects/renderS
 import { predictChain, renderedRows, type ChainSetting, type MarkOptions, type RenderedRows } from "@/lib/midiEffects/renderedNotes";
 import type { ChainEntry } from "./useMidiChain";
 
-export interface RenderedState {
-  status: "calibrating" | "idle" | "stale" | "rendering" | "error";
-  rows: RenderedRows | null;
-  error: string | null;
-  renderMs: number | null;
+/** The last render that finished: its rows and how long the offline render took. */
+export interface LastRender {
+  readonly rows: RenderedRows;
+  readonly renderMs: number;
 }
+
+/** What the page draws: nothing before calibration, then the last finished render (if any) under a status. */
+export type RenderedState =
+  | { readonly status: "calibrating" }
+  | { readonly status: "error"; readonly error: string; readonly last: LastRender | null }
+  | { readonly status: "idle" | "stale" | "rendering"; readonly last: LastRender | null };
+
+/** The last finished render of a state, null while calibrating or before the first one. */
+export const lastRenderOf = (state: RenderedState): LastRender | null => (state.status === "calibrating" ? null : state.last);
 
 export interface RenderedNotesOptions {
   project: Project | null;
@@ -97,17 +105,17 @@ function ruleContext(project: Project, entries: readonly ChainEntry[], bpm: numb
   return context;
 }
 
-interface RenderState {
+interface HookState {
   scheduler: SchedulerStatus;
-  rows: RenderedRows | null;
+  last: LastRender | null;
+  /** the last render's failure; stands until a render succeeds */
   error: string | null;
-  renderMs: number | null;
 }
 
 export function useRenderedNotes(options: RenderedNotesOptions): RenderedState {
   const { project, audioUnitBox, entries, pattern, bpm, rate, calibration, calibrationError = null } = options;
   const active = calibrationError === null && calibration !== null && project !== null && audioUnitBox !== null;
-  const [state, setState] = useState<RenderState>({ scheduler: "stale", rows: null, error: null, renderMs: null });
+  const [state, setState] = useState<HookState>({ scheduler: "stale", last: null, error: null });
   const latest = useRef(options);
   latest.current = options;
   const schedulerRef = useRef<RenderScheduler | null>(null);
@@ -127,7 +135,7 @@ export function useRenderedNotes(options: RenderedNotesOptions): RenderedState {
       const rows = renderedRows(read, prediction, pattern, bpm, readAt);
       // a scheduler disposed while this render ran (unmount, calibration lost) owns no state any more
       if (schedulerRef.current !== scheduler) return;
-      setState((previous) => ({ ...previous, rows, renderMs, error: null }));
+      setState((previous) => ({ ...previous, last: { rows, renderMs }, error: null }));
     };
     const scheduler = new RenderScheduler(run, {
       settleMs: SETTLE_MS,
@@ -167,9 +175,9 @@ export function useRenderedNotes(options: RenderedNotesOptions): RenderedState {
     return () => subscriptions.forEach((subscription) => subscription.terminate());
   }, [active, project, entries]);
 
-  if (calibrationError !== null) return { status: "error", rows: state.rows, error: calibrationError, renderMs: state.renderMs };
-  if (!active) return { status: "calibrating", rows: state.rows, error: null, renderMs: state.renderMs };
+  if (calibrationError !== null) return { status: "error", error: calibrationError, last: state.last };
+  if (!active) return { status: "calibrating" };
   // an error stands until the next render succeeds; a render under way or due reads as such
-  const status = state.scheduler === "idle" && state.error !== null ? "error" : state.scheduler;
-  return { status, rows: state.rows, error: state.error, renderMs: state.renderMs };
+  if (state.scheduler === "idle" && state.error !== null) return { status: "error", error: state.error, last: state.last };
+  return { status: state.scheduler, last: state.last };
 }

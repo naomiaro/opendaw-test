@@ -23,7 +23,7 @@ export interface LaneNote {
   readonly hollow?: boolean;
   /** the bar's left and right edges drawn as dashed lines over the fill */
   readonly dashedEdges?: boolean;
-  /** drawn just right of the bar's left edge, inside its row */
+  /** drawn just right of the bar's left edge, inside its row, and only where the bar is wide enough to hold it */
   readonly label?: string;
 }
 
@@ -47,13 +47,15 @@ export interface NoteLaneProps {
   /** pulses per beat and per bar, for the grid */
   beatPpqn?: number;
   barPpqn?: number;
+  /** ppqn spans shaded over the lane's full height, under the grid and the notes (read inside the paint) */
+  shadedSpans?: () => readonly { readonly from: number; readonly to: number }[];
 }
 
 const MARK_HEIGHT = 3;
 const BORDER = "1px solid var(--mc-line)";
 
 export const NoteLane = forwardRef<NoteLaneHandle, NoteLaneProps>(function NoteLane(
-  { title, caption, notes, rangePpqn, pitchLow, pitchHigh, height, shadeByVelocity, position, beatPpqn = 960, barPpqn = 3840 },
+  { title, caption, notes, rangePpqn, pitchLow, pitchHigh, height, shadeByVelocity, position, beatPpqn = 960, barPpqn = 3840, shadedSpans },
   ref
 ) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -61,8 +63,8 @@ export const NoteLane = forwardRef<NoteLaneHandle, NoteLaneProps>(function NoteL
   const outOfRangeRef = useRef<HTMLSpanElement>(null);
   const painterRef = useRef<CanvasPainter | null>(null);
   // Props the paint reads, kept current without re-creating the painter.
-  const propsRef = useRef({ notes, rangePpqn, pitchLow, pitchHigh, shadeByVelocity, position, beatPpqn, barPpqn });
-  propsRef.current = { notes, rangePpqn, pitchLow, pitchHigh, shadeByVelocity, position, beatPpqn, barPpqn };
+  const propsRef = useRef({ notes, rangePpqn, pitchLow, pitchHigh, shadeByVelocity, position, beatPpqn, barPpqn, shadedSpans });
+  propsRef.current = { notes, rangePpqn, pitchLow, pitchHigh, shadeByVelocity, position, beatPpqn, barPpqn, shadedSpans };
 
   useImperativeHandle(ref, () => ({ requestUpdate: () => painterRef.current?.requestUpdate() }), []);
 
@@ -70,7 +72,7 @@ export const NoteLane = forwardRef<NoteLaneHandle, NoteLaneProps>(function NoteL
     const canvas = canvasRef.current;
     if (!canvas) return undefined;
     const painter = new CanvasPainter(canvas, (_painter, context) => {
-      const { notes, rangePpqn, pitchLow, pitchHigh, shadeByVelocity, position, beatPpqn, barPpqn } = propsRef.current;
+      const { notes, rangePpqn, pitchLow, pitchHigh, shadeByVelocity, position, beatPpqn, barPpqn, shadedSpans } = propsRef.current;
       const width = canvas.clientWidth;
       const height = canvas.clientHeight;
       if (rangePpqn <= 0 || beatPpqn <= 0 || barPpqn <= 0 || pitchHigh < pitchLow) return;
@@ -80,6 +82,10 @@ export const NoteLane = forwardRef<NoteLaneHandle, NoteLaneProps>(function NoteL
 
       context.fillStyle = CANVAS_COLORS.bg;
       context.fillRect(0, 0, width, height);
+      if (shadedSpans) {
+        context.fillStyle = CANVAS_COLORS.shade;
+        for (const span of shadedSpans()) context.fillRect(x(span.from), 0, Math.max(x(span.to) - x(span.from), 1), height);
+      }
       for (let p = 0; p < rangePpqn; p += beatPpqn) {
         context.strokeStyle = p % barPpqn === 0 ? CANVAS_COLORS.gridSupporting : CANVAS_COLORS.gridTertiary;
         context.beginPath();

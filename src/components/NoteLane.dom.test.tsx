@@ -69,17 +69,47 @@ describe("NoteLane", () => {
     expect(fillRects(ctx.calls).map(args).some(([x, , w]) => x === 100 && w === 100)).toBe(true);
   });
 
-  it("a zero beat grid does not hang the paint", () => {
+  it("a zero beat grid does not hang the paint: the paint draws nothing, and draws again once the grid is valid", () => {
+    const ctx = installFakeContext2d();
+    const frames = driveFrames();
+    const ref = createRef<NoteLaneHandle>();
+    const lane = (beatPpqn: number) => (
+      <NoteLane ref={ref} title="t" notes={() => [{ pitch: 60, from: 1920, to: 3840 }]} rangePpqn={RANGE} pitchLow={36} pitchHigh={96} height={96} shadeByVelocity={false} beatPpqn={beatPpqn} />
+    );
+    const { container, rerender } = render(lane(0));
+    const canvas = container.querySelector("canvas")!;
+    layOut(canvas, { left: 0, top: 0, width: WIDTH, height: 96 });
+    resize(canvas);
+    frames.tick();
+    expect(fillRects(ctx.calls)).toEqual([]);
+
+    // the positive control: the same painter, a valid grid, one repaint draws the background exactly once
+    rerender(lane(960));
+    act(() => ref.current!.requestUpdate());
+    frames.tick();
+    expect(fillRects(ctx.calls).filter((c) => c === `fillRect(0,0,${WIDTH},96)`)).toHaveLength(1);
+  });
+
+  it("shades a span over the full height, after the background and before the grid and the notes", () => {
     const ctx = installFakeContext2d();
     const frames = driveFrames();
     const { container } = render(
-      <NoteLane title="t" notes={() => []} rangePpqn={RANGE} pitchLow={36} pitchHigh={96} height={96} shadeByVelocity={false} beatPpqn={0} />
+      <NoteLane
+        title="t" notes={() => [{ pitch: 60, from: 5760, to: 6720 }]} rangePpqn={RANGE} pitchLow={36} pitchHigh={96} height={96}
+        shadeByVelocity={false} shadedSpans={() => [{ from: 1920, to: 3840 }]}
+      />
     );
     const canvas = container.querySelector("canvas")!;
     layOut(canvas, { left: 0, top: 0, width: WIDTH, height: 96 });
     resize(canvas);
     frames.tick();
-    expect(ctx.calls.length).toBeGreaterThanOrEqual(0);
+    // 1920..3840 of 7680 over 400 px: x 100, 100 wide, the lane's full 96 px
+    const span = ctx.calls.indexOf("fillRect(100,0,100,96)");
+    expect(span).toBeGreaterThan(ctx.calls.indexOf(`fillRect(0,0,${WIDTH},96)`));
+    expect(span).toBeLessThan(ctx.calls.indexOf("stroke()"));
+    expect(span).toBeLessThan(ctx.calls.findIndex((c) => c.startsWith("fillRect(300,")));
+    const fill = ctx.sets.filter((s) => s.set.startsWith("fillStyle=") && s.at <= span).at(-1);
+    expect(fill?.set).toBe("fillStyle=#221d15");
   });
 
   it("fills a shaded bar with the velocity ramp colour", () => {

@@ -11,7 +11,9 @@ import { REGION_POSITION_PPQN, renderSeconds } from "@/lib/audit/midiEffectSeman
 import type { Pattern } from "@/lib/midiEffects/patterns";
 import { renderOfflineSlice } from "@/lib/offlineScan";
 import type { ChainEntry } from "./useMidiChain";
-import { calibrateRendered, renderChannel, useRenderedNotes, type RenderedNotesOptions, type RenderFn } from "./useRenderedNotes";
+import {
+  calibrateRendered, lastRenderOf, renderChannel, useRenderedNotes, type RenderedNotesOptions, type RenderedState, type RenderFn,
+} from "./useRenderedNotes";
 
 // `offlineScan` imports `@opendaw/studio-core`, whose `EngineWorklet` extends `AudioWorkletNode` at module load, which jsdom
 // does not have. The hook's tests pass their own `render`; the mock lets `renderChannel`'s wiring be checked without an engine.
@@ -55,6 +57,9 @@ const options = (overrides: Partial<RenderedNotesOptions>): RenderedNotesOptions
   project: PROJECT, audioUnitBox: AUDIO_UNIT_BOX, entries: NO_ENTRIES, pattern: ONE_NOTE, bpm: BPM, rate: RATE, calibration: CALIBRATION, ...overrides,
 });
 
+const rowsOf = (state: RenderedState) => lastRenderOf(state)?.rows ?? null;
+const errorOf = (state: RenderedState) => (state.status === "error" ? state.error : null);
+
 /** Fires the settle timer and lets the render's promise chain run. */
 const settle = () => act(async () => { await vi.advanceTimersByTimeAsync(SETTLE_MS); });
 const flush = () => act(async () => { await vi.advanceTimersByTimeAsync(0); });
@@ -69,7 +74,7 @@ describe("useRenderedNotes", () => {
     expect(result.current.status).toBe("calibrating");
     await settle();
     expect(render).not.toHaveBeenCalled();
-    expect(result.current).toEqual({ status: "calibrating", rows: null, error: null, renderMs: null });
+    expect(result.current).toEqual({ status: "calibrating" });
   });
 
   it("a calibration error is the error state and never requests a render", async () => {
@@ -78,12 +83,12 @@ describe("useRenderedNotes", () => {
       initialProps: options({ calibrationError: "read 31 notes, expected 32", render }),
     });
     expect(result.current.status).toBe("error");
-    expect(result.current.error).toBe("read 31 notes, expected 32");
+    expect(errorOf(result.current)).toBe("read 31 notes, expected 32");
     await settle();
     rerender(options({ calibrationError: "read 31 notes, expected 32", render, pattern: TWO_NOTES }));
     await settle();
     expect(render).not.toHaveBeenCalled();
-    expect(result.current).toEqual({ status: "error", rows: null, error: "read 31 notes, expected 32", renderMs: null });
+    expect(result.current).toEqual({ status: "error", error: "read 31 notes, expected 32", last: null });
   });
 
   it("requests a render when the pattern changes and goes stale → rendering → idle with rows", async () => {
@@ -105,12 +110,13 @@ describe("useRenderedNotes", () => {
     expect(result.current.status).toBe("rendering");
     await act(async () => { calls[1].resolve(channelWithNotes([0, PPQN.Quarter])); });
     expect(result.current.status).toBe("idle");
-    const rows = result.current.rows;
-    if (rows === null) throw new Error("no rows after a finished render");
-    expect(rows.ghosts).toHaveLength(2);
-    expect(rows.notes.map((note) => [note.pitch, note.measured])).toEqual([[69, true], [69, true]]);
-    expect(result.current.error).toBeNull();
-    expect(result.current.renderMs).not.toBeNull();
+    const last = lastRenderOf(result.current);
+    if (last === null) throw new Error("no rows after a finished render");
+    expect(last.rows.ghosts).toHaveLength(2);
+    // read from the render: solid, edges measured
+    expect(last.rows.notes.map((note) => [note.pitch, note.hollow === true, note.dashedEdges === true])).toEqual([[69, false, false], [69, false, false]]);
+    expect(errorOf(result.current)).toBeNull();
+    expect(Number.isFinite(last.renderMs)).toBe(true);
   });
 
   it("reads the stub's one note as one measured note", async () => {
@@ -120,10 +126,11 @@ describe("useRenderedNotes", () => {
     await flush();
     expect(render).toHaveBeenCalledWith(PROJECT, renderSeconds(BPM), RATE);
     expect(result.current.status).toBe("idle");
-    const rows = result.current.rows;
+    const rows = rowsOf(result.current);
     if (rows === null) throw new Error("no rows after a finished render");
     expect(rows.notes).toHaveLength(1);
-    expect(rows.notes[0]).toMatchObject({ pitch: 69, measured: true });
+    expect(rows.notes[0]).toMatchObject({ pitch: 69 });
+    expect(rows.notes[0].hollow).toBeUndefined();
     expect(rows.notes[0].velocity).toBeCloseTo(1, 2);
     expect(rows.stems).toHaveLength(1);
   });
@@ -135,12 +142,12 @@ describe("useRenderedNotes", () => {
     });
     await settle();
     await flush();
-    const first = result.current.rows;
+    const first = rowsOf(result.current);
     expect(first).not.toBeNull();
 
     rerender(options({ render, pattern: TWO_NOTES }));
     expect(result.current.status).toBe("stale");
-    expect(result.current.rows).toBe(first);
+    expect(rowsOf(result.current)).toBe(first);
     expect(render).toHaveBeenCalledTimes(1);
   });
 
@@ -152,15 +159,15 @@ describe("useRenderedNotes", () => {
     });
     await settle();
     await act(async () => { calls[0].resolve(channelWithNotes([0])); });
-    const first = result.current.rows;
+    const first = rowsOf(result.current);
     expect(first).not.toBeNull();
 
     rerender(options({ render, pattern: TWO_NOTES }));
     await settle();
     await act(async () => { calls[1].reject(new Error("boom")); });
     expect(result.current.status).toBe("error");
-    expect(result.current.error).toBe("boom");
-    expect(result.current.rows).toBe(first);
+    expect(errorOf(result.current)).toBe("boom");
+    expect(rowsOf(result.current)).toBe(first);
     expect(consoleError).toHaveBeenCalledTimes(1);
     expect(consoleError).toHaveBeenCalledWith("[midi-rendered] render failed: boom");
 
@@ -169,7 +176,7 @@ describe("useRenderedNotes", () => {
     await settle();
     await act(async () => { calls[2].resolve(channelWithNotes([0])); });
     expect(result.current.status).toBe("idle");
-    expect(result.current.error).toBeNull();
+    expect(errorOf(result.current)).toBeNull();
   });
 
   it("a pattern change during a render leaves the rows stale until the follow-up lands", async () => {
@@ -185,16 +192,16 @@ describe("useRenderedNotes", () => {
     await act(async () => { calls[0].resolve(channelWithNotes([0])); });
     // the first render's rows are the one-note pattern's and read stale: a follow-up is due
     expect(result.current.status).toBe("stale");
-    expect(result.current.rows?.ghosts).toHaveLength(1);
+    expect(rowsOf(result.current)?.ghosts).toHaveLength(1);
     expect(calls).toHaveLength(1);
 
     await settle();
     expect(calls).toHaveLength(2);
     expect(result.current.status).toBe("rendering");
-    expect(result.current.rows?.ghosts).toHaveLength(1);
+    expect(rowsOf(result.current)?.ghosts).toHaveLength(1);
     await act(async () => { calls[1].resolve(channelWithNotes([0, PPQN.Quarter])); });
     expect(result.current.status).toBe("idle");
-    expect(result.current.rows?.ghosts).toHaveLength(2);
+    expect(rowsOf(result.current)?.ghosts).toHaveLength(2);
   });
 
   it("stops rendering on unmount", async () => {

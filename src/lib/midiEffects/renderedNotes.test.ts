@@ -80,7 +80,7 @@ describe("renderedRows", () => {
     const prediction = predict([note(0, 480, 60, 0.8)]);
     expect(prediction.predicted[0].readability).toBe("readable");
     const rows = renderedRows([fig(REGION_MS + 1, REGION_MS + 240, 61, 0.7, 0.4)], prediction, melody, bpm, noRead);
-    expect(rows.notes).toEqual([{ pitch: 61, from: msToRegionPpqn(2001, bpm), to: msToRegionPpqn(2240, bpm), velocity: 0.7, measured: true }]);
+    expect(rows.notes).toEqual([{ pitch: 61, from: msToRegionPpqn(2001, bpm), to: msToRegionPpqn(2240, bpm), velocity: 0.7 }]);
     expect(rows.notes[0].from).toBeCloseTo(1.92, 2); // the read onset, not the predicted 0
     expect(rows.stems).toEqual([{ at: msToRegionPpqn(2001, bpm), velocity: 0.7 }]);
     expect(rows.unreadable).toEqual([]);
@@ -92,8 +92,8 @@ describe("renderedRows", () => {
     const prediction = predict([note(0, 480, 60)]);
     const rows = renderedRows([fig(REGION_MS + 8, 2240, null, 0.3), fig(REGION_MS - 2, 2230, null, 0.6)], prediction, melody, bpm, noRead);
     expect(rows.notes).toEqual([
-      { pitch: 60, from: msToRegionPpqn(1998, bpm), to: msToRegionPpqn(2230, bpm), velocity: 0.6, measured: true, hollow: true, label: "no pitch" },
-      { pitch: 0, from: msToRegionPpqn(2008, bpm), to: msToRegionPpqn(2240, bpm), velocity: 0.3, measured: true, hollow: true, label: "no pitch" },
+      { pitch: 60, from: msToRegionPpqn(1998, bpm), to: msToRegionPpqn(2230, bpm), velocity: 0.6, hollow: true, label: "no pitch" },
+      { pitch: 0, from: msToRegionPpqn(2008, bpm), to: msToRegionPpqn(2240, bpm), velocity: 0.3, hollow: true, label: "no pitch" },
     ]);
     expect(rows.stems.map((s) => s.velocity)).toEqual([0.6, 0.3]);
     expect(MATCH_MS).toBe(10);
@@ -113,7 +113,7 @@ describe("renderedRows", () => {
 
   it("a matched figure with no pitch is hollow, labelled no pitch, on the predicted row", () => {
     const rows = renderedRows([fig(REGION_MS, 2200, null, 0.5)], predict([note(0, 480, 67)]), melody, bpm, noRead);
-    expect(rows.notes).toEqual([{ pitch: 67, from: 0, to: msToRegionPpqn(2200, bpm), velocity: 0.5, measured: true, hollow: true, label: "no pitch" }]);
+    expect(rows.notes).toEqual([{ pitch: 67, from: 0, to: msToRegionPpqn(2200, bpm), velocity: 0.5, hollow: true, label: "no pitch" }]);
     expect(rows.stems).toEqual([{ at: 0, velocity: 0.5 }]);
   });
 
@@ -123,8 +123,8 @@ describe("renderedRows", () => {
     const read = [fig(REGION_MS + 0.5, 2990, null, 0.9), fig(6100, 6200, 69, 0.4)];
     const rows = renderedRows(read, prediction, patternById("chords"), bpm, noRead);
     expect(rows.unreadable).toEqual([{ from: 0, to: 7680, reason: "polyphonic" }]); // four half-bar triads, touching, one span
-    expect(rows.sentence).toBe("The reader reads one voice at a time: these notes overlap. Use a one-voice pattern, or an Arpeggio with a gate under 100 %.");
-    expect(rows.notes).toEqual([{ pitch: 69, from: msToRegionPpqn(6100, bpm), to: msToRegionPpqn(6200, bpm), velocity: 0.4, measured: true }]);
+    expect(rows.sentence).toBe("The reader reads one voice at a time: the notes in the shaded spans overlap. Use a one-voice pattern, or an Arpeggio with a gate under 100 %.");
+    expect(rows.notes).toEqual([{ pitch: 69, from: msToRegionPpqn(6100, bpm), to: msToRegionPpqn(6200, bpm), velocity: 0.4 }]);
     expect(rows.stems).toEqual([{ at: msToRegionPpqn(6100, bpm), velocity: 0.4 }]);
   });
 
@@ -133,7 +133,7 @@ describe("renderedRows", () => {
     const prediction = predict([note(0, 480, 60), note(0, 480, 64), note(0, 480, 67), note(500, 400, 72)]);
     expect(prediction.predicted.map((n) => n.readability)).toEqual(["polyphonic", "polyphonic", "polyphonic", "readable"]);
     const rows = renderedRows([fig(REGION_MS + 251, 2400, 72, 0.9)], prediction, melody, bpm, noRead);
-    expect(rows.notes).toEqual([{ pitch: 72, from: 500, to: 900, hollow: true, label: "silent", measured: false }]);
+    expect(rows.notes).toEqual([{ pitch: 72, from: 500, to: 900, hollow: true, label: "silent" }]);
     expect(rows.stems).toEqual([]);
   });
 
@@ -156,9 +156,9 @@ describe("renderedRows", () => {
     const rows = renderedRows([fig(REGION_MS, 2500, 61, 0.5)], prediction, melody, bpm, readAt);
     expect(calls).toEqual([[2000, 2250], [2250, 2500]]);
     expect(rows.notes).toEqual([
-      { pitch: 61, from: 0, to: 480, velocity: 0.55, dashedEdges: true, measured: false, label: "+30¢" },
+      { pitch: 61, from: 0, to: 480, velocity: 0.55, dashedEdges: true, label: "+30¢" },
       // a figure without a pitch measures nothing to draw: hollow, the predicted pitch only places the row, no velocity, no stem
-      { pitch: 62, from: 480, to: 960, hollow: true, dashedEdges: true, measured: false, label: "no pitch" },
+      { pitch: 62, from: 480, to: 960, hollow: true, dashedEdges: true, label: "no pitch" },
     ]);
     expect(rows.stems).toEqual([{ at: 0, velocity: 0.55 }]);
     expect(rows.unreadable).toEqual([]);
@@ -171,8 +171,8 @@ describe("renderedRows", () => {
     // the figure the reader made of the short note is that note's, not an extra
     const rows = renderedRows([fig(REGION_MS, 2010, null, 0.8)], prediction, melody, bpm, noRead);
     expect(rows.notes).toEqual([
-      { pitch: 60, from: 0, to: 20, hollow: true, label: "too short", measured: false },
-      { pitch: 64, from: 960, to: 1440, hollow: true, label: "too quiet", measured: false },
+      { pitch: 60, from: 0, to: 20, hollow: true, label: "too short" },
+      { pitch: 64, from: 960, to: 1440, hollow: true, label: "too quiet" },
     ]);
     expect(rows.stems).toEqual([]);
   });
@@ -183,8 +183,8 @@ describe("renderedRows", () => {
     expect(prediction.predicted.map((n) => n.readability)).toEqual(["too-short", "readable"]);
     const rows = renderedRows([fig(REGION_MS + 10, 2012, 60, 0.8)], prediction, melody, bpm, noRead);
     expect(rows.notes).toEqual([
-      { pitch: 60, from: 0, to: 20, hollow: true, label: "too short", measured: false },
-      { pitch: 64, from: 26, to: 506, hollow: true, label: "silent", measured: false },
+      { pitch: 60, from: 0, to: 20, hollow: true, label: "too short" },
+      { pitch: 64, from: 26, to: 506, hollow: true, label: "silent" },
     ]);
     expect(rows.stems).toEqual([]);
   });
@@ -194,16 +194,16 @@ describe("renderedRows", () => {
     const prediction = predictChain(chain, context, melody, bpm, mark);
     const rows = renderedRows([], prediction, melody, bpm, noRead);
     expect(rows.notes).toHaveLength(prediction.silenced.length);
-    expect(rows.notes.every((n) => n.hollow === true && n.label === "silent" && !n.measured)).toBe(true);
-    expect(rows.notes[0]).toEqual({ pitch: 60, from: 0, to: 120, hollow: true, label: "silent", measured: false });
+    expect(rows.notes.every((n) => n.hollow === true && n.label === "silent" && n.dashedEdges !== true)).toBe(true);
+    expect(rows.notes[0]).toEqual({ pitch: 60, from: 0, to: 120, hollow: true, label: "silent" });
     expect(rows.stems).toEqual([]);
   });
 
   it("keeps an unmatched read note outside every span, hollow with no pitch when the pitch is null", () => {
     const rows = renderedRows([fig(3000, 3200, 64, 0.6), fig(2100, 2300, null, 0.5)], { predicted: [], silenced: [] }, melody, bpm, noRead);
     expect(rows.notes).toEqual([
-      { pitch: 0, from: msToRegionPpqn(2100, bpm), to: msToRegionPpqn(2300, bpm), velocity: 0.5, measured: true, hollow: true, label: "no pitch" },
-      { pitch: 64, from: msToRegionPpqn(3000, bpm), to: msToRegionPpqn(3200, bpm), velocity: 0.6, measured: true },
+      { pitch: 0, from: msToRegionPpqn(2100, bpm), to: msToRegionPpqn(2300, bpm), velocity: 0.5, hollow: true, label: "no pitch" },
+      { pitch: 64, from: msToRegionPpqn(3000, bpm), to: msToRegionPpqn(3200, bpm), velocity: 0.6 },
     ]);
     expect(rows.stems).toEqual([{ at: msToRegionPpqn(2100, bpm), velocity: 0.5 }, { at: msToRegionPpqn(3000, bpm), velocity: 0.6 }]);
     expect(rows.sentence).toBeNull();
@@ -212,8 +212,8 @@ describe("renderedRows", () => {
   it("a readable predicted note with no read counterpart is hollow and labelled silent", () => {
     const rows = renderedRows([fig(REGION_MS + MATCH_MS + 1, 2200, 60, 0.7)], predict([note(0, 480, 60)]), melody, bpm, noRead);
     expect(rows.notes).toEqual([
-      { pitch: 60, from: 0, to: 480, hollow: true, label: "silent", measured: false },
-      { pitch: 60, from: msToRegionPpqn(2011, bpm), to: msToRegionPpqn(2200, bpm), velocity: 0.7, measured: true },
+      { pitch: 60, from: 0, to: 480, hollow: true, label: "silent" },
+      { pitch: 60, from: msToRegionPpqn(2011, bpm), to: msToRegionPpqn(2200, bpm), velocity: 0.7 },
     ]);
     expect(rows.stems).toEqual([{ at: msToRegionPpqn(2011, bpm), velocity: 0.7 }]);
   });

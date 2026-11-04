@@ -31,7 +31,7 @@ import type { RenderedRows } from "@/lib/midiEffects/renderedNotes";
 import { useMidiChain } from "./useMidiChain";
 import { MidiEffectCard } from "./MidiEffectCard";
 import { MidiChainSections } from "./MidiChainSections";
-import { calibrateRendered, useRenderedNotes, type RenderedState } from "./useRenderedNotes";
+import { calibrateRendered, lastRenderOf, useRenderedNotes, type RenderedState } from "./useRenderedNotes";
 import "@radix-ui/themes/styles.css";
 import { Theme, Container, Text, Button, Flex, Select, Callout, Code } from "@radix-ui/themes";
 import { PlayIcon, StopIcon } from "@radix-ui/react-icons";
@@ -65,9 +65,9 @@ function laneNotes(pattern: Pattern): LaneNote[] {
 }
 
 function renderedCaption(rendered: RenderedState): string {
-  const { status, rows, error, renderMs } = rendered;
+  const last = lastRenderOf(rendered);
   const parts: string[] = [];
-  switch (status) {
+  switch (rendered.status) {
     case "calibrating":
       parts.push("calibrating the reader…");
       break;
@@ -76,14 +76,17 @@ function renderedCaption(rendered: RenderedState): string {
       parts.push("rendering…");
       break;
     case "error":
-      parts.push(error ?? "the render failed");
+      parts.push(rendered.error);
       break;
     case "idle":
-      parts.push(`read back from an offline render of the chain: onset, end, pitch, cents, velocity · ${Math.round(renderMs ?? 0)} ms`);
+      parts.push("read back from an offline render of the chain: onset, end, pitch, cents, velocity");
       break;
   }
-  if (rows !== null && rows.sentence !== null) parts.push(rows.sentence);
-  if (rows !== null && rows.notes.some((note) => note.dashedEdges === true)) parts.push(DASHED_SENTENCE);
+  if (last !== null) {
+    if (rendered.status === "idle") parts.push(`${Math.round(last.renderMs)} ms`);
+    if (last.rows.sentence !== null) parts.push(last.rows.sentence);
+    if (last.rows.notes.some((note) => note.dashedEdges === true)) parts.push(DASHED_SENTENCE);
+  }
   return parts.join(" · ");
 }
 
@@ -113,8 +116,9 @@ function MidiEffectsRenderedDemo() {
   const heldRef = useRef<NoteEventBox[]>([]);
   const gappedRef = useRef<Pattern>(gappedPattern);
   gappedRef.current = gappedPattern;
-  const rowsRef = useRef<RenderedRows | null>(rendered.rows);
-  rowsRef.current = rendered.rows;
+  const renderedRowsNow = lastRenderOf(rendered)?.rows ?? null;
+  const rowsRef = useRef<RenderedRows | null>(renderedRowsNow);
+  rowsRef.current = renderedRowsNow;
   const writtenLane = useRef<NoteLaneHandle>(null);
   const renderedLane = useRef<NoteLaneHandle>(null);
   const strip = useRef<VelocityStripHandle>(null);
@@ -170,7 +174,7 @@ function MidiEffectsRenderedDemo() {
   useEffect(() => {
     renderedLane.current?.requestUpdate();
     strip.current?.requestUpdate();
-  }, [rendered.rows]);
+  }, [renderedRowsNow]);
 
   const reseekIfPlaying = useCallback(() => {
     if (project && project.engine.isPlaying.getValue()) project.engine.setPosition(REGION_START_PPQN);
@@ -216,6 +220,7 @@ function MidiEffectsRenderedDemo() {
   const renderedNotes = useCallback((): readonly LaneNote[] => rowsRef.current?.notes ?? [], []);
   const ghosts = useCallback((): readonly Stem[] => rowsRef.current?.ghosts ?? [], []);
   const stems = useCallback((): readonly Stem[] => rowsRef.current?.stems ?? [], []);
+  const unreadable = useCallback(() => rowsRef.current?.unreadable ?? [], []);
 
   const currentPattern = patternById(patternId);
   const dimmed = rendered.status === "stale" || rendered.status === "rendering" || rendered.status === "calibrating";
@@ -307,6 +312,7 @@ function MidiEffectsRenderedDemo() {
               shadeByVelocity
               position={position}
               barPpqn={BAR_PPQN}
+              shadedSpans={unreadable}
             />
           </div>
           <div style={{ opacity: dimmed ? 0.5 : 1 }}>

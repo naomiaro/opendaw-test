@@ -16,6 +16,9 @@ import type { UnitParameter } from "@/lib/parameterBinding";
 
 export type DeviceId = "arpeggio" | "pitch" | "velocity" | "zeitgeist";
 
+/** The two pages whose lanes a device card describes: the MIDI Effects page and the Rendered page. */
+export type LanePage = "effects" | "rendered";
+
 /** Tab order on the page. */
 export const DEVICE_IDS: readonly DeviceId[] = ["arpeggio", "pitch", "velocity", "zeitgeist"];
 
@@ -33,7 +36,7 @@ export interface DeviceSpec {
   /** What to listen for on the patterns, one or two sentences. */
   readonly listenFor: string;
   /** What the page's lower lanes show of the device, per page; null where there is nothing to add. */
-  readonly laneNote: { readonly effects: string | null; readonly rendered: string | null };
+  readonly laneNote: Readonly<Record<LanePage, string | null>>;
   /** The insert and one parameter write, as a visitor would code it. */
   readonly snippet: string;
 }

@@ -24,8 +24,6 @@ export interface Prediction { predicted: PredictedNote[]; silenced: RuleNote[] }
 
 export type MarkOptions = Parameters<typeof markReadability>[2];
 
-export interface RenderedNote extends LaneNote { readonly measured: boolean }
-
 export interface UnreadableSpan {
   /** ppqn, region-local */
   readonly from: number;
@@ -34,12 +32,19 @@ export interface UnreadableSpan {
   readonly reason: "polyphonic" | "overlap";
 }
 
-export interface RenderedRows { notes: RenderedNote[]; stems: Stem[]; ghosts: Stem[]; unreadable: UnreadableSpan[]; sentence: string | null }
+export interface RenderedRows {
+  readonly notes: readonly LaneNote[];
+  readonly stems: readonly Stem[];
+  readonly ghosts: readonly Stem[];
+  /** drawn as shaded spans on the lane */
+  readonly unreadable: readonly UnreadableSpan[];
+  readonly sentence: string | null;
+}
 
 /** How far a read onset may sit from a predicted readable onset and still answer it. */
 export const MATCH_MS = 10;
 
-export const OVERLAP_SENTENCE = "The reader reads one voice at a time: these notes overlap. Use a one-voice pattern, or an Arpeggio with a gate under 100 %.";
+export const OVERLAP_SENTENCE = "The reader reads one voice at a time: the notes in the shaded spans overlap. Use a one-voice pattern, or an Arpeggio with a gate under 100 %.";
 
 /** A time from the render's start (the reader's figures) as region-local pulses; a float, the lane takes floats. */
 export function msToRegionPpqn(ms: number, bpm: number): number {
@@ -77,11 +82,11 @@ const regionSpan = (note: RuleNote): { from: number; to: number } =>
   ({ from: note.position - REGION_START_PPQN, to: note.position + note.duration - REGION_START_PPQN });
 
 /** A note at its predicted span, outline only, with the reason it holds no reading. */
-const hollowAt = (note: RuleNote, label: string): RenderedNote => ({ pitch: note.pitch, ...regionSpan(note), hollow: true, label, measured: false });
+const hollowAt = (note: RuleNote, label: string): LaneNote => ({ pitch: note.pitch, ...regionSpan(note), hollow: true, label });
 
 /** A read figure drawn as what was read; `fallbackPitch` is the row a pitchless figure sits on. */
-function readNote(figure: NoteFigure, fallbackPitch: number, bpm: number): RenderedNote {
-  const base = { from: msToRegionPpqn(figure.onsetMs, bpm), to: msToRegionPpqn(figure.endMs, bpm), velocity: figure.velocity, measured: true };
+function readNote(figure: NoteFigure, fallbackPitch: number, bpm: number): LaneNote {
+  const base = { from: msToRegionPpqn(figure.onsetMs, bpm), to: msToRegionPpqn(figure.endMs, bpm), velocity: figure.velocity };
   if (figure.pitch === null) return { pitch: fallbackPitch, ...base, hollow: true, label: "no pitch" };
   const label = centsLabel(figure.cents);
   return { pitch: figure.pitch, ...base, ...(label === undefined ? {} : { label }) };
@@ -122,7 +127,7 @@ export function renderedRows(
 ): RenderedRows {
   const ghosts: Stem[] = pattern.notes.map((note) => ({ at: note.position, velocity: note.velocity }));
   const unreadable = unreadableSpans(prediction.predicted);
-  const notes: RenderedNote[] = [];
+  const notes: LaneNote[] = [];
   const stems: Stem[] = [];
 
   const inside = (figure: NoteFigure, note: PredictedNote): boolean => {
@@ -161,7 +166,7 @@ export function renderedRows(
       }
       const label = centsLabel(figure.cents);
       notes.push({
-        pitch: figure.pitch, ...regionSpan(note), velocity: figure.velocity, dashedEdges: true, measured: false,
+        pitch: figure.pitch, ...regionSpan(note), velocity: figure.velocity, dashedEdges: true,
         ...(label === undefined ? {} : { label }),
       });
       stems.push({ at: note.position - REGION_START_PPQN, velocity: figure.velocity });
