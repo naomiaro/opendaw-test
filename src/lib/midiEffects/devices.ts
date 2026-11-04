@@ -68,7 +68,7 @@ project.editing.modify(() => pitch.namedParameter.semiTones.setValue(7));`,
     label: "Velocity",
     factoryKey: "Velocity",
     what: "Reshapes each note's velocity: a magnet pulls velocities toward a target, random scatters them, offset shifts them, and mix blends the result with the original.",
-    listenFor: "On Sixteenths, a strong magnet flattens the loud-soft alternation. On Melody, random breaks the ramp. The emitted lane cannot show this: velocity is heard, not seen.",
+    listenFor: "On Sixteenths, a strong magnet flattens the loud-soft alternation. On Melody, random breaks the ramp. The emitted lane here cannot show any of it: it reads which pitches are sounding, not how loud, so its bars break the velocity convention and stay one colour. The Rendered page shows every note's emitted velocity.",
     snippet: `${insert("Velocity")}
 const vel = project.boxAdapters.adapterFor(box, VelocityDeviceBoxAdapter);
 project.editing.modify(() => vel.namedParameter.magnetStrength.setValue(1));`,

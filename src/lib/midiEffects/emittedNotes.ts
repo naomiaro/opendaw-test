@@ -2,7 +2,8 @@
  * Bars for the "as emitted" lane, built by sampling the engine's held-note set once per frame.
  * The set says which pitches are sounding now and nothing else: a pitch newly on opens a bar at the
  * sampled position, newly off closes it; a position that fell below the previous one (a loop wrap or
- * a seek back) drops every bar first. Velocity is not in the set, and a note shorter than a frame can
+ * a seek back) drops every bar first. The position passed is region-local (the page subtracts the
+ * region start), so it falls on every wrap. Velocity is not in the set, and a note shorter than a frame can
  * be missed, so the lane is for Arpeggio steps and Pitch moves, not for Velocity or fine timing.
  * Closed bars older than `horizon` pulses behind the position are dropped. A `Bar` is structurally a
  * `LaneNote` without velocity, which is how the lane draws it without this file importing a component.
