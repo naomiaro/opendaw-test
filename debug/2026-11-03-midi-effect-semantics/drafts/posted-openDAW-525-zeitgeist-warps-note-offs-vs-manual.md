@@ -1,4 +1,4 @@
-<!-- Posted 2026-11-03 as https://github.com/andremichelle/openDAW/issues/525 — the body below is as filed (the parenthetical on the page going live was dropped at posting). -->
+<!-- Posted 2026-11-03 as https://github.com/andremichelle/openDAW/issues/525 — the body below is as filed (the parenthetical on the page going live was dropped at posting). CLOSED 2026-11-04: the engine behaves as intended (Zeitgeist warps time itself), the manual was wrong and is corrected upstream (2922ba25d); the audit's rule follows it, see ../note.md. -->
 
 # Zeitgeist moves note-offs as well as note-ons, so note durations change with the groove; the manual says they stay
 

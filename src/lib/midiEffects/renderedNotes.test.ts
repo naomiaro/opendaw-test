@@ -40,7 +40,7 @@ describe("predictChain", () => {
   it("applies every known deviation of the enabled devices", () => {
     const chain: ChainSetting[] = [{ setting: { device: "arpeggio", settings: { ...ARPEGGIO_BASE, velocity: -1 } }, enabled: true }];
     const { silenced, predicted } = predictChain(chain, context, patternById("melody"), PATTERN_BPM, mark);
-    expect(predicted).toEqual([]); // the engine is silent at −100 % (arpeggio-velocity-matrix); the intent would predict full velocity
+    expect(predicted).toEqual([]); // silent at −100 % (the manual since openDAW#524)
     expect(silenced.length).toBeGreaterThan(0);
     expect(silenced.every((n) => n.velocity === 0)).toBe(true);
   });

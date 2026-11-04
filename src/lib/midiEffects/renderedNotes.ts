@@ -6,8 +6,8 @@
  * Two placements come from the rule: an abutting note's edges (drawn dashed) and its velocity stem,
  * which sits at its PREDICTED onset because the reader cannot find that note's edges.
  * The prediction applies EVERY known deviation of the enabled devices, the engine's variant, so its
- * windows and silences are the ones the render has (the audit's intent variant would predict full
- * velocity where an Arpeggio at −100 % is silent). Pure: the only SDK import is `PPQN`.
+ * windows are the ones the render has (the audit's intent variant would cap an Arpeggio step at its
+ * held note's end and keep the note's cent). Pure: the only SDK import is `PPQN`.
  */
 import { PPQN } from "@opendaw/lib-dsp";
 import type { LaneNote } from "@/components/NoteLane";

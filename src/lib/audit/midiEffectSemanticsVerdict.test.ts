@@ -29,12 +29,12 @@ describe("judgeRule", () => {
     const read = [note(1000, { velocity: 0.8 })];
     const variants: Variant[] = [
       { deviations: new Set(), predicted: [a] },
-      { deviations: new Set(["arpeggio-velocity-matrix"]), predicted: [b] },
-      { deviations: new Set(["arpeggio-velocity-matrix", "arpeggio-drops-cent"]), predicted: [b] }
+      { deviations: new Set(["arpeggio-uncapped-note-off"]), predicted: [b] },
+      { deviations: new Set(["arpeggio-uncapped-note-off", "arpeggio-drops-cent"]), predicted: [b] }
     ];
     const j = judgeRule(read, variants, TOLERANCES, never);
     expect(j.kind).toBe("deviation");
-    expect(j.deviations).toEqual(["arpeggio-velocity-matrix"]);
+    expect(j.deviations).toEqual(["arpeggio-uncapped-note-off"]);
     const empty = judgeRule([note(1000, { velocity: 0.5 })], variants, TOLERANCES, never);
     expect(empty.kind).toBe("holds");
     expect(empty.deviations).toEqual([]);
@@ -235,13 +235,13 @@ describe("verdictOf", () => {
     ({ kind, deviations, readable: 0, unreadable: 0, mismatch: null });
   it.each([
     [rule("holds"), "as-registered", "as-registered"],
-    [rule("deviation", ["arpeggio-velocity-matrix"]), "as-registered", "as-registered, matches-known-deviation arpeggio-velocity-matrix"],
+    [rule("deviation", ["arpeggio-uncapped-note-off"]), "as-registered", "as-registered, matches-known-deviation arpeggio-uncapped-note-off"],
     [rule("broken"), "as-registered", "as-registered, rule broken"],
     [rule("holds"), "changed", "changed, rule holds"],
-    [rule("deviation", ["arpeggio-velocity-matrix", "arpeggio-drops-cent"]), "changed", "changed, matches-known-deviation arpeggio-velocity-matrix+arpeggio-drops-cent"],
+    [rule("deviation", ["arpeggio-uncapped-note-off", "arpeggio-drops-cent"]), "changed", "changed, matches-known-deviation arpeggio-uncapped-note-off+arpeggio-drops-cent"],
     [rule("broken"), "changed", "changed, rule broken"],
     [rule("holds"), "unregistered", "rule holds, unregistered"],
-    [rule("deviation", ["zeitgeist-warps-note-off"]), "unregistered", "matches-known-deviation zeitgeist-warps-note-off, unregistered"],
+    [rule("deviation", ["arpeggio-drops-cent"]), "unregistered", "matches-known-deviation arpeggio-drops-cent, unregistered"],
     [rule("broken"), "unregistered", "rule broken, unregistered"],
     [rule("none"), "as-registered", "no rule"],
     [rule("none"), "changed", "changed, no rule"],
@@ -272,8 +272,8 @@ describe("silentRenderError", () => {
   it("throws when no variant has an empty deviation set", () => {
     expect(() => silentRenderError(0, [{ deviations: new Set(["arpeggio-drops-cent"]), predicted: [pred(1000)] }])).toThrow("silentRenderError: no intent variant");
   });
-  it("is null when a known deviation predicts the silence (Arpeggio velocity -100 %: the manual sounds, the matrix is silent)", () => {
-    const variants: Variant[] = [intent([pred(1000)]), { deviations: new Set(["arpeggio-velocity-matrix"]), predicted: [] }];
+  it("is null when a known deviation predicts the silence", () => {
+    const variants: Variant[] = [intent([pred(1000)]), { deviations: new Set(["arpeggio-uncapped-note-off"]), predicted: [] }];
     expect(silentRenderError(0, variants)).toBeNull();
   });
 });
@@ -301,7 +301,7 @@ describe("describeMismatch", () => {
 describe("verdictColor", () => {
   it.each([
     ["as-registered", "green"],
-    ["as-registered, matches-known-deviation arpeggio-velocity-matrix", "amber"],
+    ["as-registered, matches-known-deviation arpeggio-uncapped-note-off", "amber"],
     ["rule holds, unregistered", "amber"],
     ["no rule, unregistered", "amber"],
     ["changed, rule holds", "amber"],

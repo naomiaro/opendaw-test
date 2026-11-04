@@ -203,8 +203,8 @@ export function verdictColor(verdict: string): "green" | "amber" | "red" {
 /**
  * The spec's `error` for a render that is silent where the rule predicts sound: `peak` is the rendered channel's largest
  * `|x|`, `variants` the intent and each known-deviation subset as judged. Null unless the peak is 0 and EVERY variant
- * predicts a readable or abutting note: a silence one variant predicts (the Arpeggio at -100 %, silent under the crate's
- * velocity matrix where the manual sounds) is a judgement, not a failed render. The message counts the intent's notes.
+ * predicts a readable or abutting note: a silence one variant predicts (the Arpeggio at -100 %, silent by its rule) is a
+ * judgement, not a failed render. The message counts the intent's notes.
  * Throws when `variants` is not empty and holds no intent.
  */
 export function silentRenderError(peak: number, variants: readonly Variant[]): string | null {

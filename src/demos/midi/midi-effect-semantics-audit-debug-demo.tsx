@@ -340,8 +340,8 @@ const App: React.FC = () => {
           </Flex>
           <DebugLinkBar links={[
             { label: "Register: debug/2026-11-03-midi-effect-semantics/note.md", href: NOTE_URL, kind: "note" },
-            { label: "openDAW#524 (Arpeggio velocity vs its manual)", href: "https://github.com/andremichelle/openDAW/issues/524", kind: "note" },
-            { label: "openDAW#525 (Zeitgeist warps note-offs vs its manual)", href: "https://github.com/andremichelle/openDAW/issues/525", kind: "note" },
+            { label: "openDAW#524 (Arpeggio velocity: closed, manual corrected)", href: "https://github.com/andremichelle/openDAW/issues/524", kind: "note" },
+            { label: "openDAW#525 (Zeitgeist note-offs: closed, manual corrected)", href: "https://github.com/andremichelle/openDAW/issues/525", kind: "note" },
           ]} />
           <Text size="2" color="gray">
             A Nano sampler plays a {SAMPLE_HZ} Hz sine on a note pattern. Each row puts a chain of MIDI effects before it, renders

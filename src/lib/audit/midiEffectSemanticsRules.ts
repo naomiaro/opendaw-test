@@ -3,8 +3,10 @@
  * device's settings, plus the registers the semantics audit judges a render against: the known
  * deviations of the engine from that rule, and the behaviours the register questions. The rule is
  * read from the crate (`openDAW/crates/stock-devices/device-*`) and the manual
- * (`openDAW/packages/app/manual/public/devices/midi/`); a deviation is a place the engine does
- * something else, named so a render can be judged with it on and off. Positions are absolute pulses.
+ * (`openDAW/packages/app/manual/public/devices/midi/`, read at the commits that answered openDAW#524 and
+ * #525: the Arpeggio's velocity control and the Zeitgeist's note-offs are documented as the engine has them); a
+ * deviation is a place the engine does something else, named so a render can be judged with it on and off.
+ * Positions are absolute pulses.
  * The only SDK import is `PPQN`, for the one place pulses become milliseconds.
  */
 import { PPQN } from "@opendaw/lib-dsp";
@@ -12,9 +14,9 @@ import { PPQN } from "@opendaw/lib-dsp";
 /** The shape of `EventRecord`'s note-on (`crates/abi/src/lib.rs:39-51`), in absolute pulses. */
 export interface RuleNote { position: number; duration: number; pitch: number; cent: number; velocity: number }
 
-export type DeviationName = "arpeggio-velocity-matrix" | "arpeggio-drops-cent" | "arpeggio-uncapped-note-off" | "zeitgeist-warps-note-off";
+export type DeviationName = "arpeggio-drops-cent" | "arpeggio-uncapped-note-off";
 
-export type QuestionName = "pitch-drops-out-of-range" | "arpeggio-velocity-manual-gap";
+export type QuestionName = "pitch-drops-out-of-range";
 
 export interface Deviation { name: DeviationName; device: SemanticsDevice; sentence: string; source: string }
 
@@ -44,11 +46,6 @@ export interface RuleContext {
 
 export const DEVIATIONS: readonly Deviation[] = [
   {
-    name: "arpeggio-velocity-matrix", device: "arpeggio",
-    sentence: "The engine fades the note's velocity toward the constant 1 + v below 0 and toward 1.0 above it, where the manual blends full velocity with the note's own.",
-    source: "device-arpeggio/src/lib.rs:108-118"
-  },
-  {
     name: "arpeggio-drops-cent", device: "arpeggio",
     sentence: "The engine emits every arpeggiated note-on with cent 0, so a source note's detune is lost.",
     source: "device-arpeggio/src/lib.rs:304"
@@ -57,11 +54,6 @@ export const DEVIATIONS: readonly Deviation[] = [
     name: "arpeggio-uncapped-note-off", device: "arpeggio",
     sentence: "The engine ends a step at its position plus its length, never at the end of the source note, so the last step can outlast the held note.",
     source: "device-arpeggio/src/lib.rs:303-306"
-  },
-  {
-    name: "zeitgeist-warps-note-off", device: "zeitgeist",
-    sentence: "The engine warps the note-off like any other record, so a duration stretches or shrinks with the groove where the manual says durations remain unchanged.",
-    source: "device-zeitgeist/src/lib.rs:124-138"
   }
 ];
 
@@ -70,31 +62,25 @@ export const QUESTIONS: readonly Question[] = [
     name: "pitch-drops-out-of-range", device: "pitch",
     sentence: "A note shifted outside 0..127 is dropped, not clamped; the crate documents it as a deviation from the TS device, and nothing says which is meant.",
     sources: ["device-pitch/src/lib.rs:8-11", "PitchDeviceProcessor (TS)"]
-  },
-  {
-    name: "arpeggio-velocity-manual-gap", device: "arpeggio",
-    sentence: "The manual describes the velocity control as full velocity at -100 %, the note's own at +100 % and a blend between; the engine's matrix gives silence at -100 % and 1.0 at 0 %.",
-    sources: ["manual/public/devices/midi/arpeggio.md:84-92", "device-arpeggio/src/lib.rs:108-118"]
   }
 ];
 
 export const RULE_SENTENCES: Record<SemanticsDevice, string> = {
-  arpeggio: "On the absolute rate grid, one note per step from the notes held at that step, walked up, down or up-down over the octaves, as long as the gate says and no longer than the held note.",
+  arpeggio: "On the absolute rate grid, one note per step from the notes held at that step, walked up, down or up-down over the octaves, as long as the gate says and no longer than the held note; the velocity one fixed value rising from silent at -100 % to full at 0 %, then a blend from full toward the note's own at +100 %.",
   pitch: "Every note moves by octaves × 12 + semitones, its cent by the cents setting; a note shifted outside 0..127 is dropped.",
   velocity: "Every note's velocity is the device's computeVelocity at the note's absolute position.",
-  zeitgeist: "Every note starts where the groove warps its position to; durations remain unchanged."
+  zeitgeist: "Every note starts where the groove warps its position to and ends where it warps its note-off to, so its duration changes with its place in the cell."
 };
 
 /** `ArpeggioDeviceBoxAdapter.RateFractions`: `floor(3840 / d) × n` (`device-arpeggio/src/lib.rs:36-47`). */
 export const ARPEGGIO_RATE_PPQN: readonly number[] = [3840, 1920, 1280, 960, 720, 640, 480, 360, 320, 240, 180, 160, 120, 80, 60, 40, 30];
 
-/** The manual's rule: -100 % full velocity ignoring the input, +100 % the note's own, 0 % a blend (`manual/.../arpeggio.md:84-92`). */
-export function arpeggioIntentVelocity(v: number, vel: number): number {
-  return vel + (1 - vel) * (1 - v) / 2;
-}
-
-/** The crate's matrix: silence at -1, 1.0 at 0, the note's own at +1 (`device-arpeggio/src/lib.rs:108-122`). */
-export function arpeggioMatrixVelocity(v: number, vel: number): number {
+/**
+ * The manual's rule (`manual/.../arpeggio.md:90-94`, as corrected for openDAW#524) and the crate's matrix
+ * (`device-arpeggio/src/lib.rs:108-122`): below 0 one fixed velocity `1 + v`, ignoring the input; above it a blend
+ * from full toward the note's own.
+ */
+export function arpeggioVelocity(v: number, vel: number): number {
   return v <= 0 ? 1 + v : vel * v + (1 - v);
 }
 
@@ -138,9 +124,7 @@ export function arpeggioRule(
       duration: deviations.has("arpeggio-uncapped-note-off") ? length : Math.min(length, sourceEnd - position),
       pitch: source.pitch + 12 * octave,
       cent: deviations.has("arpeggio-drops-cent") ? 0 : source.cent,
-      velocity: deviations.has("arpeggio-velocity-matrix")
-        ? arpeggioMatrixVelocity(settings.velocity, source.velocity)
-        : arpeggioIntentVelocity(settings.velocity, source.velocity)
+      velocity: arpeggioVelocity(settings.velocity, source.velocity)
     });
   }
   return out;
@@ -162,14 +146,11 @@ export function velocityRule(notes: readonly RuleNote[], computeVelocity: (posit
   return notes.map((note) => ({ ...note, velocity: computeVelocity(note.position, note.velocity) }));
 }
 
-/** Zeitgeist per `process` (`device-zeitgeist/src/lib.rs:124-138`): positions through the groove as a float; the duration stays (manual `zeitgeist.md:59`) unless the deviation warps the note-off. */
-export function zeitgeistRule(
-  notes: readonly RuleNote[], groove: { warp(position: number): number }, deviations: ReadonlySet<DeviationName>
-): RuleNote[] {
+/** Zeitgeist per `process` (`device-zeitgeist/src/lib.rs:124-138`): every record through the groove as a float, the note-off too (manual `zeitgeist.md:59`, as corrected for openDAW#525). */
+export function zeitgeistRule(notes: readonly RuleNote[], groove: { warp(position: number): number }): RuleNote[] {
   return notes.map((note) => {
     const position = groove.warp(note.position);
-    const duration = deviations.has("zeitgeist-warps-note-off") ? groove.warp(note.position + note.duration) - position : note.duration;
-    return { ...note, position, duration };
+    return { ...note, position, duration: groove.warp(note.position + note.duration) - position };
   });
 }
 
@@ -178,7 +159,7 @@ function applyStage(stage: DeviceSetting, context: RuleContext, deviations: Read
     case "arpeggio": return arpeggioRule(notes, stage.settings, deviations, context.range);
     case "pitch": return pitchRule(notes, stage.settings);
     case "velocity": return velocityRule(notes, context.computeVelocity);
-    case "zeitgeist": return zeitgeistRule(notes, { warp: context.warp }, deviations);
+    case "zeitgeist": return zeitgeistRule(notes, { warp: context.warp });
   }
 }
 
@@ -203,8 +184,7 @@ export function composeRules(
 
 /**
  * The questioned behaviours a row exercises; `chain` is the enabled chain. Each is read at its own stage, from the notes that
- * reach it: a Pitch that dropped a note, an Arpeggio whose manual blend and crate matrix give a different velocity for a
- * note it holds (on a velocity-1 note at 0 % or above they agree, so such a row is not questioned).
+ * reach it: a Pitch that dropped a note.
  */
 export function questionsFor(chain: readonly DeviceSetting[], context: RuleContext, source: readonly RuleNote[]): QuestionName[] {
   const names: QuestionName[] = [];
@@ -212,9 +192,6 @@ export function questionsFor(chain: readonly DeviceSetting[], context: RuleConte
   const before = (index: number): RuleNote[] => composeRules(chain.slice(0, index), context, none, source);
   const dropped = chain.some((stage, index) => stage.device === "pitch" && pitchRule(before(index), stage.settings).length < before(index).length);
   if (dropped) names.push("pitch-drops-out-of-range");
-  const gap = chain.some((stage, index) => stage.device === "arpeggio" && before(index).some((note) =>
-    Math.abs(arpeggioIntentVelocity(stage.settings.velocity, note.velocity) - arpeggioMatrixVelocity(stage.settings.velocity, note.velocity)) > 1e-9));
-  if (gap) names.push("arpeggio-velocity-manual-gap");
   return names;
 }
 
