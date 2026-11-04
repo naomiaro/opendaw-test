@@ -37,11 +37,12 @@ left behind there.
   (unlisted; a real click on Run; deterministic, no hardware): `order-pitch-arpeggio` reads
   `matches-known-deviation arpeggio-drops-cent` with max |Δcents| 12.5, `order-arpeggio-pitch` holds.
 
-**One more question on the same device, if convenient:** a step keeps sounding for its full gate length
-after the held key is released (a 1/16 step at gate 50 % that starts 36.5 ms before the release rings
-62.5 ms, 26 ms past it; `lib.rs:303-306` ends a step at `position + duration` only). The manual's Gate
-("note length as a percentage of the step rate") reads that way, so the audit takes it as intended; a
-word either way would settle it.
+**A second question on the same device.** When the held key is released in the middle of a step, the
+step does not stop: it sounds for its full gate length. Is that intended? The manual's Gate ("note
+length as a percentage of the step rate") says the step's length is set by the gate alone, so the
+audit takes the behaviour as intended, and a word either way would settle it. Measured: at 1/16 and
+gate 50 % a step is 62.5 ms; the step that starts 36.5 ms before the release still rings 62.5 ms, so
+26 ms after the key is up (`lib.rs:303-306` ends a step at `position + duration` and nowhere else).
 
 **Register and method:**
 https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-11-03-midi-effect-semantics/note.md
