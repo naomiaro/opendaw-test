@@ -5,7 +5,7 @@ import { READER_DEFAULTS, frequencyToPitch, readNotes } from "./midiEffectSemant
 import {
   ARPEGGIO_RATE_PPQN, DEVIATIONS, DEVIATION_SUBSETS, QUESTIONS, RULE_SENTENCES, arpeggioVelocity,
   arpeggioRule, clipToRange, composeRules, markReadability, pitchRule, questionsFor, toPredictedFigures, velocityRule, zeitgeistRule,
-  type ArpeggioSettings, type DeviceSetting, type RuleContext, type RuleNote,
+  type ArpeggioSettings, type DeviationName, type DeviceSetting, type RuleContext, type RuleNote,
 } from "./midiEffectSemanticsRules";
 
 const identityContext: RuleContext = { range: { from: 3840, to: 3840 + 7680 }, computeVelocity: (_p, v) => v, warp: (p) => p };
@@ -72,13 +72,11 @@ describe("arpeggioRule", () => {
     const out = arpeggioRule(held([60, 64]), { ...base, repeat: 2 }, new Set(), range);
     expect(pitches(out, 4)).toEqual([60, 60, 64, 64]);
   });
-  it("caps the last step at the source end under the intent and not under the deviation", () => {
-    const intent = arpeggioRule(held([60]), base, new Set(), range);
-    const last = intent[intent.length - 1];
+  it("a step lasts the gate's length even past the held note's end (the manual: note length is a percentage of the step)", () => {
+    const steps = arpeggioRule(held([60]), base, new Set(), range);
+    const last = steps[steps.length - 1];
     expect(last.position).toBe(3840 + 1680);
-    expect(last.duration).toBe(70);
-    const dev = arpeggioRule(held([60]), base, new Set(["arpeggio-uncapped-note-off"]), range);
-    expect(dev[dev.length - 1].duration).toBe(120);
+    expect(last.duration).toBe(120);
   });
   it("velocity per the manual: one fixed velocity rising from silent at -1 to full at 0, then a blend from full toward the note's own at +1", () => {
     expect(arpeggioVelocity(-1, 0.8)).toBe(0);
@@ -139,9 +137,9 @@ describe("questionsFor", () => {
     expect(questionsFor([arp(0.5)], identityContext, [at(0.8)])).toEqual([]);
     expect(questionsFor([arp(-1)], identityContext, [at(1)])).toEqual([]);
   });
-  it("registers the one question and the two deviations with a source each", () => {
+  it("registers the one question and the one deviation with a source each", () => {
     expect(QUESTIONS.map((q) => q.name)).toEqual(["pitch-drops-out-of-range"]);
-    expect(DEVIATIONS.map((d) => d.name).sort()).toEqual(["arpeggio-drops-cent", "arpeggio-uncapped-note-off"]);
+    expect(DEVIATIONS.map((d) => d.name)).toEqual(["arpeggio-drops-cent"]);
     for (const d of DEVIATIONS) expect(d.source).toMatch(/lib\.rs:\d+/);
     expect(Object.keys(RULE_SENTENCES).sort()).toEqual(["arpeggio", "pitch", "velocity", "zeitgeist"]);
   });
@@ -308,10 +306,13 @@ describe("markReadability", () => {
 
 describe("DEVIATION_SUBSETS", () => {
   it("lists the empty set first, then singletons, then pairs", () => {
-    expect(DEVIATION_SUBSETS(["arpeggio-drops-cent", "arpeggio-uncapped-note-off"]).map((s) => [...s].sort().join("+"))).toEqual(["", "arpeggio-drops-cent", "arpeggio-uncapped-note-off", "arpeggio-drops-cent+arpeggio-uncapped-note-off"]);
+    // the subsets are by name only, so two labels stand in for two deviations
+    const [a, b] = ["a-deviation", "b-deviation"] as unknown as DeviationName[];
+    expect(DEVIATION_SUBSETS([a, b]).map((s) => [...s].sort().join("+"))).toEqual(["", a, b, `${a}+${b}`]);
   });
   it("lists 2^n sets", () => {
-    expect(DEVIATION_SUBSETS(["arpeggio-drops-cent", "arpeggio-uncapped-note-off"])).toHaveLength(4);
+    const [a, b, c] = ["a-deviation", "b-deviation", "c-deviation"] as unknown as DeviationName[];
+    expect(DEVIATION_SUBSETS([a, b, c])).toHaveLength(8);
     expect(DEVIATION_SUBSETS([])).toHaveLength(1);
   });
 });
