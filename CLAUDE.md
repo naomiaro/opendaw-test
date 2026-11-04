@@ -768,15 +768,17 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   `debug/2026-10-21-hidden-page-recording/note.md`.
 - After SDK upgrades, also run the MIDI output timing audit:
   `midi-output-timing-audit-debug-demo.html?bpm=140&density=32nd&transport=both&repeats=2&frameDriver=hidden-safe`,
-  then `…&jank=mid`, then `?bpm=all&density=both&repeats=2&frameDriver=hidden-safe` — Chrome, a real
-  click on Run, the IAC Driver online, the window uncovered. Read the PAGE cell first: it must be
+  then `…&jank=mid`, then `?bpm=all&density=both&repeats=2&frameDriver=hidden-safe` — the USER'S Chrome
+  (claude-in-chrome; the Playwright-launched Chrome's clock-pair relation wandered 12–24 ms within a
+  repeat on 2026-11-04 where the user's Chrome read ±3 ms on the same day), a real click on Run, the IAC
+  Driver online, the window uncovered. Read the PAGE cell first: it must be
   `bus-true` or nothing of the engine cell counts. Expect the engine cells `on-time` without jank (live
   median on the box delay within half a quantum; a one-off `investigate` whose live spread tracks a
   `pair drift` excursion is the clock relation, not the SDK) and, since the engine times MIDI output on
   the audio clock (`MIDIReceiver.outputClock`), `on-time` with jank too; a janked cell reading
   `matches-known-defect` (`midi-out-main-thread-base`, the old main-thread base) would be a regression.
-  That expectation is not yet measured (the IAC run is owed); until it is, read a janked cell against
-  the register's last run. Register `debug/2026-10-23-midi-output-timing/note.md`, table
+  Measured so on the audio-clock base: runs A, B and C on 2026-11-04, the janked cells `on-time` with
+  inside-block medians on the delay and no off-before-on inversion. Register `debug/2026-10-23-midi-output-timing/note.md`, table
   `node scripts/audit/midi-output-timing/table.ts`, reading recipe `src/demos/midi/CLAUDE.md`.
 - After SDK upgrades, also run the MIDI effect placement audit:
   `midi-effect-placement-audit-debug-demo.html?device=all` then `?rate=44100` — a real click on

@@ -178,6 +178,20 @@ after at least five seconds:
 The rows read as on 0.0.177 (the `mid` row's late stop of that run did not recur). The `cover`
 rows still need a hand.
 
+### SDK 0.0.181 (2026-11-04): the three `modal` rows, re-run
+
+Same page, Chrome 156 (Playwright's), `driver=hidden-safe`, 48 000 Hz, 120 bpm, the alert dismissed through
+the tooling's dialog handler after at least five seconds (the release fades a user's stop over one quantum
+before the devices reset; the recorder's stop stamp is netted before the fade, so the rows do not see it):
+
+| row | take 1 (interrupted) | take 2 (control) | hidden span | finalized in (take 1) |
+|---|---|---|---|---|
+| `modal`, `hideAt=start` | `intact`, 31 / 31, median 1.15 ms | `intact`, 31 / 31 | 17.2 s | 54 ms |
+| `modal`, `hideAt=mid` | `intact`, 41 / 41 (the take ran on under the dialog, 20.5 s), median 1.15 ms | `intact`, 31 / 31 | 18.4 s | 58 ms |
+| `modal`, `hideAt=stop` | `intact`, 31 / 31, median 1.15 ms | `intact`, 31 / 31 | 10.2 s | 10 211 ms (the dialog's span, as before) |
+
+The rows read as on 0.0.177 and 0.0.179. The `cover` rows still need a hand.
+
 ## Reading
 
 - **The recorder survives every interruption measured.** A take begun 22 s before the page

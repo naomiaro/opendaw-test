@@ -311,8 +311,9 @@ register `debug/2026-10-23-midi-output-timing/note.md`. Chrome only; a real clic
   longer moves a note. Before openDAW#356 was fixed the base was the moment the main thread read the
   ring plus the reported output latency, truncated to whole ms: a late handler landed on the note,
   in one direction, and `delayInMs` absorbed none of it. That old base is the band
-  `midi-out-main-thread-base` below; on the new base a janked engine cell is expected `on-time`,
-  and the band then only catches a regression (re-measure owed: the IAC rows need a hand).
+  `midi-out-main-thread-base` below; on the audio-clock base a janked engine cell reads `on-time`
+  (measured: run B's inside-block medians 10.32 / 9.97 ms on the 10 ms delay, no off-before-on
+  inversion), and the band only catches a regression.
 - **The clock rule.** The anchor is `engine.recordingStart` from a recording with NOTHING armed
   (`Recording.start` reaches `prepareRecordingState` with zero captures; the engine stamps the
   start and records nothing). ONE `getOutputTimestamp` pair per repeat bridges to the Web MIDI
@@ -345,8 +346,8 @@ register `debug/2026-10-23-midi-output-timing/note.md`. Chrome only; a real clic
   and the spread within 1 ms of the one pair. Engine: `not-judged` (`bus` or `no-control`);
   `on-time` when clean, the live median within half a quantum of `delayInMs` and the live
   spread within a quantum; `matches-known-defect` when a band in `MIDI_OUT_KNOWN_DEFECTS`
-  explains every repeat, `midi-out-main-thread-base` for a janked cell on the old main-thread base (expected
-  retired once the audio-clock base is measured `on-time`; live median on the
+  explains every repeat, `midi-out-main-thread-base` for a janked cell on the old main-thread base (a
+  regression band since the audio-clock base measured `on-time`; live median on the
   delay within a quantum, inside-block median between `delay + jank/4` and `delay + jank + 1 quantum`, spread
   within `jank + 1 quantum`, the notes clear of every block within two quanta,
   `stuck == extra == stuckInsideBlocks ≤ notesInsideBlocks`: the off-before-on inversion and only

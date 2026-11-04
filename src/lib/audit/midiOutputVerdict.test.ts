@@ -95,6 +95,20 @@ describe("classifyEngineCell", () => {
     expect(classifyEngineCell([{ ...measured[0], stuck: 3, extra: 2 }], bus, jank).status).toBe("investigate");
   });
 
+  it("reads run B on the audio-clock base (run 1793814094848, after openDAW#356 was fixed) as on-time, not as the band", () => {
+    const jank: OutputBandContext = { delayInMs: 10, jankMs: 80, jankActive: true, sampleRate: 44100 };
+    // The four engine repeats of that run: live medians on the delay, inside-block medians on the delay too, no inversion.
+    const fixed: OutputRepeatFigures[] = [
+      { ...clean(9.97, 0.02), medianErrorLiveMs: 10.0, maxAbsDevLiveMs: 0.01, maxAbsDevOutsideBlocksMs: 0.02, maxAbsDevOutsideBlocksLiveMs: 0.01, lateTailMs: 0.01, notesInsideBlocks: 7, medianErrorInsideBlocksMs: 9.97 },
+      { ...clean(10.26, 1.06), medianErrorLiveMs: 10.0, maxAbsDevLiveMs: 2.25, maxAbsDevOutsideBlocksMs: 1.06, maxAbsDevOutsideBlocksLiveMs: 2.25, lateTailMs: 0.49, notesInsideBlocks: 7, medianErrorInsideBlocksMs: 10.32 },
+      { ...clean(10.01, 0.53), medianErrorLiveMs: 9.99, maxAbsDevLiveMs: 0.66, maxAbsDevOutsideBlocksMs: 0.53, maxAbsDevOutsideBlocksLiveMs: 0.59, lateTailMs: 0.15, notesInsideBlocks: 7, medianErrorInsideBlocksMs: 9.82 },
+      { ...clean(12.78, 0.53), medianErrorLiveMs: 10.01, maxAbsDevLiveMs: 0.69, maxAbsDevOutsideBlocksMs: 0.53, maxAbsDevOutsideBlocksLiveMs: 0.69, lateTailMs: 0.11, notesInsideBlocks: 7, medianErrorInsideBlocksMs: 12.78 },
+    ];
+    const verdict = classifyEngineCell(fixed, bus, jank);
+    expect(verdict.status).toBe("on-time");
+    expect(verdict.detail).not.toMatch(/midi-out-main-thread-base/);
+  });
+
   it("holds one band, and isClean reads the four counts", () => {
     expect(MIDI_OUT_KNOWN_DEFECTS.map((b) => b.id)).toEqual(["midi-out-main-thread-base"]);
     expect(isClean(clean(0, 0))).toBe(true);

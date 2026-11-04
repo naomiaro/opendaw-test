@@ -4,8 +4,10 @@
  * says can be read; the ENGINE arm is read against the live pair when every repeat of the cell sampled one. The engine arm is `on-time`
  * when it lands on the box delay, `matches-known-defect` when a band this file pins explains every
  * repeat, else `investigate`. Bands classify a raw figure from the row's own context; they never
- * net anything out. The table holds the band run B's rows pinned
- * (`debug/2026-10-23-midi-output-timing/note.md` names the envelope).
+ * net anything out. The one band pins the main-thread timestamp base the engine used before
+ * openDAW#356 was fixed (run B's rows, `debug/2026-10-23-midi-output-timing/note.md` names the
+ * envelope); on the audio-clock base a janked cell reads `on-time` (run 1793814094848, pinned in
+ * the test), so a cell matching the band is a regression.
  */
 import { quantumMs } from "./midiInputAlignment";
 import type { OutputRepeatFigures } from "./midiOutputTiming";
@@ -42,6 +44,7 @@ export interface OutputKnownDefectBand {
  * ends (late by up to the block length), and a note whose on and off both render inside one block comes out
  * off-before-on (read as one `stuck` plus one `extra`). Every bound is computed from the row's own context.
  */
+// The base before openDAW#356 was fixed; a janked cell on the audio-clock base reads `on-time` instead (run 1793814094848).
 const MAIN_THREAD_BASE_RUN = "1792790180843";
 
 const MAIN_THREAD_BASE: OutputKnownDefectBand = {
