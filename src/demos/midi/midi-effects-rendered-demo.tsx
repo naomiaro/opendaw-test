@@ -95,6 +95,7 @@ function MidiEffectsRenderedDemo() {
   const [status, setStatus] = useState("Starting engine…");
   const [initError, setInitError] = useState<string | null>(null);
   const [chainError, setChainError] = useState<string | null>(null);
+  const [patternError, setPatternError] = useState<string | null>(null);
   const [calibration, setCalibration] = useState<Calibration | null>(null);
   const [calibrationError, setCalibrationError] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -200,7 +201,17 @@ function MidiEffectsRenderedDemo() {
   const changePattern = useCallback((id: PatternId) => {
     if (!built) return;
     const pattern = withGaps(patternById(id), GAP_RATIO);
-    heldRef.current = writePattern(built.project, built.regionBox, heldRef.current, pattern);
+    try {
+      heldRef.current = writePattern(built.project, built.regionBox, heldRef.current, pattern);
+    } catch (error) {
+      // the old notes' deletion commits before the new ones are written: keep only the boxes still in the graph
+      heldRef.current = heldRef.current.filter((box) => box.isAttached());
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("[midi-rendered] pattern write failed: " + message);
+      setPatternError(`The ${patternById(id).label} pattern could not be written to the region: ${message}. Reload the page.`);
+      return;
+    }
+    setPatternError(null);
     gappedRef.current = pattern;
     setPatternId(id);
     writtenLane.current?.requestUpdate();
@@ -223,7 +234,10 @@ function MidiEffectsRenderedDemo() {
   const unreadable = useCallback(() => rowsRef.current?.unreadable ?? [], []);
 
   const currentPattern = patternById(patternId);
-  const dimmed = rendered.status === "stale" || rendered.status === "rendering" || rendered.status === "calibrating";
+  // the rows on show are not the chain's while a render is due or running, before calibration, and after a failure
+  const dimmed = rendered.status !== "idle";
+  const calibrationNotice = calibrationError === null ? null : `${calibrationError}. The rendered rows are unavailable; reload the page.`;
+  const pageErrors = [initError, chainError, patternError, calibrationNotice].filter((message): message is string => message !== null);
 
   const renderCard = (entry: (typeof entries)[number], compact: boolean) => (
     <MidiEffectCard
@@ -232,7 +246,14 @@ function MidiEffectsRenderedDemo() {
       compact={compact}
       page="rendered"
       onEnabledChange={(enabled) => {
-        setDeviceEnabled(project!.editing, entry.box, enabled);
+        try {
+          setDeviceEnabled(project!.editing, entry.box, enabled);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          console.error(`[midi-rendered] ${enabled ? "enabling" : "bypassing"} ${entry.id} failed: ${message}`);
+          setChainError(`The ${entry.id} device could not be ${enabled ? "enabled" : "bypassed"}: ${message}`);
+          return;
+        }
         reseekIfPlaying();
       }}
       onChainChange={reseekIfPlaying}
@@ -260,9 +281,9 @@ function MidiEffectsRenderedDemo() {
           </p>
         </header>
 
-        {(initError ?? chainError) && (
+        {pageErrors.length > 0 && (
           <Callout.Root color="red" style={{ marginBottom: 16 }}>
-            <Callout.Text>{initError ?? chainError}</Callout.Text>
+            {pageErrors.map((message) => <Callout.Text key={message}>{message}</Callout.Text>)}
           </Callout.Root>
         )}
 

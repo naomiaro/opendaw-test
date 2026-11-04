@@ -110,12 +110,14 @@ interface HookState {
   last: LastRender | null;
   /** the last render's failure; stands until a render succeeds */
   error: string | null;
+  /** a device whose parameters could not be watched; stands until the chain changes and they can */
+  subscriptionError: string | null;
 }
 
 export function useRenderedNotes(options: RenderedNotesOptions): RenderedState {
   const { project, audioUnitBox, entries, pattern, bpm, rate, calibration, calibrationError = null } = options;
   const active = calibrationError === null && calibration !== null && project !== null && audioUnitBox !== null;
-  const [state, setState] = useState<HookState>({ scheduler: "stale", last: null, error: null });
+  const [state, setState] = useState<HookState>({ scheduler: "stale", last: null, error: null, subscriptionError: null });
   const latest = useRef(options);
   latest.current = options;
   const schedulerRef = useRef<RenderScheduler | null>(null);
@@ -162,21 +164,32 @@ export function useRenderedNotes(options: RenderedNotesOptions): RenderedState {
     if (!active || project === null) return undefined;
     const request = () => schedulerRef.current?.request();
     const subscriptions: Terminable[] = [];
+    let watching: ChainEntry | null = null;
     try {
       for (const entry of entries) {
+        watching = entry;
         const adapter = project.boxAdapters.adapterFor(entry.box, Devices.isMidiEffect);
         for (const { parameter } of deviceParameters(adapter)) subscriptions.push(parameter.catchupAndSubscribe(request));
         if (entry.id === "velocity") subscriptions.push((entry.box as VelocityDeviceBox).randomSeed.subscribe(request));
       }
     } catch (error) {
       subscriptions.forEach((subscription) => subscription.terminate());
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      const device = watching === null ? "a device" : watching.id;
+      console.error(`[midi-rendered] subscribing to ${device} failed: ${message}`);
+      setState((previous) => ({
+        ...previous,
+        subscriptionError: `The ${device} device's parameters could not be watched, so the rows no longer follow its changes: ${message}`,
+      }));
+      return undefined;
     }
+    setState((previous) => (previous.subscriptionError === null ? previous : { ...previous, subscriptionError: null }));
     return () => subscriptions.forEach((subscription) => subscription.terminate());
   }, [active, project, entries]);
 
   if (calibrationError !== null) return { status: "error", error: calibrationError, last: state.last };
   if (!active) return { status: "calibrating" };
+  if (state.subscriptionError !== null) return { status: "error", error: state.subscriptionError, last: state.last };
   // an error stands until the next render succeeds; a render under way or due reads as such
   if (state.scheduler === "idle" && state.error !== null) return { status: "error", error: state.error, last: state.last };
   return { status: state.scheduler, last: state.last };

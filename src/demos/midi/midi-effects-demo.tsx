@@ -184,7 +184,14 @@ function MidiEffectsDemo() {
       compact={compact}
       page="effects"
       onEnabledChange={(enabled) => {
-        setDeviceEnabled(project!.editing, entry.box, enabled);
+        try {
+          setDeviceEnabled(project!.editing, entry.box, enabled);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          console.error(`[midi-effects] ${enabled ? "enabling" : "bypassing"} ${entry.id} failed: ${message}`);
+          setChainError(`The ${entry.id} device could not be ${enabled ? "enabled" : "bypassed"}: ${message}`);
+          return;
+        }
         reseekIfPlaying();
       }}
       onChainChange={reseekIfPlaying}

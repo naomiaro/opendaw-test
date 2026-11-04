@@ -232,3 +232,30 @@ describe("renderedRows", () => {
     expect(rows.ghosts).toHaveLength(16);
   });
 });
+
+describe("renderedRows with figures that are not numbers", () => {
+  it("a NaN velocity draws hollow, labelled unreadable, with no stem; a NaN cents gets no label", () => {
+    const prediction = predict([note(0, 480, 61), note(960, 480, 64)]);
+    const read = [fig(REGION_MS + 1, REGION_MS + 240, 61, Number.NaN), fig(REGION_MS + 501, REGION_MS + 740, 64, 0.6, Number.NaN)];
+    const rows = renderedRows(read, prediction, melody, bpm, noRead);
+    expect(rows.notes).toEqual([
+      { pitch: 61, from: msToRegionPpqn(REGION_MS + 1, bpm), to: msToRegionPpqn(REGION_MS + 240, bpm), hollow: true, label: "unreadable" },
+      { pitch: 64, from: msToRegionPpqn(REGION_MS + 501, bpm), to: msToRegionPpqn(REGION_MS + 740, bpm), velocity: 0.6 },
+    ]);
+    expect(rows.stems).toEqual([{ at: msToRegionPpqn(REGION_MS + 501, bpm), velocity: 0.6 }]);
+  });
+
+  it("an abutting note whose velocity reads NaN is hollow and dashed, unreadable, with no stem", () => {
+    // two touching quarters: abutting, read at the predicted span
+    const prediction = predict([note(0, 480, 61), note(480, 480, 62)]);
+    expect(prediction.predicted.every((n) => n.readability === "abutting")).toBe(true);
+    const readAt = (onsetMs: number, endMs: number): NoteFigure => fig(onsetMs, endMs, 61, Number.NaN, Number.POSITIVE_INFINITY);
+    const rows = renderedRows([], prediction, melody, bpm, readAt);
+    expect(rows.notes).toEqual([
+      { pitch: 61, from: 0, to: 480, hollow: true, label: "unreadable", dashedEdges: true },
+      { pitch: 62, from: 480, to: 960, hollow: true, label: "unreadable", dashedEdges: true },
+    ]);
+    expect(rows.stems).toEqual([]);
+  });
+});
+

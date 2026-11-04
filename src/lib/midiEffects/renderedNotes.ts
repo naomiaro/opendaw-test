@@ -71,9 +71,9 @@ export function predictChain(chain: readonly ChainSetting[], context: RuleContex
   return { predicted: markReadability(composed, bpm, mark), silenced: composed.filter((note) => note.velocity === 0) };
 }
 
-/** "+25¢" / "−3¢" (a true minus sign), rounded; none under the audit's cents tolerance or without a reading. */
+/** "+25¢" / "−3¢" (a true minus sign), rounded; none under the audit's cents tolerance, without a reading or for a figure that is not a number. */
 function centsLabel(cents: number | null): string | undefined {
-  if (cents === null || Math.abs(cents) < TOLERANCES.cents) return undefined;
+  if (cents === null || !Number.isFinite(cents) || Math.abs(cents) < TOLERANCES.cents) return undefined;
   const rounded = Math.round(cents);
   return `${rounded < 0 ? "−" : "+"}${Math.abs(rounded)}¢`;
 }
@@ -84,9 +84,14 @@ const regionSpan = (note: RuleNote): { from: number; to: number } =>
 /** A note at its predicted span, outline only, with the reason it holds no reading. */
 const hollowAt = (note: RuleNote, label: string): LaneNote => ({ pitch: note.pitch, ...regionSpan(note), hollow: true, label });
 
+/** A velocity the reader could not turn into a number (a NaN peak) is drawn hollow, "unreadable", with no stem. */
+const readableVelocity = (velocity: number): boolean => Number.isFinite(velocity);
+
 /** A read figure drawn as what was read; `fallbackPitch` is the row a pitchless figure sits on. */
 function readNote(figure: NoteFigure, fallbackPitch: number, bpm: number): LaneNote {
-  const base = { from: msToRegionPpqn(figure.onsetMs, bpm), to: msToRegionPpqn(figure.endMs, bpm), velocity: figure.velocity };
+  const span = { from: msToRegionPpqn(figure.onsetMs, bpm), to: msToRegionPpqn(figure.endMs, bpm) };
+  if (!readableVelocity(figure.velocity)) return { pitch: figure.pitch ?? fallbackPitch, ...span, hollow: true, label: "unreadable" };
+  const base = { ...span, velocity: figure.velocity };
   if (figure.pitch === null) return { pitch: fallbackPitch, ...base, hollow: true, label: "no pitch" };
   const label = centsLabel(figure.cents);
   return { pitch: figure.pitch, ...base, ...(label === undefined ? {} : { label }) };
@@ -129,6 +134,9 @@ export function renderedRows(
   const unreadable = unreadableSpans(prediction.predicted);
   const notes: LaneNote[] = [];
   const stems: Stem[] = [];
+  const stem = (at: number, velocity: number): void => {
+    if (readableVelocity(velocity)) stems.push({ at, velocity });
+  };
 
   const inside = (figure: NoteFigure, note: PredictedNote): boolean => {
     const { onsetMs, endMs } = predictedMs(note, bpm);
@@ -152,13 +160,17 @@ export function renderedRows(
     }
     remaining.delete(best);
     notes.push(readNote(best, note.pitch, bpm));
-    stems.push({ at: msToRegionPpqn(best.onsetMs, bpm), velocity: best.velocity });
+    stem(msToRegionPpqn(best.onsetMs, bpm), best.velocity);
   }
 
   for (const note of prediction.predicted) {
     if (note.readability === "abutting") {
       const { onsetMs, endMs } = predictedMs(note, bpm);
       const figure = readAt(onsetMs, endMs);
+      if (!readableVelocity(figure.velocity)) {
+        notes.push({ ...hollowAt(note, "unreadable"), dashedEdges: true });
+        continue;
+      }
       if (figure.pitch === null) {
         // nothing measured to draw: the predicted pitch only places the row
         notes.push({ ...hollowAt(note, "no pitch"), dashedEdges: true });
@@ -169,7 +181,8 @@ export function renderedRows(
         pitch: figure.pitch, ...regionSpan(note), velocity: figure.velocity, dashedEdges: true,
         ...(label === undefined ? {} : { label }),
       });
-      stems.push({ at: note.position - REGION_START_PPQN, velocity: figure.velocity });
+      // the stem sits at the PREDICTED onset: the reader could not find this note's edges
+      stem(note.position - REGION_START_PPQN, figure.velocity);
     } else if (note.readability === "too-short") {
       notes.push(hollowAt(note, "too short"));
     } else if (note.readability === "too-quiet") {
@@ -181,7 +194,7 @@ export function renderedRows(
 
   for (const figure of remaining) {
     notes.push(readNote(figure, 0, bpm));
-    stems.push({ at: msToRegionPpqn(figure.onsetMs, bpm), velocity: figure.velocity });
+    stem(msToRegionPpqn(figure.onsetMs, bpm), figure.velocity);
   }
 
   notes.sort((a, b) => a.from - b.from);
