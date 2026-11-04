@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MIDI_TOLERANCES } from "./midiInputCalibration";
 import {
-  classifyMidiCell, expectedLateMedianMs, matchNotes, measureRepeat, median, MIDI_KNOWN_DEFECTS, percentile, quantumMs, splitCountIn,
+  classifyMidiCell, expectedLateMedianMs, LEGACY_LATE_BANDS, matchNotes, measureRepeat, median, MIDI_KNOWN_DEFECTS, percentile, quantumMs, splitCountIn,
   type RecordedNote, type SentNote,
 } from "./midiInputAlignment";
 
@@ -120,13 +120,19 @@ describe("median / percentile", () => {
   });
 });
 
-describe("MIDI_KNOWN_DEFECTS", () => {
+describe("the legacy late bands (the recorder before the capture rewrite; retired from the live verdict)", () => {
   const row = (medianMs: number, spread: number, durationMax: number): ReturnType<typeof measureRepeat> => ({
     notesSent: 48, notesRecorded: 48, judgedNotes: 48, missing: 0, receiptsMissing: 0, extra: 0, stuck: 0, velocityMismatches: 0,
     placementMedianMs: medianMs, placementMaxAbsDevMs: spread, placementP5P95Ms: spread, durationErrorMedianMs: 0, durationErrorMaxMs: durationMax,
     loopbackDelayMedianMs: 0, loopbackDelayMaxMs: 0, wrapAdjacent: 0, countInNotes: 0, countInRecorded: 0, collapsed: 0,
   });
   const mac60 = { outputLatencyMs: 23, compensationLatencyMs: 0, frameIntervalMs: 16.7, sampleRate: 44100 };
+  it("reads a bring-up row of the old recorder as investigate on the live list, which pins no band", () => {
+    expect(MIDI_KNOWN_DEFECTS).toEqual([]);
+    const v = classifyMidiCell("midtimeline-start", [row(32.64, 9.72, 12.5)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [{ ...mac60, frameIntervalMs: 18.57 }]);
+    expect(v.status).toBe("investigate");
+    expect(v.detail).not.toMatch(/midi-late/);
+  });
   it("derives the expected median from the row's own latency, frame and quantum", () => {
     // 2 × 23 − (16.7 − 2.9) = 32.2
     expect(expectedLateMedianMs(mac60)).toBeCloseTo(32.2, 1);
@@ -134,39 +140,39 @@ describe("MIDI_KNOWN_DEFECTS", () => {
     expect(expectedLateMedianMs({ outputLatencyMs: 10, compensationLatencyMs: 0, frameIntervalMs: 8.3, sampleRate: 48000 })).toBeCloseTo(14.4, 1);
   });
   it("classifies every bring-up row of the register from its own figures, the 18.6 ms frame included", () => {
-    expect(classifyMidiCell("midtimeline-start", [row(32.64, 9.72, 12.5), row(33.33, 9.72, 9.72)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS,
+    expect(classifyMidiCell("midtimeline-start", [row(32.64, 9.72, 12.5), row(33.33, 9.72, 9.72)], MIDI_TOLERANCES, LEGACY_LATE_BANDS,
       [{ ...mac60, frameIntervalMs: 18.57 }, { ...mac60, frameIntervalMs: 17.33 }]).status).toBe("matches-known-defect");
-    expect(classifyMidiCell("loop-wrap", [row(32.82, 10.42, 10.94), row(32.82, 9.38, 13.54)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS,
+    expect(classifyMidiCell("loop-wrap", [row(32.82, 10.42, 10.94), row(32.82, 9.38, 13.54)], MIDI_TOLERANCES, LEGACY_LATE_BANDS,
       [{ ...mac60, frameIntervalMs: 17.02 }, { ...mac60, frameIntervalMs: 16.8 }]).status).toBe("matches-known-defect");
   });
   it("moves with the device: a 120 Hz display or another output latency gets its own band, and a row without figures misses", () => {
     const hz120 = { ...mac60, frameIntervalMs: 8.33 }; // expected 2 × 23 − (8.33 − 2.9) = 40.6
-    expect(classifyMidiCell("nominal-start", [row(40.5, 7, 8)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [hz120]).status).toBe("matches-known-defect");
-    expect(classifyMidiCell("nominal-start", [row(32.8, 7, 8)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [hz120]).status).toBe("investigate");
+    expect(classifyMidiCell("nominal-start", [row(40.5, 7, 8)], MIDI_TOLERANCES, LEGACY_LATE_BANDS, [hz120]).status).toBe("matches-known-defect");
+    expect(classifyMidiCell("nominal-start", [row(32.8, 7, 8)], MIDI_TOLERANCES, LEGACY_LATE_BANDS, [hz120]).status).toBe("investigate");
     const iface = { outputLatencyMs: 10, compensationLatencyMs: 0, frameIntervalMs: 16.7, sampleRate: 48000 }; // expected 20 − 14 = 6
-    expect(classifyMidiCell("nominal-start", [row(6.5, 7, 8)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [iface]).status).toBe("matches-known-defect");
-    expect(classifyMidiCell("nominal-start", [row(32.8, 7, 8)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [null]).status).toBe("investigate");
+    expect(classifyMidiCell("nominal-start", [row(6.5, 7, 8)], MIDI_TOLERANCES, LEGACY_LATE_BANDS, [iface]).status).toBe("matches-known-defect");
+    expect(classifyMidiCell("nominal-start", [row(32.8, 7, 8)], MIDI_TOLERANCES, LEGACY_LATE_BANDS, [null]).status).toBe("investigate");
   });
   it("includes the compensation latency in the term the recorder doubles", () => {
     const ctx = { ...mac60, compensationLatencyMs: 5 };
     expect(expectedLateMedianMs(ctx)).toBeCloseTo(2 * (23 + 5) - (16.7 - quantumMs(44100)), 6);
-    expect(classifyMidiCell("nominal-start", [row(42.2, 7, 8)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [ctx]).status).toBe("matches-known-defect");
-    expect(classifyMidiCell("nominal-start", [row(32.8, 7, 8)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [ctx]).status).toBe("investigate");
+    expect(classifyMidiCell("nominal-start", [row(42.2, 7, 8)], MIDI_TOLERANCES, LEGACY_LATE_BANDS, [ctx]).status).toBe("matches-known-defect");
+    expect(classifyMidiCell("nominal-start", [row(32.8, 7, 8)], MIDI_TOLERANCES, LEGACY_LATE_BANDS, [ctx]).status).toBe("investigate");
   });
   it("labels an all-clean janked-mid cell with the plain late band, not the release-lost one", () => {
-    const v = classifyMidiCell("janked-mid", [row(33, 9.4, 8), row(33, 9.4, 8)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [mac60, mac60]);
+    const v = classifyMidiCell("janked-mid", [row(33, 9.4, 8), row(33, 9.4, 8)], MIDI_TOLERANCES, LEGACY_LATE_BANDS, [mac60, mac60]);
     expect(v.status).toBe("matches-known-defect");
     expect(v.detail.startsWith("midi-late:")).toBe(true);
   });
   it("bounds the jitter by a frame plus a quantum of the row, and a collapsed release only in janked-mid", () => {
-    expect(classifyMidiCell("nominal-start", [row(32.8, 19, 8)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [mac60]).status).toBe("matches-known-defect");
-    expect(classifyMidiCell("nominal-start", [row(32.8, 24, 8)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [mac60]).status).toBe("investigate");
-    expect(classifyMidiCell("nominal-start", [{ ...row(33, 9.4, 8), collapsed: 1 }], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [mac60]))
+    expect(classifyMidiCell("nominal-start", [row(32.8, 19, 8)], MIDI_TOLERANCES, LEGACY_LATE_BANDS, [mac60]).status).toBe("matches-known-defect");
+    expect(classifyMidiCell("nominal-start", [row(32.8, 24, 8)], MIDI_TOLERANCES, LEGACY_LATE_BANDS, [mac60]).status).toBe("investigate");
+    expect(classifyMidiCell("nominal-start", [{ ...row(33, 9.4, 8), collapsed: 1 }], MIDI_TOLERANCES, LEGACY_LATE_BANDS, [mac60]))
       .toMatchObject({ status: "investigate", detail: expect.stringContaining("collapsed 1") });
-    const janked = classifyMidiCell("janked-mid", [{ ...row(33, 9.4, 8), collapsed: 1 }, row(33, 9.4, 8)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [mac60, mac60]);
+    const janked = classifyMidiCell("janked-mid", [{ ...row(33, 9.4, 8), collapsed: 1 }, row(33, 9.4, 8)], MIDI_TOLERANCES, LEGACY_LATE_BANDS, [mac60, mac60]);
     expect(janked.status).toBe("matches-known-defect");
     expect(janked.detail).toContain("release");
-    expect(classifyMidiCell("janked-mid", [{ ...row(33, 9.4, 8), collapsed: 2 }], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [mac60]).status).toBe("investigate");
+    expect(classifyMidiCell("janked-mid", [{ ...row(33, 9.4, 8), collapsed: 2 }], MIDI_TOLERANCES, LEGACY_LATE_BANDS, [mac60]).status).toBe("investigate");
   });
 });
 
@@ -206,7 +212,7 @@ describe("classifyMidiCell", () => {
       .toMatchObject({ status: "investigate", detail: expect.stringContaining("no duration measured") });
   });
   it("names a missing band context instead of blaming the median", () => {
-    expect(classifyMidiCell("nominal-start", [clean(33, 9)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [null]))
+    expect(classifyMidiCell("nominal-start", [clean(33, 9)], MIDI_TOLERANCES, LEGACY_LATE_BANDS, [null]))
       .toMatchObject({ status: "investigate", detail: expect.stringContaining("no band context") });
   });
   it("lets a static band carry a fixed median range and jitter bound", () => {

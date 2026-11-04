@@ -279,7 +279,8 @@ Same shape as the matrix; take order from the labels on every repeat.
 ### The bands this register pins
 
 `midi-late` (any scenario) and `midi-late-release-lost` (`janked-mid`, the same plus one lost
-release per repeat) in `MIDI_KNOWN_DEFECTS` (`src/lib/audit/midiInputAlignment.ts`). They
+release per repeat), since 2026-11-04 as `LEGACY_LATE_BANDS` (`src/lib/audit/midiInputAlignment.ts`;
+the live list `MIDI_KNOWN_DEFECTS` is empty, see the SDK 0.0.181 section). They
 are computed from each row's OWN figures, so they hold on any device or display: the median
 must sit within ±5 ms of `2 × (outputLatencyMs + compensationLatencyMs) − (frameIntervalMs −
 quantumMs)` (23 ms and 16.7 ms give 32.2 here; a 120 Hz display gives about 40; a 10 ms
@@ -479,3 +480,8 @@ Cell `aligned`, as on 0.0.180.
 
 As on 0.0.180: the recorder takes the capture's raw note signals before the chain; the release's
 `release_all` on a leaving effect does not reach it.
+
+**The bands retired from the live verdict (2026-11-04).** `MIDI_KNOWN_DEFECTS` is empty: a cell off the
+tolerances reads `investigate`, a regression to the old recorder included (the user's rule, applied to
+the MIDI output audit the same day). The two bands (`midi-late`, `midi-late-release-lost`) live on as
+`LEGACY_LATE_BANDS` in `midiInputAlignment.ts`, exercised by the tests that pin their shape and formula.

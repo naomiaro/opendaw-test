@@ -240,14 +240,13 @@ picks another). Register: `debug/2026-10-20-midi-input-alignment/note.md`.
   output lag the clock pair implies, the figure the latency attribution rests on; count-in
   notes = recorded / sent, reported only. `aligned` needs every figure inside the
   tolerances in `midiInputCalibration.ts` (derived from a render quantum, not fitted);
-  `matches-known-defect` needs every repeat inside one band of `MIDI_KNOWN_DEFECTS`, which
-  is computed from the row's own output latency, frame interval and sample rate (median
-  within ±5 ms of `2 × (output + compensation latency) − (frame − quantum)`, jitter and
-  duration within a frame plus a quantum), so it holds on any device or display and a
-  median that does not track the formula is a finding; else `investigate` names the first
-  failing figure. Expect `aligned` (measured: 36 of 36 rows, medians 0.00–0.01 ms, release
-  lengths exact under the 150 ms blocks); the bands describe the recorder before the capture
-  rewrite and now only catch a regression back to it.
+  `matches-known-defect` needs every repeat inside one band of `MIDI_KNOWN_DEFECTS` — a list
+  that is EMPTY since the recorder's defects were fixed (openDAW#491 / #492): a cell off the
+  tolerances reads `investigate` naming the first failing figure, a regression included. The old
+  recorder's shape (median within ±5 ms of `2 × (output + compensation latency) − (frame −
+  quantum)`, jitter and duration within a frame plus a quantum, computed from the row's own
+  figures) lives on as `LEGACY_LATE_BANDS`, exercised by the tests only. Expect `aligned`
+  (measured: 36 of 36 rows, medians 0.00–0.01 ms, release lengths exact under the 150 ms blocks).
 - **Scenarios.** `nominal-start`, `janked-start` (the audio harness's 150 ms block on the
   `isRecording` flip), `janked-mid` (the same block fired from a timer task in the middle of
   the pattern's bar two, between frames), `countin-start` (one-bar count-in; three unanchored
@@ -311,9 +310,9 @@ register `debug/2026-10-23-midi-output-timing/note.md`. Chrome only; a real clic
   longer moves a note. Before openDAW#356 was fixed the base was the moment the main thread read the
   ring plus the reported output latency, truncated to whole ms: a late handler landed on the note,
   in one direction, and `delayInMs` absorbed none of it. That old base is the band
-  `midi-out-main-thread-base` below; on the audio-clock base a janked engine cell reads `on-time`
+  the verdict test pins as `investigate`; on the audio-clock base a janked engine cell reads `on-time`
   (measured: run B's inside-block medians 10.32 / 9.97 ms on the 10 ms delay, no off-before-on
-  inversion), and the band only catches a regression.
+  inversion), pinned in the same test.
 - **The clock rule.** The anchor is `engine.recordingStart` from a recording with NOTHING armed
   (`Recording.start` reaches `prepareRecordingState` with zero captures; the engine stamps the
   start and records nothing). ONE `getOutputTimestamp` pair per repeat bridges to the Web MIDI
@@ -346,12 +345,8 @@ register `debug/2026-10-23-midi-output-timing/note.md`. Chrome only; a real clic
   and the spread within 1 ms of the one pair. Engine: `not-judged` (`bus` or `no-control`);
   `on-time` when clean, the live median within half a quantum of `delayInMs` and the live
   spread within a quantum; `matches-known-defect` when a band in `MIDI_OUT_KNOWN_DEFECTS`
-  explains every repeat, `midi-out-main-thread-base` for a janked cell on the old main-thread base (a
-  regression band since the audio-clock base measured `on-time`; live median on the
-  delay within a quantum, inside-block median between `delay + jank/4` and `delay + jank + 1 quantum`, spread
-  within `jank + 1 quantum`, the notes clear of every block within two quanta,
-  `stuck == extra == stuckInsideBlocks ≤ notesInsideBlocks`: the off-before-on inversion and only
-  it), pinned on run B of the note and named in the detail; else `investigate` naming the first
+  explains every repeat — the list is empty since the main-thread base (openDAW#356) was fixed, the
+  machinery stays for a defect yet to be filed; else `investigate` naming the first
   failing figure. The repeat deadline is derived from the tuple (`repeatDeadlineMs`), so no allowed
   cell is cut off. A band is
   tried on any failure, integrity included. Transport messages (Clock / Start / Stop /

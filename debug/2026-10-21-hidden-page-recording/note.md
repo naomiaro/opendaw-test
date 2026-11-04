@@ -190,7 +190,23 @@ before the devices reset; the recorder's stop stamp is netted before the fade, s
 | `modal`, `hideAt=mid` | `intact`, 41 / 41 (the take ran on under the dialog, 20.5 s), median 1.15 ms | `intact`, 31 / 31 | 18.4 s | 58 ms |
 | `modal`, `hideAt=stop` | `intact`, 31 / 31, median 1.15 ms | `intact`, 31 / 31 | 10.2 s | 10 211 ms (the dialog's span, as before) |
 
-The rows read as on 0.0.177 and 0.0.179. The `cover` rows still need a hand.
+The rows read as on 0.0.177 and 0.0.179.
+
+### SDK 0.0.181 (2026-11-04): the `cover` row, by the user's hand
+
+`hiddenrec-summary-1793815815529.json`: `?driver=hidden-safe&interrupt=cover&hideAt=start`, the user's own
+Chrome window, Cmd+H at the prompt, the Dock click five seconds later. Hidden span 6.06 s; take 1
+(interrupted) `intact`, 31 / 31, median 1.15 ms, finalized in 57 ms; take 2 (control) `intact`, 31 / 31,
+finalized in 58 ms; longest frame gap 542 ms, position frozen 0 ms, sync resumed 97 ms after visible, take 2
+started. As on 0.0.176.
+
+Two ways that do NOT hide the page, learned on this run: the Playwright-launched Chrome never reports
+`hidden` (Playwright starts it with window backgrounding disabled, so Cmd+H on that window leaves
+`document.visibilityState` at `visible` and the page at `waiting:hide` for good), and the claude-in-chrome
+extension opens its tab in a window of its own that the user may not find, while any screenshot or script call
+from the tooling brings that tab forward and cuts the hide short (one run read `not-hidden` that way). The row is
+the user's: the URL in a tab of their normal window, Run, Cmd+H, the Dock, and the envelope read from
+`.verify-output/` afterwards.
 
 ## Reading
 

@@ -370,10 +370,9 @@ the MIDI output rows are read in the user's Chrome from here on (root CLAUDE.md)
 
 **Reading on 0.0.181, all three runs:** the finding of this register is fixed. Every note on the
 `delayInMs` within half a quantum on an idle main thread as before, and now under jank too. The band
-`midi-out-main-thread-base` (`midiOutputVerdict.ts`) stays in the file as a regression band, as the MIDI
-input bands did after the capture rewrite: a janked cell reading `matches-known-defect` from here on is a
-regression to the main-thread base, and the test file pins run B's fixed figures as `on-time` beside the
-2026-10-23 figures it pins as the band.
+`midi-out-main-thread-base` is dropped from `midiOutputVerdict.ts` (the user's call: a regression must read
+as a failure, not as a known defect); `MIDI_OUT_KNOWN_DEFECTS` is empty, and the test file pins the
+2026-10-23 figures as `investigate` and run B's fixed figures as `on-time`.
 
 ## Findings
 
@@ -401,7 +400,7 @@ regression to the main-thread base, and the test file pins run B's fixed figures
 
 ### The band (`midiOutputVerdict.ts`, `MIDI_OUT_KNOWN_DEFECTS`)
 
-`midi-out-main-thread-base` (the main-thread base before openDAW#356 was fixed; since SDK 0.0.181 a regression band only, see the 2026-11-04 section), applies to a janked cell, pinned on run B's four engine repeats (the test
+`midi-out-main-thread-base` (the main-thread base before openDAW#356 was fixed; DROPPED from the code on 2026-11-04 after the fix measured, see that section — the description below is what it pinned), applied to a janked cell, pinned on run B's four engine repeats (the test
 holds their figures, and the verdict detail names the run): median (live where sampled) within a quantum
 of `delayInMs`; at least one note inside a block; the inside-block median between `delayInMs + jankMs / 4`
 and `delayInMs + jankMs + 1 quantum`; `maxAbsDevMs ≤ jankMs + 1 quantum`; the spread of the notes CLEAR

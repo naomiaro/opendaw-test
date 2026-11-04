@@ -237,12 +237,13 @@ const LATE = {
 };
 
 /**
- * Bands the register characterized (`debug/2026-10-20-midi-input-alignment/note.md`). A band is the
- * measured shape of a defect, computed from each row's own output latency, frame interval and
- * sample rate, so it holds on any machine: a median that tracks the formula matches, one that does
- * not reads `investigate`, and a release that changes the recorder reads `aligned` or `investigate`.
+ * The bands the register characterized on the recorder before the capture rewrite
+ * (`debug/2026-10-20-midi-input-alignment/note.md`): the measured shape of openDAW#491 / #492, computed
+ * from each row's own output latency, frame interval and sample rate. Retired from the live verdict
+ * once the fixes measured (a regression must read `investigate`, not a known defect); kept for the
+ * tests that pin the shape and the formula.
  */
-export const MIDI_KNOWN_DEFECTS: readonly KnownDefectBand[] = [
+export const LEGACY_LATE_BANDS: readonly KnownDefectBand[] = [
   // The plain band first, so a janked-mid cell that lost no release is labelled with it.
   {
     id: "midi-late",
@@ -262,6 +263,9 @@ export const MIDI_KNOWN_DEFECTS: readonly KnownDefectBand[] = [
     detail: "the late band, plus one release lost to the main-thread block (written from a position as old as the block)",
   },
 ];
+
+/** No band is pinned on the live verdict: every defect the register characterized is fixed; a cell off the tolerances reads `investigate`. */
+export const MIDI_KNOWN_DEFECTS: readonly KnownDefectBand[] = [];
 
 const resolve = <T,>(bound: Bound<T> | undefined, context: BandContext | null | undefined): T | null | undefined =>
   typeof bound === "function" ? (context ? (bound as (c: BandContext) => T)(context) : null) : bound;
