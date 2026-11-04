@@ -466,6 +466,50 @@ other answer, a corrupt register, or one of another rate or bpm ends the run in 
   the run's date. Offline renders are deterministic: a `changed` row on an unchanged SDK is a
   non-determinism finding.
 
+### MIDI Effects Rendered page
+`src/demos/midi/midi-effects-rendered-demo.tsx` (hook `useRenderedNotes.ts`; pure modules
+`src/lib/midiEffects/renderedNotes.ts`, `renderScheduler.ts`, `velocityColor.ts`) draws what the
+engine DID: the chain is rendered offline and the left channel read back as notes, laid over the
+rule's prediction. The overview page is `midi-effects-overview.tsx`.
+- **Sample.** The audit's Nano sine (root key 69, 1 ms attack/release) with a 20 s sample (the
+  audit's is 4 s). The Nano does not loop the sample, so a note far above the root runs out of it: a
+  Bass quarter at +84 st needs 9.5 s. At 20 s every pattern note holds to pitch 121, the Melody's and
+  Sixteenths' to 127. Beyond that the engine ends the note when the sample ends and the reader reads
+  that end as measured; the page does not detect it.
+- **Maximizer.** The live project KEEPS the master Maximizer (a Chords triad at 0.8 would clip
+  without it). The render copy drops it through `renderOfflineSlice`'s `mutateCopy` option
+  (`src/lib/offlineScan.ts`); `renderChannel` throws unless exactly one was removed.
+- **Gapped patterns.** `withGaps(pattern, 0.9)` (`src/lib/midiEffects/patterns.ts`) shortens notes to
+  90 % so the reader finds the gap (Melody 25 ms, Bass 100 ms); the shared patterns and the audit's
+  register are untouched. The one abutting case left is an Arpeggio at gate 100 %: its steps' onset
+  AND end come from the device rule (drawn dashed, `measured: false`). Above 100 % the steps overlap
+  and read unreadable.
+- **Prediction.** Windows and readability marks use the variant with EVERY known deviation applied
+  (the engine's), never the audit's intent variant (`settingsOf` in
+  `src/lib/audit/midiEffectSemanticsRows.ts`). A disabled device is left out. The rule never supplies
+  a drawn value except the dashed edges. A read figure inside a non-readable predicted note's span
+  (±1 ms) is that note's counterpart, never an extra. Velocity-0 notes draw as hollow outlines
+  labelled "silent".
+- **Render on settle.** `RenderScheduler`: 300 ms settle, one follow-up at most. The hook subscribes
+  to every device parameter through the adapters AND to the Velocity `randomSeed` field, which
+  `DeviceSetting` excludes, so Reseed re-renders. Calibration (dry gapped Sixteenths,
+  `calibrationFrom`) runs once at boot BEFORE the hook activates, so no two offline renders overlap.
+- **Measured.** While Sixteenths played, swinging Velocity's Random between 0 and 100 % for ten
+  seconds ran about fifteen offline renders of about 150 ms each. The longest frame gap was 10.4 ms
+  against a 10.3 ms idle baseline, and Chrome's playback stats counted no underruns. Not assessed by
+  ear, so no defer-while-playing fallback was built.
+- **Cards.** The device cards carry a per-page `laneNote` (`DeviceSpec.laneNote.effects` /
+  `.rendered`), because the shared `listenFor` must not describe either page's lane.
+- **Lane.** `velocityColor` squares the velocity (openDAW's `PitchPainter` does) from a dim tint to
+  the amber accent. `NoteLane` (`src/components/NoteLane.tsx`) labels a note only where the bar fits
+  the label; `VelocityStrip.tsx` is the strip. Both lanes on the Rendered page are 224 px so the
+  dashed edges show.
+- **Region position.** The region sits at bar 2 on BOTH the MIDI Effects and Rendered pages
+  (`REGION_START_PPQN`, the audit's `REGION_POSITION_PPQN`) because the Arpeggio walks the absolute
+  grid. Play seeks to the region start when the transport is below it. Lane positions are
+  region-local and clamped at 0 (the `EmittedBars.sample` call keeps the raw value for its wrap
+  reset).
+
 ### Combined MIDI + Audio Audit (unlisted)
 `midi-audio-combined-audit-debug-demo.html?scenario=<nominal-start|countin-start|janked-mid|all>&bpm=<n>[&repeats=<n>][&state=<default|calibrated|both>][&bus=][&input=][&output=][&audible=1]`
 sends each note of the MIDI sweep's pattern on the IAC bus AND plays a 6 kHz click out of the
