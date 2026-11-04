@@ -296,9 +296,10 @@ project.editing.modify(() => {
   // Mono vs Stereo
   capture.requestChannels = 1; // mono: inputs 1 and 2 mixed
   capture.requestChannels = 2; // stereo (default)
-  // One input of an interface on its own, or any pair: a ChannelMapping (bit n = input n)
+  // One input of an interface on its own, or any pair: a ChannelMapping (bit n = input n+1, bit 0 is input 1)
   capture.channelMapping = ChannelMapping.mono(1);   // Mono 2
-  capture.channelMapping = ChannelMapping.stereo(2); // Stereo 3/4, once a browser delivers more than two inputs
+  capture.channelMapping = ChannelMapping.stereo(2); // Stereo 3/4 once a browser delivers more than two inputs;
+  // on a two-input stream the undelivered inputs drop out and an empty left side takes input 1 (ChannelMapping.fit)
   // Stereo and MonoMixed are stored as the channel count; requestChannels = n clears the masks
 
   // Input gain (dB)

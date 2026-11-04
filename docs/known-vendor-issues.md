@@ -583,7 +583,7 @@ through `getOutputTimestamp()` (a scheduled send that, with no `clear()`, cannot
 Chrome 126 regression) — the SDK never queries it; `MIDIAccess` in a worker ([379805727](https://issues.chromium.org/issues/379805727));
 the feature requests for virtual ports ([41487942](https://issues.chromium.org/issues/41487942)) and MIDI 2.0
 ([40671162](https://issues.chromium.org/issues/40671162)); and the `midi` Permissions Policy skipped by the browser-side
-session provider ([530996650](https://issues.chromium.org/issues/530996650), 2026-11, a policy gap for embedded frames — the
+session provider ([530996650](https://issues.chromium.org/issues/530996650), modified 2026-11-03, a policy gap for embedded frames — the
 demos request MIDI access from a top-level page). Lists re-read 2026-11-04 (`status:open WebMIDI` and `Blink>WebAudio`
 by modified time): nothing new that reaches here.
 

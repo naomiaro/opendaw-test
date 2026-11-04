@@ -146,7 +146,7 @@ Access via `audioUnitBoxAdapter.midiEffects` — an
 `Option<IndexedBoxAdapterCollection>` (unwrap first; `None` means the host has no
 midi chain, e.g. an effect-composite branch):
 - **ArpeggioDeviceBoxAdapter** — arpeggiator patterns (up, down, random, etc.)
-- **NoteFilterDeviceBoxAdapter** — key range (`min` / `max`, both included) then `transpose` semitones or one `key` (`set`); a transposed note outside 0..127 is dropped, velocity and cent pass through, a note ends on the key it started with; `EffectFactories.NoteFilter`
+- **NoteFilterDeviceBoxAdapter** — key range (`min` / `max`, both included; a note outside it is dropped) then `transpose` semitones or one `key` (`set`); a transposed note outside 0..127 is dropped, velocity and cent pass through, a note ends on the key it started with; `EffectFactories.NoteFilter`
 - **PitchDeviceBoxAdapter** — pitch transpose/shift
 - **VelocityDeviceBoxAdapter** — velocity curve mapping
 - **SpielwerkDeviceBoxAdapter** — scriptable MIDI effect (JavaScript)
@@ -308,8 +308,8 @@ register `debug/2026-10-23-midi-output-timing/note.md`. Chrome only; a real clic
   thread maps each time through one `getOutputTimestamp()` pair per ring read plus the
   compensation latency (`MIDIReceiver.outputClock`) and hands it to `MIDIOutput.send` as the
   timestamp (`Project.sendMIDIFromEngine`). The base is the audio clock, so a late handler no
-  longer moves a note. Before this fix the base was the moment the main thread read the
-  ring plus the reported output latency, rounded to whole ms: a late handler landed on the note,
+  longer moves a note. Before openDAW#356 was fixed the base was the moment the main thread read the
+  ring plus the reported output latency, truncated to whole ms: a late handler landed on the note,
   in one direction, and `delayInMs` absorbed none of it. That old base is the band
   `midi-out-main-thread-base` below; on the new base a janked engine cell is expected `on-time`,
   and the band then only catches a regression (re-measure owed: the IAC rows need a hand).
@@ -345,7 +345,8 @@ register `debug/2026-10-23-midi-output-timing/note.md`. Chrome only; a real clic
   and the spread within 1 ms of the one pair. Engine: `not-judged` (`bus` or `no-control`);
   `on-time` when clean, the live median within half a quantum of `delayInMs` and the live
   spread within a quantum; `matches-known-defect` when a band in `MIDI_OUT_KNOWN_DEFECTS`
-  explains every repeat, today `midi-out-main-thread-base` for a janked cell (live median on the
+  explains every repeat, `midi-out-main-thread-base` for a janked cell on the old main-thread base (expected
+  retired once the audio-clock base is measured `on-time`; live median on the
   delay within a quantum, inside-block median between `delay + jank/4` and `delay + jank + 1 quantum`, spread
   within `jank + 1 quantum`, the notes clear of every block within two quanta,
   `stuck == extra == stuckInsideBlocks ≤ notesInsideBlocks`: the off-before-on inversion and only
@@ -374,9 +375,11 @@ table `node scripts/audit/midi-effect-placement/table.ts`.
   playback. A disabled effect is left out of the chain. A change to an instrument's MIDI
   chain (an effect bypassed, removed, added or reordered) drops the instrument's sounding voices, every
   effect that left the chain ends the notes it started (its `release_all` export, Arpeggio / Spielwerk /
-  Note Filter / WebCLAP MIDI; the note-offs come out first on the instrument's next pull, for an
-  instrument that keeps its voices), and a MIDI Output sends note offs for the notes it holds, so no
-  note hangs; Arpeggio and Spielwerk start clean when enabled again. A change that leaves the MIDI
+  Note Filter / WebCLAP MIDI; the note-offs are handed out first on the instrument's next pull, after the
+  chain change has already reset the instrument's voices, so they end the notes on the note indicator and
+  on anything downstream, not on a sounding voice), and a MIDI Output discards them and sends its own
+  note offs for the notes it holds, so no note hangs; Arpeggio, and a Spielwerk whose script defines
+  `reset`, start clean when enabled again. A change that leaves the MIDI
   effects as they were (an audio effect added) keeps them. The audit sets `enabled` before it
   renders, so a row never sees the drop or the release.
 - **Two judgements.** A device meant to pass timing through (Pitch, Velocity, a Spielwerk that

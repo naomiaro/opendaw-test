@@ -54,7 +54,7 @@ if (capture instanceof CaptureAudio) {
   project.editing.modify(() => {
     capture.captureBox.deviceId.setValue(deviceId);
     capture.requestChannels = 1;        // 1 = mono (inputs 1+2 mixed), 2 = stereo; clears the masks below
-    // capture.channelMapping = ChannelMapping.mono(1); // one input on its own (captureBox.leftInputs / rightInputs, bit n = input n)
+    // capture.channelMapping = ChannelMapping.mono(1); // one input on its own (captureBox.leftInputs / rightInputs, bit n = input n+1, bit 0 is input 1)
     capture.captureBox.gainDb.setValue(0); // dB
   });
   // monitoringMode manipulates Web Audio nodes — set outside transaction

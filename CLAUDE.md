@@ -772,9 +772,11 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   click on Run, the IAC Driver online, the window uncovered. Read the PAGE cell first: it must be
   `bus-true` or nothing of the engine cell counts. Expect the engine cells `on-time` without jank (live
   median on the box delay within half a quantum; a one-off `investigate` whose live spread tracks a
-  `pair drift` excursion is the clock relation, not the SDK) and `matches-known-defect`
-  (`midi-out-main-thread-base`) with jank; a janked cell reading `on-time` means the output timestamp
-  base changed. Register `debug/2026-10-23-midi-output-timing/note.md`, table
+  `pair drift` excursion is the clock relation, not the SDK) and, since the engine times MIDI output on
+  the audio clock (`MIDIReceiver.outputClock`), `on-time` with jank too; a janked cell reading
+  `matches-known-defect` (`midi-out-main-thread-base`, the old main-thread base) would be a regression.
+  That expectation is not yet measured (the IAC run is owed); until it is, read a janked cell against
+  the register's last run. Register `debug/2026-10-23-midi-output-timing/note.md`, table
   `node scripts/audit/midi-output-timing/table.ts`, reading recipe `src/demos/midi/CLAUDE.md`.
 - After SDK upgrades, also run the MIDI effect placement audit:
   `midi-effect-placement-audit-debug-demo.html?device=all` then `?rate=44100` — a real click on
