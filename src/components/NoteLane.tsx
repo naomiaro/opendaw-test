@@ -125,10 +125,13 @@ export const NoteLane = forwardRef<NoteLaneHandle, NoteLaneProps>(function NoteL
           context.globalAlpha = 1;
         }
         if (note.label) {
-          context.fillStyle = CANVAS_COLORS.label;
           context.font = CANVAS_FONT_SMALL;
-          context.textBaseline = "top";
-          context.fillText(note.label, left + 2, top + 1);
+          // a label wider than its bar would spill over the neighbours' bars and labels
+          if (barWidth >= context.measureText(note.label).width + 4) {
+            context.fillStyle = CANVAS_COLORS.label;
+            context.textBaseline = "top";
+            context.fillText(note.label, left + 2, top + 1);
+          }
         }
       }
 

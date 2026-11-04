@@ -103,4 +103,11 @@ describe("NoteLane", () => {
     const { ctx } = show(() => [{ pitch: 60, from: 1920, to: 3840, label: "+25¢" }]);
     expect(ctx.calls.some((c) => c.startsWith("fillText(+25¢,"))).toBe(true);
   });
+
+  it("leaves out a label wider than its bar", () => {
+    // 40/7680 × 400 ≈ 2 px wide; "+25¢" measures 24 px
+    const { ctx } = show(() => [{ pitch: 60, from: 1920, to: 1960, label: "+25¢" }]);
+    expect(ctx.calls).toContain("measureText(+25¢)");
+    expect(ctx.calls.some((c) => c.startsWith("fillText(+25¢,"))).toBe(false);
+  });
 });

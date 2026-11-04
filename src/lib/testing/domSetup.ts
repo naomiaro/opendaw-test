@@ -128,7 +128,7 @@ const CONTEXT_2D_PROPERTIES = new Set([
  *
  * It knows the names a real 2D context has and throws for any other, so a
  * misspelt call fails here as it would on a real canvas. All canvases share
- * the one list of calls.
+ * the one list of calls. `measureText` answers a width of 6 px per character.
  */
 export function installFakeContext2d(): { calls: string[]; sets: { at: number; set: string }[] } {
   const calls: string[] = [];
@@ -139,6 +139,13 @@ export function installFakeContext2d(): { calls: string[]; sets: { at: number; s
     get: (_target, property) => {
       if (typeof property !== "string") return undefined;
       if (CONTEXT_2D_PROPERTIES.has(property)) return values[property];
+      if (property === "measureText") {
+        // no fonts here: every character measures 6 px wide
+        return (text: string) => {
+          calls.push(`measureText(${text})`);
+          return { width: 6 * text.length };
+        };
+      }
       if (CONTEXT_2D_METHODS.has(property)) {
         return (...args: unknown[]) => {
           calls.push(`${property}(${args.join(",")})`);

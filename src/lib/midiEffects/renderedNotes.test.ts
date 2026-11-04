@@ -123,7 +123,7 @@ describe("renderedRows", () => {
     const read = [fig(REGION_MS + 0.5, 2990, null, 0.9), fig(6100, 6200, 69, 0.4)];
     const rows = renderedRows(read, prediction, patternById("chords"), bpm, noRead);
     expect(rows.unreadable).toEqual([{ from: 0, to: 7680, reason: "polyphonic" }]); // four half-bar triads, touching, one span
-    expect(rows.sentence).toBe("The reader reads one voice at a time: these notes overlap. Add an Arpeggio, or pick a one-voice pattern.");
+    expect(rows.sentence).toBe("The reader reads one voice at a time: these notes overlap. Use a one-voice pattern, or an Arpeggio with a gate under 100 %.");
     expect(rows.notes).toEqual([{ pitch: 69, from: msToRegionPpqn(6100, bpm), to: msToRegionPpqn(6200, bpm), velocity: 0.4, measured: true }]);
     expect(rows.stems).toEqual([{ at: msToRegionPpqn(6100, bpm), velocity: 0.4 }]);
   });

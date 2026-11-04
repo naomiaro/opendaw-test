@@ -48,7 +48,8 @@ const DEFAULT_PATTERN: PatternId = "melody";
 /** C2 to C7, as the MIDI Effects page. */
 const PITCH_LOW = 36;
 const PITCH_HIGH = 96;
-const LANE_HEIGHT = 112;
+/** About 3.7 px per pitch row, so a bar's dashed edges show. */
+const LANE_HEIGHT = 224;
 const STRIP_HEIGHT = 64;
 
 const DASHED_SENTENCE = "dashed edges: the step boundaries come from the device rule; a gate under 1 makes them measured";
@@ -224,6 +225,7 @@ function MidiEffectsRenderedDemo() {
       project={project!}
       entry={entry}
       compact={compact}
+      page="rendered"
       onEnabledChange={(enabled) => {
         setDeviceEnabled(project!.editing, entry.box, enabled);
         reseekIfPlaying();

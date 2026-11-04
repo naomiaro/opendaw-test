@@ -182,6 +182,7 @@ function MidiEffectsDemo() {
       project={project!}
       entry={entry}
       compact={compact}
+      page="effects"
       onEnabledChange={(enabled) => {
         setDeviceEnabled(project!.editing, entry.box, enabled);
         reseekIfPlaying();

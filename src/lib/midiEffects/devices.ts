@@ -32,6 +32,8 @@ export interface DeviceSpec {
   readonly what: string;
   /** What to listen for on the patterns, one or two sentences. */
   readonly listenFor: string;
+  /** What the page's lower lanes show of the device, per page; null where there is nothing to add. */
+  readonly laneNote: { readonly effects: string | null; readonly rendered: string | null };
   /** The insert and one parameter write, as a visitor would code it. */
   readonly snippet: string;
 }
@@ -49,6 +51,10 @@ export const DEVICES: { readonly [K in DeviceId]: DeviceSpec & { readonly id: K 
     factoryKey: "Arpeggio",
     what: "Holds the notes that are down and plays them one at a time on a grid: up, down or up-and-down, over one to five octaves, at a rate from whole notes to 1/128.",
     listenFor: "On Chords, the held triads become running sixteenths. Raise the octaves and the run climbs; drop the gate and the steps get short.",
+    laneNote: {
+      effects: null,
+      rendered: "A gate under 100 % makes every step's timing measured; at 100 % the steps touch and their boundaries come from the device rule, drawn dashed.",
+    },
     snippet: `${insert("Arpeggio")}
 const arp = project.boxAdapters.adapterFor(box, ArpeggioDeviceBoxAdapter);
 project.editing.modify(() => arp.namedParameter.numOctaves.setValue(2));`,
@@ -59,6 +65,7 @@ project.editing.modify(() => arp.namedParameter.numOctaves.setValue(2));`,
     factoryKey: "Pitch",
     what: "Transposes every note before the instrument: whole octaves, semitones and cents. It changes which note the synth plays, not the recording of the audio.",
     listenFor: "On Melody, the tune moves as a block. Cents detune it against the dry version; octaves jump it.",
+    laneNote: { effects: null, rendered: null },
     snippet: `${insert("Pitch")}
 const pitch = project.boxAdapters.adapterFor(box, PitchDeviceBoxAdapter);
 project.editing.modify(() => pitch.namedParameter.semiTones.setValue(7));`,
@@ -68,7 +75,11 @@ project.editing.modify(() => pitch.namedParameter.semiTones.setValue(7));`,
     label: "Velocity",
     factoryKey: "Velocity",
     what: "Reshapes each note's velocity: a magnet pulls velocities toward a target, random scatters them, offset shifts them, and mix blends the result with the original.",
-    listenFor: "On Sixteenths, a strong magnet flattens the loud-soft alternation. On Melody, random breaks the ramp. The emitted lane here cannot show any of it: it reads which pitches are sounding, not how loud, so its bars break the velocity convention and stay one colour. The Rendered page shows every note's emitted velocity.",
+    listenFor: "On Sixteenths, a strong magnet flattens the loud-soft alternation. On Melody, random breaks the ramp.",
+    laneNote: {
+      effects: "The emitted lane here cannot show any of it: it reads which pitches are sounding, not how loud, so its bars break the velocity convention and stay one colour. The Rendered page shows every note's emitted velocity.",
+      rendered: "Every note's emitted velocity is the rendered bar's colour and the strip's solid stem against the written ghost; Reseed random reshuffles the scatter.",
+    },
     snippet: `${insert("Velocity")}
 const vel = project.boxAdapters.adapterFor(box, VelocityDeviceBoxAdapter);
 project.editing.modify(() => vel.namedParameter.magnetStrength.setValue(1));`,
@@ -78,7 +89,11 @@ project.editing.modify(() => vel.namedParameter.magnetStrength.setValue(1));`,
     label: "Zeitgeist",
     factoryKey: "Zeitgeist",
     what: "Applies a shuffle groove to note timing through a Möbius ease: at 50% nothing moves; above it every note between grid lines lands later, below it earlier, and the grid lines themselves stay put.",
-    listenFor: "On Sixteenths at 60%, every other note drags late by about 24 ms (47 pulses at 120 bpm), one and a half frames on a 60 Hz display, so the emitted lane shows it only roughly; the placement audit (debug/2026-10-21-midi-effect-placement/note.md) measures it to the frame. Below 50% the off-beats rush instead.",
+    listenFor: "On Sixteenths at 60%, every other note drags late by about 24 ms (47 pulses at 120 bpm). Below 50% the off-beats rush instead.",
+    laneNote: {
+      effects: "That is one and a half frames on a 60 Hz display, so the emitted lane shows it only roughly; the placement audit (debug/2026-10-21-midi-effect-placement/note.md) measures it to the frame.",
+      rendered: "The rendered lane places every note to the sample: at 60 % on Sixteenths the off-beats sit 47 pulses late.",
+    },
     snippet: `${insert("Zeitgeist")}
 const zeit = project.boxAdapters.adapterFor(box, ZeitgeistDeviceBoxAdapter);
 const groove = zeit.groove(); // the device's own groove box, a GrooveAdapter

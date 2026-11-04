@@ -39,7 +39,7 @@ export interface RenderedRows { notes: RenderedNote[]; stems: Stem[]; ghosts: St
 /** How far a read onset may sit from a predicted readable onset and still answer it. */
 export const MATCH_MS = 10;
 
-export const OVERLAP_SENTENCE = "The reader reads one voice at a time: these notes overlap. Add an Arpeggio, or pick a one-voice pattern.";
+export const OVERLAP_SENTENCE = "The reader reads one voice at a time: these notes overlap. Use a one-voice pattern, or an Arpeggio with a gate under 100 %.";
 
 /** A time from the render's start (the reader's figures) as region-local pulses; a float, the lane takes floats. */
 export function msToRegionPpqn(ms: number, bpm: number): number {
