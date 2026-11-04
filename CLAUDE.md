@@ -807,7 +807,7 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
 - After SDK upgrades, also run the Nano play-modes audit: `nano-play-modes-debug-demo.html` then
   `?rate=44100` — a real click on Run, deterministic, no hardware, about three seconds. Expect every row
   `as-expected` (the expectations are the crate's documented behaviour, no register to accept): Mono 40 dB
-  down 3..9 ms after the second note, a one-shot eighth sounding the whole 1 s sample, the loop stopping a
+  down 4.5..9 ms after the second note, a one-shot eighth sounding the whole 1 s sample, the loop stopping a
   one-shot on its note-off, fixed pitch at the root key with Octave applied, the pan law. Rows and readers
   `src/lib/audit/nanoPlayModes.ts`, note `debug/2026-11-04-nano-play-modes/note.md`.
 - After SDK upgrades, also re-run the standing combined MIDI + audio sweep:

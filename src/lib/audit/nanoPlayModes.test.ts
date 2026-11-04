@@ -31,12 +31,17 @@ const squaredFade = (at: number) => (n: number): number => (n < at ? 1 : Math.ma
 const A = noteOnsetFrame(row("poly-overlap").notes[0], RATE);
 const B = noteOnsetFrame(row("poly-overlap").notes[1], RATE);
 
-function overlapRender(firstKeepsSounding: boolean): Float32Array[] {
+function overlapRender(firstKeepsSounding: boolean, firstGain?: (n: number) => number): Float32Array[] {
   const left = new Float32Array(LENGTH);
-  tone(left, 440, A, ms(500), 0.8, firstKeepsSounding ? undefined : squaredFade(B - A));
+  tone(left, 440, A, ms(500), 0.8, firstGain ?? (firstKeepsSounding ? undefined : squaredFade(B - A)));
   tone(left, 880, B, ms(250));
   return [left, Float32Array.from(left)];
 }
+
+/** The first note's level stepping to `ratio` at the second note's onset. */
+const stepAt = (at: number, ratio: number) => (n: number): number => (n < at ? 1 : ratio);
+/** A squared fade of `fadeMs` at the second note's onset. */
+const fadeOver = (at: number, fadeMs: number) => (n: number): number => (n < at ? 1 : Math.max(0, 1 - (n - at) / ms(fadeMs)) ** 2);
 
 describe("the rows", () => {
   it("have distinct ids and keep every note inside the region", () => {
@@ -132,6 +137,36 @@ describe("judgePlayModeRow", () => {
     expect(judgePlayModeRow(row("mono-cut"), overlapRender(true), RATE, 0).status).toBe("investigate");
   });
 
+  // the band's low edge: the crate's squared 5 ms fade cannot read a 40 dB crossing before 4.5 ms, so an instant cut
+  // and a 2 ms fade both read under it, and a 12 ms fade over the top
+  it("reads a cut that is faster or slower than the 5 ms fade as investigate on mono-cut", () => {
+    const cases: Array<[string, (n: number) => number]> = [
+      ["an instant cut", stepAt(B - A, 0)],
+      ["a 2 ms fade", fadeOver(B - A, 2)],
+      ["a 12 ms fade", fadeOver(B - A, 12)],
+    ];
+    for (const [label, gain] of cases) {
+      const verdict = judgePlayModeRow(row("mono-cut"), overlapRender(false, gain), RATE, 0);
+      expect(verdict.status, label).toBe("investigate");
+      expect(verdict.figure, label).toContain("40 dB down after");
+    }
+    expect(judgePlayModeRow(row("mono-cut"), overlapRender(false, fadeOver(B - A, MONO_FADE_MS)), RATE, 0).status).toBe("as-expected");
+  });
+
+  it("reads a first note ducked past the kept tolerance as investigate on poly-overlap, and a smaller duck as kept", () => {
+    const duck = (db: number): Float32Array[] => overlapRender(true, stepAt(B - A, 10 ** (db / 20)));
+    expect(judgePlayModeRow(row("poly-overlap"), duck(-1.5), RATE, 0).status).toBe("investigate");
+    expect(judgePlayModeRow(row("poly-overlap"), duck(-0.5), RATE, 0).status).toBe("as-expected");
+  });
+
+  it("places its windows by the offset it is given", () => {
+    // 100 ms late, the "before" window sits where the first note has already faded: not sounding
+    const verdict = judgePlayModeRow(row("mono-cut"), overlapRender(false), RATE, ms(100));
+    expect(verdict.status).toBe("investigate");
+    expect(verdict.figure).toContain("first note not sounding");
+    expect(judgePlayModeRow(row("mono-cut"), overlapRender(false), RATE, 2).status).toBe("as-expected");
+  });
+
   // a relative reading on silence is 0 dB: both overlap rows must refuse a render where a note does not sound
   it("reads a silent or faint render as investigate on both overlap rows, not as kept", () => {
     const silent = [new Float32Array(LENGTH), new Float32Array(LENGTH)];
@@ -173,6 +208,13 @@ describe("judgePlayModeRow", () => {
     const wrong = judgePlayModeRow(row("one-shot"), [eighth, eighth], RATE, 0);
     expect(wrong.status).toBe("investigate");
     expect(wrong.figure).toContain("expected 1000");
+    // a retrigger read as two notes is a count mismatch, not a length
+    const two = new Float32Array(LENGTH);
+    tone(two, 440, A, ms(100));
+    tone(two, 440, A + ms(150), ms(100));
+    const split = judgePlayModeRow(row("one-shot-off"), [two, two], RATE, 0);
+    expect(split.status).toBe("investigate");
+    expect(split.figure).toBe("2 notes read, expected 1");
   });
 
   it("judges the notes' pitches", () => {
@@ -191,6 +233,18 @@ describe("judgePlayModeRow", () => {
     const wrong = judgePlayModeRow(row("fixed-off"), [same, same], RATE, 0);
     expect(wrong.status).toBe("investigate");
     expect(wrong.figure).toContain("440 Hz (expected 659.3");
+    const one = new Float32Array(LENGTH);
+    tone(one, 440, A, ms(500));
+    const missing = judgePlayModeRow(row("fixed-off"), [one, one], RATE, 0);
+    expect(missing.status).toBe("investigate");
+    expect(missing.figure).toBe("1 notes read, expected 2");
+    // a note too short for three cycles has no readable pitch
+    const short = new Float32Array(LENGTH);
+    tone(short, 440, A, 300);
+    tone(short, 440, A + ms(1000), ms(500));
+    const unreadable = judgePlayModeRow(row("fixed-off"), [short, short], RATE, 0);
+    expect(unreadable.status).toBe("investigate");
+    expect(unreadable.figure).toContain("unreadable");
   });
 
   it("judges the channels' balance", () => {

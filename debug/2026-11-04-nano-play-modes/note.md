@@ -34,7 +34,8 @@ the render with one of four readers:
   read above −20 dBFS, or a relative figure on silence (0 − 0 = 0 dB) would pass: a silent render reads
   `investigate`, "first note not sounding". Poly expects the first note within ±1 dB across the onset; Mono expects
   ≤ −40 dB and the 40 dB crossing in 3..9 ms (the voice's linear 5 ms fade is squared, so it reaches 1 % at 4.5 ms,
-  and the reader averages over 2.3 ms).
+  and the reader averages over 2.3 ms, which can only move the crossing later: an instant cut reads about 2.5 ms and a
+  2 ms fade under 4 ms, both `investigate`).
 - **length** (One-shot): one eighth note (250 ms) at key 60; `readNotes` (the semantics audit's reader) gives its onset
   and end. Default and one-shot-with-loop expect 250 ± 10 ms, one-shot expects the whole sample, 1000 ± 10 ms.
 - **pitches** (Fixed pitch): a quarter at key 60 and, a half bar later, a quarter at key 67; each read note's
@@ -66,7 +67,9 @@ the reader's floor).
 | pan-left | left 1.000 / right 0.000 | the same |
 | pan-half-right | left 0.500 / right 1.000 | the same |
 
-Instrument offset 5 frames at both rates. The one-shot's 999.9 ms is the sine's 1 s less the reader's threshold at the
+Instrument offset 5 frames at both rates: the reader's threshold crossing on the voice's 1 ms squared attack (a
+synthetic tone with the same attack and no latency reads 5 too), not sampler latency; the overlap reader needs the
+crossing, not the latency. The one-shot's 999.9 ms is the sine's 1 s less the reader's threshold at the
 last cycle; the 0.8 ms over an eighth is the 1 ms release. A velocity-1 note renders at −3 dBFS (peak 0.7079), the
 Nano's default gain.
 

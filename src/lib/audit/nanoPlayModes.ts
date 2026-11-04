@@ -25,9 +25,11 @@ const QUARTER = PPQN.Quarter;
 const EIGHTH = PPQN.Quarter / 2;
 /** The crate's `FAST_RELEASE_SECONDS`: a mono retrigger fades the sounding voice over this. */
 export const MONO_FADE_MS = 5;
-/** The band the −40 dB crossing of the faded voice may land in: the squared 5 ms fade reaches 1 % at 4.5 ms and the
- *  envelope reader averages over one 440 Hz period (2.3 ms). */
-export const MONO_FADE_BAND_MS: readonly [number, number] = [3, 9];
+/** The band the −40 dB crossing of the faded voice may land in. The squared 5 ms fade reaches 1 % at 4.5 ms, and the
+ *  envelope reader averages over one 440 Hz period (2.3 ms), which can only move the crossing LATER: 4.5 ms is a hard
+ *  floor for the crate's fade, and an instant cut (about 2.5 ms, the window sliding off the cut) or a 2 ms fade read
+ *  under it. Measured: 6.1 ms at both rates. */
+export const MONO_FADE_BAND_MS: readonly [number, number] = [4.5, 9];
 /** A kept voice's level may move this much across the second note's onset (the envelope reader's own ripple). */
 export const KEPT_TOLERANCE_DB = 1;
 /** A cut voice reads at least this far down once the fade has run. */

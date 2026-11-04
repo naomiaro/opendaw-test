@@ -11,8 +11,9 @@ export interface ParamSwitchProps {
 
 /**
  * Labelled switch bound to a boolean parameter, the readout printed by the
- * parameter's own string mapping ("On" / "Off"). The SDK's bool mapping reads
- * a unit of 0.5 or above as on, so the switch writes 1 or 0.
+ * parameter's own string mapping ("On" / "Off" for most, "Poly" / "Mono" for the
+ * Nano's Mode). The SDK's bool mapping reads a unit of 0.5 or above as on, so
+ * the switch writes 1 or 0.
  */
 export const ParamSwitch: React.FC<ParamSwitchProps> = ({ project, parameter, label }) => {
   const [unit, print, write] = useParameterUnit(project, parameter);
