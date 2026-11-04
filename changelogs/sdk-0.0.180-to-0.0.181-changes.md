@@ -97,7 +97,8 @@ for this repo:
    the 64th voice steals the oldest instead of being dropped; lowering Release during a fade-out
    no longer clicks. The defaults keep every existing project's sound. The Nano is the semantics
    audit's instrument (a sine, 1 ms envelopes, loop off): its register did not move (above). The
-   Nano demo binds parameters by name and does not list the four new ones (a follow-up candidate).
+   Nano demo binds parameters by name and did not list the four new ones; it does since the follow-up PR
+   that also measured them (`debug/2026-11-04-nano-play-modes/note.md`, every row as the crate documents).
 8. **An audio track picks its input channels** — openDAW#519 (another user's), CLOSED. "Force
    Mono" becomes Channel Mapping: `CaptureAudioBox` fields `leftInputs` (13) and `rightInputs`
    (14), bit n = input channel n feeds that side, both 0 = follow `requestChannels`;

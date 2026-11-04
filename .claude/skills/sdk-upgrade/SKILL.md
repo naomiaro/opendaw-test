@@ -116,6 +116,7 @@ async () => { const t0 = Date.now(); while (Date.now() - t0 < 95000) { const s =
 | `param-write-enabled-flip-debug-demo.html` | `button "Run"`, once per load | none | the FIXED line |
 | `plugin-delay-compensation-debug-demo.html` | `button "Run"`, disabled until the engine booted | none | every row "lag 0 frames" (read `document.body.innerText` from "Step 1"; there is no table) |
 | `midi-effect-placement-audit-debug-demo.html?device=all`, then `&rate=44100` | `button:has-text("Run audit")`, disabled until booted | none | every row `as-predicted` (table) |
+| `nano-play-modes-debug-demo.html`, then `?rate=44100` | `button:has-text("Run audit")`, disabled until booted | none | every row `as-expected` (table; the mono fade 40 dB down in 3..9 ms, a one-shot eighth sounding 1 s) |
 | `loudness-meter-audit-debug-demo.html?case=all`, then `&rate=44100` | `#run` | none; silent; ~12 min each | `node .claude/skills/sdk-upgrade/scripts/loudsum.cjs .verify-output/loudness-audit-<run>.json` prints the register's table rows |
 | `midi-input-alignment-audit-debug-demo.html?scenario=all&bpm=all`, then `?scenario=loop-wrap&bpm=120&repeats=5`, then `?scenario=nominal-start&bpm=120&effect=arpeggio` and `&effect=pitch` | real click | IAC Driver online (Audio MIDI Setup) | `node scripts/audit/midi-input-alignment/table.ts` |
 | `midi-audio-combined-audit-debug-demo.html?scenario=all&bpm=120` | real click | IAC + built-in mic and speakers, quiet room, window uncovered | `node scripts/audit/midi-audio-combined/table.ts` |

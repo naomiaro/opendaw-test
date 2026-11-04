@@ -30,7 +30,18 @@ export interface NanoParams {
   readonly loopFade: number;
   readonly loopStart: number;
   readonly loopEnd: number;
+  /** -1 (left) .. 1 (right) */
+  readonly panning: number;
+  /** false plays one voice at a time: a new note fades the sounding one out over 5 ms */
+  readonly polyphone: boolean;
+  /** true plays the region to its end whatever the note length (a looping note still stops) */
+  readonly oneShot: boolean;
+  /** true plays every key at the root key; octave and tune still apply */
+  readonly fixedPitch: boolean;
 }
+
+/** The parameters a preset holds as true / false */
+export type NanoBooleanParam = "loop" | "polyphone" | "oneShot" | "fixedPitch";
 
 /**
  * The ranges the sampler's parameters map over, for reading. The authority is
@@ -38,7 +49,7 @@ export interface NanoParams {
  * Gain is the exception to "min..max": its curve reaches -72 dB and then
  * falls to silence at the very bottom.
  */
-export const PARAM_RANGES: Readonly<Record<keyof Omit<NanoParams, "loop">, readonly [number, number]>> = {
+export const PARAM_RANGES: Readonly<Record<keyof Omit<NanoParams, NanoBooleanParam>, readonly [number, number]>> = {
   rootKey: [0, 127],
   octave: [-3, 3],
   tune: [-1200, 1200],
@@ -50,6 +61,7 @@ export const PARAM_RANGES: Readonly<Record<keyof Omit<NanoParams, "loop">, reado
   loopFade: [0.001, 1],
   loopStart: [0, 1],
   loopEnd: [0, 1],
+  panning: [-1, 1],
 };
 
 export interface NanoPatternNote {
@@ -85,6 +97,10 @@ const DEFAULTS: NanoParams = {
   loopFade: 0.05,
   loopStart: 0,
   loopEnd: 1,
+  panning: 0,
+  polyphone: true,
+  oneShot: false,
+  fixedPitch: false,
 };
 
 const held = (position: number, pitch: number, velocity = 0.8): NanoPatternNote => ({

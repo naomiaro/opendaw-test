@@ -72,7 +72,26 @@
   `octave` (int −3..3), `tune` (±1200 ct),
   `rootKey` (int 0..127, default 60), `attack` (0.001–5 s, exponential),
   `release` (0.001–8 s, exponential), `sampleStart` / `sampleEnd` (0..1),
-  `loop` (boolean), `loopFade` (0.001–1 s, exponential), `loopStart` / `loopEnd` (0..1).
+  `loop` (boolean), `loopFade` (0.001–1 s, exponential), `loopStart` / `loopEnd` (0..1),
+  `panning` (label "Pan", bipolar −1..1, prints the mixer's pan law, unit 0.5 = centre),
+  `polyphone` (label "Mode", boolean, prints Mono / Poly, default Poly), `oneShot` and
+  `fixedPitch` (booleans, default off). The four play-mode fields are bound by the demo's
+  Play mode card and Pan slider and are part of `NanoParams`, so every preset carries them
+  (`applyParams` writes all sixteen; the coverage test compares the preset's keys with
+  `namedParameter`'s).
+- **Play modes, measured** (`nano-play-modes-debug-demo.html`, offline renders of a 440 Hz
+  sine, both page rates; rows and readers `src/lib/audit/nanoPlayModes.ts`, note
+  `debug/2026-11-04-nano-play-modes/note.md`): Mono fades the sounding voice out when a
+  new note starts (the crate's 5 ms linear level fade, squared: 40 dB down 6.1 ms after the
+  second note's onset, −50 to −59 dB by 20 ms); One-shot ignores the note-off and plays to
+  the region's end (an eighth note sounds the whole 1 s sample), but with the loop on the
+  note-off still stops it (250.8 ms, the eighth plus the 1 ms release); Fixed pitch plays
+  every key at the root key with Octave still applied (keys 60 and 67 both read 440 Hz,
+  880 Hz with Octave +1); Pan keeps the near side at 1 and turns the far side down
+  linearly (−1: the right channel silent; +0.5: the left at half). From the crate, not
+  measured here: a pan move glides over 5 ms; `polyphone` is read at note-on, `oneShot`
+  at note-off and every block (`voice.rs:168`: switching it off after the note-off
+  releases the note), `fixedPitch` and `panning` every block.
 - `adapter.file()` is `Option<AudioFileBoxAdapter>`; its `peaks` and `data` are Options
   too. Peaks arrive after the loader finishes — invalidate the waveform painter from
   `watchSampleLoad`'s `onLoaded`.

@@ -11,13 +11,19 @@ const all: ReadonlyArray<readonly [string, NanoPreset]> = [
 
 const NUMERIC_KEYS = [
   "rootKey", "octave", "tune", "volume", "attack", "release",
-  "sampleStart", "sampleEnd", "loopFade", "loopStart", "loopEnd",
+  "sampleStart", "sampleEnd", "loopFade", "loopStart", "loopEnd", "panning",
 ] as const;
+const BOOLEAN_KEYS = ["loop", "polyphone", "oneShot", "fixedPitch"] as const;
 
 describe("applyParams", () => {
   it("covers every parameter a preset holds", () => {
     const keys = Object.keys(CUSTOM_PRESET.params).sort();
-    expect([...NUMERIC_KEYS, "loop"].sort()).toEqual(keys);
+    expect([...NUMERIC_KEYS, ...BOOLEAN_KEYS].sort()).toEqual(keys);
+  });
+
+  it("covers every parameter the sampler's adapter names", () => {
+    const { adapter } = samplerFixture();
+    expect([...NUMERIC_KEYS, ...BOOLEAN_KEYS].sort()).toEqual(Object.keys(adapter.namedParameter).sort());
   });
 
   // Against the SDK's own parameter mappings, so a range that moves in the SDK is caught here.
@@ -27,17 +33,17 @@ describe("applyParams", () => {
     project.editing.modify(() => applyParams(adapter, preset.params));
 
     for (const key of NUMERIC_KEYS) expect(box[key].getValue(), key).toBeCloseTo(preset.params[key], 6);
-    expect(box.loop.getValue()).toBe(preset.params.loop);
+    for (const key of BOOLEAN_KEYS) expect(box[key].getValue(), key).toBe(preset.params[key]);
   });
 
   it("leaves nothing behind from the preset that was applied before", () => {
     const { adapter, box, project } = samplerFixture();
-    project.editing.modify(() => applyParams(adapter, NANO_PRESETS.pad.params));
+    project.editing.modify(() => applyParams(adapter, { ...NANO_PRESETS.pad.params, panning: -0.5, polyphone: false, oneShot: true, fixedPitch: true }));
 
     project.editing.modify(() => applyParams(adapter, NANO_PRESETS.kick.params));
 
     for (const key of NUMERIC_KEYS) expect(box[key].getValue(), key).toBeCloseTo(NANO_PRESETS.kick.params[key], 6);
-    expect(box.loop.getValue()).toBe(false);
+    for (const key of BOOLEAN_KEYS) expect(box[key].getValue(), key).toBe(NANO_PRESETS.kick.params[key]);
   });
 
   it.each<[string, Partial<NanoParams>, string]>([
@@ -48,6 +54,7 @@ describe("applyParams", () => {
     ["a start outside the sample", { sampleStart: 1.2 }, "Start"],
     ["a release that is not a number", { release: Number.NaN }, "Release"],
     ["a gain above the top of the range", { volume: 6 }, "Gain"],
+    ["a pan past the right", { panning: 1.5 }, "Pan"],
   ])("refuses %s, names the parameter, and writes nothing", (_label, wrong, name) => {
     const { adapter, box, project } = samplerFixture();
     project.editing.modify(() => applyParams(adapter, NANO_PRESETS.pad.params));
