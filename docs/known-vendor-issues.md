@@ -237,7 +237,9 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
 - **Evidence:** `debug/2026-10-22-chromium-watched-issues/note.md`, "bfcache"; probe
   `chromium-watched-issues-debug-demo.html?issue=bfcache`, envelopes `chromium-bfcache-mvk1sddg-wilz.json`
   and `chromium-bfcache-mvk1suit-b7ru.json`.
-- **Last checked:** Chrome 155.0.8059.85, macOS 15.6.1, the user's Chrome, 2026-10-22: `HALF SPEED`
+- **Last checked:** Chrome 156, macOS 15.6.1, the user's Chrome, 2026-11-04 (SDK 0.0.181 sweep): `HALF SPEED`
+  (ratio 0.5018 after the restore, 0.4984–0.5048 in three windows, 19.8 s away, `persisted: true`;
+  `chromium-bfcache-mw2focod-n3h6.json`); the tracker assigned 2026-10-27. Chrome 155.0.8059.85, 2026-10-22: `HALF SPEED`
   twice, probe `?issue=bfcache`. Workaround verified 2026-10-23 on `looping-demo.html` (navigation type
   `reload` after Back, ratio 0.999).
 
@@ -449,8 +451,16 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   the device's. Again on Chrome 156, 2026-11-04 (SDK 0.0.181 sweep): `CLEAN` at 48 000
   (`chromium-capture-gaps-mw2dhjz4-usyp.json`, 0 zero runs in 60 s), `START GAPS` at 44 100 with the one
   441-frame start run 1394 frames in (`chromium-capture-gaps-mw2dj7um-tw2n.json`); the tracker unchanged since
-  2025-05.
-  The microphone rows were not run on 156.
+  2025-05. The microphone rows on Chrome 156, the user's Chrome, 2026-11-04 (SDK 0.0.181 sweep, the built-in
+  microphone, a quiet room): plain `START GAPS` (one 128-frame start run) at 48 000 and `CLEAN` at 44 100; under
+  the 80 ms stalls `GAPS` with 116 of 139 zero runs at stall times at 48 000 (`…-mw2fykqa-rzyq.json` the plain
+  row) and 37 of 37 at 44 100, the loopback under the same stalls `CLEAN`; `latencyHint` 0.04 one 128-frame run
+  0.24 s in, 0.1 `CLEAN`, 0.2 `START GAPS` (one 128-frame start run), the loopback at 0.2 `CLEAN`; silent output
+  over 90 s `GAPS` with the one 128-frame run at 29.95 s (`runsNear30s` 1) and `START GAPS` with none near 30 s
+  under dither; cross-context `CLEAN` at 44 100 (no start run this time, where 2026-10-22 read one of 441 frames)
+  and `GAPS` with one 480-frame run at 32.07 s at 48 000 — every row but the cross-context 44.1 start run the
+  register's reading. Not run on 0.0.181: the dithered cross-context row, the suspend-resume microphone witness,
+  the USB microphone rows.
 
 ### Chromium [40726491](https://issues.chromium.org/issues/40726491) — `getOutputTimestamp()`'s context ↔ performance relation wanders: a sawtooth of one device buffer on a context at the other rate than the device's, single early steps at the device's rate
 
@@ -509,7 +519,13 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   `await` figures); the figures above are unaffected.
 - **Upstream:** the signature above is on the tracker as [comment #16](https://issues.chromium.org/issues/40726491#comment16) (2026-10-23; the body as posted:
   `debug/2026-10-23-midi-output-timing/drafts/posted-chromium-40726491-clock-drift-comment.md`).
-- **Last checked:** Chrome 155.0.8059.85, macOS 15.6.1, the user's Chrome, 2026-10-23.
+- **Last checked:** Chrome 156, macOS 15.6.1, 2026-11-04 (SDK 0.0.181 sweep): the MIDI output timing audit's
+  per-frame witness read excursions of 13–24 ms within an 8 s repeat in four of five runs in the **Playwright-launched Chrome**
+  (the fifth, the janked run, −6.5 ms; tab hidden and uncovered alike, the engine's live medians on the delay throughout) and ±3 ms with
+  one −6.6 ms excursion in the **user's Chrome** on the same day; the SDK-free probe (`?issue=clock-drift&rate=44100&hidden=0`,
+  `chromium-clock-drift-mw2f191d-ocup.json`) read no step in its jank and graph phases (ramp −0.09 frames/s) after an
+  output stream that opened 6.5 s in (`outputLatency` 0 → 28 ms, three steps at that moment). Two Chrome instances
+  wander differently; read the MIDI harnesses in the user's Chrome. Chrome 155.0.8059.85, the user's Chrome, 2026-10-23 before that.
 
 ## Watched — read from the tracker, not reproduced here
 

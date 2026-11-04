@@ -237,3 +237,24 @@ cell. Calibration: round trip 86.80 ms (spread 0.00), input part 63.80 ms at out
   this run, or did not change the delay; the multi-mic recording sweep is the one that watches nodes.
 - The jitter the 0.0.176 cells carried (7–10 ms, all the MIDI recorder's) is gone: max deviation 0.01 ms.
 
+## SDK 0.0.181 (2026-11-04)
+
+`combined-summary-1793816112720.json`: `?scenario=all&bpm=120`, a real click in the user's Chrome (through
+the claude-in-chrome extension), Chrome 156, the MacBook Pro built-in microphone and speakers, the IAC
+Driver Bus 1, a 44 100 Hz context, the Mac's output device at 44.1 kHz, 3 repeats per cell. Calibration:
+round trip 87.62 ms (spread 0.00), input part 64.62 ms at output latency 23.0 ms. The release times
+hardware MIDI OUTPUT on the audio clock and fades a user's stop; neither touches the two recorders this
+page reads.
+
+| scenario | state | parts apart (per repeat) | MIDI median | audio median | max dev | clicks found / missing / extra |
+|---|---|---|---|---|---|---|
+| nominal-start | default | −64.62 ×3 | 0.00 | 64.62 | 0.01 | 144 / 0 / 0 |
+| nominal-start | calibrated | 0.00 ×3 | 0.00 | 0.00 | 0.01 | 144 / 0 / 0 |
+| countin-start | default | −64.62 ×3 | 0.00 | 64.62 | 0.01 | 144 / 0 / 0 |
+| countin-start | calibrated | 0.00 ×3 | 0.00 | 0.00 | 0.01 | 144 / 0 / 0 |
+| janked-mid | default | −64.62 ×3 | 0.00 | 64.62 | 0.01 | 144 / 0 / 0 |
+| janked-mid | calibrated | 0.00 ×3 | 0.00 | 0.00 | 0.01 | 144 / 0 / 0 |
+
+Calibrated `together` in every scenario (0.00 ms apart); default `matches-known-defect`, the key on the
+beat and the sound late by exactly the input part the SDK was not told (64.62 ms, this run's own
+calibration; 63.80 on 0.0.180, the microphone's own figure that day). The 0.0.180 reading.

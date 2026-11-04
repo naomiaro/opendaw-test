@@ -4,8 +4,9 @@
  * says can be read; the ENGINE arm is read against the live pair when every repeat of the cell sampled one. The engine arm is `on-time`
  * when it lands on the box delay, `matches-known-defect` when a band this file pins explains every
  * repeat, else `investigate`. Bands classify a raw figure from the row's own context; they never
- * net anything out. The table holds the band run B's rows pinned
- * (`debug/2026-10-23-midi-output-timing/note.md` names the envelope).
+ * net anything out. No band is pinned today: the main-thread base the engine used before openDAW#356
+ * was fixed is kept in the test as figures that must read `investigate`, and the audio-clock base as
+ * figures that must read `on-time` (`debug/2026-10-23-midi-output-timing/note.md` names both envelopes).
  */
 import { quantumMs } from "./midiInputAlignment";
 import type { OutputRepeatFigures } from "./midiOutputTiming";
@@ -35,42 +36,8 @@ export interface OutputKnownDefectBand {
   detail: string;
 }
 
-/**
- * The main-thread-base shape, pinned on the four engine repeats of run `midiout-summary-1792790180843.json`
- * (2026-10-23, jank 80 ms every 500 ms, 44.1 kHz; `debug/2026-10-23-midi-output-timing/note.md`, run B): the
- * notes clear of the blocks sit on the delay, a note rendered inside a block is requested when the block
- * ends (late by up to the block length), and a note whose on and off both render inside one block comes out
- * off-before-on (read as one `stuck` plus one `extra`). Every bound is computed from the row's own context.
- */
-const MAIN_THREAD_BASE_RUN = "1792790180843";
-
-const MAIN_THREAD_BASE: OutputKnownDefectBand = {
-  id: "midi-out-main-thread-base",
-  applies: (ctx) => ctx.jankActive,
-  matches: (f, ctx) => {
-    const quantum = quantumMs(ctx.sampleRate);
-    // The cell's reference: live where sampled, else the one pair (the inside-block median and the overall spread stay on the one pair; their ranges are wide).
-    const live = f.medianErrorLiveMs !== null && f.maxAbsDevOutsideBlocksLiveMs !== null;
-    const median = live ? f.medianErrorLiveMs : f.medianErrorMs;
-    const outsideDev = live ? f.maxAbsDevOutsideBlocksLiveMs : f.maxAbsDevOutsideBlocksMs;
-    if (median === null || outsideDev === null || f.maxAbsDevMs === null || f.medianErrorInsideBlocksMs === null || f.notesInsideBlocks === 0) return false;
-    return f.missing === 0
-      && f.velocityMismatches === 0
-      // The inversion, and only the inversion: every stuck note inside a block, one unplaced off per stuck note.
-      && f.stuck === f.extra
-      && f.stuck === f.stuckInsideBlocks
-      && f.stuck <= f.notesInsideBlocks
-      && Math.abs(median - ctx.delayInMs) <= quantum
-      // The notes clear of every block keep the idle shape (two quanta: the first-after notes read up to 3.4 ms off on run B).
-      && outsideDev <= 2 * quantum
-      && f.medianErrorInsideBlocksMs >= ctx.delayInMs + ctx.jankMs / 4
-      && f.medianErrorInsideBlocksMs <= ctx.delayInMs + ctx.jankMs + quantum
-      && f.maxAbsDevMs <= ctx.jankMs + quantum;
-  },
-  detail: `notes rendered inside a main-thread block are requested when the block ends (the timestamp base is the ring read); a note whose on and off both render in one block comes out off-before-on (pinned on run ${MAIN_THREAD_BASE_RUN})`,
-};
-
-export const MIDI_OUT_KNOWN_DEFECTS: readonly OutputKnownDefectBand[] = [MAIN_THREAD_BASE];
+/** No band is pinned: the one this file held (the main-thread timestamp base, openDAW#356) was fixed and dropped; a janked cell off the delay reads `investigate`. */
+export const MIDI_OUT_KNOWN_DEFECTS: readonly OutputKnownDefectBand[] = [];
 
 export function isClean(f: OutputRepeatFigures): boolean {
   return f.missing === 0 && f.extra === 0 && f.stuck === 0 && f.velocityMismatches === 0;

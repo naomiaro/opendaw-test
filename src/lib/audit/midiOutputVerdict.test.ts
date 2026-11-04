@@ -69,10 +69,9 @@ describe("classifyEngineCell", () => {
     expect(classifyEngineCell([clean(40, 30), clean(15, 30)], bus, { ...ctx, jankActive: true }, [band]).status).toBe("investigate");
   });
 
-  it("pins the main-thread-base band on the rows that measured it (run 1792790180843, jank 80 ms, 44.1 kHz) and not on a clean row", () => {
+  it("reads the main-thread-base rows (run 1792790180843, jank 80 ms, 44.1 kHz, before openDAW#356 was fixed) as investigate: no band swallows them", () => {
     const jank: OutputBandContext = { delayInMs: 10, jankMs: 80, jankActive: true, sampleRate: 44100 }; // quantum 2.90 ms
-    // The four engine repeats of run B: live median on the delay, inside-block median ~60, max dev ~70, two off-before-on notes each.
-    // Outside-block spreads are the first-after notes' (within 3.4 ms of the delay on the one pair, run B).
+    // The four engine repeats of that run: live median on the delay, inside-block median ~60, max dev ~70, two off-before-on notes each.
     const outside = { maxAbsDevOutsideBlocksMs: 3.4, maxAbsDevOutsideBlocksLiveMs: 3.4, stuckInsideBlocks: 2 };
     const measured: OutputRepeatFigures[] = [
       { ...clean(10.18, 71.22), ...outside, medianErrorLiveMs: 10.19, maxAbsDevLiveMs: 71.23, lateTailMs: 21.06, extra: 2, stuck: 2, notesInsideBlocks: 7, medianErrorInsideBlocksMs: 60.46 },
@@ -81,22 +80,26 @@ describe("classifyEngineCell", () => {
       { ...clean(10.70, 69.57), ...outside, medianErrorLiveMs: 10.23, maxAbsDevLiveMs: 69.65, lateTailMs: 19.48, extra: 2, stuck: 2, notesInsideBlocks: 7, medianErrorInsideBlocksMs: 60.57 },
     ];
     const verdict = classifyEngineCell(measured, bus, jank);
-    expect(verdict.status).toBe("matches-known-defect");
-    expect(verdict.detail).toMatch(/midi-out-main-thread-base/);
-    expect(verdict.detail).toMatch(/pinned on run 1792790180843/);
-    // A second defect inside a janked cell is not swallowed: notes OUTSIDE the blocks late by 40 ms, or a stuck note clear of every block.
-    expect(classifyEngineCell([{ ...measured[0], maxAbsDevOutsideBlocksMs: 40, maxAbsDevOutsideBlocksLiveMs: 40 }], bus, jank).status).toBe("investigate");
-    expect(classifyEngineCell([{ ...measured[0], stuckInsideBlocks: 1 }], bus, jank).status).toBe("investigate");
-    // The band is for a janked cell only, and does not swallow a clean janked cell, a missing note, or an inside median off its range.
-    expect(classifyEngineCell(measured, bus, { ...jank, jankActive: false }).status).toBe("investigate");
-    expect(classifyEngineCell([{ ...clean(10.2, 1.0), medianErrorLiveMs: 10.2, maxAbsDevLiveMs: 1.0, notesInsideBlocks: 7, medianErrorInsideBlocksMs: 10.3 }], bus, jank).status).toBe("on-time");
-    expect(classifyEngineCell([{ ...measured[0], missing: 1 }], bus, jank).status).toBe("investigate");
-    expect(classifyEngineCell([{ ...measured[0], medianErrorInsideBlocksMs: 150 }], bus, jank).status).toBe("investigate");
-    expect(classifyEngineCell([{ ...measured[0], stuck: 3, extra: 2 }], bus, jank).status).toBe("investigate");
+    expect(verdict.status).toBe("investigate");
+    expect(verdict.detail).not.toMatch(/known-defect|midi-out-main-thread-base/);
   });
 
-  it("holds one band, and isClean reads the four counts", () => {
-    expect(MIDI_OUT_KNOWN_DEFECTS.map((b) => b.id)).toEqual(["midi-out-main-thread-base"]);
+  it("reads run B on the audio-clock base (run 1793814094848, after openDAW#356 was fixed) as on-time", () => {
+    const jank: OutputBandContext = { delayInMs: 10, jankMs: 80, jankActive: true, sampleRate: 44100 };
+    // The four engine repeats of that run: live medians on the delay, inside-block medians 9.97 / 10.32 / 9.82 / 12.78 (the one pair's), no inversion.
+    const fixed: OutputRepeatFigures[] = [
+      { ...clean(9.97, 0.02), medianErrorLiveMs: 10.0, maxAbsDevLiveMs: 0.01, maxAbsDevOutsideBlocksMs: 0.02, maxAbsDevOutsideBlocksLiveMs: 0.01, lateTailMs: 0.01, notesInsideBlocks: 7, medianErrorInsideBlocksMs: 9.97 },
+      { ...clean(10.26, 1.06), medianErrorLiveMs: 10.0, maxAbsDevLiveMs: 2.25, maxAbsDevOutsideBlocksMs: 1.06, maxAbsDevOutsideBlocksLiveMs: 2.25, lateTailMs: 0.49, notesInsideBlocks: 7, medianErrorInsideBlocksMs: 10.32 },
+      { ...clean(10.01, 0.53), medianErrorLiveMs: 9.99, maxAbsDevLiveMs: 0.66, maxAbsDevOutsideBlocksMs: 0.53, maxAbsDevOutsideBlocksLiveMs: 0.59, lateTailMs: 0.15, notesInsideBlocks: 7, medianErrorInsideBlocksMs: 9.82 },
+      { ...clean(12.78, 0.53), medianErrorLiveMs: 10.01, maxAbsDevLiveMs: 0.69, maxAbsDevOutsideBlocksMs: 0.53, maxAbsDevOutsideBlocksLiveMs: 0.69, lateTailMs: 0.11, notesInsideBlocks: 7, medianErrorInsideBlocksMs: 12.78 },
+    ];
+    const verdict = classifyEngineCell(fixed, bus, jank);
+    expect(verdict.status).toBe("on-time");
+    expect(verdict.detail).not.toMatch(/midi-out-main-thread-base/);
+  });
+
+  it("holds no band, and isClean reads the four counts", () => {
+    expect(MIDI_OUT_KNOWN_DEFECTS).toEqual([]);
     expect(isClean(clean(0, 0))).toBe(true);
     expect(isClean({ ...clean(0, 0), velocityMismatches: 1 })).toBe(false);
     expect(isClean({ ...clean(0, 0), transportMessages: 56 })).toBe(true);

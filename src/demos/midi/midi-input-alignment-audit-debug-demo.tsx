@@ -434,11 +434,9 @@ Tolerances (ms)       placement ±${MIDI_TOLERANCES.placementMs} (one render qua
 Jank                  ${JANK_MS} ms main-thread block (janked-start: on the isRecording flip; janked-mid: a timer task mid pattern)
 Reference             a note's expected position is the HEARD position at its Web MIDI receipt stamp; nothing is netted out.
                       The SDK's latency term, the output and base latency and the frame interval are on every row.
-Known-defect band     computed from each row's OWN figures, so it holds on any device or display:
-                      median within ±${LATE_MEDIAN_MARGIN_MS} ms of 2 × (output + compensation latency) − (frame − quantum);
-                      jitter and duration error within one frame + one quantum; janked-mid may lose one release per repeat.
-                      A median that tracks the formula on a new machine is the same defect; one that does not is a finding.${device === null ? "" : `
-This device           output latency ${device.outputLatencyMs.toFixed(1)} ms, frame ${device.frameIntervalMs.toFixed(2)} ms → expected median ${expectedLateMedianMs(device).toFixed(1)} ms, jitter bound ${clampJitterBoundMs(device).toFixed(1)} ms`}
+Known-defect bands    none are pinned (the recorder's defects are fixed): a cell off the tolerances reads investigate, a regression included.
+                      The old recorder's shape, median within ±${LATE_MEDIAN_MARGIN_MS} ms of 2 × (output + compensation latency) − (frame − quantum), lives on in the tests only.${device === null ? "" : `
+This device           output latency ${device.outputLatencyMs.toFixed(1)} ms, frame ${device.frameIntervalMs.toFixed(2)} ms (the legacy formula would read ${expectedLateMedianMs(device).toFixed(1)} ms), jitter bound ${clampJitterBoundMs(device).toFixed(1)} ms`}
 Keep this window uncovered for the whole run: a covered window stalls the animation frames the SDK's
                       main-thread sync and this page's waits ride on (a row's "frame gap max" says if it happened).
 Click "Run audit" with a real click — it requests MIDI access and resumes the AudioContext.`}

@@ -279,7 +279,8 @@ Same shape as the matrix; take order from the labels on every repeat.
 ### The bands this register pins
 
 `midi-late` (any scenario) and `midi-late-release-lost` (`janked-mid`, the same plus one lost
-release per repeat) in `MIDI_KNOWN_DEFECTS` (`src/lib/audit/midiInputAlignment.ts`). They
+release per repeat), since 2026-11-04 as `LEGACY_LATE_BANDS` (`src/lib/audit/midiInputAlignment.ts`;
+the live list `MIDI_KNOWN_DEFECTS` is empty, see the SDK 0.0.181 section). They
 are computed from each row's OWN figures, so they hold on any device or display: the median
 must sit within ±5 ms of `2 × (outputLatencyMs + compensationLatencyMs) − (frameIntervalMs −
 quantumMs)` (23 ms and 16.7 ms give 32.2 here; a 120 Hz display gives about 40; a 10 ms
@@ -429,3 +430,58 @@ The same reading as without an effect: the recorder takes the capture's raw note
 MIDI effect chain, so an Arpeggio or a Pitch on the unit changes neither which notes are recorded nor
 where. (On 0.0.176 the arm read the same as its no-effect cell too, then inside the +32 ms band.)
 
+## SDK 0.0.181 (2026-11-04)
+
+`midiaudit-summary-1793813468891.json`: `?scenario=all&bpm=all`, a real click from the Playwright browser,
+Chrome 156, the IAC Driver Bus 1, a 44 100 Hz context, the Mac's output device at 44.1 kHz, display
+59.9 Hz, 2 repeats, no effect. The release does not touch the MIDI capture path (it times hardware MIDI
+OUTPUT on the audio clock, openDAW#356, the output-timing register's finding; and a MIDI effect leaving a
+chain now ends its notes, which the recorder, reading the capture's raw signals before the chain, never
+sees).
+
+| scenario | 90 bpm | 120 bpm | 140 bpm |
+|---|---|---|---|
+| nominal-start | aligned −0.00 / 0.00 | aligned 0.00 / −0.00 | aligned −0.00 / −0.00 |
+| janked-start | aligned −0.00 / −0.00 | aligned 0.00 / −0.00 | aligned −0.00 / −0.00 |
+| janked-mid | aligned −0.00 / 0.00 | aligned −0.00 / −0.00 | aligned −0.00 / −0.00 |
+| countin-start | aligned −0.00 / 0.00 | aligned −0.00 / 0.00 | aligned −0.00 / −0.00 |
+| midtimeline-start | aligned −0.00 / −0.00 | aligned −0.00 / 0.00 | aligned −0.00 / −0.00 |
+| loop-wrap | aligned −0.00 / −0.00 | aligned −0.00 / −0.00 | aligned −0.00 / −0.00 |
+
+Per-repeat placement medians in ms against the HEARD beat, nothing netted. Max deviation ≤ 0.01 ms on
+every row; 0 missing / no-receipt / extra / stuck / collapsed on all 36; duration error 0.00 ms under the
+150 ms blocks (frame gaps 151–174 ms); the SDK's latency term 23.00 ms, heard lag 22.53–25.32 ms; count-in
+2 of 6 pickups per cell (#493 unchanged, open); the note on the loop end in the new take on every
+`loop-wrap` row, within 0.004 ms. The 0.0.180 reading to the hundredth.
+
+### Loop-wrap, five repeats, on 0.0.181
+
+Run `1793813862700`: `?scenario=loop-wrap&bpm=120&repeats=5`, the same browser and click.
+
+| repeat | rec/sent | missing / extra / stuck | median ms | max dev ms | dur max ms | takes | wrap-adjacent note |
+|---|---|---|---|---|---|---|---|
+| 1 | 48/48 | 0 / 0 / 0 | −0.01 | 0.01 | 0.00 | 3 | new take, −0.006 |
+| 2 | 48/48 | 0 / 0 / 0 | −0.00 | 0.01 | 0.00 | 3 | new take, −0.007 |
+| 3 | 48/48 | 0 / 0 / 0 | −0.00 | 0.01 | 0.00 | 3 | new take, −0.000 |
+| 4 | 48/48 | 0 / 0 / 0 | −0.00 | 0.00 | 0.00 | 3 | new take, −0.003 |
+| 5 | 48/48 | 0 / 0 / 0 | −0.00 | 0.01 | 0.00 | 3 | new take, +0.001 |
+
+Cell `aligned`, as on 0.0.180.
+
+### Effect arm on 0.0.181
+
+`?scenario=nominal-start&bpm=120&effect=arpeggio` (run `1793813935003`) and `&effect=pitch` (run
+`1793813963371`), 2 repeats each:
+
+| effect | status | rec/sent | medians ms | max dev ms | dur max ms |
+|---|---|---|---|---|---|
+| arpeggio | aligned | 48/48, 48/48 | −0.002 / −0.001 | 0.005 | 0.00 |
+| pitch | aligned | 48/48, 48/48 | 0.007 / 0.006 | 0.005 | 0.00 |
+
+As on 0.0.180: the recorder takes the capture's raw note signals before the chain; the release's
+`release_all` on a leaving effect does not reach it.
+
+**The bands retired from the live verdict (2026-11-04).** `MIDI_KNOWN_DEFECTS` is empty: a cell off the
+tolerances reads `investigate`, a regression to the old recorder included (the user's rule, applied to
+the MIDI output audit the same day). The two bands (`midi-late`, `midi-late-release-lost`) live on as
+`LEGACY_LATE_BANDS` in `midiInputAlignment.ts`, exercised by the tests that pin their shape and formula.

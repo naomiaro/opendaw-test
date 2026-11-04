@@ -308,6 +308,72 @@ median is 10.28.
 on the `delayInMs` within half a quantum on an idle main thread; the main-thread timestamp base under jank
 as before.
 
+### SDK 0.0.181 (2026-11-04): Runs A, B and C again — openDAW#356 fixed, the janked cell reads `on-time`
+
+The release times hardware MIDI output on the audio clock (`389224d34`, "Hardware MIDI output keeps its
+timing while the page is busy (#356)"): the worklet's ring carries each message's due time as a `Float64`
+context time in ms (`quantumStartMs + offset`), `MIDIReceiver.outputClock` maps it to `performance.now()`
+through one `getOutputTimestamp()` pair per ring read plus the compensation latency, and
+`Project.sendMIDIFromEngine` hands that to `MIDIOutput.send`; CC messages get the device delay added like
+notes. Same recipes, Chrome 156, 44.1 kHz context, the Mac's output device at 44.1 kHz, the IAC bus, real
+clicks from the Playwright browser, `frameDriver=hidden-safe`.
+
+**Run A** (`1793814002979`, `?bpm=140&density=32nd&transport=both&repeats=2&frameDriver=hidden-safe`):
+
+| arm | transport | status | median ms (r1 / r2) | max dev | late tail | live median (r1 / r2) | live max dev | pair drift ms | miss/extra/stuck/vel | transport msgs |
+|---|---|---|---|---|---|---|---|---|---|---|
+| page | on | `bus-true` | −0.00 / −0.00 | 0.01 | 0.00 | 0.02 / 0.02 | 0.02 | −2.90..0.05 | 0/0/0/0 | 2 |
+| engine | on | `investigate` | 9.98 / 10.63 | 20.66 | 20.49 | 10.00 / 10.00 | 13.15 | −24.12..2.43 | 0/0/0/0 | 486 |
+| page | off | `bus-true` | −0.00 / −0.00 | 0.00 | 0.00 | 0.12 / −3.01 | 3.35 | −6.08..0.66 | 0/0/0/0 | 2 |
+| engine | off | `on-time` | 13.23 / 13.41 | 5.79 | 2.96 | 10.02 / 10.00 | 2.89 | −9.26..0.15 | 0/0/0/0 | 0 |
+
+The transport-on cell's `investigate` is the clock relation again (`maxAbsDevLiveMs 13.15 > 2.9` on
+repeat 2): both live medians exactly on the delay (10.00 / 10.00) and the live spread inside that repeat's
+pair-drift range, which this time reached −24.12 ms (0.0.180: −1.58..2.26; the register's 6 ms peak to
+peak), the widest excursion this harness has recorded. The off cell's one-pair medians (13.23 / 13.41) are
+the same excursion read on the one pair; its live medians sit on the delay.
+
+**Run B** (`1793814094848`, `…&jank=mid`): **both engine cells `on-time`**. Inside-block medians 10.32 /
+9.97 (transport on) and 9.82 / 12.78 (off) against 60.38 / 60.76 on 0.0.180; max deviation 0.02 / 1.06
+and 0.53 / 0.53 against about 70; late tail ≤ 0.49 ms against about 20; **no off-before-on inversion**
+(extra = stuck = 0 on all four repeats against 4 per cell); live medians 10.00 / 10.00 and 9.99 / 10.01;
+page cells `bus-true`. A note rendered inside an 80 ms main-thread block is sent at its due time on the
+audio clock, with the block invisible in the figures: the `midi-out-main-thread-base` band no longer
+applies to the installed SDK.
+
+**Run C** (`1793814184845`, `?bpm=all&density=both&repeats=2&frameDriver=hidden-safe`): every engine cell
+`on-time`, live medians 9.98–10.02 ms (0.0.180: 10.10–10.28; the sub-millisecond scheduling the commit
+claims: the old path truncated to whole ms); every page cell `bus-true`. The one-pair medians wobble more
+than before (12.87–17.21 on some repeats, page-arm live medians down to −5.70 on a repeat 2) with pair-drift
+ranges of −6.21 to −13.47 ms: Chromium 40726491's relation, read on the live pair where it does not reach
+the engine cell's verdict; the page arm, judged on its one pair, stays `bus-true`.
+
+**Run A repeated twice** (`1793814334871`, the user reporting the Playwright tab had been hidden during the
+runs above; `1793814506567`, the window brought to the front and uncovered): the engine live medians
+10.00 / 10.00 and 9.99 / 9.99, then 10.00 / 10.00 and 9.96 / 10.04, every page cell `bus-true`; the
+transport-on engine cell `on-time` both times, the transport-off one `investigate` both times on a live
+spread (5.88, then 5.37 ms) inside a pair-drift excursion (−20.53, then −16.23 ms). The excursions are not
+the hidden tab: the uncovered run reached −14.66 (a page cell) and −16.23. They are also not a frame
+starvation: every repeat of every run sampled the pair about 500 times in 8 s (frame interval 16.67 ms).
+On 0.0.180 the same recipe read ±3 ms within a repeat; this session reads 6–24 ms. The witness is the
+page's own `getOutputTimestamp()` relation, which the SDK cannot move, and the engine's notes sit on that
+relation's live value in every run — so the engine schedules on what Chrome reports; whether the reported
+relation or the audio clock moved is what no bus run can say (the register's "What it does not say").
+
+**Run A in the user's Chrome** (`1793814943307`, the same recipe, a real click in the user's own Chrome
+window, where every earlier session's runs were made): pair drift −1.46..2.78, −0.64..1.13 and −6.55..0.50
+ms, the 0.0.180 session's figures; page cells `bus-true`, the transport-on engine cell `on-time` (live
+10.00 / 10.00), the transport-off one `investigate` on the −6.55 ms excursion of its last repeat (live
+9.96 / 9.99), the one-off every session has read. **The wide excursions belong to the Playwright-launched
+Chrome** (a second Chrome instance on its own profile and flags), not to the SDK and not to a hidden tab;
+the MIDI output rows are read in the user's Chrome from here on (root CLAUDE.md).
+
+**Reading on 0.0.181, all three runs:** the finding of this register is fixed. Every note on the
+`delayInMs` within half a quantum on an idle main thread as before, and now under jank too. The band
+`midi-out-main-thread-base` is dropped from `midiOutputVerdict.ts` (the user's call: a regression must read
+as a failure, not as a known defect); `MIDI_OUT_KNOWN_DEFECTS` is empty, and the test file pins the
+2026-10-23 figures as `investigate` and run B's fixed figures as `on-time`.
+
 ## Findings
 
 1. **Confirmed, SDK: a note rendered during a main-thread block is requested late by the rest of the
@@ -334,14 +400,14 @@ as before.
 
 ### The band (`midiOutputVerdict.ts`, `MIDI_OUT_KNOWN_DEFECTS`)
 
-`midi-out-main-thread-base`, applies to a janked cell, pinned on run B's four engine repeats (the test
+`midi-out-main-thread-base` (the main-thread base before openDAW#356 was fixed; DROPPED from the code on 2026-11-04 after the fix measured, see that section — the description below is what it pinned), applied to a janked cell, pinned on run B's four engine repeats (the test
 holds their figures, and the verdict detail names the run): median (live where sampled) within a quantum
 of `delayInMs`; at least one note inside a block; the inside-block median between `delayInMs + jankMs / 4`
 and `delayInMs + jankMs + 1 quantum`; `maxAbsDevMs ≤ jankMs + 1 quantum`; the spread of the notes CLEAR
 of every block within two quanta (run B's first-after notes read up to 3.4 ms off), so a second defect
 beside the janked notes is not swallowed; no missing note, no velocity mismatch; `stuck == extra ==
 stuckInsideBlocks ≤ notesInsideBlocks` (the inversion, and only the inversion). Every bound is computed
-from the row's context. A janked cell that reads `on-time` would mean the base changed; a clean cell, a
+from the row's context. A janked cell that reads `on-time` means the base is the audio clock (measured so on 0.0.181); a clean cell, a
 cell with a late clear note or a stuck note outside the blocks is never swallowed (tests).
 
 ### What it does not say

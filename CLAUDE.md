@@ -750,17 +750,20 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   calibration `src/lib/audit/midiInputCalibration.ts`, register
   `debug/2026-10-20-midi-input-alignment/note.md`, table
   `node scripts/audit/midi-input-alignment/table.ts`. A cell is judged against the HEARD
-  beat with nothing netted out, so a constant offset is read against the register's bands
-  (`MIDI_KNOWN_DEFECTS`), not as a new finding; a band is computed from the row's own
-  output latency, frame interval and sample rate, so it holds on any device, and a median
-  that does not track its formula is the finding. Reading recipe and what each scenario provokes:
+  beat with nothing netted out; every cell is expected `aligned` (the recorder's defects are fixed and
+  `MIDI_KNOWN_DEFECTS` is empty), so a constant offset reads `investigate` and IS the finding (the old
+  recorder's shape stays in the tests as `LEGACY_LATE_BANDS`, computed from the row's own output
+  latency, frame interval and sample rate). Reading recipe and what each scenario provokes:
   `src/demos/midi/CLAUDE.md`.
 - After SDK upgrades, also run the hidden-page recording check:
   `recording-hidden-window-debug-demo.html?driver=hidden-safe&interrupt=cover&hideAt=start`
   (a real click on Run; when the page asks, hide Chrome by hand: Cmd+H with Chrome frontmost,
   count five, click Chrome in the Dock — no tooling hides a page: a second tab, a Playwright
   page brought to front, a protocol minimize and a popup of the page's own all leave it
-  `visible`), expect both takes `intact` and a longest frame gap under a second; then the three
+  `visible`; the Playwright-launched Chrome never reports `hidden` at all (its launch disables
+  window backgrounding), and a claude-in-chrome tab sits in a window of its own that a tooling
+  call brings forward mid-hide — so the user opens the URL in their own normal window and the
+  envelope is read from `.verify-output/`), expect both takes `intact` and a longest frame gap under a second; then the three
   `modal` rows (`?interrupt=modal&hideAt=start|mid|stop`, the alert dismissed after five
   seconds through the Playwright tooling's dialog handler: an alert answered at once measures
   nothing, and a span under a second reads `not-hidden`, the page refusing to judge, not a
@@ -768,15 +771,17 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   `debug/2026-10-21-hidden-page-recording/note.md`.
 - After SDK upgrades, also run the MIDI output timing audit:
   `midi-output-timing-audit-debug-demo.html?bpm=140&density=32nd&transport=both&repeats=2&frameDriver=hidden-safe`,
-  then `…&jank=mid`, then `?bpm=all&density=both&repeats=2&frameDriver=hidden-safe` — Chrome, a real
-  click on Run, the IAC Driver online, the window uncovered. Read the PAGE cell first: it must be
+  then `…&jank=mid`, then `?bpm=all&density=both&repeats=2&frameDriver=hidden-safe` — the USER'S Chrome
+  (claude-in-chrome; the Playwright-launched Chrome's clock-pair relation wandered 13–24 ms within a
+  repeat in four of five runs on 2026-11-04 where the user's Chrome read ±3 ms on the same day), a real click on Run, the IAC
+  Driver online, the window uncovered. Read the PAGE cell first: it must be
   `bus-true` or nothing of the engine cell counts. Expect the engine cells `on-time` without jank (live
   median on the box delay within half a quantum; a one-off `investigate` whose live spread tracks a
   `pair drift` excursion is the clock relation, not the SDK) and, since the engine times MIDI output on
-  the audio clock (`MIDIReceiver.outputClock`), `on-time` with jank too; a janked cell reading
-  `matches-known-defect` (`midi-out-main-thread-base`, the old main-thread base) would be a regression.
-  That expectation is not yet measured (the IAC run is owed); until it is, read a janked cell against
-  the register's last run. Register `debug/2026-10-23-midi-output-timing/note.md`, table
+  the audio clock (`MIDIReceiver.outputClock`), `on-time` with jank too; a janked cell off the delay
+  reads `investigate` (no band is pinned since the main-thread base, openDAW#356, was fixed and dropped).
+  Measured so on the audio-clock base: runs A, B and C on 2026-11-04, the janked cells `on-time` with
+  inside-block medians 9.8–12.8 ms (about 60 before) and no off-before-on inversion. Register `debug/2026-10-23-midi-output-timing/note.md`, table
   `node scripts/audit/midi-output-timing/table.ts`, reading recipe `src/demos/midi/CLAUDE.md`.
 - After SDK upgrades, also run the MIDI effect placement audit:
   `midi-effect-placement-audit-debug-demo.html?device=all` then `?rate=44100` — a real click on
