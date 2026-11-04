@@ -20,6 +20,9 @@ export interface RenderOfflineSliceOptions {
    *  `startSeconds` — needed when the scenario must start exactly on a
    *  non-seconds-aligned PPQN (e.g. the transport-pos audit family). */
   startPositionPpqn?: number;
+  /** Runs on the copy after the loop-disable write, before the renderer is created —
+   *  changes made here reach the render only, never the live project. */
+  mutateCopy?: (copy: Project) => void;
 }
 
 /**
@@ -45,7 +48,7 @@ export async function renderOfflineSlice(
   sampleRate: number = 48000,
   opts: RenderOfflineSliceOptions = {}
 ): Promise<{ channels: Float32Array[]; sampleRate: number }> {
-  const { exportConfig = Option.None, keepLoopEnabled = false, startPositionPpqn } = opts;
+  const { exportConfig = Option.None, keepLoopEnabled = false, startPositionPpqn, mutateCopy } = opts;
 
   // WASM offline worker is the only render path (the TS engine is removed from this
   // repo). OfflineAudioContext + createEngine is NOT usable here: ensureReady
@@ -66,6 +69,7 @@ export async function renderOfflineSlice(
         projectCopy.timelineBox.loopArea.enabled.setValue(false);
       });
     }
+    if (mutateCopy) mutateCopy(projectCopy);
 
     const durationSeconds = endSeconds - startSeconds;
     if (durationSeconds <= 0) {

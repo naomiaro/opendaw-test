@@ -344,3 +344,33 @@ export function applySettings(box: EffectBox, setting: DeviceSetting): void {
     }
   }
 }
+
+/** The inverse of `applySettings`: reads a device box's fields back into its setting. */
+export function settingsOf(box: EffectBox): DeviceSetting {
+  if (box instanceof ArpeggioDeviceBox) {
+    return {
+      device: "arpeggio",
+      settings: {
+        modeIndex: box.modeIndex.getValue() as 0 | 1 | 2, numOctaves: box.numOctaves.getValue(), rateIndex: box.rateIndex.getValue(),
+        gate: box.gate.getValue(), repeat: box.repeat.getValue(), velocity: box.velocity.getValue(),
+      },
+    };
+  }
+  if (box instanceof PitchDeviceBox) {
+    return { device: "pitch", settings: { semiTones: box.semiTones.getValue(), cents: box.cents.getValue(), octaves: box.octaves.getValue() } };
+  }
+  if (box instanceof VelocityDeviceBox) {
+    return {
+      device: "velocity",
+      settings: {
+        magnetPosition: box.magnetPosition.getValue(), magnetStrength: box.magnetStrength.getValue(),
+        randomAmount: box.randomAmount.getValue(), offset: box.offset.getValue(), mix: box.mix.getValue(),
+      },
+    };
+  }
+  if (box instanceof ZeitgeistDeviceBox) {
+    const groove = zeitgeistGrooveBox(box);
+    return { device: "zeitgeist", settings: { amount: groove.amount.getValue(), duration: groove.duration.getValue() } };
+  }
+  throw new Error(`no settings reader for ${box.constructor.name}`);
+}
