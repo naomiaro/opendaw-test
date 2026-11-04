@@ -3,7 +3,8 @@
 **Title:** MIDI Effect Placement Audit — does a MIDI effect in a unit's chain move where a note
 sounds, and does one move where the recorder places a recorded note
 
-**SDK Pin:** `@opendaw/studio-sdk@0.0.176` (installed npm package; WASM engine only)
+**SDK Pin:** `@opendaw/studio-sdk@0.0.181` (installed npm package; WASM engine only; first runs on 0.0.176, the Note
+Filter rows added on 0.0.181)
 
 **Filed (2026-10-21):** [openDAW#494](https://github.com/andremichelle/openDAW/issues/494) a sample
 of 1200 frames or fewer never loads (`drafts/posted-openDAW-494-short-sample-never-loads.md`).
@@ -54,7 +55,7 @@ playing as well as of playback.
 Two judgements, by what the device is meant to do:
 
 - **Pass-through rows** (Pitch at zero shift; Velocity at the factory values, which the engine's
-  own formula makes an identity; a Spielwerk whose generator yields nothing, so the bridge
+  own formula makes an identity; the Note Filter at its identity, C-2..G8, 0 st, Set off; a Spielwerk whose generator yields nothing, so the bridge
   forwards the input; a Spielwerk with `// @no-pass` that re-yields every note-on, the
   scheduler path; and every device once more with `enabled` false, the Spielwerk carrying the
   echo script since a disabled forward script is indistinguishable from an enabled one): the
@@ -89,6 +90,7 @@ The expected positions come from the device's documented rule, never from the dr
 | dry | eight sixteenths, each held 120 pulses | the reference; its own deltas show the sampler's spacing | — |
 | Pitch | as dry | timing passes through | semitones 0, cents 0, octaves 0 |
 | Velocity | as dry | timing passes through | magnet strength 0, random amount 0, offset 0, mix 1 (factory) |
+| Note Filter | as dry | timing passes through | min 0, max 127, Set off, transpose 0, key 60 (the factory's) |
 | Spielwerk, forward | as dry | the generator yields nothing; the bridge forwards the input verbatim | script in `midiEffectScenarios.ts` |
 | Spielwerk, yield | as dry | `// @no-pass`, every note-on re-yielded unchanged: the scheduler path | script in `midiEffectScenarios.ts` |
 | Arpeggio | one note at beat 1 held two beats | step `k` lands on the absolute grid `k × 240` for every `k` with `3840 ≤ k × 240 < 5760`: eight steps, the first on the note's own start (a note whose start is at or before a grid line is in the stack at that line; `crates/stock-devices/device-arpeggio/src/lib.rs`) | Up, 1 octave, rate index 9 (1/16 = 240 pulses), gate 1, repeat 1, velocity 0 (the engine then emits every step at velocity 1) |
@@ -156,14 +158,16 @@ effect's output, what is written is the key.
 Two rows added: `note-filter` (the device at its identity, C-2..G8, 0 st, Set off) and
 `note-filter-disabled`, both pass-through. Run 1793823240559, 48 kHz, 120 bpm, and run 1793823258131,
 44.1 kHz, 120 bpm: 15 rows, every row `as-predicted`; both Note Filter rows at lag 0, score 1.000,
-their channel peak equal to the dry row's (0.7079) at both rates. The other thirteen rows read as the
-first runs (the dry, Arpeggio, Zeitgeist and echo rows at 0 frames at 48 kHz and −1 frame at 44.1 kHz,
-the floor-versus-round case). Instrument offset 13 frames (0.27 ms) at 48 kHz, 12 (0.27 ms) at 44.1 kHz.
+their channel peak equal to the dry row's (0.7079) at both rates. The other thirteen rows `as-predicted` as
+before: the dry, Arpeggio, Zeitgeist and echo rows at 0 frames at 48 kHz (the first 48 kHz run read the
+Zeitgeist at +1 frame, the floor-versus-round case, within the one-frame tolerance either way) and −1 frame at
+44.1 kHz. Instrument offset 13 frames (0.27 ms) at 48 kHz, 12 (0.27 ms) at 44.1 kHz.
 
 ## Reading
 
 - **No MIDI effect moves a note it is meant to pass through**, enabled or disabled: every
-  pass-through row at lag 0, score 1.000, at both rates and at 90 bpm. There is no
+  pass-through row at lag 0, score 1.000, at both rates and at 90 bpm (the Note Filter rows at 120 bpm, both
+  rates). There is no
   Compressor-shaped delay on the MIDI side.
 - **Each device that moves notes moves them exactly where its rule says**, to the frame: the
   arpeggiator on the absolute grid including the first step on the note's own start, Zeitgeist

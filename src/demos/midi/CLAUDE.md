@@ -378,8 +378,8 @@ table `node scripts/audit/midi-effect-placement/table.ts`.
   `reset`, start clean when enabled again. A change that leaves the MIDI
   effects as they were (an audio effect added) keeps them. The audit sets `enabled` before it
   renders, so a row never sees the drop or the release.
-- **Two judgements.** A device meant to pass timing through (Pitch, Velocity, a Spielwerk that
-  forwards or re-yields, every device disabled) is read by cross-correlation against the dry
+- **Two judgements.** A device meant to pass timing through (Pitch, Velocity, the Note Filter, a Spielwerk
+  that forwards or re-yields, every device disabled) is read by cross-correlation against the dry
   render of the same run: expected lag 0. A device meant to move notes (Arpeggio, Zeitgeist,
   a Spielwerk echo) is read by its onsets against the frames its rule predicts, with the dry
   row's first onset as the sampler's own offset: expected within one frame. The engine splits

@@ -16,7 +16,8 @@
  * The Note Filter's range is sampled as windows on the GAPPED melody (some notes filtered out, every survivor read on its own, so a
  * leaked note starts a read note of its own; on the legato melody it would hide inside its neighbours' spans) and as
  * inclusive ends on the chromatic run (an off-by-one drops exactly one note); its transposes on the melody, with two rows on
- * the chromatic run that push every note past 127 or below 0 (predicted silent, judged on silence); its set on both patterns.
+ * the chromatic run that push every note past 127 or below 0 (predicted silent, judged on silence); its set on the gapped melody
+ * and the sixteenths.
  *
  * Id readings: a number prints as JavaScript prints it (`-0.5`, `12.5`), no padding, so `vel-offset-1-melody`
  * is offset -1. The Zeitgeist rows take every DISTINCT `GrooveShuffleBoxAdapter.DurationPPQNs` value, 8 of

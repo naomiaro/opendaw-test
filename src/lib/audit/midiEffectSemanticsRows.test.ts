@@ -211,17 +211,22 @@ describe("the Note Filter order and disabled rows", () => {
     expect(filterFirst.map((n) => n.pitch)).toEqual([71, 74, 74, 71, 69, 71, 74, 74, 71, 69]);
     expect(filterFirst.every((n) => n.cent === 12.5)).toBe(true);
   });
-  it("every order and disabled row's Note Filter and Pitch stage changes the row's own pattern (a non-identity that is an identity there proves nothing)", () => {
-    // Velocity and Zeitgeist are context-bound (the test context's computeVelocity and warp are identities). The Arpeggio's
-    // non-identity (Up, 1 octave, 1/16, gate 0.5, velocity 1) reproduces the sixteenths exactly, so `disabled-arpeggio`
-    // is excluded here and noted as an open item; changing it would move registered order rows.
-    for (const row of SEMANTICS_ROWS.filter((r) => r.group === "order" || r.group === "disabled")) {
+  it("every order and disabled row's Note Filter, Pitch and Arpeggio stage changes what it receives in the chain (a non-identity that is an identity there proves nothing)", () => {
+    // Velocity and Zeitgeist are context-bound (the test context's computeVelocity and warp are identities). `disabled-arpeggio`
+    // is the one known identity, pinned by the next test as an open item.
+    for (const row of SEMANTICS_ROWS.filter((r) => (r.group === "order" || r.group === "disabled") && r.id !== "disabled-arpeggio")) {
       const source = rowNotes(row);
-      for (const stage of row.chain) {
-        if (stage.setting.device !== "note-filter" && stage.setting.device !== "pitch") continue;
-        expect(composeRules([stage.setting], context, new Set(), source), `${row.id} ${stage.setting.device}`).not.toEqual(source);
-      }
+      row.chain.forEach((stage, index) => {
+        if (stage.setting.device === "velocity" || stage.setting.device === "zeitgeist") return;
+        const input = composeRules(row.chain.slice(0, index).map((c) => c.setting), context, new Set(), source);
+        expect(composeRules([stage.setting], context, new Set(), input), `${row.id} ${stage.setting.device}`).not.toEqual(input);
+      });
     }
+  });
+  it("flips when fixed: disabled-arpeggio's non-identity (Up, 1 octave, 1/16, gate 0.5, velocity 1) is an identity on the sixteenths, so the row proves nothing (open item in the note)", () => {
+    const row = rowById("disabled-arpeggio");
+    const source = rowNotes(row);
+    expect(composeRules([row.chain[0].setting], context, new Set(), source)).toEqual(source);
   });
   it("filter then Arpeggio empties the second half bar of the chords; Arpeggio then filter walks the full triads first", () => {
     const filterFirst = predictedVariants(rowById("order-note-filter-arpeggio"), context)[0].notes;
@@ -229,7 +234,15 @@ describe("the Note Filter order and disabled rows", () => {
     expect(filterFirst.some((n) => n.position < 3840 + 1920)).toBe(true);
     const arpFirst = predictedVariants(rowById("order-arpeggio-note-filter"), context)[0].notes;
     expect(arpFirst.every((n) => n.pitch >= 62 && n.pitch <= 67)).toBe(true);
-    expect(arpFirst.length).toBeGreaterThan(0);
+    expect(arpFirst).not.toEqual(filterFirst);
+    // first half bar (A minor 57/60/64): the filter first leaves 64 alone and every 1/16 step plays it (8 steps);
+    // the Arpeggio first walks the triad from absolute grid index 16 (16 % 3 = 1 → 60, 17 → 64, 18 → 57, …), so only
+    // the steps at indices 17, 20, 23 are at 64 and survive the filter (3 of 8)
+    const firstHalf = (notes: typeof arpFirst) => notes.filter((n) => n.position < 3840 + 1920);
+    expect(firstHalf(filterFirst).map((n) => n.pitch)).toEqual(Array(8).fill(64));
+    expect(firstHalf(arpFirst).map((n) => [n.position - 3840, n.pitch])).toEqual([[240, 64], [960, 64], [1680, 64]]);
+    // second half bar (F major 53/57/60): nothing in the window either way
+    expect(arpFirst.some((n) => n.position >= 3840 + 1920 && n.position < 3840 + 3840)).toBe(false);
   });
 });
 
