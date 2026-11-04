@@ -6,7 +6,8 @@ import { AudioUnitFactory, ProjectSkeleton, TrackType } from "@opendaw/studio-ad
 import { AudioUnitType } from "@opendaw/studio-enums";
 import type { Project } from "@opendaw/studio-core";
 import { transact } from "@/lib/testing/boxGraphFixtures";
-import { PATTERNS, PATTERN_PPQN, patternById, writePattern } from "./patterns";
+import { PPQN } from "@opendaw/lib-dsp";
+import { BAR_PPQN, PATTERNS, PATTERN_BPM, PATTERN_PPQN, REGION_START_PPQN, patternById, withGaps, writePattern } from "./patterns";
 
 /** A note region on a real graph, and the one-method `api` double `writePattern` needs (mirrors ProjectApi.createNoteEvent). */
 function regionFixture() {
@@ -120,3 +121,32 @@ describe("patterns", () => {
     }
   });
 });
+
+describe("withGaps", () => {
+  it("shortens every note to the ratio of its length and leaves everything else", () => {
+    const melody = patternById("melody");
+    const gapped = withGaps(melody, 0.9);
+    expect(gapped.id).toBe("melody");
+    expect(gapped.label).toBe(melody.label);
+    expect(gapped.blurb).toBe(melody.blurb);
+    expect(gapped.notes.length).toBe(melody.notes.length);
+    gapped.notes.forEach((note, i) => {
+      expect(note.duration).toBe(Math.round(melody.notes[i].duration * 0.9));
+      expect(note.position).toBe(melody.notes[i].position);
+      expect(note.pitch).toBe(melody.notes[i].pitch);
+      expect(note.velocity).toBe(melody.notes[i].velocity);
+    });
+  });
+  it("leaves at least 25 ms between the Melody's eighths at 120 bpm", () => {
+    const [a, b] = withGaps(patternById("melody"), 0.9).notes;
+    const gapSeconds = PPQN.pulsesToSeconds(b.position - (a.position + a.duration), PATTERN_BPM);
+    expect(gapSeconds).toBeGreaterThanOrEqual(0.025);
+  });
+  it("does not touch the shared pattern", () => {
+    const before = patternById("bass").notes.map((n) => n.duration);
+    withGaps(patternById("bass"), 0.5);
+    expect(patternById("bass").notes.map((n) => n.duration)).toEqual(before);
+  });
+});
+
+it("REGION_START_PPQN is one bar", () => expect(REGION_START_PPQN).toBe(BAR_PPQN));

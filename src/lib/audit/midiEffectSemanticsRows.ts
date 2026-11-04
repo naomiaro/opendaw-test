@@ -23,7 +23,7 @@ import { PPQN } from "@opendaw/lib-dsp";
 import { GrooveShuffleBoxAdapter, ArpeggioDeviceBoxAdapter } from "@opendaw/studio-adapters";
 import { ArpeggioDeviceBox, PitchDeviceBox, VelocityDeviceBox, ZeitgeistDeviceBox } from "@opendaw/studio-boxes";
 import type { EffectBox } from "@opendaw/studio-core";
-import { BAR_PPQN, PATTERN_PPQN, patternById, type Pattern } from "@/lib/midiEffects/patterns";
+import { PATTERN_PPQN, REGION_START_PPQN, patternById, type Pattern } from "@/lib/midiEffects/patterns";
 import { zeitgeistGrooveBox } from "./midiEffectChain";
 import {
   DEVIATIONS, DEVIATION_SUBSETS, clipToRange, composeRules,
@@ -32,7 +32,7 @@ import {
 } from "./midiEffectSemanticsRules";
 
 /** The region starts at bar 1: nothing sounds in bar 0, so the render's start is clear of every onset. */
-export const REGION_POSITION_PPQN = BAR_PPQN;
+export const REGION_POSITION_PPQN = REGION_START_PPQN;
 export const REGION_DURATION_PPQN = PATTERN_PPQN;
 export const RENDER_TAIL_SECONDS = 0.25;
 /** The sample every row plays: a 440 Hz tone this long. A note at pitch p consumes `duration_s × 2^((p − 69)/12)` of it, so a row's notes must keep that at or under this. */
