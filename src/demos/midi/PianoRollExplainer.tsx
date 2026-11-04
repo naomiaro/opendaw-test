@@ -238,6 +238,10 @@ const Field: React.FC<{ name: string; value: string | number; width?: number }> 
   </span>
 );
 
+/** Bar 1 and its beats, as a DAW's ruler prints them. */
+const BEAT_LABELS = ["1", "1.2", "1.3", "1.4"];
+const DATA_ROLL_WIDTH = GRID_LEFT + (BAR_PPQN / Quarter) * DATA_GEOMETRY.quarterWidth;
+
 /** The note the page opens with lit, so the link shows before anyone touches it. */
 const INITIAL_NOTE = 3;
 
@@ -269,6 +273,13 @@ export const NoteDataLink: React.FC = () => {
         ))}
       </div>
       <div className="prx-roll">
+        <div className="prx-ruler" aria-hidden="true">
+          {BEAT_LABELS.map((label, beat) => (
+            <span key={label} style={{ left: `${((GRID_LEFT + beat * DATA_GEOMETRY.quarterWidth) / DATA_ROLL_WIDTH) * 100}%` }}>
+              {label}
+            </span>
+          ))}
+        </div>
         <div className="prx-rail" aria-hidden="true">
           {RAIL_LABELS.map((pitch) => (
             <span
@@ -344,6 +355,15 @@ export const PIANO_ROLL_STYLES = `
 .prx-field { white-space: pre; }
 .prx-value { color: var(--mc-amber); }
 .prx-roll { display: grid; grid-template-columns: 24px minmax(0, 1fr); min-width: 0; }
+.prx-ruler { grid-column: 2; position: relative; height: 18px; }
+.prx-ruler span {
+  position: absolute;
+  bottom: 3px;
+  font-family: var(--mc-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--mc-label);
+}
 .prx-rail { position: relative; }
 .prx-rail span {
   position: absolute;

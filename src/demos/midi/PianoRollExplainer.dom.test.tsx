@@ -234,6 +234,24 @@ describe("NoteDataLink", () => {
     });
   });
 
+  it("counts bars and beats along the top of the roll", () => {
+    const { container } = show();
+    const labels = [...container.querySelectorAll<HTMLElement>(".prx-ruler span")];
+    expect(labels.map((label) => label.textContent)).toEqual(["1", "1.2", "1.3", "1.4"]);
+  });
+
+  it("puts each beat's number over the note that starts on that beat", () => {
+    const { container, rows, bars } = show();
+    const [, , viewWidth] = container.querySelector(".prx-roll svg")!.getAttribute("viewBox")!.split(" ").map(Number);
+    const labels = [...container.querySelectorAll<HTMLElement>(".prx-ruler span")];
+    expect(labels).toHaveLength(4);
+    labels.forEach((label, beat) => {
+      const index = rows.findIndex((row) => new RegExp(`position:\\s*${beat * 960},`).test(row.textContent ?? ""));
+      const barLeft = num(bars[index], "x") - BAR_INSET / 2;
+      expect((parseFloat(label.style.left) / 100) * viewWidth).toBeCloseTo(barLeft, 5);
+    });
+  });
+
   it("names the rail's rows at the height of those rows", () => {
     const { container, rows, bars } = show();
     const [, , , viewHeight] = container.querySelector(".prx-roll svg")!.getAttribute("viewBox")!.split(" ").map(Number);

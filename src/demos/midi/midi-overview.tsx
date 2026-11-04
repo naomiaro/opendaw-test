@@ -98,8 +98,9 @@ function MidiOverview() {
               DAWs can use a different one, so read the handbook&apos;s{" "}
               <a href="/docs/02-timing-and-tempo.html#what-is-ppqn">guide to PPQN</a> before
               moving these numbers between programs. <code>pitch</code> is the row and{" "}
-              <code>velocity</code> runs from 0 to 1. Move over a line or a bar to see which is
-              which.
+              <code>velocity</code> runs from 0 to 1. The numbers along the top count musical bars and
+              beats: 1.3 is bar 1, beat 3, which is position 1920. Move over a line or a bar to
+              see which is which.
             </p>
             <NoteDataLink />
             <p>
