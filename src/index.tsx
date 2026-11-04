@@ -276,7 +276,6 @@ const App: React.FC = () => {
               and run.{" "}
               <a
                 href="/docs/"
-                style={{ color: "var(--mc-amber)", textDecoration: "none", borderBottom: "1px solid var(--mc-amber)" }}
               >
                 Read the Handbook &rarr;
               </a>

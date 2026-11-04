@@ -54,10 +54,32 @@ export const CONSOLE_STYLES = `
   --mc-rose: #df8a76;
   --mc-violet: #ab92db;
   --mc-slate: #7fa0d4;
+  --mc-link: #86aee8;
+  --mc-link-hover: #b5cff2;
   --mc-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 body { background: var(--mc-bg); }
 .mc-root { color: var(--mc-text); }
+/* A link in prose is blue and underlined, everywhere: amber marks a highlight, never a link.
+   Classed links (.mc-open, .mc-panel, .back-link) are controls and draw themselves. */
+a:not([class]),
+a.rt-Link {
+  color: var(--mc-link);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+a:not([class]):hover,
+a.rt-Link:hover {
+  color: var(--mc-link-hover);
+  text-decoration-thickness: 2px;
+}
+a:not([class]):focus-visible,
+a.rt-Link:focus-visible {
+  outline: 2px solid var(--mc-amber);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
 .mc-kicker {
   font-family: var(--mc-mono);
   font-size: 11px;
@@ -257,8 +279,7 @@ body { background: var(--mc-bg); }
 .mc-open .mc-arrow { transition: transform 160ms ease; }
 .mc-open:hover { border-color: var(--mc-amber); color: var(--mc-amber); }
 .mc-open:hover .mc-arrow { transform: translateX(3px); }
-.mc-open:focus-visible,
-.mc-anchors a:focus-visible {
+.mc-open:focus-visible {
   outline: 2px solid var(--mc-amber);
   outline-offset: 2px;
   border-radius: 3px;
@@ -297,8 +318,6 @@ body { background: var(--mc-bg); }
   border-radius: 3px;
   padding: 0.08em 0.35em;
 }
-.mc-anchors a { color: var(--mc-amber); text-decoration: none; border-bottom: 1px solid transparent; }
-.mc-anchors a:hover { border-bottom-color: var(--mc-amber); }
 
 /* Two-up definition panels (engraved-strip look) inside an .mc-anchors section.
    Inner panels use --mc-bg (darker than the section's --mc-panel) so the 1px

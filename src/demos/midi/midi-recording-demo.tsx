@@ -330,7 +330,7 @@ const App: React.FC = () => {
               (<code>MidiDevices.softwareMIDIInput</code>) — notes reach the recording
               engine either way. Step recording enters notes one at a time, without a
               real-time performance. New to MIDI? The{" "}
-              <a href="/midi-demos.html" style={{ color: "var(--mc-amber)" }}>MIDI overview</a> explains the piano
+              <a href="/midi-demos.html">MIDI overview</a> explains the piano
               roll and links the other MIDI pages.
             </p>
           </div>

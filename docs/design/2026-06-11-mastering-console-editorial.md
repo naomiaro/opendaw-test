@@ -25,6 +25,7 @@ per page that carries information (never decoration for its own sake).
 | `--mc-amber` | `#e8a33d` | the single accent; also "audio file" in diagrams |
 | `--mc-cyan` | `#5fb4c9` | "project grid" in diagrams; scenario chip |
 | `--mc-green` | `#7fbf6a` | scenario chip (time-stretch/slicing) |
+| `--mc-link` / `--mc-link-hover` | `#86aee8` / `#b5cff2` | links in prose, always underlined (at least 7.3:1 on every surface) |
 
 ## Rules
 
@@ -36,6 +37,10 @@ per page that carries information (never decoration for its own sake).
   chips, never full-surface coloring. Every text/background pair ≥4.5:1 (verify with
   a contrast computation, not by eye — `--mc-faint` exists precisely because it fails).
   Multi-lane pages may carry a lane's chip color into that lane's drawn data line and its small controls.
+- **Links:** a link in prose is `--mc-link` and underlined, and amber never marks one, so a reader can tell
+  a link from a highlight at a glance. One rule in `CONSOLE_STYLES` does this for every unclassed `<a>`; a
+  page sets no colour on a link. Classed links (`.mc-open`, `.mc-panel`, `.back-link`) are controls and
+  draw themselves.
 - **Signature element:** one per page, drawn from the page's actual data/concept
   (the overview's warp lattice plots real-shaped wobbly beats against the grid).
 - **Motion:** one staggered load reveal (`animation-delay`), restrained hovers
@@ -85,7 +90,7 @@ they must work on pages whose `<style>` blocks don't define the tokens.
   Cambridge-MT credit with its full educational-use notice, styled as the
   back-panel fine-print plate on studio hardware: hairline-bordered panel
   (`#2a2620` on `#151310`), mono uppercase "Audio Attribution" eyebrow, 12px
-  muted body with the song title lifted to `--mc-text`, amber link hover.
+  muted body with the song title lifted to `--mc-text`, links in `--mc-link`.
   Takes a required `stems` prop — a singular noun interpolated as
   "{stems} stems from …" (e.g. "Drum", "Guitar", "Vocal", "Mix").
   Placement rule: directly above `<MoisesLogo />` on every demo that plays

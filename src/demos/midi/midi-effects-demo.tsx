@@ -212,11 +212,11 @@ function MidiEffectsDemo() {
             chain and hear what it does to the notes before they reach the synth, then stack several and drag them
             into an order. The lower lane reads the notes the chain emits from the engine, not from a model of the
             device. For the sixth device, the scriptable one, see the{" "}
-            <a href="/spielwerk-demo.html" style={{ color: "var(--mc-amber)" }}>Spielwerk demo</a>.
+            <a href="/spielwerk-demo.html">Spielwerk demo</a>.
             For the exact view, velocity included, see the{" "}
-            <a href="/midi-effects-rendered-demo.html" style={{ color: "var(--mc-amber)" }}>Rendered page</a>; all
+            <a href="/midi-effects-rendered-demo.html">Rendered page</a>; all
             the MIDI pages are on the{" "}
-            <a href="/midi-demos.html" style={{ color: "var(--mc-amber)" }}>MIDI overview</a>.
+            <a href="/midi-demos.html">MIDI overview</a>.
           </p>
         </header>
 

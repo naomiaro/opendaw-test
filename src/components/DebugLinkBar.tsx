@@ -24,7 +24,7 @@ export const DebugLinkBar: React.FC<DebugLinkBarProps> = ({ links }) => {
           <a
             href={l.href}
             style={{
-              color: "var(--accent-11)",
+              color: "var(--mc-link, var(--accent-11))",
               textDecoration: "underline",
               display: "inline-flex",
               alignItems: "center",

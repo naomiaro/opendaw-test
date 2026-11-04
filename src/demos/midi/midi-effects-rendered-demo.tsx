@@ -279,9 +279,9 @@ function MidiEffectsRenderedDemo() {
             velocity. What you hear is what the reader reads, with one difference: the live output carries the
             master limiter and the render does not, so the velocities read are true levels. For the same chain on a
             synth, read live from the engine, see the{" "}
-            <a href="/midi-effects-demo.html" style={{ color: "var(--mc-amber)" }}>MIDI Effects demo</a>; all
+            <a href="/midi-effects-demo.html">MIDI Effects demo</a>; all
             the MIDI pages are on the{" "}
-            <a href="/midi-demos.html" style={{ color: "var(--mc-amber)" }}>MIDI overview</a>.
+            <a href="/midi-demos.html">MIDI overview</a>.
           </p>
         </header>
 

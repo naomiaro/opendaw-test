@@ -535,7 +535,6 @@ function TimePitchDemo() {
               changes. Source for the chapter at{" "}
               <a
                 href="https://opendaw-test.pages.dev/docs/18-time-and-pitch.html"
-                style={{ color: "var(--mc-amber)" }}
               >
                 docs/18-time-and-pitch
               </a>

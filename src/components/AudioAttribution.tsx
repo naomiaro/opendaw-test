@@ -40,14 +40,12 @@ export const AudioAttribution: React.FC<{ stems: string }> = ({ stems }) => {
           color: #d8d2c8;
         }
         .audio-attribution-text a {
-          color: #e8a33d;
+          color: #86aee8; /* --mc-link: this plate styles itself, on pages without the console theme too */
           text-decoration: underline;
           text-underline-offset: 3px;
-          text-decoration-color: #5f594e;
-          transition: text-decoration-color 120ms ease;
         }
         .audio-attribution-text a:hover {
-          text-decoration-color: #e8a33d;
+          color: #b5cff2; /* --mc-link-hover */
         }
         .audio-attribution-text a:focus-visible {
           outline: 2px solid #e8a33d;

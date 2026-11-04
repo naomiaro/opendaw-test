@@ -763,7 +763,6 @@ const App: React.FC = () => {
                 href="https://soundpacks.com/free-sound-packs/90s-mpc-sample-pack/"
                 target="_blank"
                 rel="noopener noreferrer"
-                style={{ color: "var(--mc-amber)", textDecoration: "none" }}
               >
                 90s MPC Sample Pack
               </a>{" "}
