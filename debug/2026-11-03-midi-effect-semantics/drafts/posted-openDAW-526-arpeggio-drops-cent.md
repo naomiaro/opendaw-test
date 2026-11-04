@@ -1,4 +1,4 @@
-<!-- TO REVIEW before posting on andremichelle/openDAW. A question, not a bug report: the manual is silent. -->
+<!-- Posted 2026-11-04 as https://github.com/andremichelle/openDAW/issues/526 — the body below is as filed (a question, not a bug report: the manual is silent). -->
 
 # Arpeggio: is a held note's cent meant to be dropped? Every arpeggiated note-on is emitted with cent 0
 
