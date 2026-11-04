@@ -29,8 +29,9 @@ Later the same day `arpeggio-uncapped-note-off` was retired as well, on the manu
 the note length as a percentage of the step rate and says nothing about the held note's end, so the
 cap at the held note was this audit's own reading, not the manual's (the registers did not change:
 every row as-registered). The one deviation left is `arpeggio-drops-cent`, and it is the subject of a
-drafted question for upstream (`drafts/TO-REVIEW-openDAW-arpeggio-drops-cent.md`, which also asks
-about the uncapped step in one line); the maintainer's answer settles both.
+question filed 2026-11-04 as [openDAW#526](https://github.com/andremichelle/openDAW/issues/526)
+(`drafts/posted-openDAW-526-arpeggio-drops-cent.md`, which also asks about the uncapped step); the
+maintainer's answer settles both.
 
 **Harness:** unlisted debug demo
 `midi-effect-semantics-audit-debug-demo.html[?rate=48000|44100][&rows=all|quick|<id,id,…>][&device=all|arpeggio|pitch|velocity|zeitgeist|order|disabled][&pattern=<id>]`
@@ -153,8 +154,8 @@ error; a row that matches only with a deviation on reads `matches-known-deviatio
 | name | what the engine does | crate line | first seen | retired on |
 |---|---|---|---|---|
 | `arpeggio-velocity-matrix` (retired) | One fixed velocity `1 + v` below 0, a blend `velocity × v + (1 − v)` above it, where the manual of the time blended full velocity with the note's own; the engine still does exactly this, and it is the rule since 2026-11-04. | `device-arpeggio/src/lib.rs:108-118` | 0.0.180 (first run) | 2026-11-04: openDAW#524 closed, the manual corrected (`0b371e0b3`); the matrix is the rule |
-| `arpeggio-drops-cent` | Emits every arpeggiated note-on with cent 0, so a source note's detune is lost. | `device-arpeggio/src/lib.rs:304` | 0.0.180 | — |
-| `arpeggio-uncapped-note-off` (retired) | Ends a step at its position plus its length, never at the end of the source note, so the last step outlasts the held note; the engine still does exactly this, and it is the rule since 2026-11-04. | `device-arpeggio/src/lib.rs:303-306` | 0.0.180 | 2026-11-04: the manual's gate definition (`arpeggio.md:76`) matches the engine; the cap was this audit's reading. Asked in one line of the drafted dropped-cent question (waiting for a read) |
+| `arpeggio-drops-cent` | Emits every arpeggiated note-on with cent 0, so a source note's detune is lost. Asked upstream as openDAW#526 (the manual is silent); retire it if the answer is "intended". | `device-arpeggio/src/lib.rs:304` | 0.0.180 | — |
+| `arpeggio-uncapped-note-off` (retired) | Ends a step at its position plus its length, never at the end of the source note, so the last step outlasts the held note; the engine still does exactly this, and it is the rule since 2026-11-04. | `device-arpeggio/src/lib.rs:303-306` | 0.0.180 | 2026-11-04: the manual's gate definition (`arpeggio.md:76`) matches the engine; the cap was this audit's reading. Asked in one line of the dropped-cent question, openDAW#526 |
 | `zeitgeist-warps-note-off` (retired) | Warps the note-off like any other record, so a duration stretches or shrinks with the groove, where the manual of the time said durations remain unchanged; the engine still does exactly this, and it is the rule since 2026-11-04. | `device-zeitgeist/src/lib.rs:124-138` | 0.0.180 | 2026-11-04: openDAW#525 closed, the manual corrected (`2922ba25d`); the warped note-off is the rule |
 
 ## Row sampling
@@ -470,9 +471,9 @@ manual corrected: openDAW#524 (the `arpeggio-velocity-manual-gap` question, with
 `zeitgeist-warps-note-off` deviation: the manual's technical notes said durations remain unchanged,
 the engine warps the note-offs, measured as 26.4 / 63.6 ms note lengths at 25 % and 124.0 / 38.9 ms
 at 75 % for notes held 62.5 ms; `drafts/posted-openDAW-525-zeitgeist-warps-note-offs-vs-manual.md`).
-The Pitch drop is not filed: the manual is silent on it. Drafted, waiting for a read
-(`drafts/TO-REVIEW-openDAW-arpeggio-drops-cent.md`): the dropped cent, and in one line the step that
-runs its full gate length past the held note's release, both as questions.
+The Pitch drop is not filed: the manual is silent on it. Filed 2026-11-04 as a question, openDAW#526
+(`drafts/posted-openDAW-526-arpeggio-drops-cent.md`): the dropped cent, and in one line the step that
+runs its full gate length past the held note's release.
 
 - **`pitch-drops-out-of-range`.** The engine drops a note shifted outside 0..127, and its note-off
   passes through unshifted; the crate documents this as its deviation from the TS device, which

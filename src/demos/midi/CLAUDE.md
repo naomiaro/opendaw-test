@@ -428,7 +428,7 @@ other answer, a corrupt register, or one of another rate or bpm ends the run in 
   sits inside a tolerance.
 - **The rule** is the crate's and the manual's, intent first; each subset of the row's known
   deviations is tried after it, smallest first. Deviations (`DEVIATIONS` in the rules module, with
-  crate lines): `arpeggio-drops-cent` only (a question for upstream is drafted). A step runs its full
+  crate lines): `arpeggio-drops-cent` only (asked upstream as openDAW#526, with the uncapped step). A step runs its full
   gate length past the held note's release by the rule (the manual: note length as a percentage of
   the step; `arpeggio-uncapped-note-off` retired 2026-11-04 on that). Two more were retired the same
   day when openDAW#524 and #525 closed with the MANUALS corrected:
