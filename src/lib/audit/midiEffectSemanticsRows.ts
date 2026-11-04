@@ -59,7 +59,7 @@ const { SemiQuaver } = PPQN;
 export const HELD_NOTE: AuditPattern = {
   id: "held-note",
   label: "Held note",
-  blurb: "One C3 held off the grid: the Arpeggio's last step is capped by the note.",
+  blurb: "One C3 held off the grid: the Arpeggio's last step runs its full gate length past the note's end.",
   notes: [{ position: 0, duration: HELD_NOTE_PPQN, pitch: 60, velocity: 1 }],
 };
 

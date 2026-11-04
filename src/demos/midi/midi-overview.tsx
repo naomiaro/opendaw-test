@@ -9,7 +9,7 @@ import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
 import { CONSOLE_STYLES } from "@/lib/design/consoleTheme";
-import { NoteDataLink, PianoRollSteps, PIANO_ROLL_STYLES } from "./PianoRollExplainer";
+import { EffectChainDiagram, NoteDataLink, PianoRollSteps, PIANO_ROLL_STYLES } from "./PianoRollExplainer";
 
 const PAGES = [
   {
@@ -17,7 +17,7 @@ const PAGES = [
     chip: "var(--mc-rose)",
     name: "MIDI Recording",
     direction: "GET NOTES IN",
-    limit: "Shows the notes held down and a count of the notes recorded, not a roll",
+    limit: "Lists the last notes played and lights the keys held down, but does not draw what you recorded on a roll",
     href: "/midi-recording-demo.html",
     prose:
       "Play the on-screen keyboard or a connected device and record what you play, or enter notes one step at a time without playing them in real time.",
@@ -99,7 +99,7 @@ function MidiOverview() {
             </p>
             <NoteDataLink />
             <p>
-              A real note has three more fields that the bar doesn&apos;t draw:{" "}
+              A real note has more fields that the bar doesn&apos;t draw, such as{" "}
               <code>cent</code> for fine tuning, <code>chance</code> for how likely it is to
               play, and <code>playCount</code> for repeats. The handbook&apos;s{" "}
               <a href="/docs/16-midi.html">MIDI deep dive</a> has the full list.
@@ -186,6 +186,7 @@ function MidiOverview() {
               A MIDI effect sits between the notes and the instrument. The instrument pulls
               notes through the chain, and each effect hands on what it was given, changed.
             </p>
+            <EffectChainDiagram />
             <ul className="prx-effects">
               <li><strong>Arpeggio</strong> plays the notes you hold one at a time, on a grid.</li>
               <li><strong>Note Filter</strong> keeps only a range of keys, then can move them or turn them all into one key.</li>

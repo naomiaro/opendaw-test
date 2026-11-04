@@ -18,4 +18,9 @@ describe("PianoKeyboard", () => {
     fireEvent.mouseDown(screen.getByText("C4"));
     expect(onNoteOn).toHaveBeenLastCalledWith(72);
   });
+
+  it("ends on B4, one key short of C5", () => {
+    render(<PianoKeyboard activeNotes={new Set()} onNoteOn={() => {}} onNoteOff={() => {}} />);
+    expect(screen.queryByText("C5")).toBeNull();
+  });
 });

@@ -563,7 +563,7 @@ If you need to pitch-shift a sample for *playback*, use a sampler instrument (Va
 
 ## Reference Pitch (Concert Tuning)
 
-Every project has a global reference pitch — the frequency that the MIDI note `A4` (note 69) maps to. The Western default is `440 Hz`. Orchestras and historical / non-Western tunings use other values: `432 Hz` (sometimes called "Verdi tuning"), `442 Hz` and `443 Hz` (common in European orchestras), `415 Hz` (Baroque). The SDK exposes this as a single Float32 field on the root box.
+Every project has a global reference pitch — the frequency that concert A (MIDI note 69: A4 in scientific pitch, A3 in the SDK's names) maps to. The Western default is `440 Hz`. Orchestras and historical / non-Western tunings use other values: `432 Hz` (sometimes called "Verdi tuning"), `442 Hz` and `443 Hz` (common in European orchestras), `415 Hz` (Baroque). The SDK exposes this as a single Float32 field on the root box.
 
 | Where | What |
 |-------|------|
@@ -580,8 +580,8 @@ Only one place inside the engine consumes it today: **the MIDI synth instruments
 ```typescript
 import { midiToHz, hzToMidi, semitoneToHz, hzToSemitone } from "@opendaw/lib-dsp";
 
-midiToHz(69, 440);   // 440  (A4 at standard tuning)
-midiToHz(69, 443);   // 443  (A4 at A=443)
+midiToHz(69, 440);   // 440  (concert A at standard tuning)
+midiToHz(69, 443);   // 443  (concert A at A=443)
 midiToHz(60, 440);   // 261.626 (middle C at standard tuning)
 midiToHz(60, 443);   // 263.408 (middle C at A=443 — sharp by ~11.76 cents)
 ```

@@ -290,12 +290,12 @@ describe("markReadability", () => {
     expect(marked[0]).toMatchObject({ duration: 480, cent: 0, velocity: 1 });
   });
   it("a short span is judged on its own pitch: 18.3 ms is too short at 60 and enough at 96", () => {
-    // threshold = 3 × 1 ms + 4 periods; C4 (261.6 Hz) 18.29 ms, C7 (2093 Hz) 4.91 ms; 35 pulses = 18.23 ms, 36 = 18.75 ms; 10 pulses = 5.2 ms
+    // threshold = 3 × 1 ms + 4 periods; key 60 (261.6 Hz) 18.29 ms, key 96 (2093 Hz) 4.91 ms; 35 pulses = 18.23 ms, 36 = 18.75 ms; 10 pulses = 5.2 ms
     expect(markReadability([at(0, 35, 60)], 120, options)[0].readability).toBe("too-short");
     expect(markReadability([at(0, 36, 60)], 120, options)[0].readability).toBe("readable");
     expect(markReadability([at(0, 10, 96)], 120, options)[0].readability).toBe("readable");
   });
-  it("a thirty-second at G#1 is too short: three periods fit, the reader's window needs four crossings", () => {
+  it("a thirty-second at key 32 is too short: three periods fit, the reader's window needs four crossings", () => {
     // pitch 32 = 51.9 Hz, period 19.27 ms; 120 pulses = 62.5 ms, window 59.5 ms (run 1793741626351, pitch-st-36-chromatic read no pitch)
     expect(markReadability([at(0, 120, 32)], 120, options)[0].readability).toBe("too-short");
     expect(markReadability([at(0, 120, 40)], 120, options)[0].readability).toBe("readable");

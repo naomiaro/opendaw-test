@@ -32,9 +32,9 @@ export const PATTERN_LEN = BAR * PATTERN_BARS;
 // Sustained bass notes — held tones make the cutoff wobble and volume gating audible.
 // (region-local ticks; pitch = MIDI note number)
 const PATTERN: ReadonlyArray<{ position: number; duration: number; pitch: number }> = [
-  { position: 0 * QUARTER, duration: 4 * QUARTER, pitch: 33 }, // A1, bar 1
-  { position: 4 * QUARTER, duration: 2 * QUARTER, pitch: 36 }, // C2, bar 2 first half
-  { position: 6 * QUARTER, duration: 2 * QUARTER, pitch: 31 }, // G1, bar 2 second half
+  { position: 0 * QUARTER, duration: 4 * QUARTER, pitch: 33 }, // A0, bar 1
+  { position: 4 * QUARTER, duration: 2 * QUARTER, pitch: 36 }, // C1, bar 2 first half
+  { position: 6 * QUARTER, duration: 2 * QUARTER, pitch: 31 }, // G0, bar 2 second half
 ];
 
 // A 16-step accent pattern for the volume gate (stored unitValues; the modulator runs

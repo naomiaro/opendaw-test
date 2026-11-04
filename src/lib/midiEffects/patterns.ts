@@ -1,6 +1,6 @@
 /**
  * The MIDI effects demos' patterns: four two-bar phrases at 120 bpm, each written for the devices
- * it serves (the MIDI Effects and Spielwerk demos under `src/demos/midi/`).
+ * it serves (the MIDI pages under `src/demos/midi/`; the audits and the Nano play-modes page read them too).
  * `writePattern` replaces a region's notes the way the placement audit does: the old boxes go in
  * one transaction, the new ones come in an `append` folded into the same undo step.
  */
@@ -97,7 +97,7 @@ export const PATTERNS: readonly Pattern[] = [
   {
     id: "bass",
     label: "Bass",
-    blurb: "Quarter-note roots down in the first octave. Pitch octaves, and an Arpeggio with three or more octaves, have room to climb.",
+    blurb: "Quarter-note roots down in the C1 octave. Pitch octaves, and an Arpeggio with three or more octaves, have room to climb.",
     notes: bass,
   },
 ];

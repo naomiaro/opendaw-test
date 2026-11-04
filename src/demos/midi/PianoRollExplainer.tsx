@@ -113,7 +113,6 @@ const Roll: React.FC<{
         <rect
           key={index}
           data-note={index}
-          data-active={activeIndex === index ? "true" : undefined}
           x={x(note.position) + 1}
           y={rowTop(note.pitch) + 1}
           width={(note.duration / Quarter) * quarterWidth - 2}
@@ -152,6 +151,64 @@ export const PianoRollSteps: React.FC = () => (
         <p className="prx-step-text">{step.text}</p>
       </div>
     ))}
+  </div>
+);
+
+/** Four notes, played hard, so what each effect does to them is plain. */
+const CHAIN_NOTES: readonly PatternNote[] = [60, 62, 64, 65].map((pitch, index) => ({
+  position: index * Quarter,
+  duration: Quarter,
+  pitch,
+  velocity: 0.9,
+}));
+const CHAIN_SEMITONES = 5;
+const CHAIN_SOFTER_BY = 0.45;
+const AFTER_PITCH = CHAIN_NOTES.map((note) => ({ ...note, pitch: note.pitch + CHAIN_SEMITONES }));
+const AFTER_VELOCITY = AFTER_PITCH.map((note) => ({ ...note, velocity: note.velocity - CHAIN_SOFTER_BY }));
+
+const ROLL_WIDTH = GRID_LEFT + (BAR_PPQN / Quarter) * STEP_GEOMETRY.quarterWidth;
+const ROLL_HEIGHT = rollHeight(STEP_GEOMETRY);
+
+/** The instrument's end of the chain: a tone drawn in the space a roll takes, so the panels line up. */
+const SoundWave: React.FC = () => {
+  const middle = ROLL_HEIGHT / 2;
+  const points = Array.from({ length: ROLL_WIDTH + 1 }, (_, x) => {
+    const envelope = Math.sin((Math.PI * x) / ROLL_WIDTH);
+    return `${x},${(middle - Math.sin(x / 2.2) * envelope * (middle - 8)).toFixed(1)}`;
+  });
+  return (
+    <svg className="prx-svg" viewBox={`0 0 ${ROLL_WIDTH} ${ROLL_HEIGHT}`} role="img" aria-label="A sound wave">
+      <polyline data-sound points={points.join(" ")} fill="none" stroke="var(--mc-amber)" strokeWidth={1.5} />
+    </svg>
+  );
+};
+
+const CHAIN_STAGES: readonly { heading: string; text: string; label: string; notes?: readonly PatternNote[] }[] = [
+  { heading: "Notes", text: "Four notes, as they were written.", label: "Four rising notes, played hard", notes: CHAIN_NOTES },
+  { heading: "Pitch", text: "Set to +5: every bar moves up five rows.", label: "The same four notes, five keys higher", notes: AFTER_PITCH },
+  { heading: "Velocity", text: "Set softer: the same bars, dimmer, with shorter stems.", label: "The same four notes, five keys higher and softer", notes: AFTER_VELOCITY },
+  { heading: "Instrument", text: "Turns whatever reaches it into sound.", label: "" },
+];
+
+export const EffectChainDiagram: React.FC = () => (
+  <div>
+    <div className="prx-chain">
+      {CHAIN_STAGES.map((stage, index) => (
+        <div className="prx-chain-part" key={stage.heading}>
+          {index > 0 && <span className="prx-chain-arrow" aria-hidden="true">&rarr;</span>}
+          <div className="prx-step" data-stage>
+            <h3 className="prx-step-head prx-chain-head">{stage.heading}</h3>
+            {stage.notes === undefined ? <SoundWave /> : <Roll label={stage.label} notes={stage.notes} stems geometry={STEP_GEOMETRY} />}
+            <p className="prx-step-text">{stage.text}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+    <p className="prx-chain-pull">
+      <span className="prx-chain-pull-arrow" aria-hidden="true">&larr;</span> The asking runs the other way. The
+      instrument asks Velocity for notes, Velocity asks Pitch, and Pitch reads the region. Each one changes what it
+      gets back and hands it on.
+    </p>
   </div>
 );
 
@@ -304,6 +361,28 @@ export const PIANO_ROLL_STYLES = `
   border-radius: 3px;
 }
 .prx-code-note { color: var(--mc-label); }
+.prx-chain { display: flex; align-items: stretch; margin-top: 16px; }
+.prx-chain-part { display: flex; align-items: center; flex: 1 1 0; min-width: 0; }
+.prx-chain-part:first-child { flex-grow: 0.92; }
+.prx-chain-part .prx-step {
+  flex: 1 1 0;
+  min-width: 0;
+  align-self: stretch;
+  padding: 10px;
+  border: 1px solid var(--mc-line);
+  border-radius: 4px;
+}
+.prx-chain-head { min-height: 0; }
+.prx-chain-arrow {
+  flex: none;
+  width: 22px;
+  text-align: center;
+  font-family: var(--mc-mono);
+  font-size: 14px;
+  color: var(--mc-amber);
+}
+.mc-anchors .prx-chain-pull { max-width: none; font-size: 12.5px; line-height: 1.5; margin-top: 10px; }
+.prx-chain-pull-arrow { font-family: var(--mc-mono); color: var(--mc-amber); }
 .prx-effects { list-style: none; max-width: 72ch; margin: 12px 0 0; padding: 0; font-size: 13.5px; }
 .prx-effects li {
   display: grid;
@@ -319,6 +398,11 @@ export const PIANO_ROLL_STYLES = `
 @media (max-width: 880px) {
   .prx-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .prx-link { grid-template-columns: minmax(0, 1fr); }
+  .prx-chain { flex-direction: column; }
+  .prx-chain-part { flex-direction: column; flex: none; }
+  .prx-chain-part .prx-step { flex: none; width: 100%; box-sizing: border-box; max-width: 320px; }
+  .prx-chain-arrow { transform: rotate(90deg); padding: 6px 0; }
+  .prx-chain-pull-arrow { display: inline-block; transform: rotate(90deg); }
 }
 @media (max-width: 480px) {
   .prx-steps { grid-template-columns: minmax(0, 1fr); }
