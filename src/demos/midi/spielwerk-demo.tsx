@@ -231,8 +231,8 @@ function SpielwerkDemo() {
             turn the knobs it declares, and watch the lower lane read what the chain emits from the engine. The five
             fixed devices are on the{" "}
             <a href="/midi-effects-demo.html" style={{ color: "var(--mc-amber)" }}>MIDI Effects demo</a>, and all
-            three pages are on the{" "}
-            <a href="/midi-effects-demos.html" style={{ color: "var(--mc-amber)" }}>MIDI Effects overview</a>.
+            the MIDI pages are on the{" "}
+            <a href="/midi-demos.html" style={{ color: "var(--mc-amber)" }}>MIDI overview</a>.
           </p>
         </header>
 

@@ -342,7 +342,7 @@ console.log(softwareKb.id);   // "software-midi-input"
 
 ```typescript
 // Send note events programmatically (on-screen keyboard)
-MidiDevices.softwareMIDIInput.sendNoteOn(60, 0.8);  // note 60 (C4), velocity 0.8
+MidiDevices.softwareMIDIInput.sendNoteOn(60, 0.8);  // note 60 (C3), velocity 0.8
 MidiDevices.softwareMIDIInput.sendNoteOff(60);
 
 // Set MIDI channel (0-15)

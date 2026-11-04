@@ -12,7 +12,7 @@
  * rates are swept (1/3, 1/4, 3/16, 1/8, 3/32, 1/12, 1/16, 1/32, 1/64), the straight, dotted and triplet kinds from
  * the longest step that falls twice on the 1750-pulse hold to the first under the reader's floor. Of the eight left
  * out, 1/1 and 1/2 give a single step on the hold, 1/6, 3/64, 1/24 and 1/48 repeat a kind already swept between two
- * swept neighbours, and 1/96 and 1/128 put a gate-0.5 step under the floor at C4, as 1/64 already does (`no rule`).
+ * swept neighbours, and 1/96 and 1/128 put a gate-0.5 step under the floor at key 60, as 1/64 already does (`no rule`).
  * The Note Filter's range is sampled as windows on the GAPPED melody (some notes filtered out, every survivor read on its own, so a
  * leaked note starts a read note of its own; on the legato melody it would hide inside its neighbours' spans) and as
  * inclusive ends on the chromatic run (an off-by-one drops exactly one note); its transposes on the melody, with two rows on
@@ -59,7 +59,7 @@ const { SemiQuaver } = PPQN;
 export const HELD_NOTE: AuditPattern = {
   id: "held-note",
   label: "Held note",
-  blurb: "One C4 held off the grid: the Arpeggio's last step is capped by the note.",
+  blurb: "One C3 held off the grid: the Arpeggio's last step is capped by the note.",
   notes: [{ position: 0, duration: HELD_NOTE_PPQN, pitch: 60, velocity: 1 }],
 };
 
@@ -73,7 +73,7 @@ export const HELD_CHORD: AuditPattern = {
 export const CHROMATIC: AuditPattern = {
   id: "chromatic",
   label: "Chromatic",
-  blurb: "Twelve sixteenths C4 to B4, each held a thirty-second: every semitone of a shift, one at a time.",
+  blurb: "Twelve sixteenths C3 to B3, each held a thirty-second: every semitone of a shift, one at a time.",
   notes: Array.from({ length: 12 }, (_, k) => ({ position: k * SemiQuaver, duration: SemiQuaver / 2, pitch: 60 + k, velocity: 1 })),
 };
 

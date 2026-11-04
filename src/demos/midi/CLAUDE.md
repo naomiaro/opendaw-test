@@ -450,7 +450,7 @@ other answer, a corrupt register, or one of another rate or bpm ends the run in 
   index 16. Questioned behaviour (`QUESTIONS`): the Pitch drops a note shifted outside 0..127; a row
   that shows it carries `questioned: <name>`.
 - **Readability** (a monophonic reader): `overlap` and `polyphonic` are not judged; `too-short` is a
-  note whose duration less three attacks holds fewer than four periods (18.3 ms at C4; the reader's
+  note whose duration less three attacks holds fewer than four periods (18.3 ms at key 60; the reader's
   pitch window starts two attacks in, stops one before the end and needs four rising crossings);
   `too-quiet` is velocity above 0 and under 0.01; a velocity of exactly 0 is silence (the Nano's gain is
   `gain × velocity`, `device-nano/src/voice.rs:129`) and leaves the prediction, so a row whose every
@@ -485,7 +485,7 @@ other answer, a corrupt register, or one of another rate or bpm ends the run in 
 `src/demos/midi/midi-effects-rendered-demo.tsx` (hook `useRenderedNotes.ts`; pure modules
 `src/lib/midiEffects/renderedNotes.ts`, `renderScheduler.ts`, `velocityColor.ts`) draws what the
 engine DID: the chain is rendered offline and the left channel read back as notes, laid over the
-rule's prediction. The overview page is `midi-effects-overview.tsx`.
+rule's prediction. The overview page is `midi-overview.tsx` (`midi-demos.html`; piano-roll primer `PianoRollExplainer.tsx`).
 - **Sample.** The audit's Nano sine (root key 69, 1 ms attack/release) with a 20 s sample (the
   audit's is 4 s). The bootstrap sets `nanoBox.loop` false, so a note far above the root runs out of
   the sample: a gapped Bass quarter at +84 st needs 8.6 s. At 20 s a gapped Chords note holds to
@@ -532,8 +532,7 @@ rule's prediction. The overview page is `midi-effects-overview.tsx`.
   stock devices; a `DeviceParameter` names its control (`control: "switch"` renders a `ParamSwitch`,
   `src/components/ParamSwitch.tsx`, else a `ParamSlider`) and `dimWhen: { key, on }` dims it, still
   operable, while the named switch reads on / off (Note Filter: Semitones under Set on, Key under
-  Set off). Key readouts print the SDK's names (`MidiKeys.toFullString`, middle C as C3, unlike the
-  MIDI recording demo's keyboard). The Rendered page predicts a Note Filter through `noteFilterRule`
+  Set off). Key readouts print the SDK's names (`MidiKeys.toFullString`, middle C as C3, as every demo prints it). The Rendered page predicts a Note Filter through `noteFilterRule`
   in the semantics rule layer; the audit's `note-filter` group samples it (range windows on the melody,
   inclusive ends on the chromatic run, transposes, set).
 - **Lane.** `velocityColor` squares the velocity (openDAW's `PitchPainter` does) from a dim tint to

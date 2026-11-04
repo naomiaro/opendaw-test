@@ -32,7 +32,7 @@ import { PlayIcon, StopIcon } from "@radix-ui/react-icons";
 
 const FACTORIES: Factories = EffectFactories.MidiNamed;
 
-/** C2 to C7: the patterns (36..71) with room for a three-octave Arpeggio on Chords or a two-octave Pitch
+/** C1 to C6: the patterns (36..71) with room for a three-octave Arpeggio on Chords or a two-octave Pitch
  *  shift; beyond that the lane marks notes out of range. */
 const PITCH_LOW = 36;
 const PITCH_HIGH = 96;
@@ -215,8 +215,8 @@ function MidiEffectsDemo() {
             <a href="/spielwerk-demo.html" style={{ color: "var(--mc-amber)" }}>Spielwerk demo</a>.
             For the exact view, velocity included, see the{" "}
             <a href="/midi-effects-rendered-demo.html" style={{ color: "var(--mc-amber)" }}>Rendered page</a>; all
-            three pages are on the{" "}
-            <a href="/midi-effects-demos.html" style={{ color: "var(--mc-amber)" }}>MIDI Effects overview</a>.
+            the MIDI pages are on the{" "}
+            <a href="/midi-demos.html" style={{ color: "var(--mc-amber)" }}>MIDI overview</a>.
           </p>
         </header>
 
@@ -294,7 +294,7 @@ project.editing.modify(() => IndexedBox.moveIndices(field, [from], dropIndex));`
 {`// 128 held-note bits per unit, marked in the engine as the instrument pulls the chain's
 // output; read on the main thread once per frame
 const notes = new NoteStreamReceiver(project.liveStreamReceiver, audioUnitBox.address);
-AnimationFrame.add(() => { if (notes.isNoteOn(60)) { /* C4 is sounding */ } });`}
+AnimationFrame.add(() => { if (notes.isNoteOn(60)) { /* key 60, middle C, is sounding */ } });`}
           </Code>
           <Text size="2" weight="bold" style={{ display: "block", marginTop: 16 }}>A chain change drops sounding voices:</Text>
           <Code size="2" style={CODE_BLOCK_STYLE}>

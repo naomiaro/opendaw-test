@@ -1,18 +1,15 @@
 import React from "react";
 import { Text } from "@radix-ui/themes";
+import { MidiKeys } from "@opendaw/lib-dsp";
 
 // Piano key layout constants
 const WHITE_KEYS = [0, 2, 4, 5, 7, 9, 11]; // C, D, E, F, G, A, B semitone offsets
 const BLACK_KEY_OFFSETS = [1, 3, 6, 8, 10]; // C#, D#, F#, G#, A# semitone offsets
-const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
-export const noteName = (pitch: number) => `${NOTE_NAMES[pitch % 12]}${Math.floor(pitch / 12) - 1}`;
-
-// Octave range for the on-screen keyboard
-const KEYBOARD_START_OCTAVE = 3; // C3
-const KEYBOARD_OCTAVES = 3; // C3 to B5
-const KEYBOARD_START_NOTE = KEYBOARD_START_OCTAVE * 12 + 12; // MIDI note 48 (C3)
-const KEYBOARD_END_NOTE = KEYBOARD_START_NOTE + KEYBOARD_OCTAVES * 12; // MIDI note 84 (C6)
+// Range of the on-screen keyboard. Names are the SDK's (MidiKeys.toFullString): key 60 is C3.
+const KEYBOARD_OCTAVES = 3; // C2 to B4
+const KEYBOARD_START_NOTE = 48; // C2
+const KEYBOARD_END_NOTE = KEYBOARD_START_NOTE + KEYBOARD_OCTAVES * 12; // 84, C5, not played
 
 // Key caps draw from the console palette (consoleTheme.ts). The one literal is
 // an amber-family value derived for the contrast floors: pressed vs unpressed
@@ -106,7 +103,7 @@ export const PianoKeyboard: React.FC<{
                 fontFamily: "var(--mc-mono)",
               }}
             >
-              {noteName(note)}
+              {MidiKeys.toFullString(note)}
             </Text>
           )}
         </div>
