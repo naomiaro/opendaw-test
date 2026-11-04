@@ -115,6 +115,8 @@ export interface MidiEffectFixture {
   readonly box: EffectBox;
   /** The SDK's own adapter, so parameters carry their real value and string mappings */
   readonly adapter: MidiEffectDeviceAdapter;
+  /** The registry `adapter` was made beside, for code that resolves adapters itself (`project.boxAdapters.adapterFor`) */
+  readonly boxAdapters: BoxAdapters;
   readonly editing: BoxEditing;
 }
 
@@ -164,5 +166,5 @@ export function midiEffectFixture(id: DeviceId): MidiEffectFixture {
     : box instanceof PitchDeviceBox ? new PitchDeviceBoxAdapter(context, box)
     : box instanceof VelocityDeviceBox ? new VelocityDeviceBoxAdapter(context, box)
     : new ZeitgeistDeviceBoxAdapter(context, box as ZeitgeistDeviceBox);
-  return { boxGraph, unit, box, adapter, editing: new BoxEditing(boxGraph) };
+  return { boxGraph, unit, box, adapter, boxAdapters: context.boxAdapters, editing: new BoxEditing(boxGraph) };
 }
