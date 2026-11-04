@@ -306,6 +306,9 @@ export const PIANO_ROLL_STYLES = `
 .prx-code-note { color: var(--mc-label); }
 .prx-effects { list-style: none; max-width: 72ch; margin: 12px 0 0; padding: 0; font-size: 13.5px; }
 .prx-effects li {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  column-gap: 16px;
   line-height: 1.5;
   color: var(--mc-muted);
   padding: 6px 0;
