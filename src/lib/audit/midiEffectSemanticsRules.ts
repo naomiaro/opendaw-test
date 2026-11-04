@@ -24,12 +24,14 @@ export interface Question { name: QuestionName; device: SemanticsDevice; sentenc
 
 export interface ArpeggioSettings { modeIndex: 0 | 1 | 2; numOctaves: number; rateIndex: number; gate: number; repeat: number; velocity: number }
 export interface PitchSettings { semiTones: number; cents: number; octaves: number }
+export interface NoteFilterSettings { min: number; max: number; set: boolean; transpose: number; key: number }
 /** The seed stays the box default 0x800. */
 export interface VelocitySettings { magnetPosition: number; magnetStrength: number; randomAmount: number; offset: number; mix: number }
 export interface ZeitgeistSettings { amount: number; duration: number }
 
 export type DeviceSetting =
   | { device: "arpeggio"; settings: ArpeggioSettings }
+  | { device: "note-filter"; settings: NoteFilterSettings }
   | { device: "pitch"; settings: PitchSettings }
   | { device: "velocity"; settings: VelocitySettings }
   | { device: "zeitgeist"; settings: ZeitgeistSettings };
@@ -62,6 +64,7 @@ export const QUESTIONS: readonly Question[] = [
 
 export const RULE_SENTENCES: Record<SemanticsDevice, string> = {
   arpeggio: "On the absolute rate grid, one note per step from the notes held at that step, walked up, down or up-down over the octaves, each as long as the gate says, past the held note's end too; the velocity one fixed value rising from silent at -100 % to full at 0 %, then a blend from full toward the note's own at +100 %.",
+  "note-filter": "Only a note between min and max, both included, passes; it then moves by the transpose semitones, or plays as the key when set is on; a result outside 0..127 is dropped.",
   pitch: "Every note moves by octaves × 12 + semitones, its cent by the cents setting; a note shifted outside 0..127 is dropped.",
   velocity: "Every note's velocity is the device's computeVelocity at the note's absolute position.",
   zeitgeist: "Every note starts where the groove warps its position to and ends where it warps its note-off to, so its duration changes with its place in the cell."
@@ -139,6 +142,18 @@ export function pitchRule(notes: readonly RuleNote[], settings: PitchSettings): 
   return out;
 }
 
+/** Note Filter per `output_pitch` and `transform` (`device-note-filter/src/lib.rs:45-49,105-118`): min..max both included, then transpose or set, a result outside 0..127 dropped. */
+export function noteFilterRule(notes: readonly RuleNote[], settings: NoteFilterSettings): RuleNote[] {
+  const out: RuleNote[] = [];
+  for (const note of notes) {
+    if (note.pitch < settings.min || note.pitch > settings.max) continue;
+    const pitch = settings.set ? settings.key : note.pitch + settings.transpose;
+    if (pitch < 0 || pitch > 127) continue;
+    out.push({ ...note, pitch });
+  }
+  return out;
+}
+
 /** Velocity replaced by the adapter's `computeVelocity` at the absolute position (`VelocityDeviceBoxAdapter.ts:31-39`). */
 export function velocityRule(notes: readonly RuleNote[], computeVelocity: (position: number, original: number) => number): RuleNote[] {
   return notes.map((note) => ({ ...note, velocity: computeVelocity(note.position, note.velocity) }));
@@ -155,6 +170,7 @@ export function zeitgeistRule(notes: readonly RuleNote[], groove: { warp(positio
 function applyStage(stage: DeviceSetting, context: RuleContext, deviations: ReadonlySet<DeviationName>, notes: readonly RuleNote[]): RuleNote[] {
   switch (stage.device) {
     case "arpeggio": return arpeggioRule(notes, stage.settings, deviations, context.range);
+    case "note-filter": return noteFilterRule(notes, stage.settings);
     case "pitch": return pitchRule(notes, stage.settings);
     case "velocity": return velocityRule(notes, context.computeVelocity);
     case "zeitgeist": return zeitgeistRule(notes, { warp: context.warp });

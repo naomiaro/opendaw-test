@@ -4,9 +4,10 @@ import { graphWithZeitgeist, midiEffectFixture, transact } from "@/lib/testing/b
 import { READER_DEFAULTS, frequencyToPitch, readNotes } from "./midiEffectSemanticsReader";
 import {
   ARPEGGIO_RATE_PPQN, DEVIATIONS, DEVIATION_SUBSETS, QUESTIONS, RULE_SENTENCES, arpeggioVelocity,
-  arpeggioRule, clipToRange, composeRules, markReadability, pitchRule, questionsFor, toPredictedFigures, velocityRule, zeitgeistRule,
+  arpeggioRule, clipToRange, composeRules, markReadability, noteFilterRule, pitchRule, questionsFor, toPredictedFigures, velocityRule, zeitgeistRule,
   type ArpeggioSettings, type DeviationName, type DeviceSetting, type RuleContext, type RuleNote,
 } from "./midiEffectSemanticsRules";
+import { NOTE_FILTER_BASE } from "./midiEffectSemanticsRows";
 
 const identityContext: RuleContext = { range: { from: 3840, to: 3840 + 7680 }, computeVelocity: (_p, v) => v, warp: (p) => p };
 
@@ -119,6 +120,30 @@ describe("pitchRule", () => {
   });
 });
 
+describe("noteFilterRule", () => {
+  const at = (pitch: number, cent = 0): RuleNote => ({ position: 960, duration: 240, pitch, cent, velocity: 0.7 });
+  it("at the defaults passes everything unchanged", () => {
+    const notes = [at(0), at(60, 12.5), at(127)];
+    expect(noteFilterRule(notes, NOTE_FILTER_BASE)).toEqual(notes);
+  });
+  it("both range ends are included; min above max passes nothing (device-note-filter/src/lib.rs output_pitch)", () => {
+    const notes = [34, 35, 36, 37, 38, 39].map((p) => at(p));
+    expect(noteFilterRule(notes, { ...NOTE_FILTER_BASE, min: 36, max: 38 }).map((n) => n.pitch)).toEqual([36, 37, 38]);
+    expect(noteFilterRule(notes, { ...NOTE_FILTER_BASE, min: 70, max: 50 })).toEqual([]);
+  });
+  it("transpose adds semitones and drops a result outside 0..127, not clamped", () => {
+    expect(noteFilterRule([at(60), at(71)], { ...NOTE_FILTER_BASE, transpose: 60 }).map((n) => n.pitch)).toEqual([120]);
+    expect(noteFilterRule([at(9), at(10)], { ...NOTE_FILTER_BASE, transpose: -10 }).map((n) => n.pitch)).toEqual([0]);
+  });
+  it("set plays every passing note as key, ignoring transpose, cent and velocity kept", () => {
+    const out = noteFilterRule([at(35), at(36, 12.5), at(48), at(49)], { min: 36, max: 48, set: true, transpose: 12, key: 0 });
+    expect(out.map((n) => n.pitch)).toEqual([0, 0]);
+    expect(out[0].cent).toBe(12.5);
+    expect(out[0].velocity).toBe(0.7);
+    expect(out[0].position).toBe(960);
+  });
+});
+
 describe("questionsFor", () => {
   const note = (pitch: number): RuleNote => ({ position: 3840, duration: 1750, pitch, cent: 0, velocity: 1 });
   const pitch = (semiTones: number): DeviceSetting => ({ device: "pitch", settings: { semiTones, cents: 0, octaves: 0 } });
@@ -141,7 +166,7 @@ describe("questionsFor", () => {
     expect(QUESTIONS.map((q) => q.name)).toEqual(["pitch-drops-out-of-range"]);
     expect(DEVIATIONS.map((d) => d.name)).toEqual(["arpeggio-drops-cent"]);
     for (const d of DEVIATIONS) expect(d.source).toMatch(/lib\.rs:\d+/);
-    expect(Object.keys(RULE_SENTENCES).sort()).toEqual(["arpeggio", "pitch", "velocity", "zeitgeist"]);
+    expect(Object.keys(RULE_SENTENCES).sort()).toEqual(["arpeggio", "note-filter", "pitch", "velocity", "zeitgeist"]);
   });
 });
 
@@ -196,6 +221,13 @@ describe("composeRules", () => {
     const dropped = new Set(["arpeggio-drops-cent" as const]);
     expect(composeRules([pitch, arp], identityContext, dropped, source).every((n) => n.cent === 0)).toBe(true);
     expect(composeRules([arp, pitch], identityContext, dropped, source).every((n) => n.cent === 12.5)).toBe(true);
+  });
+  it("Pitch then Note Filter judges the shifted pitch; Note Filter then Pitch judges the written one", () => {
+    const source: RuleNote[] = [{ position: 3840, duration: 240, pitch: 60, cent: 0, velocity: 0.8 }, { position: 3840, duration: 240, pitch: 67, cent: 0, velocity: 0.8 }];
+    const octaveUp: DeviceSetting = { device: "pitch", settings: { semiTones: 12, cents: 0, octaves: 0 } };
+    const filter: DeviceSetting = { device: "note-filter", settings: { ...NOTE_FILTER_BASE, min: 72, max: 127 } };
+    expect(composeRules([octaveUp, filter], identityContext, new Set(), source).map((n) => n.pitch)).toEqual([72, 79]);
+    expect(composeRules([filter, octaveUp], identityContext, new Set(), source).map((n) => n.pitch)).toEqual([]);
   });
   it("hands the context's range, velocity function and warp to the stages that use them", () => {
     const context: RuleContext = { range: { from: 3840, to: 4320 }, computeVelocity: () => 0.25, warp: (p) => p + 1 };
