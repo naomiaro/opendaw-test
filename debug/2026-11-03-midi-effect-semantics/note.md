@@ -37,7 +37,7 @@ question filed 2026-11-04 as [openDAW#526](https://github.com/andremichelle/open
 maintainer's answer settles both.
 
 **Harness:** unlisted debug demo
-`midi-effect-semantics-audit-debug-demo.html[?rate=48000|44100][&rows=all|quick|<id,id,…>][&device=all|arpeggio|pitch|velocity|zeitgeist|order|disabled][&pattern=<id>]`
+`midi-effect-semantics-audit-debug-demo.html[?rate=48000|44100][&rows=all|quick|<id,id,…>][&device=all|arpeggio|pitch|velocity|zeitgeist|note-filter|order|disabled][&pattern=<id>]`
 on the dev server, Chrome, a real click on "Run audit"; deterministic, no hardware, about 35
 seconds per rate for the 230 rows. The summary JSON (`midisem-summary-<runToken>.json`, one record
 per row with every predicted and read note) lands in `.verify-output/` via the dev server's
@@ -144,6 +144,7 @@ mappings. Positions are absolute pulses.
 | Pitch | Every note moves by `octaves × 12 + semitones`, its cent by the cents setting; a note shifted outside 0..127 is dropped. | `device-pitch/src/lib.rs:101-133` (`transform`), `:8-11` (the drop) | `PitchDeviceBoxAdapter.ts:50-58` (octaves ±7, semitones ±36, cents ±50) |
 | Velocity | Every note's velocity is the adapter's `computeVelocity` at the note's absolute position (magnet, random from the seeded generator, offset, clamped, mixed). | `device-velocity/src/lib.rs:70-77` (`compute_velocity`, the adapter's formula ported) | `VelocityDeviceBoxAdapter.ts:31-39` |
 | Zeitgeist | Every note starts where the groove warps its position to and ends where it warps its note-off to, so its duration changes with its place in the cell (`zeitgeist.md:59`, as corrected for openDAW#525). The warp is the cell's Möbius ease at the squashed amount (`0.01 + 0.98 × amount`), read through the device adapter's `groove()` and kept as a float pulse. | `device-zeitgeist/src/lib.rs:124-138` (`process`: warp each record, clamp into the block's range) | `GrooveShuffleBoxAdapter.ts:31-32, 46` |
+| Note Filter | Only a note between min and max, both included, passes (`note-filter.md` §1: "If Min is above Max, no note passes"); it then moves by the transpose semitones, or plays as the key when set is on (§2); a result outside 0..127 is ignored (§2). The 64 held-note cap (`MAX_HELD`) is not modelled; no pattern reaches it. | `device-note-filter/src/lib.rs:45-49` (`output_pitch`), `:105-118` (`transform`) | `NoteFilterDeviceBoxAdapter` (key and min/max 0..127, transpose −127..127) |
 
 A chain composes the rules in index order (`crates/engine/src/audio_unit/wiring.rs:1061-1066`); a
 disabled device is left out (`wiring.rs:1063`).
@@ -185,6 +186,13 @@ control.
 - **Zeitgeist**: amounts 0, 0.25, 0.5, 0.75, 1 × every DISTINCT groove duration (8 of the 9 listed
   in `GrooveShuffleBoxAdapter.Durations`; 960 is listed twice), 1/8 to 16 bars, on the sixteenths;
   amounts × 1/8 and 1 bar on the melody.
+- **Note Filter**: range windows on the melody (0..127, 62..67, 65..127, 0..64, 64..64, 67..62: some
+  notes filtered out, the survivors readable) and inclusive ends on the chromatic run (min 60 and 61, max
+  71 and 70: an off-by-one drops exactly one note); transpose −12, −7, −1, 0, +1, +7, +12, +24 on the
+  melody and +68 / −72 on the chromatic run (every note dropped, predicted silent and judged on silence);
+  set on with key 48, 60, 72 on the melody and the sixteenths, plus set under a window (62..67, key 72: the
+  filter runs before the set) and set over a transpose (key 72, +7 st: the transpose is ignored under set)
+  on the melody.
 - **Order** (one row per ordered pair at one non-identity setting each: Arpeggio and Zeitgeist,
   Pitch and Arpeggio, Velocity and Arpeggio, both ways, on the chords) and **disabled** (each device
   off on the sixteenths, expected dry).

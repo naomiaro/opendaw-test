@@ -13,6 +13,9 @@
  * the longest step that falls twice on the 1750-pulse hold to the first under the reader's floor. Of the eight left
  * out, 1/1 and 1/2 give a single step on the hold, 1/6, 3/64, 1/24 and 1/48 repeat a kind already swept between two
  * swept neighbours, and 1/96 and 1/128 put a gate-0.5 step under the floor at C4, as 1/64 already does (`no rule`).
+ * The Note Filter's range is sampled as windows on the melody (some notes filtered out, the survivors readable) and as
+ * inclusive ends on the chromatic run (an off-by-one drops exactly one note); its transposes on the melody, with two rows on
+ * the chromatic run that push every note past 127 or below 0 (predicted silent, judged on silence); its set on both patterns.
  *
  * Id readings: a number prints as JavaScript prints it (`-0.5`, `12.5`), no padding, so `vel-offset-1-melody`
  * is offset -1. The Zeitgeist rows take every DISTINCT `GrooveShuffleBoxAdapter.DurationPPQNs` value, 8 of
@@ -76,7 +79,7 @@ const demoPattern = (id: "chords" | "sixteenths" | "melody"): AuditPattern => ({
 
 export const AUDIT_PATTERNS: readonly AuditPattern[] = [HELD_NOTE, HELD_CHORD, CHROMATIC, demoPattern("chords"), demoPattern("sixteenths"), demoPattern("melody")];
 
-export type RowGroup = "dry" | "arpeggio" | "pitch" | "velocity" | "zeitgeist" | "order" | "disabled";
+export type RowGroup = "dry" | "arpeggio" | "pitch" | "velocity" | "zeitgeist" | "note-filter" | "order" | "disabled";
 
 /** One device in a row's chain; a chain holds at most one Velocity and one Zeitgeist (`RuleContext` carries one of each). */
 export interface ChainStage { setting: DeviceSetting; enabled: boolean }
@@ -130,6 +133,7 @@ export const QUICK_IDS: ReadonlySet<string> = new Set([
   "pitch-st7-chromatic", "pitch-oct1-chromatic", "pitch-ct12.5-chromatic", "pitch-oct7-chromatic",
   "vel-magnet1x1-sixteenths", "vel-random0.5-sixteenths", "vel-offset-1-sixteenths", "vel-magnet1x1-melody",
   "zg-amount0.25-dur480-sixteenths", "zg-amount0.75-dur480-sixteenths", "zg-amount0.75-dur3840-sixteenths", "zg-amount1-dur480-sixteenths",
+  "nf-range62-67-melody", "nf-range61-127-chromatic", "nf-tr7-melody", "nf-set-key72-melody",
 ]);
 
 type RowDraft = Omit<SemanticsRow, "quick">;
@@ -223,6 +227,26 @@ function zeitgeistRows(): RowDraft[] {
   return rows;
 }
 
+function noteFilterRows(): RowDraft[] {
+  const rows: RowDraft[] = [];
+  const add = (id: string, label: string, pattern: SemanticsPatternId, settings: NoteFilterSettings): void => {
+    rows.push({ id: `${id}-${pattern}`, label: `Note Filter ${label} — ${patternLabel(pattern)}`, group: "note-filter", pattern, chain: [one(noteFilter(settings))] });
+  };
+  const ranges: readonly (readonly [number, number, SemanticsPatternId])[] = [
+    [0, 127, "melody"], [62, 67, "melody"], [65, 127, "melody"], [0, 64, "melody"], [64, 64, "melody"], [67, 62, "melody"],
+    [60, 127, "chromatic"], [61, 127, "chromatic"], [0, 71, "chromatic"], [0, 70, "chromatic"],
+  ];
+  for (const [min, max, pattern] of ranges) add(`nf-range${min}-${max}`, `${min}..${max}`, pattern, { ...NOTE_FILTER_BASE, min, max });
+  for (const transpose of [-12, -7, -1, 0, 1, 7, 12, 24]) add(`nf-tr${transpose}`, `${signed(transpose)} st`, "melody", { ...NOTE_FILTER_BASE, transpose });
+  for (const transpose of [68, -72]) add(`nf-tr${transpose}`, `${signed(transpose)} st`, "chromatic", { ...NOTE_FILTER_BASE, transpose });
+  for (const key of [48, 60, 72]) {
+    for (const pattern of ["melody", "sixteenths"] as const) add(`nf-set-key${key}`, `set to ${key}`, pattern, { ...NOTE_FILTER_BASE, set: true, key });
+  }
+  add("nf-set-key72-range62-67", "62..67, set to 72", "melody", { ...NOTE_FILTER_BASE, min: 62, max: 67, set: true, key: 72 });
+  add("nf-set-key72-tr7", "set to 72, +7 st", "melody", { ...NOTE_FILTER_BASE, set: true, key: 72, transpose: 7 });
+  return rows;
+}
+
 const NON_IDENTITY: Record<SemanticsDevice, DeviceSetting> = {
   arpeggio: arp(ARPEGGIO_BASE),
   "note-filter": noteFilter({ ...NOTE_FILTER_BASE, min: 60 }),
@@ -252,12 +276,12 @@ function disabledRows(): RowDraft[] {
 }
 
 export const SEMANTICS_ROWS: readonly SemanticsRow[] = [
-  ...dryRows(), ...arpeggioRows(), ...pitchRows(), ...velocityRows(), ...zeitgeistRows(), ...orderRows(), ...disabledRows(),
+  ...dryRows(), ...arpeggioRows(), ...pitchRows(), ...velocityRows(), ...zeitgeistRows(), ...noteFilterRows(), ...orderRows(), ...disabledRows(),
 ].map((row) => ({ ...row, quick: QUICK_IDS.has(row.id) || row.group === "order" || row.group === "disabled" }));
 
 export interface RowParams { device: string | null; pattern: string | null; rows: string | null }
 
-const DEVICE_FILTERS: readonly string[] = ["all", "arpeggio", "pitch", "velocity", "zeitgeist", "order", "disabled"];
+const DEVICE_FILTERS: readonly string[] = ["all", "arpeggio", "pitch", "velocity", "zeitgeist", "note-filter", "order", "disabled"];
 
 /** `?rows=all|quick|<id,id,…>`, `?device=` filters by group, `?pattern=` by pattern id; the dry rows always stay, in table order, so `dry-sixteenths` leads. */
 export function resolveRows(params: RowParams): SemanticsRow[] {

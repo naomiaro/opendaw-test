@@ -411,7 +411,7 @@ table `node scripts/audit/midi-effect-placement/table.ts`.
   pass-through, not as the script.
 
 ### MIDI Effect Semantics Audit (unlisted)
-`midi-effect-semantics-audit-debug-demo.html[?rate=48000|44100][&rows=all|quick|<id,id,…>][&device=all|arpeggio|pitch|velocity|zeitgeist|order|disabled][&pattern=<id>]`
+`midi-effect-semantics-audit-debug-demo.html[?rate=48000|44100][&rows=all|quick|<id,id,…>][&device=all|arpeggio|pitch|velocity|zeitgeist|note-filter|order|disabled][&pattern=<id>]`
 renders 230 rows offline (a Nano playing a 440 Hz sine, root key 69, 1 ms attack and release), each
 with a chain of stock MIDI effects at one setting, reads the left channel back as notes and judges
 them against what the devices DOCUMENT (the placement audit asks when; this one asks what). Register:
@@ -534,7 +534,8 @@ rule's prediction. The overview page is `midi-effects-overview.tsx`.
   operable, while the named switch reads on / off (Note Filter: Semitones under Set on, Key under
   Set off). Key readouts print the SDK's names (`MidiKeys.toFullString`, middle C as C3, unlike the
   MIDI recording demo's keyboard). The Rendered page predicts a Note Filter through `noteFilterRule`
-  in the semantics rule layer; the audit has no Note Filter ROWS yet.
+  in the semantics rule layer; the audit's `note-filter` group samples it (range windows on the melody,
+  inclusive ends on the chromatic run, transposes, set).
 - **Lane.** `velocityColor` squares the velocity (openDAW's `PitchPainter` does) from a dim tint to
   the amber accent. `NoteLane` (`src/components/NoteLane.tsx`) labels a note only where the bar fits
   the label; `VelocityStrip.tsx` is the strip. Both lanes on the Rendered page are 224 px so the

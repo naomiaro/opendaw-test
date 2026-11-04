@@ -23,7 +23,7 @@ const rowById = (id: string): SemanticsRow => {
   if (row === undefined) throw new Error(`no row ${id}`);
   return row;
 };
-const GROUPS: RowGroup[] = ["dry", "arpeggio", "pitch", "velocity", "zeitgeist", "order", "disabled"];
+const GROUPS: RowGroup[] = ["dry", "arpeggio", "pitch", "velocity", "zeitgeist", "note-filter", "order", "disabled"];
 const quick = SEMANTICS_ROWS.filter((row) => row.quick);
 
 describe("SEMANTICS_ROWS", () => {
@@ -38,11 +38,11 @@ describe("SEMANTICS_ROWS", () => {
   });
   it("counts per group follow the brief", () => {
     const count = (group: RowGroup) => SEMANTICS_ROWS.filter((r) => r.group === group).length;
-    expect(GROUPS.map(count)).toEqual([4, 88, 40, 38, 50, 6, 4]);
+    expect(GROUPS.map(count)).toEqual([4, 88, 40, 38, 50, 28, 6, 4]);
   });
-  it("has 230 rows, 41 of them quick (the counts src/demos/midi/CLAUDE.md gives)", () => {
-    expect(SEMANTICS_ROWS.length).toBe(230);
-    expect(quick.length).toBe(41);
+  it("has 258 rows, 45 of them quick (the counts src/demos/midi/CLAUDE.md gives)", () => {
+    expect(SEMANTICS_ROWS.length).toBe(258);
+    expect(quick.length).toBe(45);
   });
   it("every quick id names a row: a renamed row cannot silently leave the quick subset", () => {
     const ids = new Set(SEMANTICS_ROWS.map((r) => r.id));
@@ -136,6 +136,51 @@ describe("SEMANTICS_ROWS", () => {
   });
 });
 
+describe("the Note Filter rows", () => {
+  const pitchesOf = (id: string) => predictedVariants(rowById(id), context).map((v) => v.notes.map((n) => n.pitch));
+  it("the melody window keeps 64, 67, 67, 64, 62 per bar and drops 60, 69, 71", () => {
+    expect(pitchesOf("nf-range62-67-melody")).toEqual([[64, 67, 67, 64, 62, 64, 67, 67, 64, 62]]);
+  });
+  it("the floor, the ceiling and the one-key window keep what the spec says", () => {
+    expect(pitchesOf("nf-range65-127-melody")[0]).toEqual([67, 69, 67, 71, 67, 69, 67, 71]);
+    expect(pitchesOf("nf-range0-64-melody")[0]).toEqual([60, 64, 64, 62, 60, 64, 64, 62]);
+    expect(pitchesOf("nf-range64-64-melody")[0]).toEqual([64, 64, 64, 64]);
+  });
+  it("min above max and a transpose past either end predict silence, as one judged variant with no notes", () => {
+    for (const id of ["nf-range67-62-melody", "nf-tr68-chromatic", "nf-tr-72-chromatic"]) {
+      expect(predictedVariants(rowById(id), context), id).toEqual([{ deviations: new Set(), notes: [] }]);
+    }
+  });
+  it("the inclusive ends on the chromatic run drop exactly one note one step past each end", () => {
+    expect(pitchesOf("nf-range60-127-chromatic")[0].length).toBe(12);
+    expect(pitchesOf("nf-range61-127-chromatic")[0]).toEqual([61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71]);
+    expect(pitchesOf("nf-range0-71-chromatic")[0].length).toBe(12);
+    expect(pitchesOf("nf-range0-70-chromatic")[0]).toEqual([60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70]);
+  });
+  it("set collapses every passing note to the key, after the range and ignoring the transpose", () => {
+    expect(pitchesOf("nf-set-key72-melody")[0]).toEqual(Array(16).fill(72));
+    expect(pitchesOf("nf-set-key72-range62-67-melody")[0]).toEqual(Array(10).fill(72));
+    expect(pitchesOf("nf-set-key72-tr7-melody")[0]).toEqual(Array(16).fill(72));
+    expect(pitchesOf("nf-set-key60-sixteenths")).toEqual([rowNotes(rowById("dry-sixteenths")).map((n) => n.pitch)]);
+  });
+  it("the transpose rows move the melody by the setting", () => {
+    expect(pitchesOf("nf-tr-12-melody")[0].slice(0, 8)).toEqual([48, 52, 55, 57, 55, 52, 50, 59]);
+    expect(pitchesOf("nf-tr24-melody")[0].slice(0, 8)).toEqual([84, 88, 91, 93, 91, 88, 86, 95]);
+    expect(SEMANTICS_ROWS.filter((r) => r.id.startsWith("nf-tr") && r.id.endsWith("-melody")).map((r) => r.id))
+      .toEqual([-12, -7, -1, 0, 1, 7, 12, 24].map((n) => `nf-tr${n}-melody`));
+  });
+  it("labels and placement in the table", () => {
+    expect(rowById("nf-range62-67-melody").label).toBe("Note Filter 62..67 — melody");
+    expect(rowById("nf-tr-7-melody").label).toBe("Note Filter -7 st — melody");
+    expect(rowById("nf-set-key72-range62-67-melody").label).toBe("Note Filter 62..67, set to 72 — melody");
+    expect(rowById("nf-set-key72-tr7-melody").label).toBe("Note Filter set to 72, +7 st — melody");
+    const groups = SEMANTICS_ROWS.map((r) => r.group);
+    expect(groups.lastIndexOf("zeitgeist")).toBeLessThan(groups.indexOf("note-filter"));
+    expect(groups.lastIndexOf("note-filter")).toBeLessThan(groups.indexOf("order"));
+    expect(SEMANTICS_ROWS.filter((r) => r.group === "note-filter").every((r) => r.chain.length === 1 && r.chain[0].setting.device === "note-filter" && r.chain[0].enabled)).toBe(true);
+  });
+});
+
 describe("resolveRows", () => {
   const none = { device: null, pattern: null, rows: null };
   it("all by default, quick, a device, a pattern, a named list; unknown values throw", () => {
@@ -151,6 +196,11 @@ describe("resolveRows", () => {
     const named = resolveRows({ ...none, rows: "pitch-st7-chromatic,vel-offset0-melody" });
     expect(named.map((r) => r.id)).toEqual(["dry-sixteenths", "dry-melody", "dry-chromatic", "dry-held-note", "pitch-st7-chromatic", "vel-offset0-melody"]);
     expect(resolveRows({ ...none, rows: "dry-melody", device: "order" })[0].id).toBe("dry-sixteenths");
+    const nf = resolveRows({ ...none, device: "note-filter" });
+    expect(nf.length).toBe(4 + 28);
+    expect(nf.slice(4).every((r) => r.group === "note-filter")).toBe(true);
+    expect(resolveRows({ ...none, device: "note-filter", rows: "quick" }).slice(4).map((r) => r.id))
+      .toEqual(["nf-range62-67-melody", "nf-range61-127-chromatic", "nf-tr7-melody", "nf-set-key72-melody"]);
     expect(() => resolveRows({ ...none, rows: "nope" })).toThrow(/nope/);
     expect(() => resolveRows({ ...none, rows: "dry-melody,nope" })).toThrow(/nope/);
     expect(() => resolveRows({ ...none, device: "echo" })).toThrow(/echo/);
