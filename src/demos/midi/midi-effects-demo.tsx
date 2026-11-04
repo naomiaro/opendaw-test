@@ -163,10 +163,15 @@ function MidiEffectsDemo() {
     reseekIfPlaying();
   }, [built, reseekIfPlaying]);
 
-  const handlePlay = useCallback(() => project?.engine.play(), [project]);
+  const handlePlay = useCallback(() => {
+    if (!project) return;
+    // The region starts one bar in: a transport at 0 would run a silent bar first.
+    if (project.engine.position.getValue() < REGION_START_PPQN) project.engine.setPosition(REGION_START_PPQN);
+    project.engine.play();
+  }, [project]);
   const handleStop = useCallback(() => project?.engine.stop(true), [project]);
 
-  const position = useMemo(() => (project ? () => project.engine.position.getValue() - REGION_START_PPQN : undefined), [project]);
+  const position = useMemo(() => (project ? () => Math.max(0, project.engine.position.getValue() - REGION_START_PPQN) : undefined), [project]);
   const writtenNotes = useCallback(() => laneNotes(patternRef.current), []);
   const emittedNotes = useCallback(() => barsRef.current.bars, []);
 
