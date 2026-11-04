@@ -1,3 +1,5 @@
+const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
 export type SchedulerStatus = "idle" | "stale" | "rendering";
 
 export type RenderSchedulerOptions = {
@@ -42,7 +44,22 @@ export class RenderScheduler {
       return;
     }
     this.#status = status;
-    this.#options.onStatus(status);
+    try {
+      this.#options.onStatus(status);
+    } catch (error) {
+      console.error("[render-scheduler] onStatus threw: " + messageOf(error));
+    }
+  }
+
+  #report(error: unknown): void {
+    if (this.#disposed) {
+      return;
+    }
+    try {
+      this.#options.onError(messageOf(error));
+    } catch (callbackError) {
+      console.error("[render-scheduler] onError threw: " + messageOf(callbackError));
+    }
   }
 
   #clearTimer(): void {
@@ -63,15 +80,15 @@ export class RenderScheduler {
 
   async #execute(): Promise<void> {
     this.#running = true;
-    this.#setStatus("rendering");
     try {
+      this.#setStatus("rendering");
       await this.#run();
     } catch (error) {
-      if (!this.#disposed) {
-        this.#options.onError(error instanceof Error ? error.message : String(error));
-      }
+      this.#report(error);
+    } finally {
+      // a throw anywhere above must never leave the scheduler running for the life of the page
+      this.#running = false;
     }
-    this.#running = false;
     if (this.#disposed) {
       return;
     }

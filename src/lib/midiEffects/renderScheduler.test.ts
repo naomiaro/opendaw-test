@@ -109,6 +109,49 @@ describe("RenderScheduler", () => {
     expect(statuses.at(-1)).toBe("idle");
   });
 
+  it("a throwing onError or onStatus does not wedge the scheduler: the next request still runs", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const run = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        throw new Error("boom");
+      })
+      .mockImplementation(async () => {});
+    let throwOnError = true;
+    let throwOnStatus = false;
+    const statuses: SchedulerStatus[] = [];
+    const scheduler = new RenderScheduler(run, {
+      settleMs: 300,
+      onStatus: status => {
+        statuses.push(status);
+        if (throwOnStatus) {
+          throwOnStatus = false;
+          throw new Error("status listener");
+        }
+      },
+      onError: () => {
+        if (throwOnError) {
+          throwOnError = false;
+          throw new Error("error listener");
+        }
+      }
+    });
+    scheduler.request();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(consoleError).toHaveBeenCalledWith("[render-scheduler] onError threw: error listener");
+    expect(statuses.at(-1)).toBe("idle");
+
+    throwOnStatus = true;
+    scheduler.request();
+    expect(consoleError).toHaveBeenCalledWith("[render-scheduler] onStatus threw: status listener");
+    await vi.advanceTimersByTimeAsync(300);
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(statuses).toEqual(["stale", "rendering", "idle", "stale", "rendering", "idle"]);
+    expect(consoleError).toHaveBeenCalledTimes(2);
+    consoleError.mockRestore();
+  });
+
   it("dispose cancels the timer", async () => {
     const run = vi.fn(async () => {});
     const { scheduler, statuses } = make(run);
