@@ -129,8 +129,9 @@ export function renderedRows(
     const { onsetMs, endMs } = predictedMs(note, bpm);
     return figure.onsetMs >= onsetMs - TOLERANCES.onsetMs && figure.onsetMs <= endMs + TOLERANCES.onsetMs;
   };
-  const unreadableNotes = prediction.predicted.filter((n) => n.readability === "polyphonic" || n.readability === "overlap");
-  const remaining = new Set(read.filter((figure) => !unreadableNotes.some((note) => inside(figure, note))));
+  // owned figures leave before matching, so a figure inside a non-readable note's span is never a readable note's match
+  const owners = prediction.predicted.filter((n) => n.readability !== "readable");
+  const remaining = new Set(read.filter((figure) => !owners.some((note) => inside(figure, note))));
 
   for (const note of prediction.predicted) {
     if (note.readability !== "readable") continue;
@@ -153,9 +154,14 @@ export function renderedRows(
     if (note.readability === "abutting") {
       const { onsetMs, endMs } = predictedMs(note, bpm);
       const figure = readAt(onsetMs, endMs);
+      if (figure.pitch === null) {
+        // nothing measured to draw: the predicted pitch only places the row
+        notes.push({ ...hollowAt(note, "no pitch"), dashedEdges: true });
+        continue;
+      }
       const label = centsLabel(figure.cents);
       notes.push({
-        pitch: figure.pitch ?? note.pitch, ...regionSpan(note), velocity: figure.velocity, dashedEdges: true, measured: false,
+        pitch: figure.pitch, ...regionSpan(note), velocity: figure.velocity, dashedEdges: true, measured: false,
         ...(label === undefined ? {} : { label }),
       });
       stems.push({ at: note.position - REGION_START_PPQN, velocity: figure.velocity });
@@ -168,9 +174,7 @@ export function renderedRows(
 
   for (const note of prediction.silenced) notes.push(hollowAt(note, "silent"));
 
-  const owned = prediction.predicted.filter((n) => n.readability !== "readable");
   for (const figure of remaining) {
-    if (owned.some((note) => inside(figure, note))) continue;
     notes.push(readNote(figure, 0, bpm));
     stems.push({ at: msToRegionPpqn(figure.onsetMs, bpm), velocity: figure.velocity });
   }

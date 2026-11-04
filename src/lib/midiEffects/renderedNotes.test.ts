@@ -144,7 +144,7 @@ describe("renderedRows", () => {
     expect(rows.unreadable).toEqual([{ from: 0, to: 720, reason: "overlap" }, { from: 1920, to: 2400, reason: "polyphonic" }]);
   });
 
-  it("draws an abutting note dashed at the predicted span with the readAt figure's velocity", () => {
+  it("draws an abutting note dashed at the predicted span with the readAt figure's pitch and velocity, hollow when it has no pitch", () => {
     const prediction = predict([note(0, 480, 60), note(480, 480, 62)]);
     expect(prediction.predicted.map((n) => n.readability)).toEqual(["abutting", "abutting"]);
     const calls: Array<[number, number]> = [];
@@ -157,9 +157,10 @@ describe("renderedRows", () => {
     expect(calls).toEqual([[2000, 2250], [2250, 2500]]);
     expect(rows.notes).toEqual([
       { pitch: 61, from: 0, to: 480, velocity: 0.55, dashedEdges: true, measured: false, label: "+30¢" },
-      { pitch: 62, from: 480, to: 960, velocity: 0.45, dashedEdges: true, measured: false },
+      // a figure without a pitch measures nothing to draw: hollow, the predicted pitch only places the row, no velocity, no stem
+      { pitch: 62, from: 480, to: 960, hollow: true, dashedEdges: true, measured: false, label: "no pitch" },
     ]);
-    expect(rows.stems).toEqual([{ at: 0, velocity: 0.55 }, { at: 480, velocity: 0.45 }]);
+    expect(rows.stems).toEqual([{ at: 0, velocity: 0.55 }]);
     expect(rows.unreadable).toEqual([]);
     expect(rows.sentence).toBeNull();
   });
@@ -172,6 +173,18 @@ describe("renderedRows", () => {
     expect(rows.notes).toEqual([
       { pitch: 60, from: 0, to: 20, hollow: true, label: "too short", measured: false },
       { pitch: 64, from: 960, to: 1440, hollow: true, label: "too quiet", measured: false },
+    ]);
+    expect(rows.stems).toEqual([]);
+  });
+
+  it("a figure inside a too-short note's span is absorbed before a readable neighbour 3.5 ms away can match it", () => {
+    // too short: 0..20 pulses (2000..2010.4 ms); readable from 26 pulses (2013.5 ms), 3.1 ms after, past the reader's gap
+    const prediction = predict([note(0, 20, 60), note(26, 480, 64)]);
+    expect(prediction.predicted.map((n) => n.readability)).toEqual(["too-short", "readable"]);
+    const rows = renderedRows([fig(REGION_MS + 10, 2012, 60, 0.8)], prediction, melody, bpm, noRead);
+    expect(rows.notes).toEqual([
+      { pitch: 60, from: 0, to: 20, hollow: true, label: "too short", measured: false },
+      { pitch: 64, from: 26, to: 506, hollow: true, label: "silent", measured: false },
     ]);
     expect(rows.stems).toEqual([]);
   });
