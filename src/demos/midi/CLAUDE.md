@@ -310,9 +310,9 @@ register `debug/2026-10-23-midi-output-timing/note.md`. Chrome only; a real clic
   longer moves a note. Before openDAW#356 was fixed the base was the moment the main thread read the
   ring plus the reported output latency, truncated to whole ms: a late handler landed on the note,
   in one direction, and `delayInMs` absorbed none of it. That old base is the band
-  the verdict test pins as `investigate`; on the audio-clock base a janked engine cell reads `on-time`
-  (measured: run B's inside-block medians 10.32 / 9.97 ms on the 10 ms delay, no off-before-on
-  inversion), pinned in the same test.
+  figures the verdict test pins as `investigate`; on the audio-clock base a janked engine cell reads
+  `on-time` (measured, run 1793814094848: inside-block medians 10.32 / 9.97 / 9.82 / 12.78 ms against
+  about 60 before, no off-before-on inversion), pinned in the same test.
 - **The clock rule.** The anchor is `engine.recordingStart` from a recording with NOTHING armed
   (`Recording.start` reaches `prepareRecordingState` with zero captures; the engine stamps the
   start and records nothing). ONE `getOutputTimestamp` pair per repeat bridges to the Web MIDI

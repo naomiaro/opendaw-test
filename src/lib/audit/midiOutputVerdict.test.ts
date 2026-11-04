@@ -76,6 +76,8 @@ describe("classifyEngineCell", () => {
     const measured: OutputRepeatFigures[] = [
       { ...clean(10.18, 71.22), ...outside, medianErrorLiveMs: 10.19, maxAbsDevLiveMs: 71.23, lateTailMs: 21.06, extra: 2, stuck: 2, notesInsideBlocks: 7, medianErrorInsideBlocksMs: 60.46 },
       { ...clean(9.57, 70.37), ...outside, medianErrorLiveMs: 10.15, maxAbsDevLiveMs: 71.69, lateTailMs: 20.57, extra: 2, stuck: 2, notesInsideBlocks: 7, medianErrorInsideBlocksMs: 59.82 },
+      { ...clean(11.92, 68.96), ...outside, medianErrorLiveMs: 10.32, maxAbsDevLiveMs: 68.62, lateTailMs: 18.89, extra: 2, stuck: 2, notesInsideBlocks: 7, medianErrorInsideBlocksMs: 60.96 },
+      { ...clean(10.70, 69.57), ...outside, medianErrorLiveMs: 10.23, maxAbsDevLiveMs: 69.65, lateTailMs: 19.48, extra: 2, stuck: 2, notesInsideBlocks: 7, medianErrorInsideBlocksMs: 60.57 },
     ];
     const verdict = classifyEngineCell(measured, bus, jank);
     expect(verdict.status).toBe("investigate");
@@ -84,7 +86,7 @@ describe("classifyEngineCell", () => {
 
   it("reads run B on the audio-clock base (run 1793814094848, after openDAW#356 was fixed) as on-time", () => {
     const jank: OutputBandContext = { delayInMs: 10, jankMs: 80, jankActive: true, sampleRate: 44100 };
-    // The four engine repeats of that run: live medians on the delay, inside-block medians on the delay too, no inversion.
+    // The four engine repeats of that run: live medians on the delay, inside-block medians 9.97 / 10.32 / 9.82 / 12.78 (the one pair's), no inversion.
     const fixed: OutputRepeatFigures[] = [
       { ...clean(9.97, 0.02), medianErrorLiveMs: 10.0, maxAbsDevLiveMs: 0.01, maxAbsDevOutsideBlocksMs: 0.02, maxAbsDevOutsideBlocksLiveMs: 0.01, lateTailMs: 0.01, notesInsideBlocks: 7, medianErrorInsideBlocksMs: 9.97 },
       { ...clean(10.26, 1.06), medianErrorLiveMs: 10.0, maxAbsDevLiveMs: 2.25, maxAbsDevOutsideBlocksMs: 1.06, maxAbsDevOutsideBlocksLiveMs: 2.25, lateTailMs: 0.49, notesInsideBlocks: 7, medianErrorInsideBlocksMs: 10.32 },

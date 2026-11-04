@@ -450,7 +450,7 @@ sees).
 
 Per-repeat placement medians in ms against the HEARD beat, nothing netted. Max deviation ≤ 0.01 ms on
 every row; 0 missing / no-receipt / extra / stuck / collapsed on all 36; duration error 0.00 ms under the
-150 ms blocks (frame gaps 158–174 ms); the SDK's latency term 23.00 ms, heard lag 22.96–25.32 ms; count-in
+150 ms blocks (frame gaps 151–174 ms); the SDK's latency term 23.00 ms, heard lag 22.53–25.32 ms; count-in
 2 of 6 pickups per cell (#493 unchanged, open); the note on the loop end in the new take on every
 `loop-wrap` row, within 0.004 ms. The 0.0.180 reading to the hundredth.
 

@@ -520,8 +520,8 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
 - **Upstream:** the signature above is on the tracker as [comment #16](https://issues.chromium.org/issues/40726491#comment16) (2026-10-23; the body as posted:
   `debug/2026-10-23-midi-output-timing/drafts/posted-chromium-40726491-clock-drift-comment.md`).
 - **Last checked:** Chrome 156, macOS 15.6.1, 2026-11-04 (SDK 0.0.181 sweep): the MIDI output timing audit's
-  per-frame witness read excursions of 12–24 ms within an 8 s repeat in the **Playwright-launched Chrome**
-  (five runs, tab hidden and uncovered alike, the engine's live medians on the delay throughout) and ±3 ms with
+  per-frame witness read excursions of 13–24 ms within an 8 s repeat in four of five runs in the **Playwright-launched Chrome**
+  (the fifth, the janked run, −6.5 ms; tab hidden and uncovered alike, the engine's live medians on the delay throughout) and ±3 ms with
   one −6.6 ms excursion in the **user's Chrome** on the same day; the SDK-free probe (`?issue=clock-drift&rate=44100&hidden=0`,
   `chromium-clock-drift-mw2f191d-ocup.json`) read no step in its jank and graph phases (ramp −0.09 frames/s) after an
   output stream that opened 6.5 s in (`outputLatency` 0 → 28 ms, three steps at that moment). Two Chrome instances

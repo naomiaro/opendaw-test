@@ -186,9 +186,9 @@ before the devices reset; the recorder's stop stamp is netted before the fade, s
 
 | row | take 1 (interrupted) | take 2 (control) | hidden span | finalized in (take 1) |
 |---|---|---|---|---|
-| `modal`, `hideAt=start` | `intact`, 31 / 31, median 1.15 ms | `intact`, 31 / 31 | 17.2 s | 54 ms |
-| `modal`, `hideAt=mid` | `intact`, 41 / 41 (the take ran on under the dialog, 20.5 s), median 1.15 ms | `intact`, 31 / 31 | 18.4 s | 58 ms |
-| `modal`, `hideAt=stop` | `intact`, 31 / 31, median 1.15 ms | `intact`, 31 / 31 | 10.2 s | 10 211 ms (the dialog's span, as before) |
+| `modal`, `hideAt=start` (`hiddenrec-summary-1793815079281.json`) | `intact`, 31 / 31, median 1.15 ms | `intact`, 31 / 31 | 17.2 s | 54 ms |
+| `modal`, `hideAt=mid` (`…1793815140042.json`) | `intact`, 41 / 41 (the take ran on under the dialog, 20.5 s), median 1.15 ms | `intact`, 31 / 31 | 18.4 s | 58 ms |
+| `modal`, `hideAt=stop` (`…1793815189793.json`) | `intact`, 31 / 31, median 1.15 ms | `intact`, 31 / 31 | 10.2 s | 10 211 ms (the dialog's span, as before) |
 
 The rows read as on 0.0.177 and 0.0.179.
 
