@@ -283,7 +283,7 @@ const defaultInput = AudioDevices.defaultInput; // Optional<MediaDeviceInfo>
 ### Device Selection and Channels
 
 ```typescript
-import { CaptureAudio } from "@opendaw/studio-core";
+import { CaptureAudio, ChannelMapping } from "@opendaw/studio-core";
 
 // After getting a CaptureAudio instance:
 const capture = project.captureDevices.get(uuid).unwrap() as CaptureAudio;
@@ -294,8 +294,13 @@ project.editing.modify(() => {
   capture.captureBox.deviceId.setValue(deviceId); // string from MediaDeviceInfo.deviceId
 
   // Mono vs Stereo
-  capture.requestChannels = 1; // mono
+  capture.requestChannels = 1; // mono: inputs 1 and 2 mixed
   capture.requestChannels = 2; // stereo (default)
+  // One input of an interface on its own, or any pair: a ChannelMapping (bit n = input n+1, bit 0 is input 1)
+  capture.channelMapping = ChannelMapping.mono(1);   // Mono 2
+  capture.channelMapping = ChannelMapping.stereo(2); // Stereo 3/4 once a browser delivers more than two inputs;
+  // on a two-input stream the undelivered inputs drop out and an empty left side takes input 1 (ChannelMapping.fit)
+  // Stereo and MonoMixed are stored as the channel count; requestChannels = n clears the masks
 
   // Input gain (dB)
   capture.captureBox.gainDb.setValue(0);  // 0 dB = unity gain
@@ -947,6 +952,7 @@ Instead, use `waveformOffset` + `duration` (see [Rendering Take Peaks](#renderin
 | Basic recording | `project.startRecording()` | `recording-api-react-demo.html` |
 | Audio input selection | `AudioDevices.inputs` | `recording-api-react-demo.html` |
 | Mono/stereo | `capture.requestChannels` | `recording-api-react-demo.html` |
+| Channel mapping (one input, a pair) | `capture.channelMapping`, `ChannelMapping` from `@opendaw/studio-core` | — |
 | Input gain | `capture.captureBox.gainDb` | `recording-api-react-demo.html` |
 | Input monitoring | `capture.monitoringMode` | `recording-api-react-demo.html` |
 | Multi-device recording | `capture.armed.setValue(true)` | `recording-api-react-demo.html` |

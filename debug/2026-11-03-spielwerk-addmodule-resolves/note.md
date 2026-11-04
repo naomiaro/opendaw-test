@@ -11,8 +11,12 @@ and no device message is sent
 0.0.181** (the maintainer's answer: the wrapper now catches an error thrown while the module loads, so
 the registry entry is written and its `create` rethrows; the device is silenced and the error arrives
 through `subscribeDeviceMessage`; `compile` still resolves, since the main thread cannot see the worklet
-scope, so the demo's preflight stays a valid earlier refusal). Not yet re-measured here: the installed
-SDK is 0.0.180; the next upgrade re-runs the steps below and expects the device message. Measured on the Spielwerk demo
+scope, so the demo's preflight stays a valid earlier refusal). **Re-measured 2026-11-04 on the installed
+0.0.181** (Chrome 156, the Spielwerk demo): a script whose top level throws only in the worklet
+(`if (typeof AudioWorkletGlobalScope !== "undefined") throw …`, so the demo's main-thread preflight lets it
+through) compiles without an editor error, and the device message "Failed to instantiate Processor: Error:
+boom at worklet load" arrives through `subscribeDeviceMessage` about 0.5 s after Compile, the page reporting
+the device silenced — the maintainer's description, to the word. Measured on the Spielwerk demo
 (PR #190); worked around in the demo by building and constructing the Processor on the main thread
 before compiling (`preflightScript`, `src/lib/midiEffects/spielwerkCompile.ts`).
 

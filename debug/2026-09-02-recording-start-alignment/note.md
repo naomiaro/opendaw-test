@@ -6043,6 +6043,76 @@ arming starts it, `prepareRecording` awaits it): with the entry the run ends `er
 +1.15 on all three repeats. The control envelopes are in `.verify-output/round-trip-guard-controls/`,
 out of the one-quantum tally.
 
+## Standing sweep on 0.0.181 (2026-11-04)
+
+`@opendaw/studio-sdk@0.0.181` (build probe `upstream`, `buildFeatures: ["recordingStart"]` →
+`release` profile; PRs #378 / #380 still open). The release leaves the capture path alone except
+for an audio track's channel mapping (`CaptureAudioBox.leftInputs` / `rightInputs`, `capture.channelMapping`;
+`requestChannels = 1`, which every Tape here sets, still means Mono 1+2 Mixed and now also clears both
+masks, so no mapping nodes are built) and the recorders writing through `project.recordingSession.editing`
+(the project's own editing outside a live room). What it does change near this harness is the
+**user's Stop: the engine now fades the next quantum of the output from full to silence before it
+resets every device** (`stop_faded`; an offline render keeps the immediate stop). The loopback take
+therefore carries a fade in its last quantum; a tail row moved by up to a quantum (2.7 / 2.9 ms)
+would be that fade, not the stop path. None moved by that much (below). No stored round trip existed
+(read before the first run). Details in `changelogs/sdk-0.0.180-to-0.0.181-changes.md`. Chrome 156,
+the Playwright browser, the tab visible throughout, a fresh `node_modules` and dev server, **the
+Mac's output device at 44.1 kHz**.
+
+### Single tape
+
+| file | rate | rows | error rows | cells `aligned` | finalized | netted medians |
+|---|---|---|---|---|---|---|
+| `recaudit-summary-1793809097700.json` | 48000 | 60 | 0 | 10 of 10 | 60 of 60 | +1.10…+1.17 ms |
+| `recaudit-summary-1793809524649.json` | 44100 | 60 | 0 | 10 of 10 | 60 of 60 | +1.09…+1.19 ms |
+
+**Every scenario is the 0.0.180 placement to the row.** The 48 kHz tally is 1.15 ×27, 1.17 ×15,
+1.16 ×12, 1.10 ×6, the 0.0.180 tally exactly; 44.1 kHz 1.17 ×23, 1.16 ×22, 1.18 ×6, 1.09 ×6,
+1.19 ×3 (0.0.180: +1.09…+1.19 on every row). `loop-wrap` takes hold (no per-lap drift), the fifth
+take of each repeat about 0.07 ms under the others as on both earlier releases.
+
+**Tail deficit: 0 of 60 rows at 48 kHz; 8 rows at 44.1 kHz, all under 0.1 ms** (`nominal-start/120`
+r3 0.09, `janked-start/97.3` r2 0.05, `loop-wrap/120` r2 0.06 on its takes), the frame rounding the
+0.0.179 and 0.0.180 sweeps read at 0.14 and 0.04 ms; every cell `aligned`. Nothing near the 2.9 ms a
+lost faded quantum would read, so the fade is inside the take as the stop stamp expects.
+
+**Head deficit: none**, on a fresh `node_modules` and dev server, the second sweep in a row without
+the cold-start event (0.0.179 and earlier: one on the first recording of a fresh server).
+
+### Multi-mic (`multitrack-all`, 120 BPM, 48000 Hz), 8 repeats per cell
+
+| file | rows | error rows | finalized | node delays read | netted, every row | cells | raw inter-tape skew |
+|---|---|---|---|---|---|---|---|
+| `recaudit-mt-summary-1793809955666.json` | 32 | 0 | 32 of 32 | 32 of 32 | +1.146 | both `aligned` | 0.00 on all 16 repeats |
+
+Netted skew 0.00, first-frame check 0.00 on every row, no tail deficit; 8 clock discontinuities
+(4 stalls) over the run.
+
+### Forced: the SDK's stamps under graph work (three runs)
+
+`scenario=multitrack-start&graphChurn=on` (`…1793810181259`, `…1793810274607`,
+`…1793810374307`), 48 rows, 0 error rows, a node delay on every one, 197 / 207 / 217 clock
+discontinuities per run (106 / 112 / 118 stalls), 64 442 to 78 376 connect / disconnect pairs per
+repeat, `nodeTapMissingQuanta` 0 to 1.
+
+| netted / first-frame check, in quanta off the usual | rows |
+|---|---|
+| 0 / 0 | 48 |
+
+As on 0.0.174 through 0.0.180. Netted +1.146 on every row. No tail deficit.
+
+### The one-quantum event, counted
+
+`one-quantum-events.ts` after these runs: 0.0.181 **0 in 76** repeats (30 single-tape at 48 kHz,
+30 at 44.1 kHz, 16 multi-mic), as on 0.0.180, 0.0.179, 0.0.177, 0.0.176 and 0.0.175 (forced runs left out).
+
+### Reading
+
+Placement, finalization, the stamp repair, the netted stop and the netted inter-tape skew read as
+on 0.0.180 to the row. The faded stop did not move a tail: the fade sits inside the recorded take,
+after the engine's stop stamp was netted, and the sub-0.1 ms deficits at 44.1 kHz are the frame
+rounding seen before.
+
 ### Device at 48 kHz (2026-10-30)
 
 The same release with the Mac's output device switched to 48 kHz (read off a bare

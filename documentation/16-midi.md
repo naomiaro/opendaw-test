@@ -354,9 +354,9 @@ A quick map of the SDK surfaces this chapter touches:
 | Recording | `CaptureMidi`, `project.captureDevices` | `@opendaw/studio-core` |
 | Note signals (audition) | `NoteSignal` | `@opendaw/studio-adapters` |
 | Engine note input | `project.engine.noteSignal(signal)` | `@opendaw/studio-core` |
-| MIDI effects | `ArpeggioDeviceBox`, `PitchDeviceBox`, `VelocityDeviceBox`, `ZeitgeistDeviceBox`, `SpielwerkDeviceBox` | `@opendaw/studio-boxes` |
+| MIDI effects | `ArpeggioDeviceBox`, `NoteFilterDeviceBox`, `PitchDeviceBox`, `VelocityDeviceBox`, `ZeitgeistDeviceBox`, `SpielwerkDeviceBox` | `@opendaw/studio-boxes` |
 | Add an effect | `EffectFactories.MidiNamed`, `project.api.insertEffect` | `@opendaw/studio-core` |
-| MIDI output to hardware | Not yet exposed publicly | (internals only) |
+| MIDI output to hardware | `InstrumentFactories.MIDIOutput` (`MIDIOutputBox`), sent through `Project.sendMIDIFromEngine` on the audio clock | `@opendaw/studio-core`, `@opendaw/studio-boxes` |
 | MIDI Clock | Not yet exposed publicly | (internals only) |
 
 ## Further reading

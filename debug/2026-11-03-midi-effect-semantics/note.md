@@ -3,8 +3,11 @@
 **Title:** MIDI Effect Semantics Audit — does each stock MIDI effect emit what its documented rule
 says, across the whole range of every parameter, and has anything changed since the last accepted run
 
-**SDK Pin:** `@opendaw/studio-sdk@0.0.180` (installed npm package; WASM engine only). The crate
-citations below are read in the openDAW checkout pinned to that release; the two manual citations
+**SDK Pin:** `@opendaw/studio-sdk@0.0.181` (installed npm package; WASM engine only; first accepted on
+0.0.180, the registers unchanged by 0.0.181). The crate citations below are read in the openDAW checkout
+pinned to the installed release (the Arpeggio's shifted by one line in the header and by six from its
+`process` on 0.0.181, where `release_all` was added; Pitch, Velocity, Zeitgeist and the wiring fold are
+untouched); the two manual citations
 marked "as corrected" (`arpeggio.md:90-94`, `zeitgeist.md:59`) are read at upstream `0b371e0b3` and
 `2922ba25d`, the commits that answered openDAW#524 and #525, ahead of the pinned tag (at the tag those
 lines carry the old text).
@@ -137,7 +140,7 @@ mappings. Positions are absolute pulses.
 
 | device | rule | crate | adapter |
 |---|---|---|---|
-| Arpeggio | On the absolute rate grid, one note per step from the notes held at that step, walked up, down or up-down over the octaves, each as long as the gate says, past the held note's end too (`arpeggio.md:76`, "note length as a percentage of the step rate"; nothing cuts it at the held note). The walk indexes the ABSOLUTE grid (`step_index = k / repeat`, `k` the absolute grid index; the manual: "syncs to transport position", `arpeggio.md:98`), so a hold from bar 1 at 1/16 starts at grid index 16, not 0: an Up walk over a C major triad starts on E. Velocity per the manual as corrected for openDAW#524 (`arpeggio.md:90-94`): below 0 % one fixed velocity `1 + v` ignoring the input (silent at −100 %, full at 0 %), above it a blend from full toward the note's own (`velocity × v + (1 − v)`). | `device-arpeggio/src/lib.rs:240-312` (`process`), `:127-151` (the walk), `:203-206` (`first_index`), `:298` (`step_index`) | `ArpeggioDeviceBoxAdapter.ts:13-19` (`RateFractions`, `floor(3840 / d) × n`) |
+| Arpeggio | On the absolute rate grid, one note per step from the notes held at that step, walked up, down or up-down over the octaves, each as long as the gate says, past the held note's end too (`arpeggio.md:76`, "note length as a percentage of the step rate"; nothing cuts it at the held note). The walk indexes the ABSOLUTE grid (`step_index = k / repeat`, `k` the absolute grid index; the manual: "syncs to transport position", `arpeggio.md:98`), so a hold from bar 1 at 1/16 starts at grid index 16, not 0: an Up walk over a C major triad starts on E. Velocity per the manual as corrected for openDAW#524 (`arpeggio.md:90-94`): below 0 % one fixed velocity `1 + v` ignoring the input (silent at −100 %, full at 0 %), above it a blend from full toward the note's own (`velocity × v + (1 − v)`). | `device-arpeggio/src/lib.rs:253-318` (`process`), `:128-152` (the walk), `:204-207` (`first_index`), `:304` (`step_index`) | `ArpeggioDeviceBoxAdapter.ts:13-19` (`RateFractions`, `floor(3840 / d) × n`) |
 | Pitch | Every note moves by `octaves × 12 + semitones`, its cent by the cents setting; a note shifted outside 0..127 is dropped. | `device-pitch/src/lib.rs:101-133` (`transform`), `:8-11` (the drop) | `PitchDeviceBoxAdapter.ts:50-58` (octaves ±7, semitones ±36, cents ±50) |
 | Velocity | Every note's velocity is the adapter's `computeVelocity` at the note's absolute position (magnet, random from the seeded generator, offset, clamped, mixed). | `device-velocity/src/lib.rs:70-77` (`compute_velocity`, the adapter's formula ported) | `VelocityDeviceBoxAdapter.ts:31-39` |
 | Zeitgeist | Every note starts where the groove warps its position to and ends where it warps its note-off to, so its duration changes with its place in the cell (`zeitgeist.md:59`, as corrected for openDAW#525). The warp is the cell's Möbius ease at the squashed amount (`0.01 + 0.98 × amount`), read through the device adapter's `groove()` and kept as a float pulse. | `device-zeitgeist/src/lib.rs:124-138` (`process`: warp each record, clamp into the block's range) | `GrooveShuffleBoxAdapter.ts:31-32, 46` |
@@ -153,9 +156,9 @@ error; a row that matches only with a deviation on reads `matches-known-deviatio
 
 | name | what the engine does | crate line | first seen | retired on |
 |---|---|---|---|---|
-| `arpeggio-velocity-matrix` (retired) | One fixed velocity `1 + v` below 0, a blend `velocity × v + (1 − v)` above it, where the manual of the time blended full velocity with the note's own; the engine still does exactly this, and it is the rule since 2026-11-04. | `device-arpeggio/src/lib.rs:108-118` | 0.0.180 (first run) | 2026-11-04: openDAW#524 closed, the manual corrected (`0b371e0b3`); the matrix is the rule |
-| `arpeggio-drops-cent` | Emits every arpeggiated note-on with cent 0, so a source note's detune is lost. Asked upstream as openDAW#526 (the manual is silent); retire it if the answer is "intended". | `device-arpeggio/src/lib.rs:304` | 0.0.180 | — |
-| `arpeggio-uncapped-note-off` (retired) | Ends a step at its position plus its length, never at the end of the source note, so the last step outlasts the held note; the engine still does exactly this, and it is the rule since 2026-11-04. | `device-arpeggio/src/lib.rs:303-306` | 0.0.180 | 2026-11-04: the manual's gate definition (`arpeggio.md:76`) matches the engine; the cap was this audit's reading. Asked in one line of the dropped-cent question, openDAW#526 |
+| `arpeggio-velocity-matrix` (retired) | One fixed velocity `1 + v` below 0, a blend `velocity × v + (1 − v)` above it, where the manual of the time blended full velocity with the note's own; the engine still does exactly this, and it is the rule since 2026-11-04. | `device-arpeggio/src/lib.rs:109-119` | 0.0.180 (first run) | 2026-11-04: openDAW#524 closed, the manual corrected (`0b371e0b3`); the matrix is the rule |
+| `arpeggio-drops-cent` | Emits every arpeggiated note-on with cent 0, so a source note's detune is lost. Asked upstream as openDAW#526; answered 2026-11-04: the cent was dropped by mistake, the fix (every held note's cents kept on walk notes, chord steps, ratchets and octave copies) ships with the release after 0.0.181, and the manual now says so. Retire it when `order-pitch-arpeggio` reads `changed, rule holds` on that release. | `device-arpeggio/src/lib.rs:310` (0.0.181; `:304` on 0.0.180) | 0.0.180 | — |
+| `arpeggio-uncapped-note-off` (retired) | Ends a step at its position plus its length, never at the end of the source note, so the last step outlasts the held note; the engine still does exactly this, and it is the rule since 2026-11-04. | `device-arpeggio/src/lib.rs:309-312` | 0.0.180 | 2026-11-04: the manual's gate definition (`arpeggio.md:76`) matches the engine; the cap was this audit's reading. Asked in one line of the dropped-cent question, openDAW#526 |
 | `zeitgeist-warps-note-off` (retired) | Warps the note-off like any other record, so a duration stretches or shrinks with the groove, where the manual of the time said durations remain unchanged; the engine still does exactly this, and it is the rule since 2026-11-04. | `device-zeitgeist/src/lib.rs:124-138` | 0.0.180 | 2026-11-04: openDAW#525 closed, the manual corrected (`2922ba25d`); the warped note-off is the rule |
 
 ## Row sampling
@@ -485,7 +488,7 @@ runs its full gate length past the held note's release.
 - **`arpeggio-velocity-manual-gap` (withdrawn 2026-11-04).** The manual of the time: −100 % plays
   every note at full velocity ignoring the input, +100 % keeps the note's own, 0 % a blend
   (`arpeggio.md:84-92` before `0b371e0b3`). The engine: silence at −100 %, 1.0 at 0 %, the note's own
-  only at +100 % (`device-arpeggio/src/lib.rs:108-118`). Rows: `arp-vel-1-*` and `arp-vel-0.5-*` (held
+  only at +100 % (`device-arpeggio/src/lib.rs:109-119`). Rows: `arp-vel-1-*` and `arp-vel-0.5-*` (held
   chord and held note), `arp-vel0-held-chord`, `arp-vel0.5-held-chord`; on the chord at velocity 0.8
   the gap was 1.0 at −100 %, 0.45 at −50 %, 0.1 at 0 %, 0.05 at +50 %. openDAW#524's answer: the
   engine is as intended; the corrected manual describes the matrix, which is the rule now.
@@ -780,3 +783,22 @@ run 1793770665002 (2026-11-04T05:37:45.002Z) | sdk 0.0.180 | 44100 Hz | 120 bpm 
 
 The 2026-11-03 tables (runs 1793744029767 and 1793744117203, on the rules before the manuals were
 corrected) and the first registers' (runs 1793741953204 and 1793742021509) are in this note's history.
+
+### 2026-11-04, SDK 0.0.181 (Chrome 156, macOS, the Mac's output device at 44.1 kHz)
+
+The upgrade's standing run, before any repo change but the bump, against the registers accepted on
+0.0.180. The release changes the Nano (Mono/Poly, Pan, One-Shot, Fixed pitch, voice stealing at 64,
+a 5 ms choke fade; the defaults keep the old sound) and the Arpeggio (`release_all` when it leaves
+the chain, the discontinuous-block release shared with it); Pitch, Velocity, Zeitgeist and the
+wiring fold are untouched (`device_pitch.wasm`, `device_velocity.wasm`, `device_zeitgeist.wasm`
+byte-identical; `engine.wasm`, `device_arpeggio.wasm`, `device_nano.wasm` changed).
+
+| rate | run | `as-registered` | `as-registered, matches-known-deviation …` | `no rule` | `changed` | `error` |
+|---|---|---|---|---|---|---|
+| 48 kHz | 1793808711783 | 211 | 1 (`arpeggio-drops-cent`, `order-pitch-arpeggio`) | 18 | 0 | 0 |
+| 44.1 kHz | 1793808780528 | 211 | 1 (the same row) | 18 | 0 | 0 |
+
+No row changed; reference peak 0.7079 / 0.7078, instrument offset 6 frames, as on 0.0.180. The
+maintainer answered openDAW#526 the same morning: the dropped cent was a mistake and the fix ships
+with the next release, so `arpeggio-drops-cent` stays until `order-pitch-arpeggio` reads `changed,
+rule holds` there (the installed crate still emits `cent: 0.0`, `lib.rs:310`).

@@ -48,7 +48,7 @@ export const DEVIATIONS: readonly Deviation[] = [
   {
     name: "arpeggio-drops-cent", device: "arpeggio",
     sentence: "The engine emits every arpeggiated note-on with cent 0, so a source note's detune is lost.",
-    source: "device-arpeggio/src/lib.rs:304"
+    source: "device-arpeggio/src/lib.rs:310"
   }
 ];
 
@@ -67,19 +67,19 @@ export const RULE_SENTENCES: Record<SemanticsDevice, string> = {
   zeitgeist: "Every note starts where the groove warps its position to and ends where it warps its note-off to, so its duration changes with its place in the cell."
 };
 
-/** `ArpeggioDeviceBoxAdapter.RateFractions`: `floor(3840 / d) × n` (`device-arpeggio/src/lib.rs:36-47`). */
+/** `ArpeggioDeviceBoxAdapter.RateFractions`: `floor(3840 / d) × n` (`device-arpeggio/src/lib.rs:37-48`). */
 export const ARPEGGIO_RATE_PPQN: readonly number[] = [3840, 1920, 1280, 960, 720, 640, 480, 360, 320, 240, 180, 160, 120, 80, 60, 40, 30];
 
 /**
  * The manual's rule (`manual/.../arpeggio.md:90-94`, as corrected for openDAW#524) and the crate's matrix
- * (`device-arpeggio/src/lib.rs:108-122`): below 0 one fixed velocity `1 + v`, ignoring the input; above it a blend
+ * (`device-arpeggio/src/lib.rs:109-123`): below 0 one fixed velocity `1 + v`, ignoring the input; above it a blend
  * from full toward the note's own.
  */
 export function arpeggioVelocity(v: number, vel: number): number {
   return v <= 0 ? 1 + v : vel * v + (1 - v);
 }
 
-/** The step's (stack index, octave) for a global step index (`device-arpeggio/src/lib.rs:127-151`); integer divisions throughout. */
+/** The step's (stack index, octave) for a global step index (`device-arpeggio/src/lib.rs:128-152`); integer divisions throughout. */
 function walk(mode: 0 | 1 | 2, count: number, octaves: number, step: number): { local: number; octave: number } {
   if (mode === 1) {
     return { local: count - 1 - step % count, octave: octaves - 1 - Math.trunc((step % (count * octaves)) / count) };
@@ -95,9 +95,9 @@ function walk(mode: 0 | 1 | 2, count: number, octaves: number, step: number): { 
 }
 
 /**
- * Arpeggio per the grid loop in `process` (`device-arpeggio/src/lib.rs:261-312`): a note-on at every absolute grid line in range with at least
+ * Arpeggio per the grid loop in `process` (`device-arpeggio/src/lib.rs:267-318`): a note-on at every absolute grid line in range with at least
  * one held note, each `gate × rate` long (the manual, "5. Gate": note length as a percentage of the step rate; the held
- * note's end does not cut it, `lib.rs:303-306`).
+ * note's end does not cut it, `lib.rs:309-312`).
  */
 export function arpeggioRule(
   notes: readonly RuleNote[], settings: ArpeggioSettings, deviations: ReadonlySet<DeviationName>, range: { from: number; to: number }
@@ -108,7 +108,7 @@ export function arpeggioRule(
   const stepLength = rate * Math.max(settings.gate, 0);
   const length = stepLength < 1 ? 1 : Math.floor(stepLength);
   const out: RuleNote[] = [];
-  // first_index: the smallest grid index whose line is at or after `from` (device-arpeggio/src/lib.rs:203-206)
+  // first_index: the smallest grid index whose line is at or after `from` (device-arpeggio/src/lib.rs:204-207)
   for (let index = Math.ceil(range.from / rate); index * rate < range.to; index++) {
     const position = index * rate;
     const stack = notes

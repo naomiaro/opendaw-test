@@ -11,8 +11,9 @@ import { BAR_PPQN } from "./auditExpectations";
  *  the sampler's shortest attack (1 ms) would scale a lone sample by the ramp's first value. */
 export const BURST_STEP_MS = 10;
 export const BURST_FALL_MS = 10;
-/** The sample the burst sits at the head of, the rest silence: the SDK's peaks stage fit returns no stage for a
- *  sample of 1200 frames or fewer and the peak worker then fails, so a 20 ms sample never loads. */
+/** The sample the burst sits at the head of, the rest silence. One second keeps the register's frames comparable
+ *  with the first runs, which needed it: the SDK's peaks stage fit then returned no stage for a sample of 1200 frames
+ *  or fewer and the peak worker failed (openDAW#494, fixed; a 20 ms sample loads now). */
 export const BURST_SAMPLE_SECONDS = 1;
 /** First frame above this (of full scale) is a note's onset. */
 export const ONSET_THRESHOLD = 0.05;
@@ -165,7 +166,7 @@ export function burstChannel(rate: number): Float32Array {
 }
 
 /** The sample as loaded: the burst, then silence to `ms` (`BURST_SAMPLE_SECONDS` by default; `?sampleMs=20` is
- *  the burst alone, the length the loader refuses). A sample shorter than the burst is cut. */
+ *  the burst alone, the length the loader refused before openDAW#494 was fixed). A sample shorter than the burst is cut. */
 export function burstSample(rate: number, ms: number = BURST_SAMPLE_SECONDS * 1000): Float32Array {
   const out = new Float32Array(Math.round((ms / 1000) * rate));
   const burst = burstChannel(rate);
