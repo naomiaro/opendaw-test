@@ -52,7 +52,7 @@ const PITCH_HIGH = 96;
 const LANE_HEIGHT = 224;
 const STRIP_HEIGHT = 64;
 
-const DASHED_SENTENCE = "dashed edges: the step boundaries come from the device rule; a gate under 1 makes them measured";
+const DASHED_SENTENCE = "dashed edges: the step boundaries come from the device rule; a gate under 100 % makes them measured";
 
 interface Built {
   project: Project;

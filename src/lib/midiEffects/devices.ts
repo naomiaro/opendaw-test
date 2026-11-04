@@ -91,7 +91,7 @@ project.editing.modify(() => vel.namedParameter.magnetStrength.setValue(1));`,
     what: "Applies a shuffle groove to note timing through a Möbius ease: at 50% nothing moves; above it every note between grid lines lands later, below it earlier, and the grid lines themselves stay put.",
     listenFor: "On Sixteenths at 60%, every other note drags late by about 24 ms (47 pulses at 120 bpm). Below 50% the off-beats rush instead.",
     laneNote: {
-      effects: "That is one and a half frames on a 60 Hz display, so the emitted lane shows it only roughly; the placement audit (debug/2026-10-21-midi-effect-placement/note.md) measures it to the frame.",
+      effects: "The 24 ms drag is one and a half frames on a 60 Hz display, so the emitted lane shows it only roughly; the placement audit (debug/2026-10-21-midi-effect-placement/note.md) measures it to the frame.",
       rendered: "The rendered lane places every note to the sample: at 60 % on Sixteenths the off-beats sit 47 pulses late.",
     },
     snippet: `${insert("Zeitgeist")}
