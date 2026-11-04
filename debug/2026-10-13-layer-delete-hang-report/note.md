@@ -1,7 +1,7 @@
 # "Deleting a layer hangs openDAW and loses work" — a Discord report, not reproduced
 
 **Started:** 2026-10-13
-**Status:** not reproduced; one minor undo finding; questions for the reporter drafted
+**Status:** not reproduced; one minor undo finding; the reply drafted for the reporter withdrawn unposted (2026-11-04)
 **Verified against:** installed `@opendaw/studio-sdk` 0.0.174 (this repo); the openDAW
 checkout at `92a9df6a6` (the 2026-10-09 publish of app-studio 0.2.6) for the Node tests;
 the deployed studio build `090790ec` of 2026-10-12T18:47:42Z (`/build-info.json`) for
@@ -179,7 +179,8 @@ not filed.
 
 ## Questions for the reporter
 
-Drafted in `drafts/TO-REVIEW-discord-reply.md`. What the thread needs before anything can
+Drafted in `drafts/withdrawn-discord-reply.md` and WITHDRAWN unposted on 2026-11-04 (the user's call; the
+thread never supplied the detail). What a thread of this kind needs before anything can
 be reproduced: what "layer" means to them (a Composite layer, a track, a Playfield pad,
 an effect), the exact gesture (icon, menu, Delete key), whether the transport was
 running, whether the project was in a live room, the browser console content (a
@@ -191,4 +192,4 @@ dialog was shown.
 ## Files
 
 - `layer-delete-soak-debug-demo.html`, `src/demos/instruments/layer-delete-soak-debug-demo.tsx`
-- `drafts/TO-REVIEW-discord-reply.md`
+- `drafts/withdrawn-discord-reply.md` (unposted)

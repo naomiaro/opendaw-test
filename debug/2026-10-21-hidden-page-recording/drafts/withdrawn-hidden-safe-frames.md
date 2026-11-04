@@ -1,3 +1,14 @@
+<!-- WITHDRAWN 2026-11-04, never posted. Reason: nothing it would change is a defect, and half its
+     evidence predates the SDK 0.0.180 capture rewrite. The recorder no longer rides on animation
+     frames (takes finalize on the engine's transport anchors; the 0.0.181 rows finalize 54 to 58 ms
+     after a stop while hidden), so the "Why" paragraph's take-creation, stop-while-hidden and
+     stop-wait figures (SDK 0.0.176) describe a recorder that no longer exists. What remains, the
+     page's view standing still for the hidden span and catching up within 114 ms, is recorded as a
+     known SDK limitation with the downstream opt-in as its workaround:
+     docs/known-sdk-limitations.md, "Engine view on a hidden page". Reopen only if a release moves
+     part of the recorder back onto frames or a demo needs its view live while hidden. The text
+     below is as drafted on 2026-10-21. -->
+
 <!-- Draft for andremichelle/openDAW. Not posted. Target: a pull request on `@opendaw/lib-dom`
      (packages/lib/dom/src/frames.ts), offered as an OPTION beside no issue: nothing measured in
      debug/2026-10-21-hidden-page-recording/note.md is a defect — the recorder survives a hidden page

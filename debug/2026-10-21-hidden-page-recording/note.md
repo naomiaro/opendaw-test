@@ -246,8 +246,11 @@ measured here is a defect, and what the driver buys a demo is a view that is cur
 instant the page returns rather than a hundred milliseconds later).
 
 No upstream issue drafted from this register: nothing measured here is a defect. The driver
-is offered upstream as an improvement as an option (`drafts/TO-REVIEW-openDAW-pr-hidden-safe-frames.md`),
-on the user's read.
+was drafted as an upstream option and WITHDRAWN unposted on 2026-11-04
+(`drafts/withdrawn-hidden-safe-frames.md`, the reason at its head): since the 0.0.180 capture
+rewrite the recorder does not ride on frames at all, and the view's freeze is recorded as a known
+SDK limitation with the opt-in driver as its workaround (`docs/known-sdk-limitations.md`, "Engine
+view on a hidden page").
 
 ## Open items
 

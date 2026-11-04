@@ -695,6 +695,10 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
 2px mobile overflow on bordered `width:100%` canvases.
 
 ## Build & Verification
+- **Known SDK limitations live in `docs/known-sdk-limitations.md`** — SDK behaviours measured here, not
+  defects, worked around rather than filed, each with the decision not to file and its reason (the engine's
+  main-thread view standing still on a hidden page, with the opt-in frame driver as the workaround). Read
+  it before drafting anything upstream about a behaviour that is not a defect; an entry there is a decision.
 - **Known vendor issues live in `docs/known-vendor-issues.md`** — browser, platform and hosting
   behaviours outside the SDK that this repo has measured and works around, grouped by vendor
   (Chromium, Firefox, WebKit, hosting and tooling: the Chromium worklet clock that stands still
@@ -1269,6 +1273,7 @@ unasked (every `xerj` command prints a banner inviting it).
 
 ## Reference Files
 - Known vendor issues (browser / platform / hosting, with workarounds): `docs/known-vendor-issues.md`
+- Known SDK limitations (behaviours measured, not filed, worked around; each with the decision not to file): `docs/known-sdk-limitations.md`
 - Project setup: `src/lib/projectSetup.ts`
 - Track loading: `src/lib/trackLoading.ts` (handles queryLoadingComplete automatically)
 - Audio utilities: `src/lib/audioUtils.ts` (format detection, file loading)
