@@ -439,6 +439,25 @@ live context's resampling never reaches a figure; this pass measures that. A `ch
 be a dependence of the sample or render path on the device, not of the engine's rules.
 
 
+### 2026-11-04, the Note Filter rows (SDK 0.0.181, Chrome, macOS, the Mac's output device at 44.1 kHz)
+
+The 33 rows added for the Note Filter (the `note-filter` group of 28, the four order rows pairing it
+with Pitch on the gapped melody and with Arpeggio on the chords, `disabled-note-filter`), run against
+the registers accepted on the 0.0.181 upgrade. Every new row reads `rule holds, unregistered` at both
+rates: the range windows keep exactly the notes the rule names and nothing else (the gapped melody
+would have shown a leak as an extra note), the inclusive ends drop exactly one note one step past each
+end, min above max and the two transposes past 127 and below 0 are silent, set collapses every
+passing note to the key after the range and ignoring the transpose, the order pairs keep 2 notes with
+Pitch first and 10 with the filter first. Every old row as registered; the 18 `no rule` rows unchanged.
+
+| rate | run | `as-registered` | `as-registered, matches-known-deviation …` | `no rule` | `rule holds, unregistered` | `changed` | `error` |
+|---|---|---|---|---|---|---|---|
+| 48 kHz | 1793823134245 | 211 | 1 (`arpeggio-drops-cent`, `order-pitch-arpeggio`) | 18 | 33 | 0 | 0 |
+| 44.1 kHz | 1793823187726 | 211 | 1 (the same row) | 18 | 33 | 0 | 0 |
+
+The verdict column is identical across the two rates, row for row. Reference peak 0.7079 / 0.7078,
+instrument offset 6 frames at both rates, as before.
+
 ## Reading
 
 - **The Arpeggio walks the absolute grid, in every mode, at every octave count, rate and repeat,

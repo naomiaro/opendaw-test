@@ -151,6 +151,15 @@ The recorder reads the capture's raw note signals before the chain
 (`packages/studio/core/src/capture/RecordMidi.ts`); what is heard while recording is the
 effect's output, what is written is the key.
 
+### 2026-11-04, the Note Filter rows (SDK 0.0.181, Chrome, macOS)
+
+Two rows added: `note-filter` (the device at its identity, C-2..G8, 0 st, Set off) and
+`note-filter-disabled`, both pass-through. Run 1793823240559, 48 kHz, 120 bpm, and run 1793823258131,
+44.1 kHz, 120 bpm: 15 rows, every row `as-predicted`; both Note Filter rows at lag 0, score 1.000,
+their channel peak equal to the dry row's (0.7079) at both rates. The other thirteen rows read as the
+first runs (the dry, Arpeggio, Zeitgeist and echo rows at 0 frames at 48 kHz and −1 frame at 44.1 kHz,
+the floor-versus-round case). Instrument offset 13 frames (0.27 ms) at 48 kHz, 12 (0.27 ms) at 44.1 kHz.
+
 ## Reading
 
 - **No MIDI effect moves a note it is meant to pass through**, enabled or disabled: every
