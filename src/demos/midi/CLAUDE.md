@@ -358,7 +358,7 @@ register `debug/2026-10-23-midi-output-timing/note.md`. Chrome only; a real clic
   `src/` reload the page and lose a run.
 
 ### MIDI Effect Placement Audit (unlisted)
-`midi-effect-placement-audit-debug-demo.html[?rate=48000|44100][&bpm=<n>][&device=all|pitch|velocity|arpeggio|zeitgeist|spielwerk][&sampleMs=<n>][&importMs=<n>]`
+`midi-effect-placement-audit-debug-demo.html[?rate=48000|44100][&bpm=<n>][&device=all|pitch|velocity|note-filter|arpeggio|zeitgeist|spielwerk][&sampleMs=<n>][&importMs=<n>]`
 renders a Nano burst pattern offline dry and through each stock MIDI effect, enabled and
 disabled, and reads each row against what the device's own rule predicts. Register:
 `debug/2026-10-21-midi-effect-placement/note.md`; library `src/lib/audit/midiEffect*.ts`;

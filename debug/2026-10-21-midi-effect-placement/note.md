@@ -14,7 +14,7 @@ ratio at or under 1; a short sample gets one stage). **Re-measured here 2026-11-
 on that sample.
 
 **Harness:** unlisted debug demo
-`midi-effect-placement-audit-debug-demo.html[?rate=48000|44100][&bpm=<n>][&device=all|pitch|velocity|arpeggio|zeitgeist|spielwerk][&sampleMs=<n>][&importMs=<n>]`
+`midi-effect-placement-audit-debug-demo.html[?rate=48000|44100][&bpm=<n>][&device=all|pitch|velocity|note-filter|arpeggio|zeitgeist|spielwerk][&sampleMs=<n>][&importMs=<n>]`
 on the dev server, Chrome, a real click on "Run audit"; deterministic, no hardware, about
 fifteen seconds. The summary JSON (`midifx-summary-<runToken>.json`, one record per row with
 every onset) lands in `.verify-output/` via the dev server's `/__verify` sink;
