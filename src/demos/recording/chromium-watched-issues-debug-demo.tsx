@@ -59,6 +59,8 @@ const NOTE_URL =
 interface IssueInfo {
   tracker: string;
   title: string;
+  /** The SDK-side issue filed from this probe's finding, when there is one. */
+  upstream?: { label: string; href: string };
 }
 
 const ISSUE_INFO: Record<WatchedIssue, IssueInfo> = {
@@ -80,6 +82,7 @@ const ISSUE_INFO: Record<WatchedIssue, IssueInfo> = {
   },
   "opfs-usage": {
     tracker: "436552046",
+    upstream: { label: "openDAW#527 (filed from this finding)", href: "https://github.com/andremichelle/openDAW/issues/527" },
     title: "OPFS data cannot be deleted",
   },
   "opfs-flush": {
@@ -337,6 +340,7 @@ const App: React.FC<{ issue: WatchedIssue }> = ({ issue }) => {
             href: `https://issues.chromium.org/issues/${info.tracker}`,
             kind: "note",
           },
+          ...(info.upstream === undefined ? [] : [{ label: info.upstream.label, href: info.upstream.href, kind: "note" as const }]),
         ]}
       />
 

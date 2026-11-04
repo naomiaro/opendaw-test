@@ -10,6 +10,8 @@ WAV encoder for their captures, nothing else): they say what Chrome does, not wh
 path is the witness (the first-read issue), the finding names the installed release.
 **Page:** [`chromium-watched-issues-debug-demo.html?issue=<name>`](../../chromium-watched-issues-debug-demo.html)
 (`src/demos/recording/chromium-watched-issues-debug-demo.tsx`; shared shape `src/lib/audit/chromiumWatched.ts`).
+**Filed upstream:** [openDAW#527](https://github.com/andremichelle/openDAW/issues/527) (2026-11-04, from the
+`opfs-usage` finding; body in `drafts/posted-openDAW-527-opfs-delete-usage.md`).
 
 Each entry either moves to "Measured here" in the register with a figure, or stays watched with "not
 reproduced on Chrome N, <date>" and the probe that failed to show it. A run that could not exercise the
@@ -967,6 +969,10 @@ What these rows show:
   and this probe uses neither.
 
 ### opfs-usage (436552046 / 401692415)
+
+Filed on the SDK's tracker as [openDAW#527](https://github.com/andremichelle/openDAW/issues/527) on 2026-11-04
+(the worker's sync-handle write and bare `removeEntry()` paths, unchanged at 0.0.181; both Chromium trackers
+re-read that day, open and unchanged since the 2026-09-25 root-cause comment).
 
 **Reproduced in the user's Chrome: a plain run's delete, then a restart, reads `NEGATIVE USAGE`.** The
 restart round comes first below, then the in-session runs in Playwright's Chrome.
