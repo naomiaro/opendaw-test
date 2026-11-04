@@ -12,6 +12,7 @@ const LOW_PITCH = 60;
 const HIGH_PITCH = 71;
 const ROWS = HIGH_PITCH - LOW_PITCH + 1;
 const KEY_WIDTH = 18;
+const BLACK_KEY_WIDTH = KEY_WIDTH * 0.6;
 const KEY_GAP = 2;
 const GRID_LEFT = KEY_WIDTH + KEY_GAP;
 const STRIP_GAP = 8;
@@ -28,6 +29,8 @@ const flatNote = (position: number, duration: number, pitch: number): PatternNot
 interface Step {
   readonly heading: string;
   readonly text: string;
+  /** What the drawing shows, for a screen reader. */
+  readonly label: string;
   readonly notes: readonly PatternNote[];
   readonly stems: boolean;
 }
@@ -36,24 +39,28 @@ const STEPS: readonly Step[] = [
   {
     heading: "1. A note is a bar",
     text: "It starts sounding at the bar's left edge and stops at its right edge.",
+    label: "One bar in the middle of the roll, two beats long",
     notes: [flatNote(Quarter, 2 * Quarter, 64)],
     stems: false,
   },
   {
     heading: "2. Height is pitch",
     text: "Each row is one piano key. Up one row is one key higher.",
+    label: "Four bars one after another, each on a higher row than the last",
     notes: [flatNote(0, Quarter, 60), flatNote(Quarter, Quarter, 64), flatNote(2 * Quarter, Quarter, 67), flatNote(3 * Quarter, Quarter, 69)],
     stems: false,
   },
   {
     heading: "3. Width is length",
     text: "A wider bar is held longer: the same key, for more time.",
+    label: "Three bars on one row, each twice as wide as the last",
     notes: [flatNote(0, EIGHTH, 64), flatNote(EIGHTH, Quarter, 64), flatNote(EIGHTH + Quarter, 2 * Quarter, 64)],
     stems: false,
   },
   {
     heading: "4. Brightness is velocity",
     text: "How hard the key was hit. The stem underneath shows the same value as a height.",
+    label: "Eight notes getting brighter from left to right, with a taller stem under each",
     notes: MELODY_BAR,
     stems: true,
   },
@@ -87,18 +94,30 @@ const Roll: React.FC<{
 
   const pitches = Array.from({ length: ROWS }, (_, row) => HIGH_PITCH - row);
   const gridLines = Array.from({ length: BAR_PPQN / EIGHTH + 1 }, (_, line) => line * EIGHTH);
+  // A white key meets the next one on the row line (E-F, B-C), or under the middle of the black key between them.
+  const whiteKeyEdges = pitches
+    .filter((pitch) => pitch < HIGH_PITCH && !MidiKeys.isBlackKey(pitch))
+    .map((pitch) => (MidiKeys.isBlackKey(pitch + 1) ? rowTop(pitch + 1) + rowHeight / 2 : rowTop(pitch)));
 
   return (
     <svg className="prx-svg" viewBox={`0 0 ${GRID_LEFT + gridWidth} ${stripBottom}`} role="img" aria-label={label}>
-      {pitches.map((pitch) => {
-        const black = MidiKeys.isBlackKey(pitch);
-        return (
-          <g key={pitch}>
-            <rect x={GRID_LEFT} y={rowTop(pitch)} width={gridWidth} height={rowHeight} fill={black ? "var(--mc-bg)" : "var(--mc-shade)"} />
-            <rect x={0} y={rowTop(pitch) + 0.5} width={KEY_WIDTH} height={rowHeight - 1} fill={black ? "var(--mc-line-bright)" : "var(--mc-text)"} />
-          </g>
-        );
-      })}
+      {pitches.map((pitch) => (
+        <rect
+          key={pitch}
+          x={GRID_LEFT}
+          y={rowTop(pitch)}
+          width={gridWidth}
+          height={rowHeight}
+          fill={MidiKeys.isBlackKey(pitch) ? "var(--mc-bg)" : "var(--mc-shade)"}
+        />
+      ))}
+      <rect data-white-keys x={0} y={0} width={KEY_WIDTH} height={gridHeight} fill="var(--mc-text)" />
+      {whiteKeyEdges.map((y) => (
+        <line key={y} data-key-edge x1={0} x2={KEY_WIDTH} y1={y} y2={y} stroke="var(--mc-faint)" strokeWidth={0.75} />
+      ))}
+      {pitches.filter(MidiKeys.isBlackKey).map((pitch) => (
+        <rect key={pitch} data-black-key={pitch} x={0} y={rowTop(pitch)} width={BLACK_KEY_WIDTH} height={rowHeight} fill="var(--mc-bg)" />
+      ))}
       {gridLines.map((ppqn) => (
         <line
           key={ppqn}
@@ -125,7 +144,7 @@ const Roll: React.FC<{
           onClick={onActivate === undefined ? undefined : () => onActivate(index)}
         />
       ))}
-      {stems && <rect x={GRID_LEFT} y={gridHeight + STRIP_GAP} width={gridWidth} height={stripHeight} fill="var(--mc-panel)" />}
+      {stems && <rect x={GRID_LEFT} y={gridHeight + STRIP_GAP} width={gridWidth} height={stripHeight} fill="var(--mc-shade)" />}
       {stems &&
         notes.map((note, index) => {
           const stemX = x(note.position) + STEM_INSET;
@@ -147,7 +166,7 @@ export const PianoRollSteps: React.FC = () => (
     {STEPS.map((step) => (
       <div className="prx-step" data-step key={step.heading}>
         <h3 className="prx-step-head">{step.heading}</h3>
-        <Roll label={step.heading} notes={step.notes} stems={step.stems} geometry={STEP_GEOMETRY} />
+        <Roll label={step.label} notes={step.notes} stems={step.stems} geometry={STEP_GEOMETRY} />
         <p className="prx-step-text">{step.text}</p>
       </div>
     ))}
@@ -212,9 +231,11 @@ export const EffectChainDiagram: React.FC = () => (
   </div>
 );
 
-/** A value in a note object, padded so the columns line up in the mono face. */
-const Value: React.FC<{ value: string | number; width?: number }> = ({ value, width = 0 }) => (
-  <span className="prx-value">{String(value).padStart(width, " ")}</span>
+/** One field of a note object, its value padded so the columns line up in the mono face. Never breaks across lines. */
+const Field: React.FC<{ name: string; value: string | number; width?: number }> = ({ name, value, width = 0 }) => (
+  <span className="prx-field">
+    {name}: <span className="prx-value">{String(value).padStart(width, " ")}</span>
+  </span>
 );
 
 /** The note the page opens with lit, so the link shows before anyone touches it. */
@@ -230,18 +251,19 @@ export const NoteDataLink: React.FC = () => {
             type="button"
             className="prx-row"
             key={index}
-            aria-pressed={active === index}
+            aria-current={active === index ? "true" : undefined}
             onMouseEnter={() => setActive(index)}
             onFocus={() => setActive(index)}
+            onClick={() => setActive(index)}
           >
-            {"{ position: "}
-            <Value value={note.position} width={4} />
-            {", duration: "}
-            <Value value={note.duration} />
-            {", pitch: "}
-            <Value value={note.pitch} />
-            {", velocity: "}
-            <Value value={note.velocity.toFixed(2)} />
+            {"{ "}
+            <Field name="position" value={note.position} width={4} />
+            {", "}
+            <Field name="duration" value={note.duration} />
+            {", "}
+            <Field name="pitch" value={note.pitch} />
+            {", "}
+            <Field name="velocity" value={note.velocity.toFixed(2)} />
             {" }"}
           </button>
         ))}
@@ -317,8 +339,9 @@ export const PIANO_ROLL_STYLES = `
   color: var(--mc-muted);
   cursor: default;
 }
-.prx-row[aria-pressed="true"] { background: var(--mc-shade); border-left-color: var(--mc-amber); color: var(--mc-text); }
+.prx-row[aria-current="true"] { background: var(--mc-shade); border-left-color: var(--mc-amber); color: var(--mc-text); }
 .prx-row:focus-visible { outline: 2px solid var(--mc-amber); outline-offset: -2px; }
+.prx-field { white-space: pre; }
 .prx-value { color: var(--mc-amber); }
 .prx-roll { display: grid; grid-template-columns: 24px minmax(0, 1fr); min-width: 0; }
 .prx-rail { position: relative; }
@@ -345,13 +368,12 @@ export const PIANO_ROLL_STYLES = `
 .prx-names dt:nth-last-of-type(1), .prx-names dd:nth-last-of-type(1) { border-bottom: 0; }
 .prx-names dt { font-family: var(--mc-mono); color: var(--mc-amber); }
 .prx-names dd { color: var(--mc-muted); }
-.prx-code {
+.mc-anchors .prx-code {
   display: block;
   max-width: 72ch;
   margin-top: 12px;
   padding: 12px 14px;
-  overflow-x: auto;
-  white-space: pre;
+  white-space: pre-wrap;
   font-family: var(--mc-mono);
   font-size: 12.5px;
   line-height: 1.7;
@@ -406,5 +428,6 @@ export const PIANO_ROLL_STYLES = `
 }
 @media (max-width: 480px) {
   .prx-steps { grid-template-columns: minmax(0, 1fr); }
+  .prx-row { white-space: normal; min-width: 0; line-height: 1.5; }
 }
 `;

@@ -55,11 +55,54 @@ describe("PianoRollSteps", () => {
     bars.slice(1).forEach((bar, index) => expect(num(bars[index], "x") + spans[index]).toBe(num(bar, "x"))); // they abut
   });
 
-  it("draws the piano's black and white keys in pitch order", () => {
-    const { container } = render(<PianoRollSteps />);
-    const keys = [...container.querySelector("svg")!.querySelectorAll('rect[x="0"]')];
-    const black = keys.map((key) => key.getAttribute("fill") === "var(--mc-line-bright)");
-    expect(black).toEqual([false, true, false, true, false, true, false, false, true, false, true, false]); // 71 down to 60
+  describe("the piano", () => {
+    function piano() {
+      const { container } = render(<PianoRollSteps />);
+      const svg = container.querySelector("svg")!;
+      return {
+        white: svg.querySelector("[data-white-keys]")!,
+        black: [...svg.querySelectorAll("[data-black-key]")],
+        edges: [...svg.querySelectorAll("[data-key-edge]")],
+      };
+    }
+
+    it("has a black key for each of the five black notes, and no others", () => {
+      const { black } = piano();
+      expect(black.map((key) => key.getAttribute("data-black-key"))).toEqual(["70", "68", "66", "63", "61"]);
+    });
+
+    it("makes black keys shorter than white keys", () => {
+      const { white, black } = piano();
+      for (const key of black) {
+        expect(num(key, "x")).toBe(num(white, "x"));
+        expect(num(key, "width")).toBeLessThan(num(white, "width") * 0.7);
+        expect(num(key, "width")).toBeGreaterThan(num(white, "width") * 0.4);
+      }
+    });
+
+    it("divides the white keys into the seven of an octave, E-F and B-C sharing no black key", () => {
+      const { white, black, edges } = piano();
+      expect(edges).toHaveLength(6); // 7 white keys from C (60) up to B (71)
+      const rowHeight = num(black[0], "height");
+      const rows = edges.map((edge) => (num(white, "y") + num(white, "height") - num(edge, "y1")) / rowHeight);
+      // Rows from the bottom: under a black key's middle where one sits between, on the row line for E-F.
+      expect(rows.sort((a, b) => a - b)).toEqual([1.5, 3.5, 5, 6.5, 8.5, 10.5]);
+    });
+  });
+
+  it("lines each black key up with its own row in the grid", () => {
+    render(<PianoRollSteps />);
+    const firstRoll = screen.getByRole("heading", { name: HEADINGS[1] }).closest("[data-step]")!;
+    const bottomBar = firstRoll.querySelector("[data-note]")!; // key 60
+    const rowHeight = num(bottomBar, "height") + BAR_INSET;
+    const rowOf60 = num(bottomBar, "y") - BAR_INSET / 2;
+    const keys = [...firstRoll.querySelectorAll("[data-black-key]")];
+    expect(keys).toHaveLength(5);
+    for (const key of keys) {
+      const pitch = Number(key.getAttribute("data-black-key"));
+      expect(num(key, "y")).toBe(rowOf60 - (pitch - 60) * rowHeight);
+      expect(num(key, "height")).toBe(rowHeight);
+    }
   });
 
   it("keeps every bar inside its roll", () => {
@@ -85,6 +128,14 @@ describe("PianoRollSteps", () => {
     const last = step(HEADINGS[3]);
     expect(last.stems).toHaveLength(last.bars.length);
     expect(new Set(last.bars.map((bar) => bar.getAttribute("fill"))).size).toBe(last.bars.length);
+  });
+
+  it("describes each drawing to a screen reader, rather than repeating its heading", () => {
+    render(<PianoRollSteps />);
+    const labels = screen.getAllByRole("img").map((image) => image.getAttribute("aria-label"));
+    expect(labels).toHaveLength(4);
+    labels.forEach((label) => expect(HEADINGS).not.toContain(label));
+    expect(new Set(labels).size).toBe(4);
   });
 
   it("gives a harder note a brighter bar and a taller stem", () => {
@@ -154,7 +205,7 @@ describe("NoteDataLink", () => {
     const rows = within(container).getAllByRole("button");
     const bars = [...container.querySelectorAll("[data-note]")];
     const lit = () => ({
-      rows: rows.flatMap((row, index) => (row.getAttribute("aria-pressed") === "true" ? [index] : [])),
+      rows: rows.flatMap((row, index) => (row.getAttribute("aria-current") === "true" ? [index] : [])),
       bars: bars.flatMap((bar, index) => (bar.getAttribute("stroke") !== null ? [index] : [])),
     });
     return { container, rows, bars, lit };
@@ -216,6 +267,17 @@ describe("NoteDataLink", () => {
     const { bars, lit } = show();
     fireEvent.click(bars[5]);
     expect(lit()).toEqual({ rows: [5], bars: [5] });
+  });
+
+  it("lights a pair when a row is tapped or pressed", () => {
+    const { rows, lit } = show();
+    fireEvent.click(rows[4]);
+    expect(lit()).toEqual({ rows: [4], bars: [4] });
+  });
+
+  it("never announces a row as a toggle: it marks the current note", () => {
+    const { rows } = show();
+    rows.forEach((row) => expect(row.hasAttribute("aria-pressed")).toBe(false));
   });
 
   it("lights a pair when a row takes keyboard focus", () => {

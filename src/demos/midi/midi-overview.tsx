@@ -27,7 +27,7 @@ const PAGES = [
     chip: "var(--mc-amber)",
     name: "MIDI Effects",
     direction: "HEAR NOTES CHANGE",
-    limit: "The lane of what came out cannot show velocity, so every bar is one colour, or timing finer than a frame",
+    limit: "The lane of what came out cannot show velocity (every bar is one colour) or timing finer than a frame",
     href: "/midi-effects-demo.html",
     prose:
       "Run a pattern through Arpeggio, Note Filter, Pitch, Velocity and Zeitgeist on a synth, one at a time or stacked in any order, and watch what comes out next to what went in.",
