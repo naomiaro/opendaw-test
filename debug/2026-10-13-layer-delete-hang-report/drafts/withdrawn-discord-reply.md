@@ -1,7 +1,11 @@
 # Draft: reply in the Discord thread (for the reporter and André)
 
-Status: TO REVIEW, nothing posted. Target: the Discord thread where a user reports that
-deleting a layer hangs or crashes openDAW and loses their work.
+Status: WITHDRAWN 2026-11-04, never posted (the user's call). Target was the Discord thread
+where a user reported that deleting a layer hangs or crashes openDAW and loses their work.
+The investigation stands as the note records it: not reproduced on the studio build of
+2026-10-12 nor through the SDK on 0.0.174, one minor undo finding not filed, and the thread
+never supplied the detail the questions below ask for. The questions stay here for the next
+report of the kind; the soak page `layer-delete-soak-debug-demo.html` stays runnable.
 
 ---
 
