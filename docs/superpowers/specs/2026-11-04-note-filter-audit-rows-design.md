@@ -38,7 +38,13 @@ drop.
   and below the reader's four-cycle window at the bottom on every pattern the audit has. The
   out-of-range drop is shown the way the Pitch group shows it, two all-dropped rows judged on
   silence. (The reader is proven to pitch 112; proving it at 127 is a separate piece of work.)
-- No new pattern. The melody, the sixteenths and the chromatic run carry every row.
+- No new rhythm. The sixteenths and the chromatic run carry their rows unchanged; the melody rows use
+  the demo melody GAPPED (`withGaps` at 90 %, as the Rendered page does: every eighth 432 pulses, a
+  48-pulse, 25 ms gap), ruled during execution: on the legato melody a note the filter should have
+  dropped between two survivors runs straight on from its neighbour, starts no read note of its own
+  and hides inside the abutting judgement (an abutting note is read only at its predicted span), so
+  the rule could not see a leak. With the gap every survivor is read on its own and a leak is an
+  extra note. Pattern id `melody-gaps`, label "Melody, gapped".
 - The crate's `MAX_HELD` 64 cap stays unmodelled (no pattern reaches it), as for Pitch.
 - Nothing in the MIDI Effects demo or the Rendered page changes.
 

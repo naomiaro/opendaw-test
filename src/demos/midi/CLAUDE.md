@@ -412,12 +412,12 @@ table `node scripts/audit/midi-effect-placement/table.ts`.
 
 ### MIDI Effect Semantics Audit (unlisted)
 `midi-effect-semantics-audit-debug-demo.html[?rate=48000|44100][&rows=all|quick|<id,id,…>][&device=all|arpeggio|pitch|velocity|zeitgeist|note-filter|order|disabled][&pattern=<id>]`
-renders 230 rows offline (a Nano playing a 440 Hz sine, root key 69, 1 ms attack and release), each
+renders 263 rows offline (a Nano playing a 440 Hz sine, root key 69, 1 ms attack and release), each
 with a chain of stock MIDI effects at one setting, reads the left channel back as notes and judges
 them against what the devices DOCUMENT (the placement audit asks when; this one asks what). Register:
 `debug/2026-11-03-midi-effect-semantics/note.md` and `register/<rate>.json`; library
 `src/lib/audit/midiEffectSemantics*.ts`; table `node scripts/audit/midi-effect-semantics/table.ts
-[runToken] [--accept] [--force]`. `&rows=quick` is a 41-row subset; the dry rows always run and
+[runToken] [--accept] [--force]`. `&rows=quick` is a 50-row subset; the dry rows always run and
 `dry-sixteenths` calibrates (reference peak, instrument offset; 32 notes and a positive finite peak,
 or the run aborts; a run whose calibration row did not render ends in `error:` too). `#audit-state`
 reads `done` with `data-error-rows="<n>"` counting the rows that failed on their own (0 on a clean

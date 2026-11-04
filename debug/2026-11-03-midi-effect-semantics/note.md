@@ -164,7 +164,7 @@ error; a row that matches only with a deviation on reads `matches-known-deviatio
 
 ## Row sampling
 
-230 rows, every one in the register. One parameter at a time across its whole range, the others at
+263 rows, every one in the register. One parameter at a time across its whole range, the others at
 their base, so a miss names its parameter; each parameter's identity setting is a row too, as the
 control.
 
@@ -186,16 +186,19 @@ control.
 - **Zeitgeist**: amounts 0, 0.25, 0.5, 0.75, 1 × every DISTINCT groove duration (8 of the 9 listed
   in `GrooveShuffleBoxAdapter.Durations`; 960 is listed twice), 1/8 to 16 bars, on the sixteenths;
   amounts × 1/8 and 1 bar on the melody.
-- **Note Filter**: range windows on the melody (0..127, 62..67, 65..127, 0..64, 64..64, 67..62: some
-  notes filtered out, the survivors readable) and inclusive ends on the chromatic run (min 60 and 61, max
+- **Note Filter**: range windows on the gapped melody (0..127, 62..67, 65..127, 0..64, 64..64, 67..62:
+  some notes filtered out, every survivor read on its own) and inclusive ends on the chromatic run (min 60 and 61, max
   71 and 70: an off-by-one drops exactly one note); transpose −12, −7, −1, 0, +1, +7, +12, +24 on the
-  melody and +68 / −72 on the chromatic run (every note dropped, predicted silent and judged on silence);
-  set on with key 48, 60, 72 on the melody and the sixteenths, plus set under a window (62..67, key 72: the
-  filter runs before the set) and set over a transpose (key 72, +7 st: the transpose is ignored under set)
-  on the melody.
+  gapped melody and +68 / −72 on the chromatic run (every note dropped, predicted silent and judged on
+  silence); set on with key 48, 60, 72 on the gapped melody and the sixteenths, plus set under a window
+  (62..67, key 72: the filter runs before the set) and set over a transpose (key 72, +7 st: the transpose
+  is ignored under set) on the gapped melody.
 - **Order** (one row per ordered pair at one non-identity setting each: Arpeggio and Zeitgeist,
-  Pitch and Arpeggio, Velocity and Arpeggio, both ways, on the chords) and **disabled** (each device
-  off on the sixteenths, expected dry).
+  Pitch and Arpeggio, Velocity and Arpeggio, Arpeggio and Note Filter, both ways, on the chords; Pitch
+  and Note Filter both ways on the gapped melody, because the one-voice reader cannot judge a held
+  triad and the chords pairs are judgeable only through their Arpeggio) and **disabled** (each device
+  off on the sixteenths, expected dry). The Note Filter's non-identity is the 62..67 window (min 60
+  drops nothing on the sixteenths or the melody).
 - **Gate 1 and gate 2.** At gate 1 the Arpeggio's steps touch: they are `abutting`, read at their
   predicted spans for pitch and velocity; the placement audit holds their timing (every step on its
   grid frame). At gate 2 every step overlaps the next by a whole step: same-pitch overlaps on a held
@@ -203,8 +206,12 @@ control.
 
 The patterns (`midiEffectSemanticsRows.ts`): a held C4 (1750 pulses, off the 1/16 grid so a 1/16
 step crosses its end at 5590), a held C major triad at velocity 0.8 (the same length), a chromatic
-run C4–B4 (sixteenths held a thirty-second), and the MIDI effects demo's chords, sixteenths and
-melody.
+run C4–B4 (sixteenths held a thirty-second), the MIDI effects demo's chords, sixteenths and
+melody, and the melody gapped (every eighth at 90 %, 432 pulses, a 48-pulse, 25 ms gap). The gapped
+melody carries the Note Filter rows: on the legato melody a note the filter should have dropped
+between two survivors would run straight on from its neighbour, start no read note of its own and
+hide inside the abutting judgement, which reads an abutting note only at its predicted span; a gap
+the reader splits on makes a leak an extra note.
 
 ## Runs
 
@@ -516,6 +523,12 @@ register instead of replacing it, and only into a register of the same SDK, bpm 
 row is never accepted, forced or not: it keeps its registered entry, or stays out of the register.
 
 ## Open items
+
+- **`disabled-arpeggio` proves nothing.** The Arpeggio's non-identity (Up, 1 octave, 1/16, gate 0.5,
+  velocity 1) reproduces the sixteenths exactly (one 120-pulse step at pitch 60 per grid line, the
+  note's own velocity), so the row reads dry whether or not the engine skips the disabled device. A
+  different non-identity would move the registered order rows; left for a release that changes them
+  anyway. The guard test in `midiEffectSemanticsRows.test.ts` covers the Note Filter and Pitch stages.
 
 - **Gate 2 and other true overlaps are tracked only.** A monophonic reader cannot judge two notes
   sounding at once; those rows and notes are in the register, so a change in what they render still
