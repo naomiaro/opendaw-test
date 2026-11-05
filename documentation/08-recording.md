@@ -610,6 +610,8 @@ const sub = capture.subscribeRoundTrip(() => { /* an entry was stored or dropped
 
 While an entry exists for the devices in use, every take on a capture whose `captureBox.inputLatency` is `InputLatency.Inherit` records with `outputLatency = roundTrip.seconds` and `inputLatency = 0`; the engine preference `recording.inputLatency` is not read. A per-tape value (any value other than Inherit, `0` included) wins over the entry. The entry is shared by every page on the origin. Bluetooth outputs, whose reported `outputLatency` is far off, are the case it is for; the measurement needs the output audible to the input (speakers, or an earbud held to the mic).
 
+The measurement listens for `RoundTrip.MaxSeconds` (0.6 s) after each burst, so a longer round trip is not found: that burst does not count as heard, and with none heard the verdict is `"no-signal"`. This is separate from the 0.1 s cap on [delay compensation](./11-effects.md#delay-compensation), because a round trip moves where a take is placed and delays no audio.
+
 ### Why measurement matters
 
 Gil&nbsp;Panal, Richard & David (Web Audio Conference 2025, [zenodo:17642262](https://zenodo.org/records/17642262)) show that browser DAW roundtrip latency varies from ~39 ms to ~105 ms across Firefox / Chrome / Safari × Ubuntu / Windows / macOS, with std. dev. up to ~8 ms on Chromium and ~0 ms on Firefox. The paper makes two practical points:

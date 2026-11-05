@@ -10,6 +10,7 @@
 - [Creating and Adding Effects](#creating-and-adding-effects)
 - [Track Integration](#track-integration)
 - [Master Bus Integration](#master-bus-integration)
+- [Delay Compensation](#delay-compensation)
 - [UI Controls](#ui-controls)
 - [Code Examples](#code-examples)
 - [Built-in Effect Reference](#built-in-effect-reference)
@@ -1421,6 +1422,22 @@ Audio Interface Output
 
 ---
 
+## Delay Compensation
+
+A device that delays its signal (Compressor or Maximizer look-ahead, Fold oversampling, Autotune, a script that declares [`// @latency`](#latency-declaration-latency)) reports that latency, and the engine delays the parallel paths so everything stays aligned. `project.engine.compensationLatency` holds the project's total in seconds, and all live output is that much later. Offline renders trim it from the start.
+
+- **Mute and solo do not change it.** A device on a muted track still holds the whole project back. Removing the device removes the delay.
+- **The delay is capped at 0.1 s per stage.** Above that, the reported figure keeps rising while the audio does not. A script declaring `// @latency 150` reads `compensationLatency` 0.150 and delays the other paths by 0.100, which leaves them 50 ms short of alignment. Nothing warns about this, so check for it through the signal graph:
+
+```typescript
+const graph = await project.engine.querySignalGraph();
+const overLimit = graph.edges.filter(edge => edge.delay > graph.maxCompensation);
+```
+
+`edge.delay` is the delay a path needs and `graph.maxCompensation` is the cap, both in frames.
+
+---
+
 ## UI Controls
 
 OpenDAW effects expose a reactive binding surface you can drive any UI from:
@@ -2136,7 +2153,7 @@ Each declaration adds a sidechain input to the device: a `WerkstattSidechainBox`
 // @latency <milliseconds>
 ```
 
-A script whose output lags its input (a look-ahead, an FFT frame) declares the delay so the engine's delay compensation aligns every other path to it: the parallel tracks, the dry path of an effects stack, a bus the track feeds, the metronome and recorded takes. A positive `this.latency = frames` set at runtime overrides the declaration (zero or unset falls back to it). A malformed or negative value fails the compile (`ScriptDeclaration.parseLatency`). Compensation is capped at 0.1 s per stage; a path that needs more stays unaligned and is reported.
+A script whose output lags its input (a look-ahead, an FFT frame) declares the delay so the engine's delay compensation aligns every other path to it: the parallel tracks, the dry path of an effects stack, a bus the track feeds, the metronome and recorded takes. A positive `this.latency = frames` set at runtime overrides the declaration (zero or unset falls back to it). A malformed or negative value fails the compile (`ScriptDeclaration.parseLatency`). Compensation is capped at 0.1 s per stage: see [Delay Compensation](#delay-compensation).
 
 **A failing script renders silence.** A `process()` that throws (or writes a non-finite sample) mutes the device and keeps it muted until the script is compiled again; a device whose script has not loaded yet mutes each block until it does. The engine keeps a device's output between quanta, so leaving it untouched would loop the last quantum. The error reaches the device's status.
 
