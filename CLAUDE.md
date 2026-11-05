@@ -906,11 +906,13 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
 - typescript-lsp plugin: install `typescript-language-server` and `typescript` **globally** (`npm i -g typescript-language-server typescript`) — the plugin spawns by PATH, NOT from `node_modules/.bin`, so a devDep doesn't satisfy it. LSP `hover` / `goToDefinition` / `documentSymbol` also resolve types in the upstream openDAW checkout (`tsserver` walks up to the nearest tsconfig — handy for SDK drift audits). Prefer file-scoped ops over `workspaceSymbol` (~3.9k symbols / ~135 KB persisted in this repo).
 - Dev server is HTTPS (COOP/COEP) — Playwright/curl must use `https://`, not `http://`. Custom port:
   `npm run dev -- --port 5180 --host 127.0.0.1`, then browse `https://localhost:5180/<demo>.html`.
-- A page fetching a file under the repo root from the DEV server gets the SPA fallback for a missing
-  path: HTML with status 200, not 404 — test the content type or a body starting with `<` before
-  parsing. The PUBLIC host (Cloudflare Pages) answers an `.html` URL with a 308 to the clean URL
-  (query string kept), 404s a missing file, and has no `/__verify` sink: a PUT there is 404/405, so a
-  page that uploads an envelope treats those two statuses as "no sink", not as a failed run.
+- A page fetching a missing file gets the SPA fallback on the DEV server AND on the PUBLIC host (Cloudflare
+  Pages, which falls back to the root page because the site has no `404.html`): HTML with status 200, not
+  404 — test the content type or a body starting with `<` before parsing. The public host answers an
+  existing page's `.html` URL with a 308 to the clean URL (query string kept); a removed page's clean URL
+  can keep serving its old copy from the CDN for up to a week (`s-maxage=604800`). It has no `/__verify`
+  sink: a PUT there is 404/405, so a page that uploads an envelope treats those two statuses as "no sink",
+  not as a failed run.
 - COOP/COEP headers in `public/_headers` exclude `/docs/*` — VitePress assets break under `require-corp`
 - The repo compiles with `strict` (plus `noFallthroughCasesInSwitch`, `noImplicitOverride`,
   `noUnusedLocals`, `noUnusedParameters`, `noImplicitReturns`). `npm run typecheck`
