@@ -9,7 +9,7 @@ import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
 import { CONSOLE_STYLES } from "@/lib/design/consoleTheme";
-import { EffectChainDiagram, NoteDataLink, PianoRollSteps, PIANO_ROLL_STYLES } from "./PianoRollExplainer";
+import { EffectChainDiagram, NoteDataLink, PaperRollComparison, PianoRollSteps, PIANO_ROLL_STYLES } from "./PianoRollExplainer";
 
 const PAGES = [
   {
@@ -87,15 +87,22 @@ function MidiOverview() {
               quarter of the way from dim to full. Heights are easier to compare than colours,
               which is why the stems are there.
             </p>
+          </section>
+
+          <section className="mc-anchors mc-reveal" style={{ animationDelay: "180ms" }}>
+            <h2 className="mc-anchors-head">Why it&apos;s called a piano roll</h2>
             <p>
               The name is older than computers. About a century ago, a player piano played itself
               from a long roll of paper with holes punched in it. Each hole was a note:{" "}
               <a href="https://www.pianola.co.nz/public/web/about_piano_rolls">
                 where it sat and how long it ran
               </a>{" "}
-              chose the key and how long it stayed down. Turn that paper on its side and you have
-              the grid above, with each block where a hole would be. The MIDI Association calls
-              today&apos;s view{" "}
+              chose the key and how long it stayed down.
+            </p>
+            <PaperRollComparison />
+            <p>
+              Turn that paper on its side and you have the grid, with each block where a hole
+              would be. The MIDI Association calls today&apos;s view{" "}
               <a href="https://midi.org/midi-historychapter-2-player-pianos-1850-1930">
                 a direct descendant
               </a>{" "}

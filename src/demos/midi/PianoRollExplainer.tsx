@@ -77,6 +77,14 @@ const DATA_GEOMETRY: RollGeometry = { rowHeight: 14, quarterWidth: 80, stripHeig
 
 const rollHeight = ({ rowHeight, stripHeight }: RollGeometry) => ROWS * rowHeight + STRIP_GAP + stripHeight;
 
+/** Where a note's block sits in a roll, one unit inside its cell so the grid shows around it. */
+const noteRect = (note: PatternNote, { rowHeight, quarterWidth }: RollGeometry) => ({
+  x: GRID_LEFT + (note.position / Quarter) * quarterWidth + 1,
+  y: (HIGH_PITCH - note.pitch) * rowHeight + 1,
+  width: (note.duration / Quarter) * quarterWidth - 2,
+  height: rowHeight - 2,
+});
+
 const Roll: React.FC<{
   label: string;
   notes: readonly PatternNote[];
@@ -132,10 +140,7 @@ const Roll: React.FC<{
         <rect
           key={index}
           data-note={index}
-          x={x(note.position) + 1}
-          y={rowTop(note.pitch) + 1}
-          width={(note.duration / Quarter) * quarterWidth - 2}
-          height={rowHeight - 2}
+          {...noteRect(note, geometry)}
           rx={1}
           fill={velocityColor(note.velocity)}
           stroke={activeIndex === index ? "var(--mc-text)" : undefined}
@@ -228,6 +233,58 @@ export const EffectChainDiagram: React.FC = () => (
       instrument asks Velocity for notes, Velocity asks Pitch, and Pitch reads the region. Each one changes what it
       gets back and hands it on.
     </p>
+  </div>
+);
+
+/** A short phrase with long and short notes and a chord, so the holes show what they can carry. */
+const PAPER_NOTES: readonly PatternNote[] = [
+  flatNote(0, Quarter, 60),
+  flatNote(Quarter, EIGHTH, 64),
+  flatNote(Quarter + EIGHTH, EIGHTH, 67),
+  flatNote(2 * Quarter, 2 * Quarter, 60),
+  flatNote(2 * Quarter, 2 * Quarter, 64),
+  flatNote(2 * Quarter, Quarter, 69),
+];
+const PAPER_GEOMETRY: RollGeometry = { rowHeight: 12, quarterWidth: 70, stripHeight: 0 };
+
+/** The paper of a player piano's roll, its holes where the same notes' blocks sit on the grid. */
+const PunchedPaper: React.FC = () => {
+  const gridHeight = ROWS * PAPER_GEOMETRY.rowHeight;
+  const width = (BAR_PPQN / Quarter) * PAPER_GEOMETRY.quarterWidth;
+  return (
+    <svg
+      className="prx-svg"
+      viewBox={`0 0 ${GRID_LEFT + width} ${rollHeight(PAPER_GEOMETRY)}`}
+      role="img"
+      aria-label="A strip of paper running from a spool, with a hole punched for each note"
+    >
+      <rect x={0} y={-2} width={KEY_WIDTH} height={gridHeight + 4} rx={4} fill="var(--mc-faint)" />
+      <rect x={KEY_WIDTH - 4} y={0} width={width + KEY_GAP + 4} height={gridHeight} fill="var(--mc-text)" />
+      {PAPER_NOTES.map((note, index) => {
+        const rect = noteRect(note, PAPER_GEOMETRY);
+        return <rect key={index} data-hole={index} {...rect} rx={rect.height / 2} fill="var(--mc-bg)" />;
+      })}
+    </svg>
+  );
+};
+
+export const PaperRollComparison: React.FC = () => (
+  <div className="prx-chain">
+    <div className="prx-chain-part">
+      <div className="prx-step">
+        <h3 className="prx-step-head prx-chain-head">The paper</h3>
+        <PunchedPaper />
+        <p className="prx-step-text">A hole for each note. Drawn on its side here, to line up with the grid.</p>
+      </div>
+    </div>
+    <div className="prx-chain-part">
+      <span className="prx-chain-arrow" aria-hidden="true">&rarr;</span>
+      <div className="prx-step">
+        <h3 className="prx-step-head prx-chain-head">The grid</h3>
+        <Roll label="The same notes as blocks on a piano roll, each where its hole was" notes={PAPER_NOTES} stems={false} geometry={PAPER_GEOMETRY} />
+        <p className="prx-step-text">A block for each note, in the same place.</p>
+      </div>
+    </div>
   </div>
 );
 

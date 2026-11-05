@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { patternById } from "@/lib/midiEffects/patterns";
 import { velocityColor } from "@/lib/midiEffects/velocityColor";
-import { EffectChainDiagram, NoteDataLink, PianoRollSteps } from "./PianoRollExplainer";
+import { EffectChainDiagram, NoteDataLink, PaperRollComparison, PianoRollSteps } from "./PianoRollExplainer";
 
 const num = (element: Element, name: string) => Number(element.getAttribute(name));
 /** A block is drawn one unit inside its cell on every side, so it shows the grid around it. */
@@ -196,6 +196,41 @@ describe("EffectChainDiagram", () => {
     expect(instrument.blocks).toHaveLength(0);
     expect(instrument.sound).not.toBeNull();
     expect(velocity.sound).toBeNull();
+  });
+});
+
+describe("PaperRollComparison", () => {
+  function show() {
+    const { container } = render(<PaperRollComparison />);
+    return { holes: [...container.querySelectorAll("[data-hole]")], blocks: [...container.querySelectorAll("[data-note]")] };
+  }
+
+  it("shows the paper first, then the grid it became", () => {
+    render(<PaperRollComparison />);
+    expect(screen.getAllByRole("heading").map((h) => h.textContent)).toEqual(["The paper", "The grid"]);
+  });
+
+  it("punches one hole for each block, exactly where that block sits", () => {
+    const { holes, blocks } = show();
+    expect(holes.length).toBeGreaterThan(1);
+    expect(holes).toHaveLength(blocks.length);
+    for (const name of ["x", "y", "width", "height"]) {
+      expect(holes.map((hole) => num(hole, name))).toEqual(blocks.map((block) => num(block, name)));
+    }
+  });
+
+  it("uses notes of different lengths and a chord, so the holes show both", () => {
+    const { holes } = show();
+    expect(new Set(holes.map((hole) => num(hole, "width"))).size).toBeGreaterThan(1);
+    const starts = holes.map((hole) => num(hole, "x"));
+    expect(new Set(starts).size).toBeLessThan(starts.length);
+  });
+
+  it("draws no velocity on the paper: a hole only knows which key and for how long", () => {
+    const { container } = render(<PaperRollComparison />);
+    expect(container.querySelectorAll("[data-stem]")).toHaveLength(0);
+    const fills = new Set(show().holes.map((hole) => hole.getAttribute("fill")));
+    expect(fills.size).toBe(1);
   });
 });
 
