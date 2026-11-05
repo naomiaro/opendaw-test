@@ -170,7 +170,7 @@
   existing events, then `editing.append()` creating the new ones (one undo step). A
   collection does not see its own in-flight changes.
 - **Naming:** the SDK prints note 60 as "C3" (`MidiKeys.toFullString`, so the Root key
-  readout says A2 for note 57), while the on-screen `PianoKeyboard` labels note 60 as C4.
+  readout says A2 for note 57); the on-screen `PianoKeyboard` prints the same names.
 - A themed Radix `Slider` does not forward `aria-label` to its thumb (the element with
   `role="slider"`). Use `ParamSlider`, or `useSliderThumbLabel()` for a raw Slider.
 

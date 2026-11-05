@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { createRoot } from "react-dom/client";
 import type { Terminable } from "@opendaw/lib-std";
-import { PPQN } from "@opendaw/lib-dsp";
+import { MidiKeys, PPQN } from "@opendaw/lib-dsp";
 import { Project, MidiDevices } from "@opendaw/studio-core";
 import { InstrumentFactories } from "@opendaw/studio-adapters";
 import type { AudioUnitBox } from "@opendaw/studio-boxes";
@@ -14,7 +14,7 @@ import { BackLink } from "@/components/BackLink";
 import { MidiSupportNotice } from "@/components/MidiSupportNotice";
 import { BpmControl } from "@/components/BpmControl";
 import { RecordingPreferences } from "@/components/RecordingPreferences";
-import { PianoKeyboard, PIANO_STYLES, noteName } from "./PianoKeyboard";
+import { PianoKeyboard, PIANO_STYLES } from "./PianoKeyboard";
 import { StepRecordingSection } from "./StepRecordingSection";
 import type { RecordedNote } from "./StepRecordingSection";
 import { CONSOLE_STYLES, CODE_BLOCK_STYLE } from "@/lib/design/consoleTheme";
@@ -58,7 +58,7 @@ const NoteDisplay: React.FC<{
         ) : (
           notes.map((note, i) => (
             <Badge key={`${note.pitch}-${i}`} color="amber" size="1">
-              {noteName(note.pitch)} vel:{Math.round(note.velocity * 127)}
+              {MidiKeys.toFullString(note.pitch)} vel:{Math.round(note.velocity * 127)}
             </Badge>
           ))
         )}
@@ -329,7 +329,9 @@ const App: React.FC = () => {
               recording. Play an external MIDI controller or the software keyboard
               (<code>MidiDevices.softwareMIDIInput</code>) — notes reach the recording
               engine either way. Step recording enters notes one at a time, without a
-              real-time performance.
+              real-time performance. New to MIDI? The{" "}
+              <a href="/midi-demos.html">MIDI overview</a> explains the piano
+              roll and links the other MIDI pages.
             </p>
           </div>
 

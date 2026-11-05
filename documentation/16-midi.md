@@ -49,7 +49,7 @@ The actual MIDI note. Fields:
 | `events` | `PointerField<NoteEvents>` | — | Back-reference to the collection |
 | `position` | `Int32Field` | 0 | Position within the region, in PPQN |
 | `duration` | `Int32Field` | 240 | Length in PPQN (240 = one 16th note) |
-| `pitch` | `Int32Field` | 60 | MIDI pitch (0–127, 60 = C4) |
+| `pitch` | `Int32Field` | 60 | MIDI pitch (0–127, 60 = C3 in the SDK's names, `MidiKeys.toFullString`) |
 | `velocity` | `Float32Field` | ≈0.787 | 0.0–1.0 |
 | `playCount` | `Int32Field` | 1 | Repeat the note 1–128 times across `duration` |
 | `playCurve` | `Float32Field` | 0 | −1.0 to 1.0 — curve applied to velocity across repeats |
@@ -95,7 +95,7 @@ project.editing.modify(() => {
       box.events.refer(collection.events);
       box.position.setValue(beat * Quarter); // 0, 960, 1920, 2880
       box.duration.setValue(Quarter / 2);     // eighth note
-      box.pitch.setValue(48 + beat);          // C3, C#3, D3, D#3
+      box.pitch.setValue(48 + beat);          // C2, C#2, D2, D#2
       box.velocity.setValue(0.8);
     });
   }

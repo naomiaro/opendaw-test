@@ -70,7 +70,7 @@ project.editing.modify(() => arp.namedParameter.numOctaves.setValue(2));`,
     listenFor: "On Chords, raise Min to D3 and the stack thins to one, none, two and one notes: the F chord goes silent, a keyboard split. On Bass, switch Set on and every root plays as the Key, the one-shot trigger the manual describes. On Melody, Semitones moves the tune; push it past G8 and the top notes drop out instead of clamping.",
     laneNote: {
       effects: "A dropped note simply vanishes from the emitted lane; a moved or set one appears on its new key.",
-      rendered: "A dropped note is a written ghost with no rendered bar; a moved or set one sits on its new key, its velocity and cents as written.",
+      rendered: "A dropped note is a written ghost with no rendered block; a moved or set one sits on its new key, its velocity and cents as written.",
     },
     snippet: `${insert("NoteFilter")}
 const filter = project.boxAdapters.adapterFor(box, NoteFilterDeviceBoxAdapter);
@@ -94,8 +94,8 @@ project.editing.modify(() => pitch.namedParameter.semiTones.setValue(7));`,
     what: "Reshapes each note's velocity: a magnet pulls velocities toward a target, random scatters them, offset shifts them, and mix blends the result with the original.",
     listenFor: "On Sixteenths, a strong magnet flattens the loud-soft alternation. On Melody, random breaks the ramp.",
     laneNote: {
-      effects: "The emitted lane here cannot show any of it: it reads which pitches are sounding, not how loud, so its bars break the velocity convention and stay one colour. The Rendered page shows every note's emitted velocity.",
-      rendered: "Every note's emitted velocity is the rendered bar's colour and the strip's solid stem against the written ghost; Reseed random reshuffles the scatter.",
+      effects: "The emitted lane here cannot show any of it: it reads which pitches are sounding, not how loud, so its blocks break the velocity convention and stay one colour. The Rendered page shows every note's emitted velocity.",
+      rendered: "Every note's emitted velocity is the rendered block's colour and the strip's solid stem against the written ghost; Reseed random reshuffles the scatter.",
     },
     snippet: `${insert("Velocity")}
 const vel = project.boxAdapters.adapterFor(box, VelocityDeviceBoxAdapter);

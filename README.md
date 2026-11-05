@@ -18,8 +18,7 @@ Visit http://localhost:5173 to explore the demos.
 | **[Effects & Mixer](https://opendaw-test.pages.dev/effects-demo.html)** | Multi-track mixer with reverb, compressor, delay, lo-fi crusher, and stereo width effects |
 | **[Track Editing](https://opendaw-test.pages.dev/track-editing-demo.html)** | Split, move, and rearrange audio regions on a timeline |
 | **[Recording API](https://opendaw-test.pages.dev/recording-api-react-demo.html)** | Microphone recording with live 60fps waveform, device selection, mono/stereo, input gain, and monitoring modes |
-| **[MIDI Recording](https://opendaw-test.pages.dev/midi-recording-demo.html)** | Record MIDI notes with device/channel selection, on-screen piano keyboard, and step recording |
-| **[MIDI Effects: What Gets Through?](https://opendaw-test.pages.dev/midi-effects-demos.html)** | Three sub-demos on the MIDI chain and the piano-roll conventions they follow: [hear the devices on a synth](https://opendaw-test.pages.dev/midi-effects-demo.html) (Arpeggio, Note Filter, Pitch, Velocity and Zeitgeist, one at a time or stacked and reordered by drag), [see what they emit](https://opendaw-test.pages.dev/midi-effects-rendered-demo.html) on a sine rendered offline and read back note by note (velocity and cents included), and [write your own device](https://opendaw-test.pages.dev/spielwerk-demo.html) in JavaScript with Spielwerk |
+| **[MIDI](https://opendaw-test.pages.dev/midi-demos.html)** | New to MIDI? Learn to read a piano roll and why middle C has two names, then four demos: [record notes](https://opendaw-test.pages.dev/midi-recording-demo.html) with device and channel selection, an on-screen keyboard and step entry, [hear them through the stock effects](https://opendaw-test.pages.dev/midi-effects-demo.html) on a synth, [see exactly what the engine emitted](https://opendaw-test.pages.dev/midi-effects-rendered-demo.html) on a rendered sine, and [write your own effect](https://opendaw-test.pages.dev/spielwerk-demo.html) in JavaScript with Spielwerk |
 | **[Neon: CZ-101 Phase Distortion](https://opendaw-test.pages.dev/neon-demo.html)** | Play OpenDAW's Casio CZ-101 phase-distortion synth — five original patches round-tripped through real `.syx` bytes, a sysex drop zone, live wave/modulation controls, and an 8-stage envelope visualizer |
 | **[Cubed: 303-Style Acid Bassline](https://opendaw-test.pages.dev/cubed-demo.html)** | Program Cubed's built-in step sequencer live — notes, gates, slides and accents on a 64-step grid, a random pattern generator, JSON and ABL `.pat` pattern exchange, and a synced LFO sweeping the filter |
 | **[Nano: Polyphonic Sampler](https://opendaw-test.pages.dev/nano-demo.html)** | Play one sample across the keyboard — four synthesized samples or your own file, draggable region and loop markers on the waveform, reverse playback, a crossfaded loop, an LFO scanning the sample start, and live read heads for the sounding voices |
@@ -150,7 +149,8 @@ src/
     │   └── SwipeCompLanes.tsx         # Swipe comp lane component
     ├── midi/                          # MIDI demos
     │   ├── midi-recording-demo.tsx    # MIDI recording + step recording
-    │   ├── midi-effects-overview.tsx  # MIDI Effects overview: piano-roll conventions, three sub-demos
+    │   ├── midi-overview.tsx          # MIDI overview: piano-roll primer, note names, the four MIDI demos
+    │   ├── PianoRollExplainer.tsx     # The primer's rolls: four steps, then notes linked to their data
     │   ├── midi-effects-demo.tsx      # Stock MIDI effects, one at a time and stacked
     │   ├── midi-effects-rendered-demo.tsx # The chain on a sine, rendered offline and read back as notes
     │   └── spielwerk-demo.tsx         # Spielwerk: scriptable MIDI effect

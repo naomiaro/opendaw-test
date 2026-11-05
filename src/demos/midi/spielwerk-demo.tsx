@@ -2,7 +2,6 @@
  * Spielwerk demo: the scriptable MIDI effect. A two-bar pattern loops on a Vaporisateur through one
  * Spielwerk on the unit's MIDI chain; the visitor browses pre-built scripts, edits them, compiles on
  * demand, turns the declared parameters, and loads the API reference's examples into the editor.
- * Design: `docs/superpowers/specs/2026-11-03-midi-effects-demos-design.md`.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -230,9 +229,9 @@ function SpielwerkDemo() {
             receives the block's note events and yields notes to the synth. Browse the scripts, edit one, compile it,
             turn the knobs it declares, and watch the lower lane read what the chain emits from the engine. The five
             fixed devices are on the{" "}
-            <a href="/midi-effects-demo.html" style={{ color: "var(--mc-amber)" }}>MIDI Effects demo</a>, and all
-            three pages are on the{" "}
-            <a href="/midi-effects-demos.html" style={{ color: "var(--mc-amber)" }}>MIDI Effects overview</a>.
+            <a href="/midi-effects-demo.html">MIDI Effects demo</a>, and all
+            the MIDI pages are on the{" "}
+            <a href="/midi-demos.html">MIDI overview</a>.
           </p>
         </header>
 

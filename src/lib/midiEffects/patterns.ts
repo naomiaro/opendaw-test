@@ -1,6 +1,6 @@
 /**
  * The MIDI effects demos' patterns: four two-bar phrases at 120 bpm, each written for the devices
- * it serves (the MIDI Effects and Spielwerk demos under `src/demos/midi/`).
+ * it serves (the MIDI pages under `src/demos/midi/`; the audits and the Nano play-modes page read them too).
  * `writePattern` replaces a region's notes the way the placement audit does: the old boxes go in
  * one transaction, the new ones come in an `append` folded into the same undo step.
  */
@@ -36,7 +36,7 @@ const HALF_BAR = BAR_PPQN / 2;
 const EIGHTH = Quarter / 2;
 const THIRTY_SECOND = SemiQuaver / 2;
 
-/** Am, F, C, G as triads around C4, one per half bar, each held its half bar. */
+/** Am, F, C, G as triads around C3, one per half bar, each held its half bar. */
 const CHORD_TRIADS: readonly (readonly number[])[] = [
   [57, 60, 64],
   [53, 57, 60],
@@ -66,7 +66,7 @@ const melody: readonly PatternNote[] = [0, 1].flatMap((bar) =>
   }))
 );
 
-/** Quarter-note roots in the C2 octave (A2, F2, C2, G2): the chord roots an octave down, C two so it stays in the octave. */
+/** Quarter-note roots in the C1 octave (A1, F1, C1, G1): the chord roots an octave down, C two so it stays in the octave. */
 const BASS_ROOTS: readonly number[] = [45, 41, 36, 43];
 const bass: readonly PatternNote[] = Array.from({ length: 8 }, (_, k) => ({
   position: k * Quarter,
@@ -97,7 +97,7 @@ export const PATTERNS: readonly Pattern[] = [
   {
     id: "bass",
     label: "Bass",
-    blurb: "Quarter-note roots down in the second octave. Pitch octaves, and an Arpeggio with three or more octaves, have room to climb.",
+    blurb: "Quarter-note roots down in the C1 octave. Pitch octaves, and an Arpeggio with three or more octaves, have room to climb.",
     notes: bass,
   },
 ];

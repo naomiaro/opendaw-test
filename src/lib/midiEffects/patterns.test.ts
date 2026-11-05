@@ -110,7 +110,7 @@ describe("patterns", () => {
     expect(notes[7].velocity).toBeCloseTo(1.0);
   });
 
-  it("bass: 8 quarter-note roots around C2 at velocity 0.9", () => {
+  it("bass: 8 quarter-note roots around C1 at velocity 0.9", () => {
     const notes = patternById("bass").notes;
     expect(notes).toHaveLength(8);
     for (const n of notes) {

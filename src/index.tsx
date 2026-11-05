@@ -157,16 +157,10 @@ const GROUPS: Group[] = [
           "Loop-record takes on a single tape, then swipe across take lanes to splice a comp — Logic-style comping with transparent engine crossfades at every seam, undo per swipe.",
       },
       {
-        href: "/midi-recording-demo.html",
-        title: "MIDI Recording",
+        href: "/midi-demos.html",
+        title: "MIDI",
         blurb:
-          "Record MIDI notes with device selection, channel filtering, an on-screen piano keyboard, and step-recording mode for precise note-by-note entry.",
-      },
-      {
-        href: "/midi-effects-demos.html",
-        title: "MIDI Effects",
-        blurb:
-          "Three demos on the MIDI chain: hear Arpeggio, Note Filter, Pitch, Velocity and Zeitgeist on a synth, see what the engine emits from them on a rendered sine (velocity and cents included), and write your own device in JavaScript with Spielwerk.",
+          "New to MIDI? Learn to read a piano roll and why middle C has two names, then record notes, hear them through Arpeggio, Note Filter, Pitch, Velocity and Zeitgeist, see exactly what the engine emitted, and write your own effect in JavaScript with Spielwerk.",
       },
     ],
   },
@@ -282,7 +276,6 @@ const App: React.FC = () => {
               and run.{" "}
               <a
                 href="/docs/"
-                style={{ color: "var(--mc-amber)", textDecoration: "none", borderBottom: "1px solid var(--mc-amber)" }}
               >
                 Read the Handbook &rarr;
               </a>
