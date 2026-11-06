@@ -42,6 +42,9 @@ export const STILLNESS_SENTENCE: Readonly<Record<Stillness, string>> = {
   "ends-only": "At this Duration every note still starts on a cell boundary, so only where the notes end shifts. Set the Duration to twice the note spacing to hear it swing.",
 };
 
+/** Above every stillness: nothing moves whatever the settings. */
+export const SWITCHED_OFF_SENTENCE = "This Zeitgeist is switched off, so nothing moves. A try below switches it on.";
+
 /** The Zeitgeist's groove when it is a shuffle, the only kind these pages offer controls for; null otherwise. */
 export function zeitgeistShuffleOf(adapter: ZeitgeistDeviceBoxAdapter): GrooveShuffleBoxAdapter | null {
   const groove = adapter.groove();

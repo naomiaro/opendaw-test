@@ -89,7 +89,7 @@ export const MidiEffectCard: React.FC<MidiEffectCardProps> = ({ project, entry, 
         )}
       </div>
       {shuffle && pattern && onPatternChange && (
-        <ZeitgeistGuide editing={project.editing} shuffle={shuffle} pattern={pattern} onPatternChange={onPatternChange} />
+        <ZeitgeistGuide editing={project.editing} shuffle={shuffle} pattern={pattern} onPatternChange={onPatternChange} enabled={entry.enabled} onEnabledChange={onEnabledChange} />
       )}
       {!compact && (
         <>

@@ -4,7 +4,7 @@
  * sampled position, newly off closes it; a position that fell below the previous one (a loop wrap or
  * a seek back) drops every bar first. The position passed is region-local (the page subtracts the
  * region start), so it falls on every wrap. Velocity is not in the set, a note shorter than a frame can be
- * missed, and two hits of one pitch less than a frame apart can read as one bar (a pushed Zeitgeist off-beat and the next
+ * missed, and two hits of one pitch less than a frame apart can read as one bar (a pushed Zeitgeist off-beat ending just before the next
  * downbeat), so the lane is for Arpeggio steps and Pitch moves, not for Velocity or fine timing.
  * Closed bars older than `horizon` pulses behind the position are dropped. A `Bar` is structurally a
  * `LaneNote` without velocity, which is how the lane draws it without this file importing a component.

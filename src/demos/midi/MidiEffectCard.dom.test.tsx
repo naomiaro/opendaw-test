@@ -12,18 +12,19 @@ import { patternById } from "@/lib/midiEffects/patterns";
 import { zeitgeistShuffleOf } from "@/lib/midiEffects/zeitgeistGuide";
 
 describe("MidiEffectCard's Zeitgeist guide", () => {
-  const setup = (patternId: "chords" | "eighths") => {
+  const setup = (patternId: "chords" | "sixteenths", enabled = true) => {
     const { box, editing, boxAdapters, adapter } = midiEffectFixture("zeitgeist");
     const shuffle = zeitgeistShuffleOf(adapter as ZeitgeistDeviceBoxAdapter)!;
     const project = { editing, boxAdapters } as unknown as Project;
     const onPatternChange = vi.fn();
+    const onEnabledChange = vi.fn();
     const card = (compact = false) => (
       <Theme>
-        <MidiEffectCard project={project} entry={{ id: "zeitgeist", box, enabled: true }} onEnabledChange={() => {}} onChainChange={() => {}} page="effects"
+        <MidiEffectCard project={project} entry={{ id: "zeitgeist", box, enabled }} onEnabledChange={onEnabledChange} onChainChange={() => {}} page="effects"
           compact={compact} pattern={patternById(patternId)} onPatternChange={onPatternChange} />
       </Theme>
     );
-    return { card, shuffle, onPatternChange };
+    return { card, shuffle, onPatternChange, onEnabledChange };
   };
 
   it("says so when nothing moves on this pattern, and stops saying it once the Duration moves a note", () => {
@@ -42,6 +43,22 @@ describe("MidiEffectCard's Zeitgeist guide", () => {
     expect(onPatternChange).toHaveBeenCalledWith("eighths");
     expect(shuffle.namedParameter.duration.getValue()).toBe(960);
     expect(shuffle.namedParameter.amount.getValue()).toBeCloseTo(0.75, 6);
+  });
+
+  it("a device switched off says so on a pattern that would otherwise move, and a Try switches it on", () => {
+    const { card, onEnabledChange } = setup("sixteenths", false);
+    render(card());
+    expect(screen.getByRole("status").textContent).toMatch(/switched off/i);
+    fireEvent.click(screen.getByRole("button", { name: /Eighths/ }));
+    expect(onEnabledChange).toHaveBeenCalledWith(true);
+  });
+
+  it("a Try leaves a device that is on alone, and there is no sentence where notes move", () => {
+    const { card, onEnabledChange } = setup("sixteenths");
+    render(card());
+    expect(screen.queryByRole("status")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Eighths/ }));
+    expect(onEnabledChange).not.toHaveBeenCalled();
   });
 
   it("a stack's compact card carries neither", () => {

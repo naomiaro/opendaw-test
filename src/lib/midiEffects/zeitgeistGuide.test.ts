@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { GrooveShuffleBoxAdapter, ZeitgeistDeviceBoxAdapter } from "@opendaw/studio-adapters";
 import { midiEffectFixture } from "@/lib/testing/boxGraphFixtures";
-import { patternById, REGION_START_PPQN } from "./patterns";
+import { patternById, REGION_START_PPQN, withGaps } from "./patterns";
 import { applyZeitgeistTry, stillnessOf, ZEITGEIST_TRIES, zeitgeistShuffleOf } from "./zeitgeistGuide";
 
 const zeitgeist = () => {
@@ -28,14 +28,20 @@ describe("stillnessOf", () => {
     expect(stillnessOf(patternById("quarters").notes, 0.75, 1920)).toBeNull();
   });
   it("counts cells from position 0, not the region's start: a 3-bar cell is not on the region's grid", () => {
+    // region-local this note starts and ends on a boundary; absolute it does neither
+    const note = { position: 0, duration: 11520, pitch: 60, velocity: 1 };
     expect(REGION_START_PPQN % 11520).not.toBe(0);
-    expect(stillnessOf(patternById("chords").notes, 0.75, 11520)).toBeNull();
+    expect(stillnessOf([note], 0.75, 11520)).toBeNull();
+  });
+  it("reads the notes in the region: gapped Melody at 1/8 starts on the grid, but its shortened ends move", () => {
+    expect(stillnessOf(patternById("melody").notes, 0.6, 480)).toBe("nothing");
+    expect(stillnessOf(withGaps(patternById("melody"), 0.9).notes, 0.6, 480)).toBe("ends-only");
   });
   it("at 50 % time runs straight on any pattern", () => {
     expect(stillnessOf(patternById("sixteenths").notes, 0.5, 480)).toBe("straight");
   });
-  it("a value that only rounds to 50 % on the label still moves notes", () => {
-    expect(stillnessOf(patternById("sixteenths").notes, 0.51, 480)).toBeNull();
+  it("one slider step off 50 % still moves notes, though the label rounds to 50 %", () => {
+    expect(stillnessOf(patternById("sixteenths").notes, 0.495, 480)).toBeNull();
   });
 });
 

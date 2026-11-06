@@ -483,11 +483,11 @@ other answer, a corrupt register, or one of another rate or bpm ends the run in 
 
 ### The Zeitgeist's guide (both MIDI Effects pages)
 A groove leaves its cell boundaries where they are, so a note that starts on one does not move. On most patterns at the default
-Duration (1/8) that is every note, and the device looks broken: Chords at 90 % moves nothing, Melody moves nothing until 1/4.
+Duration (1/8) that is every note, and the device looks broken: on the Effects page Chords at 90 % moves nothing, Melody moves nothing at 1/24, 1/16 or 1/8. The Rendered page's notes are gapped, so their ends move there and it says so: the guide reads the notes in the region.
 `stillnessOf` (`src/lib/midiEffects/zeitgeistGuide.ts`) says which it is, with cells counted from position 0, and `ZeitgeistGuide.tsx` shows the sentence
 under the controls of a single card (not a stack's compact one) with three tries at 75 %, each Duration twice its pattern's spacing: Sixteenths 1/8, Eighths 1/4,
 Quarters 1/2, the off-beat 61, 122 and 245 ms late. Eighths and Quarters are one pitch with a gap between the hits: legato would hide the timing, and repeated legato
-notes do not even read as separate on the emitted lane. That lane samples once per frame, so a pushed off-beat less than a frame before the next downbeat can draw as one long
+notes do not even read as separate on the emitted lane. That lane samples once per frame, so a pushed off-beat ending less than a frame before the next downbeat can draw as one long
 note (Sixteenths at 1/8: 32 bars of 32 up to 80 %, 31 at 85 %, 25 at 90 %, 17 at 95 %; the Rendered page reads 32 at 90 %). A note the groove moves across the
 loop end is not played (Sixteenths at 75 % on this two-bar loop: 25 of 32 at 2 bars, 3 at 16 bars).
 
