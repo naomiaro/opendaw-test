@@ -3,7 +3,7 @@
 **Title:** With delay compensation that is not a whole number of quanta, `OfflineEngineRenderer.renderSection` with
 `tail: false` drops frames at the first chunk boundary: everything after it comes out early, and a sustained sound jumps there
 
-**Issue:** not filed. Draft: [`drafts/TO-REVIEW-openDAW-render-section-latency-gap.md`](./drafts/TO-REVIEW-openDAW-render-section-latency-gap.md)
+**Issue:** [openDAW#530](https://github.com/andremichelle/openDAW/issues/530) (filed 2026-11-05). Body as filed: [`drafts/posted-openDAW-530-render-section-latency-gap.md`](./drafts/posted-openDAW-530-render-section-latency-gap.md)
 
 **Verified against:** `@opendaw/studio-sdk@0.0.181` (`5820e7791`), Chrome on macOS. Source citations are read at that tag.
 The code cited is unchanged on upstream main at `10088021d` (2026-11-05).

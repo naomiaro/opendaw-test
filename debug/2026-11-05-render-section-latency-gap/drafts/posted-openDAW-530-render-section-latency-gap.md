@@ -1,4 +1,4 @@
-<!-- TO REVIEW, not posted. The repro URL and the note link go live when the PR holding them merges. -->
+<!-- Posted as https://github.com/andremichelle/openDAW/issues/530 on 2026-11-05. Body as filed. -->
 
 # `renderSection` drops frames at frame 48000 when delay compensation is not a whole number of quanta
 

@@ -460,6 +460,7 @@ const App: React.FC = () => {
           <DebugLinkBar
             links={[
               { label: "Investigation note", href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-11-05-render-section-latency-gap/note.md", kind: "note" },
+              { label: "openDAW#530", href: "https://github.com/andremichelle/openDAW/issues/530", kind: "note" },
             ]}
           />
           <Text size="2" color="gray">

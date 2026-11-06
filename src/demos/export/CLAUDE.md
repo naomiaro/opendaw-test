@@ -78,7 +78,7 @@ Pass a copy (not the live project) — the renderer connects the source's
 worker trims the settled delay compensation out of the first step, so a second `step` on one
 renderer loses frames unless everything before it, trim included, comes to whole quanta. The SDK's own
 `renderSection` with `tail: false` hits this when a render, all passes counted, runs past 48000 frames
-with a latency that is not whole quanta (measured, `debug/2026-11-05-render-section-latency-gap/note.md`).
+with a latency that is not whole quanta (measured, openDAW#530, `debug/2026-11-05-render-section-latency-gap/note.md`).
 A stock Maximizer's look-ahead is on by default (the Compressor's is off), and the one `Project.new` puts on
 the master has it off.
 
