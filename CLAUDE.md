@@ -1192,7 +1192,9 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   fixes/features against the WASM dists (`studio-core-wasm`); TS-dist greps are only for
   historical comparison.
 - Proving a render-path migration didn't change audio: render the same scenario through
-  old and new code and compare WAV SHA-256 — byte-identical beats any threshold argument.
+  old and new code and compare WAV SHA-256 — byte-identical beats any threshold argument. A
+  mixdown of several units built twice differs in its last bits unless their UUIDs are fixed: UUID
+  order sets the summing order (`src/demos/export/CLAUDE.md`).
   Commit (or stash) work-in-progress BEFORE `git checkout main -- <file>` A/B swaps: the
   checkout silently clobbers uncommitted edits to that file.
 - Report SDK bugs as GitHub issues on `andremichelle/openDAW` (tracker is actively worked —

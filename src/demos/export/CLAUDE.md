@@ -90,6 +90,29 @@ the render and restoring them via raw `beginTransaction` / `endTransaction` (no 
 A two-pass loop keeps the second pass. Every offline path settles plug-in delay compensation
 and trims it from the start before the first frame is kept.
 
+### Audio Unit UUIDs Set the Summing Order, So They Reach a Mixdown's Bits
+The engine does not sort units by mixer order ("order is not audible",
+`crates/engine/src/audio_unit/mod.rs` `observe_audio_units`); the order it sums them in follows
+their UUIDs, and 32-bit float addition depends on order. Measured on 0.0.182, five units, 27 page
+loads, both page rates (Chrome, one Mac):
+- A mixdown of the same project through `project.copy()` is bit-identical: a copy keeps its UUIDs.
+- The same content BUILT AGAIN gets fresh UUIDs: every mix row differs, about 40 % of frames, at most
+  1.19e-7 (−138.5 dBFS) without the master Maximizer, up to 2.1e-6 (−113 dBFS) through it. A
+  mismatch of this size between two builds is rounding, not a regression.
+- One unit soloed by muting the others, and the stems, stay bit-identical on fresh UUIDs.
+
+To compare a mixdown across builds or SDK versions, replace `UUID.generate` with an ascending counter
+BEFORE `initializeOpenDAW` (`Project.new`, `createInstrument` and `insertEffect` all reach it; code in
+`documentation/10-export.md`, "Bit-Exact Renders and Audio Unit UUIDs"). Ascending, not seeded: the
+hashes held with 0, 3 and 17 extra `generate()` calls per unit, where a seeded stream changes every
+later UUID after one extra call. Descending gives a different, equally stable hash, the positive
+control that order is the cause. Assert the units' UUIDs read back as expected, so a change upstream
+that stops the replacement reaching them fails loudly.
+
+Hash the audio, never `project.toArrayBuffer()`: `ProjectSkeleton` stamps the creation time, so those
+bytes differ on every build. Not measured: other machines and browsers, buses and aux sends in the
+mix.
+
 ### Mutate-Copy-Restore Pattern for Offline Rendering
 `project.copy()` creates new box instances — you cannot modify the original project's
 boxes through the copy's `editing.modify()` (throws "Modification only prohibited in
