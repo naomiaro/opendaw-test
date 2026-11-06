@@ -73,7 +73,7 @@ describe("planAccept", () => {
   it("takes a known-finding row whose failed invariant names a finding of that invariant", () => {
     const labelled = record({
       id: "a", standing: "known-finding", read: read({ hash: "h" }),
-      invariants: [{ invariant: "samples-equal-warm-pass", holds: false, detail: "", finding: "one-frame-early-44100" }]
+      invariants: [{ invariant: "impulse-on-reference", holds: false, detail: "", finding: "loop-pass-one-frame-short" }]
     });
     expect(planAccept(summary([labelled]), null, new Set(["a"]), force).register.rows.a.hash).toBe("h");
   });
@@ -86,7 +86,7 @@ describe("planAccept", () => {
       ["clean over no invariants", record({ standing: "clean", invariants: [] })],
       ["a finding of another invariant", record({
         standing: "known-finding",
-        invariants: [{ invariant: "no-jump", holds: false, detail: "", finding: "one-frame-early-44100" }]
+        invariants: [{ invariant: "no-jump", holds: false, detail: "", finding: "loop-pass-one-frame-short" }]
       })],
       ["a finding no entry names", record({
         standing: "known-finding",
@@ -165,15 +165,15 @@ describe("staleFindings", () => {
   };
   it("reports a finding whose rows now hold as no longer reproducing", () => {
     const stale = staleFindings(summary(rows.map((r) => held(r.id)), { sampleRate: 44100 }));
-    expect(stale.map((s) => s.name)).toContain("one-frame-early-44100");
-    expect(stale.find((s) => s.name === "one-frame-early-44100")!.rows.length).toBeGreaterThan(0);
+    expect(stale.map((s) => s.name)).toContain("loop-pass-one-frame-short");
+    expect(stale.find((s) => s.name === "loop-pass-one-frame-short")!.rows.length).toBeGreaterThan(0);
   });
   it("does not report one whose invariant still fails, or a row that errored", () => {
     const failing = rows.map((r) => {
       const h = held(r.id);
-      return { ...h, invariants: h.invariants.map((i) => i.invariant === "samples-equal-warm-pass" ? { ...i, holds: false } : i) };
+      return { ...h, invariants: h.invariants.map((i) => i.invariant === "impulse-on-reference" ? { ...i, holds: false } : i) };
     });
-    expect(staleFindings(summary(failing, { sampleRate: 44100 })).map((s) => s.name)).not.toContain("one-frame-early-44100");
+    expect(staleFindings(summary(failing, { sampleRate: 44100 })).map((s) => s.name)).not.toContain("loop-pass-one-frame-short");
     const errored = rows.map((r) => record({ id: r.id, error: "x", read: null, standing: "errored" }));
     expect(staleFindings(summary(errored, { sampleRate: 44100 }))).toEqual([]);
   });

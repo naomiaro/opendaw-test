@@ -77,11 +77,11 @@ describe("formatRows and runLine", () => {
   it("prints id, standing, register, hash prefix, frames, latency and the failing invariants", () => {
     const failing = record({
       id: "b", standing: "known-finding", register: "changed", shiftFrames: -1, reportedLatencyFrames: 64,
-      invariants: [{ invariant: "section-is-slice", holds: false, detail: "", finding: "one-frame-early-44100" }]
+      invariants: [{ invariant: "section-is-slice", holds: false, detail: "", finding: "loop-pass-one-frame-short" }]
     });
     expect(formatRows(summary([record(), failing]))).toEqual([
       "a | clean | unregistered | 0123456789 | 4 | 0 | -",
-      "b | known-finding | changed shift -1 | 0123456789 | 4 | 64 | section-is-slice (one-frame-early-44100)"
+      "b | known-finding | changed shift -1 | 0123456789 | 4 | 64 | section-is-slice (loop-pass-one-frame-short)"
     ]);
   });
   it("counts the three standings and the errored on the run line", () => {
@@ -246,6 +246,6 @@ describe("the script", () => {
     const result = run(root, []);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain(`clean ${rows.length}, known finding 0, failing 0, errored 0`);
-    expect(result.stdout).toContain("no longer reproducing: one-frame-early-44100");
+    expect(result.stdout).toContain("no longer reproducing: loop-pass-one-frame-short");
   });
 });

@@ -53,6 +53,37 @@ const hasNoFrames = (r: RenderedRow): boolean => r.samples.length === 0 || r.sam
 const rangeFramesOf = (row: ExportRow, pageRate: number): number => Math.round(row.rangeSeconds * pageRate);
 const rangeStartFrame = (row: ExportRow, pageRate: number): number => Math.round(row.rangeStartSeconds * pageRate);
 
+const largestDifferencePast = (
+  rendered: RenderedRow, reference: RenderedRow, offset: number, shared: number, from: number
+): number => {
+  let largest = 0;
+  for (let c = 0; c < rendered.samples.length; c++) {
+    const x = rendered.samples[c];
+    const y = reference.samples[c];
+    for (let frame = from; frame < shared; frame++) {
+      const delta = Math.abs(x[frame] - y[offset + frame]);
+      if (Number.isNaN(delta)) return Infinity;
+      if (delta > largest) largest = delta;
+    }
+  }
+  return largest;
+};
+
+/** With nothing left to compare past the delay it proves nothing, so it reads false. */
+const isDelayedBy = (
+  rendered: RenderedRow, reference: RenderedRow, offset: number, shared: number, frames: number
+): boolean => {
+  if (!(frames > 0) || frames >= shared) return false;
+  for (let c = 0; c < rendered.samples.length; c++) {
+    const a = bitsOf(rendered.samples[c]);
+    const b = bitsOf(reference.samples[c]);
+    for (let frame = frames; frame < shared; frame++) {
+      if (a[frame] !== b[offset + frame - frames]) return false;
+    }
+  }
+  return true;
+};
+
 /**
  * Bit patterns of the row's frames against the reference from `offset`, over the frames both hold. The
  * range's frames must all be compared: a short render or a short reference fails by itself.
@@ -88,10 +119,19 @@ const compareToSlice = (rendered: RenderedRow, reference: RenderedRow, offset: n
   if (first >= 0) {
     return fail(
       `differs at frame ${first} of channel ${firstChannel} (reference frame ${offset + first}), last at ${last}, ${shared} frames compared`,
-      { earlyFrames: null, firstDifferingFrame: first, lastDifferingFrame: last, largestDifference: largest }
+      {
+        ...NO_EVIDENCE, firstDifferingFrame: first, lastDifferingFrame: last, largestDifference: largest,
+        differencePast: (from) => largestDifferencePast(rendered, reference, offset, shared, from),
+        sameDelayedBy: (frames) => isDelayedBy(rendered, reference, offset, shared, frames)
+      }
     );
   }
-  if (shared < rangeFrames) return fail(`only ${shared} of the range's ${rangeFrames} frames could be compared (render ${rowFrames}, reference from frame ${offset}: ${reference.samples[0].length - offset})`);
+  if (shared < rangeFrames) {
+    return fail(
+      `only ${shared} of the range's ${rangeFrames} frames could be compared (render ${rowFrames}, reference from frame ${offset}: ${reference.samples[0].length - offset})`,
+      { ...NO_EVIDENCE, comparedFrames: shared }
+    );
+  }
   const spare = rowFrames - shared;
   const tail = spare > 0 ? `, ${spare} frames past the reference not compared` : "";
   return pass(`${shared} frames bit-identical from reference frame ${offset}${tail}`);
@@ -169,7 +209,7 @@ const judge = (
       const { step, frame } = read.largestStep;
       const detail = `largest step ${step} at frame ${frame}, limit ${limit}`;
       if (frame < 0 || step === 0) return failUncompared(`no step measured (${detail}): a silent or empty window proves nothing`);
-      return step <= limit ? pass(detail) : fail(detail);
+      return step <= limit ? pass(detail) : fail(detail, { ...NO_EVIDENCE, largestStep: { step, frame } });
     }
     case "muted-latent-unchanged": {
       const missing = needs("no-latency", refs.noLatency);
@@ -238,8 +278,8 @@ const judge = (
       return energy === null || energy === 0 ? pass(`exactly the range's ${rangeFrames} frames`) : fail(`rms past the range ${energy}`);
     }
     case "proves-something": {
-      if (read.nonFinite > 0) return fail(`${read.nonFinite} non-finite samples`);
-      if (!(read.peak > 0) || read.frames === 0) return fail(`silent render: peak ${read.peak}, ${read.frames} frames`);
+      if (read.nonFinite > 0) return fail(`${read.nonFinite} non-finite samples`, { ...NO_EVIDENCE, silent: false });
+      if (!(read.peak > 0) || read.frames === 0) return fail(`silent render: peak ${read.peak}, ${read.frames} frames`, { ...NO_EVIDENCE, silent: true });
       return pass(`peak ${read.peak}, ${read.frames} frames`);
     }
     case "latency-as-expected": {

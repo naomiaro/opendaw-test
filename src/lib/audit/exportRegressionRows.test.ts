@@ -111,11 +111,11 @@ describe("exportRegressionRows", () => {
     expect(LOOP_ON_COPY_SECONDS).toBe(2);
   });
   it("labels the one frame only where it was measured", async () => {
-    const { findingFor } = await import("./exportRegressionFindings.ts");
+    const { findingFor, NO_EVIDENCE } = await import("./exportRegressionFindings.ts");
     const row = buildRows(44100).find((r) => r.id === "core-none-section-loop-twice")!;
-    const one = { earlyFrames: 1, firstDifferingFrame: null, lastDifferingFrame: null, largestDifference: null };
-    expect(findingFor(row, "samples-equal-warm-pass", 44100, one)?.name).toBe("one-frame-early-44100");
-    expect(findingFor(row, "samples-equal-warm-pass", 48000, one)).toBeNull();
+    const one = { ...NO_EVIDENCE, earlyFrames: 1 };
+    expect(findingFor(row, "impulse-on-reference", 44100, one)?.name).toBe("loop-pass-one-frame-short");
+    expect(findingFor(row, "impulse-on-reference", 48000, one)).toBeNull();
     expect(findingFor(row, "section-is-slice", 44100, one)).toBeNull();
     expect(findingFor(row, "no-jump", 44100, one)).toBeNull();
   });
