@@ -228,9 +228,26 @@ const judge = (
   }
 };
 
+/**
+ * The one shift every impulse of the row shows against the reference's hits in its range (positive: early),
+ * read once per row so every invariant of the row sees the same measurement; null when nothing can be read.
+ */
+const rowEarlyFrames = (
+  row: ExportRow, rendered: RenderedRow, reference: RenderedRow | null, pageRate: number
+): number | null => {
+  if (reference === null) return null;
+  const start = rangeStartFrame(row, pageRate);
+  const end = start + rangeFramesOf(row, pageRate);
+  const expected = reference.read.impulseHits.filter((hit) => hit >= start && hit < end).map((hit) => hit - start);
+  return uniformEarly(expected, [...rendered.read.impulseHits]);
+};
+
 export function judgeInvariants(row: ExportRow, rendered: RenderedRow, refs: Refs, pageRate: number): InvariantResult[] {
+  const earlyFrames = rowEarlyFrames(row, rendered, refs.reference, pageRate);
   return row.invariants.map((invariant) => {
-    const { holds, detail, compared, evidence } = judge(invariant, row, rendered, refs, pageRate);
+    const outcome = judge(invariant, row, rendered, refs, pageRate);
+    const { holds, detail, compared } = outcome;
+    const evidence = { ...outcome.evidence, earlyFrames };
     const finding = holds || !compared ? null : findingFor(row, invariant, pageRate, evidence)?.name ?? null;
     return { invariant, holds, detail, finding };
   });

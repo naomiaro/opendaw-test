@@ -181,6 +181,26 @@ describe("judgeInvariants", () => {
     const other = judgeInvariants({ ...loop, invariants: ["proves-something"] }, rendered([0], {}, { peak: 0 }), { reference: null, noLatency: null }, 44100)[0];
     expect(other.finding).toBeNull();
   });
+  it("names one-frame-early-44100 on both invariants of a row shifted exactly one frame, and stands known-finding", () => {
+    const loop = buildRows(44100).find((x) => x.id === "core-none-section-loop-twice")!;
+    const frames = Math.round(loop.rangeSeconds * 44100);
+    const hits = [5000, 20000, 40000];
+    const left = Float32Array.from({ length: frames }, (_, i) => Math.sin(i / 7));
+    const right = new Float32Array(frames);
+    hits.forEach((h) => (right[h] = 0.9));
+    const earlyOf = (c: Float32Array) => Float32Array.from({ length: frames }, (_, i) => c[i + 1] ?? 0);
+    const ref: RenderedRow = { ...rendered([0]), samples: [left, right], read: read({ frames, channels: 2, impulseHits: hits }) };
+    const got: RenderedRow = {
+      ...rendered([0]), samples: [earlyOf(left), earlyOf(right)],
+      read: read({ frames, channels: 2, impulseHits: hits.map((h) => h - 1) })
+    };
+    const results = judgeInvariants({ ...loop, invariants: ["section-is-slice", "impulse-on-reference"] }, got, { reference: ref, noLatency: null }, 44100);
+    expect(results.map((r) => r.holds)).toEqual([false, false]);
+    expect(results.map((r) => r.finding)).toEqual(["one-frame-early-44100", "one-frame-early-44100"]);
+    expect(rowStanding(results, null)).toBe("known-finding");
+    const jump = judgeInvariants({ ...loop, invariants: ["section-is-slice", "no-jump"] }, { ...got, read: { ...got.read, largestStep: { step: 5, frame: 9 } } }, { reference: ref, noLatency: null }, 44100);
+    expect(rowStanding(jump, null)).toBe("failing");
+  });
   it("names the slice finding only on a one-frame-early measurement", () => {
     const loop = buildRows(44100).find((x) => x.id === "core-none-section-loop-twice")!;
     const r = { ...loop, invariants: ["section-is-slice" as const], rangeSeconds: 5 / 44100 };
