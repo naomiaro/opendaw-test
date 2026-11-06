@@ -5,13 +5,16 @@
  */
 import React, { useEffect, useMemo, useState } from "react";
 import { Button, Flex, Switch, Text } from "@radix-ui/themes";
-import { Devices, VelocityDeviceBoxAdapter } from "@opendaw/studio-adapters";
+import { Devices, VelocityDeviceBoxAdapter, ZeitgeistDeviceBoxAdapter } from "@opendaw/studio-adapters";
 import type { Project } from "@opendaw/studio-core";
 import { ParamSlider } from "@/components/ParamSlider";
 import { ParamSwitch } from "@/components/ParamSwitch";
 import { observeParameter, readParameter } from "@/lib/parameterBinding";
 import { CODE_BLOCK_STYLE } from "@/lib/design/consoleTheme";
 import { DEVICES, deviceParameters, reseedVelocity, type DeviceParameter, type LanePage } from "@/lib/midiEffects/devices";
+import type { Pattern, PatternId } from "@/lib/midiEffects/patterns";
+import { zeitgeistShuffleOf } from "@/lib/midiEffects/zeitgeistGuide";
+import { ZeitgeistGuide } from "./ZeitgeistGuide";
 import type { ChainEntry } from "./useMidiChain";
 
 export interface MidiEffectCardProps {
@@ -24,6 +27,9 @@ export interface MidiEffectCardProps {
   compact?: boolean;
   /** Which page's lanes the card's lane note describes. */
   page: LanePage;
+  /** The pattern now in the region, and how to change it: the Zeitgeist's guide reads the one and offers the other. */
+  pattern?: Pattern;
+  onPatternChange?(id: PatternId): void;
 }
 
 const switchStates = (parameters: readonly DeviceParameter[]): Record<string, boolean> =>
@@ -42,11 +48,12 @@ function useSwitchStates(parameters: readonly DeviceParameter[]): Record<string,
   return states;
 }
 
-export const MidiEffectCard: React.FC<MidiEffectCardProps> = ({ project, entry, onEnabledChange, onChainChange, compact = false, page }) => {
+export const MidiEffectCard: React.FC<MidiEffectCardProps> = ({ project, entry, onEnabledChange, onChainChange, compact = false, page, pattern, onPatternChange }) => {
   const spec = DEVICES[entry.id];
   const adapter = useMemo(() => project.boxAdapters.adapterFor(entry.box, Devices.isMidiEffect), [project, entry.box]);
   const parameters = useMemo(() => deviceParameters(adapter), [adapter]);
   const switches = useSwitchStates(parameters);
+  const shuffle = !compact && adapter instanceof ZeitgeistDeviceBoxAdapter ? zeitgeistShuffleOf(adapter) : null;
   const reseed = adapter instanceof VelocityDeviceBoxAdapter
     ? () => {
         reseedVelocity(project.editing, adapter);
@@ -81,6 +88,9 @@ export const MidiEffectCard: React.FC<MidiEffectCardProps> = ({ project, entry, 
           </Flex>
         )}
       </div>
+      {shuffle && pattern && onPatternChange && (
+        <ZeitgeistGuide editing={project.editing} shuffle={shuffle} pattern={pattern} onPatternChange={onPatternChange} />
+      )}
       {!compact && (
         <>
           <p className="mc-prose" style={{ marginTop: 4 }}>{spec.what}</p>

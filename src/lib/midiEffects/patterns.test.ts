@@ -66,8 +66,18 @@ describe("writePattern", () => {
 });
 
 describe("patterns", () => {
-  it("has the four patterns in order", () => {
-    expect(PATTERNS.map((p) => p.id)).toEqual(["chords", "sixteenths", "melody", "bass"]);
+  it("has the six patterns in order", () => {
+    expect(PATTERNS.map((p) => p.id)).toEqual(["chords", "sixteenths", "eighths", "quarters", "melody", "bass"]);
+  });
+
+  it.each([["eighths", 16, 480, 240], ["quarters", 8, 960, 480]] as const)("%s: %i separate hits on one pitch, loud and soft in turn", (id, count, spacing, length) => {
+    const notes = patternById(id).notes;
+    expect(notes).toHaveLength(count);
+    expect(new Set(notes.map((n) => n.pitch)).size).toBe(1);
+    expect(notes.map((n) => n.position)).toEqual(Array.from({ length: count }, (_, k) => k * spacing));
+    expect(notes.map((n) => n.velocity).slice(0, 4)).toEqual([1, 0.6, 1, 0.6]);
+    // half the spacing: the gap is what the timing is heard and seen against
+    for (const n of notes) expect(n.duration).toBe(length);
   });
 
   it("keeps every note inside two bars with a positive duration", () => {

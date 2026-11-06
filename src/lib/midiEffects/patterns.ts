@@ -1,5 +1,5 @@
 /**
- * The MIDI effects demos' patterns: four two-bar phrases at 120 bpm, each written for the devices
+ * The MIDI effects demos' patterns: six two-bar phrases at 120 bpm, each written for the devices
  * it serves (the MIDI pages under `src/demos/midi/`; the audits and the Nano play-modes page read them too).
  * `writePattern` replaces a region's notes the way the placement audit does: the old boxes go in
  * one transaction, the new ones come in an `append` folded into the same undo step.
@@ -14,7 +14,7 @@ export const PATTERN_PPQN = 2 * BAR_PPQN;
 /** Where the note region starts: bar 1, so nothing sounds in bar 0 and the render's start is clear of every onset. */
 export const REGION_START_PPQN: ppqn = BAR_PPQN;
 
-export type PatternId = "chords" | "sixteenths" | "melody" | "bass";
+export type PatternId = "chords" | "sixteenths" | "eighths" | "quarters" | "melody" | "bass";
 
 export interface PatternNote {
   /** region-local pulses */
@@ -55,6 +55,15 @@ const sixteenths: readonly PatternNote[] = Array.from({ length: 32 }, (_, k) => 
   velocity: k % 2 === 0 ? 1 : 0.6,
 }));
 
+/** One pitch, loud and soft in turn, each note half its spacing: the gap is what the timing is heard and seen against. */
+const hits = (spacing: ppqn): readonly PatternNote[] =>
+  Array.from({ length: PATTERN_PPQN / spacing }, (_, k) => ({
+    position: k * spacing,
+    duration: spacing / 2,
+    pitch: 60,
+    velocity: k % 2 === 0 ? 1 : 0.6,
+  }));
+
 /** One bar of eighths in C major within an octave, velocities rising 0.4 to 1.0, repeated. */
 const MELODY_BAR: readonly number[] = [60, 64, 67, 69, 67, 64, 62, 71];
 const melody: readonly PatternNote[] = [0, 1].flatMap((bar) =>
@@ -87,6 +96,18 @@ export const PATTERNS: readonly Pattern[] = [
     label: "Sixteenths",
     blurb: "Straight sixteenths on one pitch, velocities alternating loud and soft. Zeitgeist moves the off-beats; a Velocity magnet flattens the alternation.",
     notes: sixteenths,
+  },
+  {
+    id: "eighths",
+    label: "Eighths",
+    blurb: "Straight eighths on one pitch, loud and soft in turn, with a gap between them. A Zeitgeist on 1/4 swings the off-beats.",
+    notes: hits(Quarter / 2),
+  },
+  {
+    id: "quarters",
+    label: "Quarters",
+    blurb: "Straight quarters on one pitch, loud and soft in turn, with a gap between them. A Zeitgeist on 1/2 swings the off-beats.",
+    notes: hits(Quarter),
   },
   {
     id: "melody",

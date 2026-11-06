@@ -1,13 +1,67 @@
 // @vitest-environment jsdom
 import "@/lib/testing/domSetup";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { NoteFilterDeviceBoxAdapter } from "@opendaw/studio-adapters";
+import { NoteFilterDeviceBoxAdapter, type ZeitgeistDeviceBoxAdapter } from "@opendaw/studio-adapters";
 import { Theme } from "@radix-ui/themes";
 import type { Project } from "@opendaw/studio-core";
 import { MidiEffectCard } from "./MidiEffectCard";
 import { midiEffectFixture } from "@/lib/testing/boxGraphFixtures";
+import { patternById } from "@/lib/midiEffects/patterns";
+import { zeitgeistShuffleOf } from "@/lib/midiEffects/zeitgeistGuide";
+
+describe("MidiEffectCard's Zeitgeist guide", () => {
+  const setup = (patternId: "chords" | "eighths") => {
+    const { box, editing, boxAdapters, adapter } = midiEffectFixture("zeitgeist");
+    const shuffle = zeitgeistShuffleOf(adapter as ZeitgeistDeviceBoxAdapter)!;
+    const project = { editing, boxAdapters } as unknown as Project;
+    const onPatternChange = vi.fn();
+    const card = (compact = false) => (
+      <Theme>
+        <MidiEffectCard project={project} entry={{ id: "zeitgeist", box, enabled: true }} onEnabledChange={() => {}} onChainChange={() => {}} page="effects"
+          compact={compact} pattern={patternById(patternId)} onPatternChange={onPatternChange} />
+      </Theme>
+    );
+    return { card, shuffle, onPatternChange };
+  };
+
+  it("says so when nothing moves on this pattern, and stops saying it once the Duration moves a note", () => {
+    const { card, shuffle } = setup("chords");
+    render(card());
+    expect(screen.getByRole("status").textContent).toMatch(/nothing moves/i);
+    fireEvent.keyDown(screen.getByRole("slider", { name: "Duration" }), { key: "End" });
+    expect(shuffle.namedParameter.duration.getValue()).toBe(61440);
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("a Try button writes its pattern and settings", () => {
+    const { card, shuffle, onPatternChange } = setup("chords");
+    render(card());
+    fireEvent.click(screen.getByRole("button", { name: /Eighths/ }));
+    expect(onPatternChange).toHaveBeenCalledWith("eighths");
+    expect(shuffle.namedParameter.duration.getValue()).toBe(960);
+    expect(shuffle.namedParameter.amount.getValue()).toBeCloseTo(0.75, 6);
+  });
+
+  it("a stack's compact card carries neither", () => {
+    const { card } = setup("chords");
+    render(card(true));
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Eighths/ })).toBeNull();
+  });
+
+  it("another device's card has no guide", () => {
+    const { box, editing, boxAdapters } = midiEffectFixture("pitch");
+    render(
+      <Theme>
+        <MidiEffectCard project={{ editing, boxAdapters } as unknown as Project} entry={{ id: "pitch", box, enabled: true }} onEnabledChange={() => {}} onChainChange={() => {}} page="effects"
+          pattern={patternById("chords")} onPatternChange={() => {}} />
+      </Theme>
+    );
+    expect(screen.queryByRole("button", { name: /Eighths/ })).toBeNull();
+  });
+});
 
 describe("MidiEffectCard", () => {
   it("dims Key while Set is off and Semitones once it is on", () => {
