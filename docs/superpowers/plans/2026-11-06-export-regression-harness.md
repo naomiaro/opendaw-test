@@ -40,7 +40,7 @@
 - Create: `src/lib/audit/exportRegressionReader.ts`, `src/lib/audit/exportRegressionReader.test.ts`
 
 **Interfaces:**
-- Produces, in Signals: `IMPULSE_SOURCE_FRAMES: readonly number[]` = `[4096, 24037, 72064, 120037, 168064]`; `PROBE_TONE_HZ = 997`; `PROBE_TONE_LEVEL = 0.5`; `IMPULSE_LEVEL = 0.9`; `probeSource(sourceRate: number, seconds: number): [Float32Array, Float32Array]` (left a sine, right impulses on silence); `sweepSource(sourceRate, seconds): [Float32Array, Float32Array]` (log sweep 20 Hz to 20 kHz at 0.4, the same on both channels); `tailSource(sourceRate, seconds): [Float32Array, Float32Array]` (a 200 ms 440 Hz burst at 0.5 from the start, then silence); `bedSource(sourceRate, seconds): [Float32Array, Float32Array]` (220 Hz + 3329.6 Hz at 0.15 each, for the second unit in mix and stem rows).
+- Produces, in Signals: `IMPULSE_SOURCE_FRAMES: readonly number[]` = `[4096, 24037, 72064, 120037, 168064]`; `PROBE_TONE_HZ = 997`; `PROBE_TONE_LEVEL = 0.5`; `IMPULSE_LEVEL = 0.9`; `probeSource(sourceRate: number, seconds: number): [Float32Array, Float32Array]` (left a sine, right impulses on silence); `sweepSource(sourceRate, seconds): [Float32Array, Float32Array]` (log sweep 20 Hz to 20 kHz at 0.4, the same on both channels); `tailSource(sourceRate, seconds): [Float32Array, Float32Array]` (a 200 ms 440 Hz burst at 0.5 from the start, then silence); `bedSource(sourceRate, seconds): [Float32Array, Float32Array]` (220 Hz + 3329.6 Hz at 0.15 each, for the second unit in mix and stem rows); `hotSource(sourceRate, seconds): [Float32Array, Float32Array]` (a 997 Hz sine at 1.5 on both channels, so the master Maximizer must limit it).
 - Produces, in `ascendingUuids.ts`: `type UuidNamespace = { generate: () => Uint8Array }`; `installUuidOrder(uuid: UuidNamespace, order: "ascending" | "descending"): void`; `assertUuidOrder(uuids: readonly Uint8Array[], order: "ascending" | "descending"): void`, which throws if the bytes are not strictly in that order.
 - Produces, in Reader: `sha256OfSamples(channels: readonly Float32Array[]): Promise<string>` (lower-case hex, `crypto.subtle`, channels concatenated in order); `findImpulses(channel: Float32Array, threshold: number, minGapFrames: number): number[]` (the PEAK sample of each cluster over threshold); `computedFrame(sourceFrame: number, sourceRate: number, pageRate: number): number` (`Math.round(sourceFrame * pageRate / sourceRate)`); `readRender(channels: readonly Float32Array[], options: { rangeFrames: number; pageRate: number }): Promise<RenderRead>`; `RenderRead = { hash: string; frames: number; channels: number; peak: number; nonFinite: number; impulseHits: number[]; largestStep: { step: number; frame: number }; energyPastRange: number | null }`. `largestStep` leaves out 0.1 s at each end of the range, on channel 0. `impulseHits` reads channel 1 with threshold 0.05 and a gap of 1000 frames. `energyPastRange` is the RMS past `rangeFrames` on all channels, null when the render ends at the range.
 
@@ -63,6 +63,9 @@ it("puts one-sample impulses on the right channel and a sine on the left", () =>
 });
 it("drops impulses past the end of a short source", () => {
   expect(probeSource(48000, 0.9)[1].filter((s) => s !== 0).length).toBe(2);
+});
+it("drives the master Maximizer over its limit", () => {
+  expect(Math.max(...hotSource(48000, 1)[0].subarray(0, 4800))).toBeGreaterThan(1.4);
 });
 it("sweeps the full range", () => {
   const [left] = sweepSource(48000, 4);
@@ -218,13 +221,14 @@ git commit -m "feat: float WAV codec and bit-exact render diff"
 - Produces: `LatencyCaseId` = `"none" | "autotune-muted" | "compressor-track" | "compressor-muted" | "maximizer-muted" | "fold-muted" | "script-10ms-muted" | "script-150ms-parallel" | "compressor-bus" | "compressor-aux" | "several"`.
 - Produces: `PathId` = `"step-one" | "step-chunked-whole" | "step-chunked-odd" | "step-reset" | "start" | "section-entire" | "section-loop-once" | "section-loop-twice" | "section-marker" | "section-marker-last" | "stems-fx" | "stems-dry" | "stems-sends" | "stems-metronome" | "bounce-pre-fx" | "bounce-pre-fader" | "bounce-post-fader" | "bounce-merge" | "bounce-loop" | "bounce-tail" | "setposition-on-quantum" | "setposition-off-quantum" | "loop-on-copy"`.
 - Produces: `InvariantId` = `"samples-equal-reference" | "section-is-slice" | "impulse-on-reference" | "impulse-unmoved-by-latency" | "impulse-on-computed-frame" | "no-jump" | "muted-latent-unchanged" | "disabled-equals-absent" | "stems-sum-to-mix" | "repeat-identical" | "tail-present" | "tail-absent" | "proves-something" | "latency-as-expected" | "differs-from-reference"`.
-- Produces: `ExportRow = { id: string; label: string; group: "core" | "stems" | "bounce" | "position" | "one-frame" | "tail" | "sweep" | "control"; latencyCase: LatencyCaseId; path: PathId; signal: "probe" | "sweep" | "tail"; sourceRate: number; seconds: number; rangeStartSeconds: number; rangeSeconds: number; bpm: number; masterMaximizer: boolean; disabledDevice: boolean; nudgeVolume: boolean; withBed: boolean; repeat: boolean; referenceId: string | null; noLatencyReferenceId: string | null; invariants: InvariantId[] }`.
+- Produces: `ExportRow = { id: string; label: string; group: "core" | "master" | "stems" | "bounce" | "position" | "one-frame" | "tail" | "sweep" | "control"; latencyCase: LatencyCaseId; path: PathId; signal: "probe" | "sweep" | "tail" | "hot"; sourceRate: number; seconds: number; rangeStartSeconds: number; rangeSeconds: number; bpm: number; masterMaximizer: boolean; disabledDevice: boolean; nudgeVolume: boolean; withBed: boolean; repeat: boolean; referenceId: string | null; noLatencyReferenceId: string | null; invariants: InvariantId[] }`.
 - Produces: `buildRows(pageRate: number): ExportRow[]`; `expectedLatencyFrames(latencyCase: LatencyCaseId, pageRate: number): number`.
 - Produces: `KnownFinding = { name: string; invariant: InvariantId; note: string; applies: (row: ExportRow, pageRate: number) => boolean }`; `KNOWN_FINDINGS: readonly KnownFinding[]`; `findingFor(row: ExportRow, invariant: InvariantId, pageRate: number): KnownFinding | null`.
 
 **The catalogue.** All rows default to `signal: "probe"`, `sourceRate: 48000`, `seconds: 4` (the source's length), `rangeStartSeconds: 0`, `rangeSeconds` equal to `seconds`, `bpm: 120`, `masterMaximizer: false`. `section-marker` covers 1 s to 3 s, `section-marker-last` 3 s to the end, and each `setposition-*` starts at its own frame, so a slice of the reference starts at `rangeStartSeconds`. Ids are `<group>-<latencyCase>-<path>`, with the axis values appended on `one-frame` rows, and match `/^[a-z0-9-]+$/`.
 - **`core`:** every latency case × `step-one`, `step-chunked-whole` (375 quanta), `step-chunked-odd` (1000 frames), `step-reset`, `start`, `section-entire`, `section-loop-once`, `section-loop-twice`, `section-marker`, `section-marker-last`.
 - **`stems`, `bounce`, `position`:** the cases `none`, `autotune-muted`, `compressor-track`, `compressor-muted` × each stems path, each bounce path, the two `setposition-*` paths and `loop-on-copy`. Stem rows have `withBed: true`, and their reference is a `mix-<case>-step-one` row (also `withBed`, in group `stems`), since the bed's signal would hide the impulses on any row that reads them. Only these rows and `control-master-maximizer` carry the bed.
+- **`master`:** every project gets a master Maximizer, normal exports go through it, and it is the one device a version check saw change the sound (0.0.180 to 0.0.181, up to -19.5 dBFS, and only on rows over its limit). So `signal: "hot"`, `masterMaximizer: true`, the cases `none` and `compressor-track` × `step-one`, `step-chunked-whole`, `step-chunked-odd`, `step-reset`, `start`, `section-entire`, `section-loop-once`, `section-loop-twice`, `section-marker`. Plus a `master-<case>-bypass` row of each case (`masterMaximizer: false`, `step-one`): each `master-*-step-one` has that row as reference with `differs-from-reference`, so a limiter that stops engaging fails. The other paths' invariants as in `core`, except `no-jump` and the impulse invariants, since the limiter moves the level and the source has no impulses.
 - **`one-frame`:** latency `none`, path `section-loop-twice` and `step-chunked-whole`, crossing `sourceRate` 48000 / 44100, `seconds` 0.9 / 2 / 4 and `bpm` 120 / 137. A row of the same axis values with `step-one` is its reference.
 - **`tail`:** `signal: "tail"`, a Reverb on the source's unit, reference a `step-one` of the same chain: `section-entire` and `bounce-tail` (`tail-present`), `bounce-pre-fader` (`tail-absent`), and `section-marker`, whose range starts after the 200 ms of content has ended, with `section-is-slice` (a reverb still ringing into the range is what the reference holds: the missing-tail pin).
 - **`sweep`:** `signal: "sweep"`, every latency case × `step-one`, `section-loop-once`.
@@ -263,6 +267,13 @@ it("points every reference at a row that exists and renders first", () => {
     if (r.noLatencyReferenceId !== null) expect(seen.has(r.noLatencyReferenceId), r.id).toBe(true);
     seen.add(r.id);
   }
+});
+it("drives the default master Maximizer over its limit on the render paths", () => {
+  const rows = buildRows(48000).filter((r) => r.group === "master" && r.masterMaximizer);
+  expect(rows.length).toBe(2 * 9);
+  rows.forEach((r) => expect(r.signal, r.id).toBe("hot"));
+  expect(new Set(rows.map((r) => r.path)).size).toBe(9);
+  expect(rows.filter((r) => r.path === "step-one").every((r) => r.invariants.includes("differs-from-reference"))).toBe(true);
 });
 it("never gives a resampled row an exact-frame invariant", () => {
   buildRows(44100).filter((r) => r.sourceRate !== 44100)
