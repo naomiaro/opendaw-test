@@ -907,8 +907,9 @@ not through any preferences object set after the fact.
 
 #### Bit-Exact Renders and Audio Unit UUIDs
 
-The engine does not put audio units in mixer order when it sums them: the order follows their
-UUIDs. Addition in 32-bit float depends on order, so two projects that differ only in their UUIDs
+An offline render loads the project from its bytes and sums audio units in UUID order, not mixer
+order. (A running engine appends a unit when it arrives, so its order also depends on the edit
+history.) Addition in 32-bit float depends on order, so two projects that differ only in their UUIDs
 can render different last bits wherever several units meet on a bus. You cannot hear this, but it
 changes a hash of the output.
 
@@ -921,7 +922,7 @@ the master:
 | The same project, through `project.copy()` | Itself | Bit-identical |
 | One audio unit, with the others muted | The same content built again | Bit-identical |
 | Stems | The same content built again | Bit-identical |
-| Several units summed | The same content built again | About 40 % of frames differ, by at most 1.2e-7 (−138.5 dBFS) with no master Maximizer, and up to 2.1e-6 (−113 dBFS) through it |
+| Several units summed | The same content built again | About 40 % of samples differ, by at most 1.2e-7 (−138.5 dBFS) with no master Maximizer, and up to 2.1e-6 (−113 dBFS) through it |
 
 To compare mixdowns between separately built projects, for example hashes across SDK versions in a
 regression test, fix the order yourself. `UUID.generate` is a replaceable property, and `Project.new`,

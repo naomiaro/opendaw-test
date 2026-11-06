@@ -92,11 +92,14 @@ and trims it from the start before the first frame is kept.
 
 ### Audio Unit UUIDs Set the Summing Order, So They Reach a Mixdown's Bits
 The engine does not sort units by mixer order ("order is not audible",
-`crates/engine/src/audio_unit/mod.rs` `observe_audio_units`); the order it sums them in follows
-their UUIDs, and 32-bit float addition depends on order. Measured on 0.0.182, five units, 27 page
-loads, both page rates (Chrome, one Mac):
+`crates/engine/src/audio_unit/mod.rs` `observe_audio_units`). An offline render boots from the
+project's bytes, so its units arrive sorted by UUID and the bus sums them in that order
+(`AudioBusProcessor::process`), and 32-bit float addition depends on order. A running engine appends a
+unit that arrives later, and a re-route moves a source to the end (`mod.rs` `reconcile_units`,
+`routing.rs` `add_audio_source`), so live order also depends on the edit history. Measured offline,
+five units, both page rates; run and figures in `debug/2026-11-06-mixdown-uuid-order/note.md`:
 - A mixdown of the same project through `project.copy()` is bit-identical: a copy keeps its UUIDs.
-- The same content BUILT AGAIN gets fresh UUIDs: every mix row differs, about 40 % of frames, at most
+- The same content BUILT AGAIN gets fresh UUIDs: every mix row differs, about 40 % of samples, at most
   1.19e-7 (−138.5 dBFS) without the master Maximizer, up to 2.1e-6 (−113 dBFS) through it. A
   mismatch of this size between two builds is rounding, not a regression.
 - One unit soloed by muting the others, and the stems, stay bit-identical on fresh UUIDs.
