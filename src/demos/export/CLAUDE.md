@@ -74,6 +74,12 @@ see above; engine preferences never travel into an offline render). Provide a no
 Pass a copy (not the live project) — the renderer connects the source's
 `liveStreamReceiver`, which conflicts with a live engine.
 
+**Render an exact range in ONE `step`.** A `step` discards the rest of its last quantum, and the
+worker trims the settled delay compensation out of the first step, so a second `step` on one
+renderer loses frames unless everything before it, trim included, comes to whole quanta. The SDK's own
+`renderSection` hits this past 48000 frames with a latency that is not whole quanta (measured,
+`debug/2026-11-05-render-section-latency-gap/note.md`).
+
 ### Sections: `MixdownSection` + `renderSection`
 
 `MixdownSection.collect(project)` lists the entire song, the loop area (once / two passes) and
