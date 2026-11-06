@@ -1,0 +1,174 @@
+import { describe, expect, it } from "vitest";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { acceptPath, formatRows, hashSamples, parseArgs, runLine } from "./table.ts";
+import { sha256OfSamples } from "../../../src/lib/audit/exportRegressionReader.ts";
+import { encodeFloatWav } from "../../../src/lib/audit/exportRegressionWav.ts";
+import { buildRows } from "../../../src/lib/audit/exportRegressionRows.ts";
+import { wavFileName, type ExportSummary, type RowRecord } from "../../../src/lib/audit/exportRegressionArtifacts.ts";
+
+const SCRIPT = resolve(import.meta.dirname, "table.ts");
+const samples = [Float32Array.from([0, 0.5, -0.25, 1]), Float32Array.from([0.125, 0, 0, -1])];
+
+const record = (over: Partial<RowRecord> = {}): RowRecord => ({
+  id: "a", label: "A", group: "core", read: {
+    hash: "0123456789abcdef", frames: 4, channels: 2, peak: 1, nonFinite: 0, impulseHits: [1],
+    largestStep: { step: 0.1, frame: 1 }, energyPastRange: null
+  }, reportedLatencyFrames: 0, invariants: [], register: "unregistered", shiftFrames: null, standing: "clean",
+  wavUploaded: true, error: null, renderMs: 5, ...over
+});
+const summary = (rows: RowRecord[], over: Partial<ExportSummary> = {}): ExportSummary => ({
+  schemaVersion: 1, runToken: 7, userAgent: "ua", sdkVersion: "0.0.182", engineWasmSha256: "e".repeat(64), sampleRate: 48000,
+  uuidOrder: "ascending", rowsParam: "all", fill: false, registerSdkVersion: null, rows, ...over
+});
+
+/** A scratch tree with the summary, and the WAV of each row id in `wavs`; returns the root and a library path. */
+const scratch = (s: ExportSummary, wavs: Record<string, readonly Float32Array[]> = {}) => {
+  const root = mkdtempSync(join(tmpdir(), "exportreg-"));
+  const library = join(root, "library");
+  mkdirSync(library);
+  mkdirSync(join(root, ".verify-output"));
+  writeFileSync(join(root, ".verify-output", `exportreg-summary-${s.runToken}.json`), JSON.stringify(s));
+  for (const [id, channels] of Object.entries(wavs)) {
+    writeFileSync(join(root, ".verify-output", wavFileName(s.runToken, id)), new Uint8Array(encodeFloatWav(channels, s.sampleRate)));
+  }
+  return { root, library };
+};
+const run = (root: string, args: string[], env: Record<string, string> = {}) =>
+  spawnSync(process.execPath, [SCRIPT, ...args], {
+    encoding: "utf8", timeout: 60_000, env: { ...process.env, EXPORT_REGRESSION_ROOT: root, EXPORT_WAV_LIBRARY: "", ...env }
+  });
+
+describe("hashSamples", () => {
+  it("agrees with the page reader's sha256OfSamples", async () => {
+    expect(hashSamples(samples)).toBe(await sha256OfSamples(samples));
+  });
+});
+
+describe("parseArgs", () => {
+  it("reads the token, flags and values", () => {
+    const parsed = parseArgs(["17", "--accept", "--force", "--library", "/x/lib", "--diff", "row"], {});
+    expect(parsed).toEqual({ token: "17", accept: true, force: true, diff: "row", library: "/x/lib" });
+  });
+  it("takes the library from the environment, and is null when nothing resolves", () => {
+    expect(parseArgs([], { EXPORT_WAV_LIBRARY: "/e/lib" }).library).toBe("/e/lib");
+    expect(parseArgs([], {}, "/nonexistent/root/x").library).toBeNull();
+  });
+  it("refuses an unknown flag and a flag without its value", () => {
+    expect(() => parseArgs(["--acept"], {})).toThrow('unknown flag "--acept"');
+    expect(() => parseArgs(["--library"], {})).toThrow(/needs a value/);
+  });
+});
+
+describe("acceptPath", () => {
+  it("ends in register/<rate>.json", () => {
+    expect(acceptPath(48000)).toMatch(/debug\/2026-11-06-export-regression\/register\/48000\.json$/);
+  });
+});
+
+describe("formatRows and runLine", () => {
+  it("prints id, standing, register, hash prefix, frames, latency and the failing invariants", () => {
+    const failing = record({
+      id: "b", standing: "known-finding", register: "changed", shiftFrames: -1, reportedLatencyFrames: 64,
+      invariants: [{ invariant: "section-is-slice", holds: false, detail: "", finding: "one-frame-early-44100" }]
+    });
+    expect(formatRows(summary([record(), failing]))).toEqual([
+      "a | clean | unregistered | 0123456789 | 4 | 0 | -",
+      "b | known-finding | changed shift -1 | 0123456789 | 4 | 64 | section-is-slice (one-frame-early-44100)"
+    ]);
+  });
+  it("counts the three standings and the errored on the run line", () => {
+    const line = runLine(summary([record(), record({ standing: "known-finding" }), record({ standing: "failing" }),
+      record({ standing: "errored", error: "x", read: null })]));
+    expect(line).toContain("clean 1, known finding 1, failing 1, errored 1");
+    expect(line).toContain("sdk 0.0.182");
+    expect(line).toContain("engine eeeeeeeeeeee");
+  });
+});
+
+describe("the script", () => {
+  const good = () => {
+    const hash = hashSamples(samples);
+    const s = summary([record({ read: { ...record().read!, hash } })]);
+    return { s, hash, ...scratch(s, { a: samples }) };
+  };
+
+  it("--accept writes the register and copies the WAV by hash", () => {
+    const { s, hash, root, library } = good();
+    const result = run(root, ["--accept", "--library", library]);
+    expect(result.status).toBe(0);
+    expect(existsSync(join(library, "wav", `${hash}.wav`))).toBe(true);
+    const register = JSON.parse(readFileSync(acceptPath(s.sampleRate, root), "utf8"));
+    expect(register.rows.a).toMatchObject({ hash, wav: `wav/${hash}.wav` });
+    expect(result.stdout).toContain("git -C");
+  });
+
+  it("a second accept of the same run copies nothing", () => {
+    const { root, library } = good();
+    run(root, ["--accept", "--library", library]);
+    const again = run(root, ["--accept", "--library", library]);
+    expect(again.status).toBe(0);
+    expect(again.stdout).toContain("0 WAV(s) copied");
+    expect(again.stdout).toContain("no differences");
+  });
+
+  it("verifies a WAV's samples hash before copying it, and writes nothing", () => {
+    const s = summary([record({ read: { ...record().read!, hash: "f".repeat(64) } })]);
+    const { root, library } = scratch(s, { a: samples });
+    const result = run(root, ["--accept", "--library", library]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("nothing written");
+    expect(existsSync(join(library, "wav"))).toBe(false);
+    expect(existsSync(acceptPath(s.sampleRate, root))).toBe(false);
+  });
+
+  it("refuses with no library when there is something to copy, naming how to set it", () => {
+    const { s, root } = good();
+    const result = run(root, ["--accept"]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("--library");
+    expect(result.stderr).toContain("EXPORT_WAV_LIBRARY");
+    expect(existsSync(acceptPath(s.sampleRate, root))).toBe(false);
+  });
+
+  it("refuses a failing row, even forced, and writes nothing", () => {
+    const s = summary([record({ standing: "failing" })]);
+    const { root, library } = scratch(s, { a: samples });
+    const result = run(root, ["--accept", "--force", "--library", library]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("no known finding");
+    expect(existsSync(acceptPath(s.sampleRate, root))).toBe(false);
+  });
+
+  it("--diff reports figures against the accepted render, and says so when no library is present", () => {
+    const { s, hash, root, library } = good();
+    run(root, ["--accept", "--library", library]);
+    const moved = [Float32Array.from([0, 0, 0.5, -0.25]), samples[1]];
+    const next = summary([record({ read: { ...record().read!, hash: "d".repeat(64) }, register: "changed" })], { runToken: 8 });
+    writeFileSync(join(root, ".verify-output", "exportreg-summary-8.json"), JSON.stringify(next));
+    writeFileSync(join(root, ".verify-output", wavFileName(8, "a")), new Uint8Array(encodeFloatWav(moved, 48000)));
+    const withLibrary = run(root, ["8", "--diff", "a", "--library", library]);
+    expect(withLibrary.status).toBe(0);
+    expect(withLibrary.stdout).toMatch(/a: different, first differing frame 1, largest/);
+    expect(existsSync(join(root, ".verify-output", "exportreg-diff-a-accepted.wav"))).toBe(true);
+    expect(existsSync(join(root, ".verify-output", "exportreg-diff-a-new.wav"))).toBe(true);
+    const without = run(root, ["8", "--diff", "a"]);
+    expect(without.status).toBe(0);
+    expect(without.stdout).toContain("no library");
+    expect(hash).toBe(s.rows[0].read!.hash);
+  });
+
+  it("prints stale findings and the standing counts on the run line", () => {
+    const rows = buildRows(44100).filter((r) => r.path === "section-loop-twice" && r.seconds === 4).map((r) => record({
+      id: r.id, invariants: r.invariants.map((invariant) => ({ invariant, holds: true, detail: "", finding: null }))
+    }));
+    expect(rows.length).toBeGreaterThan(0);
+    const { root } = scratch(summary(rows, { sampleRate: 44100 }));
+    const result = run(root, []);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(`clean ${rows.length}, known finding 0, failing 0, errored 0`);
+    expect(result.stdout).toContain("no longer reproducing: one-frame-early-44100");
+  });
+});
