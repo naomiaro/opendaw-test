@@ -1,5 +1,5 @@
 // Plain Node must load this file: the table script reads it, so SDK and reader imports are types only.
-import { buildRows, type ExportRow } from "./exportRegressionRows.ts";
+import { buildRows, type ExportRow, type LatencyCaseId } from "./exportRegressionRows.ts";
 import { KNOWN_FINDINGS } from "./exportRegressionFindings.ts";
 import { rowStanding, type InvariantResult, type RegisterEntry, type RegisterVerdict } from "./exportRegressionVerdict.ts";
 import type { RenderRead } from "./exportRegressionReader";
@@ -26,6 +26,13 @@ export type RowRecord = {
   renderMs: number;
 };
 
+/** One figure of the live engine: it refreshes on animation frames, so a hidden page's figure may be an old one. */
+export type LatencyRead = {
+  latencyCase: LatencyCaseId;
+  frames: number | null;
+  visibility: string;
+};
+
 export type ExportSummary = {
   schemaVersion: number;
   runToken: number;
@@ -37,6 +44,7 @@ export type ExportSummary = {
   rowsParam: string;
   fill: boolean;
   registerSdkVersion: string | null;
+  latencyReads: LatencyRead[];
   rows: RowRecord[];
 };
 

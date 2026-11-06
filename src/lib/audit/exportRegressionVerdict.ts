@@ -19,7 +19,7 @@ export type InvariantResult = {
   finding: string | null;
 };
 
-export type Refs = { reference: RenderedRow | null; noLatency: RenderedRow | null };
+export type Refs = { reference: RenderedRow | null; noLatency: RenderedRow | null; warm: RenderedRow | null };
 
 export type RegisterEntry = {
   hash: string;
@@ -131,6 +131,8 @@ const judge = (
     case "samples-equal-reference":
     case "section-is-slice":
       return needs("reference", refs.reference) ?? compareToSlice(rendered, refs.reference!, start, rangeFrames);
+    case "samples-equal-warm-pass":
+      return needs("warm pass", refs.warm) ?? compareToSlice(rendered, refs.warm!, 0, rangeFrames);
     case "impulse-on-reference": {
       const missing = needs("reference", refs.reference);
       if (missing !== null) return missing;

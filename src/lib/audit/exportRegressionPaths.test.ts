@@ -1,8 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
-import { chunkSizes } from "./exportRegressionPaths";
+import { chunkSizes, secondPass } from "./exportRegressionPaths";
 
 // The package index needs AudioWorkletNode, which Node has not. Nothing tested here renders.
 vi.mock("@opendaw/studio-core", () => ({ EffectFactories: { AudioNamed: {} } }));
+
+describe("secondPass", () => {
+  it("keeps what follows the first pass, on every channel", () => {
+    const channels = [Float32Array.from([1, 2, 3, 4]), Float32Array.from([5, 6, 7, 8])];
+    expect(secondPass(channels, 2).map((channel) => [...channel])).toEqual([[3, 4], [7, 8]]);
+  });
+
+  it("hands a short render on short: the verdict reads it", () => {
+    expect([...secondPass([Float32Array.from([1, 2, 3])], 2)[0]]).toEqual([3]);
+  });
+});
 
 describe("chunkSizes", () => {
   it("covers the total in chunks", () => {

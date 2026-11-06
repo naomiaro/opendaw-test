@@ -19,14 +19,14 @@ const rendered = (samples: number[] | number[][], over: Partial<RenderedRow> = {
 const row = (over: Partial<ExportRow> = {}): ExportRow => ({
   ...buildRows(48000).find((x) => x.id === "core-none-step-one")!, rangeStartSeconds: 0, rangeSeconds: 5 / 48000, invariants: [], ...over
 });
-const one = (inv: InvariantId, r: ExportRow, got: RenderedRow, refs: { reference?: RenderedRow | null; noLatency?: RenderedRow | null } = {}, rate = 48000) =>
-  judgeInvariants({ ...r, invariants: [inv] }, got, { reference: refs.reference ?? null, noLatency: refs.noLatency ?? null }, rate)[0];
+const one = (inv: InvariantId, r: ExportRow, got: RenderedRow, refs: { reference?: RenderedRow | null; noLatency?: RenderedRow | null; warm?: RenderedRow | null } = {}, rate = 48000) =>
+  judgeInvariants({ ...r, invariants: [inv] }, got, { reference: refs.reference ?? null, noLatency: refs.noLatency ?? null, warm: refs.warm ?? null }, rate)[0];
 
 describe("judgeInvariants", () => {
   it("fails section-is-slice on one frame early, with no allowance", () => {
     const ref = rendered([0, 0, 1, 0, 0]);
     const early = rendered([0, 1, 0, 0, 0]);
-    const [r] = judgeInvariants(row({ invariants: ["section-is-slice"] }), early, { reference: ref, noLatency: null }, 48000);
+    const [r] = judgeInvariants(row({ invariants: ["section-is-slice"] }), early, { reference: ref, noLatency: null, warm: null }, 48000);
     expect(r.holds).toBe(false);
     expect(r.detail).toContain("frame 1");
     expect(one("section-is-slice", row(), rendered([0, 0, 1, 0, 0]), { reference: ref }).holds).toBe(true);
@@ -279,7 +279,7 @@ describe("judgeInvariants", () => {
     const ref = rendered([[1, 2]], {}, { impulseHits: refHits });
     const judged = (shift: number[] | number, inv: InvariantId = "impulse-on-reference") => {
       const hits = typeof shift === "number" ? refHits.map((h) => h - shift) : shift;
-      return judgeInvariants({ ...loop, invariants: [inv], rangeSeconds: frames / 44100 }, rendered([[1, 2]], {}, { impulseHits: hits }), { reference: ref, noLatency: null }, 44100)[0];
+      return judgeInvariants({ ...loop, invariants: [inv], rangeSeconds: frames / 44100 }, rendered([[1, 2]], {}, { impulseHits: hits }), { reference: ref, noLatency: null, warm: null }, 44100)[0];
     };
     expect(judged(1).holds).toBe(false);
     expect(judged(1).finding).toBe("one-frame-early-44100");
@@ -288,7 +288,7 @@ describe("judgeInvariants", () => {
     expect(judged([4999, 19999, 39998]).finding).toBeNull();
     expect(judged(0).holds).toBe(true);
     expect(judged(0).finding).toBeNull();
-    const other = judgeInvariants({ ...loop, invariants: ["proves-something"] }, rendered([0], {}, { peak: 0 }), { reference: null, noLatency: null }, 44100)[0];
+    const other = judgeInvariants({ ...loop, invariants: ["proves-something"] }, rendered([0], {}, { peak: 0 }), { reference: null, noLatency: null, warm: null }, 44100)[0];
     expect(other.finding).toBeNull();
   });
   it("names one-frame-early-44100 on both invariants of a row shifted exactly one frame, and stands known-finding", () => {
@@ -304,24 +304,66 @@ describe("judgeInvariants", () => {
       ...rendered([0]), samples: [earlyOf(left), earlyOf(right)],
       read: read({ frames, channels: 2, impulseHits: hits.map((h) => h - 1) })
     };
-    const results = judgeInvariants({ ...loop, invariants: ["section-is-slice", "impulse-on-reference"] }, got, { reference: ref, noLatency: null }, 44100);
+    const results = judgeInvariants({ ...loop, invariants: ["samples-equal-warm-pass", "impulse-on-reference"] }, got, { reference: ref, noLatency: null, warm: ref }, 44100);
     expect(results.map((r) => r.holds)).toEqual([false, false]);
     expect(results.map((r) => r.finding)).toEqual(["one-frame-early-44100", "one-frame-early-44100"]);
     expect(rowStanding(results, null)).toBe("known-finding");
-    const jump = judgeInvariants({ ...loop, invariants: ["section-is-slice", "no-jump"] }, { ...got, read: { ...got.read, largestStep: { step: 5, frame: 9 } } }, { reference: ref, noLatency: null }, 44100);
+    const jump = judgeInvariants({ ...loop, invariants: ["samples-equal-warm-pass", "no-jump"] }, { ...got, read: { ...got.read, largestStep: { step: 5, frame: 9 } } }, { reference: ref, noLatency: null, warm: ref }, 44100);
     expect(rowStanding(jump, null)).toBe("failing");
   });
   it("names the slice finding only on a one-frame-early measurement", () => {
     const loop = buildRows(44100).find((x) => x.id === "core-none-section-loop-twice")!;
-    const r = { ...loop, invariants: ["section-is-slice" as const], rangeSeconds: 5 / 44100 };
+    const r = { ...loop, invariants: ["samples-equal-warm-pass" as const], rangeSeconds: 5 / 44100 };
     // a sample slice carries no impulses, so it measures no shift and no finding matches
-    const [bad] = judgeInvariants(r, rendered([0, 1, 0, 0, 0]), { reference: rendered([0, 0, 1, 0, 0]), noLatency: null }, 44100);
+    const [bad] = judgeInvariants(r, rendered([0, 1, 0, 0, 0]), { reference: rendered([0, 0, 1, 0, 0]), noLatency: null, warm: rendered([0, 0, 1, 0, 0]) }, 44100);
     expect(bad.holds).toBe(false);
     expect(bad.finding).toBeNull();
   });
+  it("holds a loop's kept pass to the warm pass sample for sample, from its first frame", () => {
+    const warm = rendered([[1, 2, 3, 4, 5], [6, 7, 8, 9, 1]]);
+    const held = one("samples-equal-warm-pass", row(), rendered([[1, 2, 3, 4, 5], [6, 7, 8, 9, 1]]), { warm });
+    expect(held.holds).toBe(true);
+    expect(held.detail).toContain("5 frames bit-identical");
+  });
+  it("fails a warm pass one frame off, with no allowance", () => {
+    const warm = rendered([0, 0, 1, 0, 0]);
+    const off = one("samples-equal-warm-pass", row(), rendered([0, 1, 0, 0, 0]), { warm });
+    expect(off.holds).toBe(false);
+    expect(off.detail).toContain("differs at frame 1");
+  });
+  it("fails a render too short for the warm pass's range, naming both counts", () => {
+    const short = one("samples-equal-warm-pass", row(), rendered([1, 2]), { warm: rendered([1, 2, 3, 4, 5]) });
+    expect(short.holds).toBe(false);
+    expect(short.detail).toContain("2 of the range's 5");
+  });
+  it("reads the warm reference, never the cold one, for the warm pass", () => {
+    const cold = rendered([9, 9, 9, 9, 9]);
+    expect(one("samples-equal-warm-pass", row(), rendered([1, 2, 3, 4, 5]), { reference: cold, warm: rendered([1, 2, 3, 4, 5]) }).holds).toBe(true);
+    expect(one("section-is-slice", row(), rendered([1, 2, 3, 4, 5]), { reference: cold, warm: rendered([1, 2, 3, 4, 5]) }).holds).toBe(false);
+  });
+  it("fails uncompared with no warm reference, and gives that no finding", () => {
+    const loop = buildRows(44100).find((x) => x.id === "core-none-section-loop-twice")!;
+    const hits = [5000, 20000, 40000];
+    const cold = rendered([1], {}, { impulseHits: hits });
+    const [r] = judgeInvariants({ ...loop, invariants: ["samples-equal-warm-pass"] }, rendered([1], {}, { impulseHits: hits.map((h) => h - 1) }), { reference: cold, noLatency: null, warm: null }, 44100);
+    expect(r.holds).toBe(false);
+    expect(r.detail).toContain("no warm pass read");
+    expect(r.finding).toBeNull();
+  });
+  it("takes the one-frame evidence from the cold reference, for the warm invariant too", () => {
+    const loop = buildRows(44100).find((x) => x.id === "core-none-section-loop-twice")!;
+    const coldHits = [3, 6, 8];
+    const cold = rendered([0], {}, { impulseHits: coldHits });
+    const got = rendered([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], {}, { impulseHits: coldHits.map((h) => h - 1) });
+    // the warm pass carries the same shift as the row, so only the cold reference can see it
+    const warm = rendered([1, 2, 3, 4, 5, 6, 7, 8, 9, 11], {}, { impulseHits: coldHits.map((h) => h - 1) });
+    const [r] = judgeInvariants({ ...loop, invariants: ["samples-equal-warm-pass"], rangeSeconds: 10 / 44100 }, got, { reference: cold, noLatency: null, warm }, 44100);
+    expect(r.holds).toBe(false);
+    expect(r.finding).toBe("one-frame-early-44100");
+  });
   it("gives a failure that compared nothing no finding", () => {
     const loop = buildRows(44100).find((x) => x.id === "core-none-section-loop-twice")!;
-    const [r] = judgeInvariants({ ...loop, invariants: ["impulse-on-reference"] }, rendered([0], {}, { impulseHits: [1] }), { reference: null, noLatency: null }, 44100);
+    const [r] = judgeInvariants({ ...loop, invariants: ["impulse-on-reference"] }, rendered([0], {}, { impulseHits: [1] }), { reference: null, noLatency: null, warm: null }, 44100);
     expect(r.holds).toBe(false);
     expect(r.finding).toBeNull();
   });

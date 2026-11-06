@@ -18,7 +18,7 @@ const record = (over: Partial<RowRecord> = {}): RowRecord => ({
 });
 const summary = (rows: RowRecord[], over: Partial<ExportSummary> = {}): ExportSummary => ({
   schemaVersion: 1, runToken: 7, userAgent: "ua", sdkVersion: "0.0.182", engineWasmSha256: "e".repeat(64), sampleRate: 48000,
-  uuidOrder: "ascending", rowsParam: "all", fill: false, registerSdkVersion: null, rows, ...over
+  uuidOrder: "ascending", rowsParam: "all", fill: false, registerSdkVersion: null, latencyReads: [], rows, ...over
 });
 const registerAt = (rate: number, rows: ExportRegister["rows"] = {}): ExportRegister => ({
   schemaVersion: 1, sdkVersion: "0.0.182", engineWasmSha256: "e".repeat(64), acceptedRunToken: 1, acceptedAt, sampleRate: rate, rows
@@ -73,7 +73,7 @@ describe("planAccept", () => {
   it("takes a known-finding row whose failed invariant names a finding of that invariant", () => {
     const labelled = record({
       id: "a", standing: "known-finding", read: read({ hash: "h" }),
-      invariants: [{ invariant: "section-is-slice", holds: false, detail: "", finding: "one-frame-early-44100" }]
+      invariants: [{ invariant: "samples-equal-warm-pass", holds: false, detail: "", finding: "one-frame-early-44100" }]
     });
     expect(planAccept(summary([labelled]), null, new Set(["a"]), force).register.rows.a.hash).toBe("h");
   });
@@ -171,7 +171,7 @@ describe("staleFindings", () => {
   it("does not report one whose invariant still fails, or a row that errored", () => {
     const failing = rows.map((r) => {
       const h = held(r.id);
-      return { ...h, invariants: h.invariants.map((i) => i.invariant === "section-is-slice" ? { ...i, holds: false } : i) };
+      return { ...h, invariants: h.invariants.map((i) => i.invariant === "samples-equal-warm-pass" ? { ...i, holds: false } : i) };
     });
     expect(staleFindings(summary(failing, { sampleRate: 44100 })).map((s) => s.name)).not.toContain("one-frame-early-44100");
     const errored = rows.map((r) => record({ id: r.id, error: "x", read: null, standing: "errored" }));

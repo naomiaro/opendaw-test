@@ -30,7 +30,7 @@ const oneFrameEarly = (invariant: InvariantId): KnownFinding => ({
 });
 
 export const KNOWN_FINDINGS: readonly KnownFinding[] = [
-  oneFrameEarly("section-is-slice"),
+  oneFrameEarly("samples-equal-warm-pass"),
   oneFrameEarly("impulse-on-reference"),
   {
     name: "setposition-cold-start",

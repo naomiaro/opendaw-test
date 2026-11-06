@@ -12,7 +12,9 @@ describe("exportRegressionFindings", () => {
   it("matches the one early frame on impulse-on-reference too, on the 44.1 kHz page only", () => {
     const row = rowOf(44100, "core-none-section-loop-twice");
     expect(findingFor(row, "impulse-on-reference", 44100, early(1))?.name).toBe("one-frame-early-44100");
-    expect(findingFor(row, "section-is-slice", 44100, early(1))?.name).toBe("one-frame-early-44100");
+    expect(findingFor(row, "samples-equal-warm-pass", 44100, early(1))?.name).toBe("one-frame-early-44100");
+    expect(findingFor(row, "samples-equal-warm-pass", 48000, early(1))).toBeNull();
+    expect(findingFor(row, "section-is-slice", 44100, early(1))).toBeNull();
     expect(findingFor(row, "impulse-on-reference", 48000, early(1))).toBeNull();
     expect(findingFor(rowOf(44100, "core-none-section-loop-once"), "section-is-slice", 44100, early(1))).toBeNull();
   });

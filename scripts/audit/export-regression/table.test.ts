@@ -21,7 +21,7 @@ const record = (over: Partial<RowRecord> = {}): RowRecord => ({
 });
 const summary = (rows: RowRecord[], over: Partial<ExportSummary> = {}): ExportSummary => ({
   schemaVersion: 1, runToken: 7, userAgent: "ua", sdkVersion: "0.0.182", engineWasmSha256: "e".repeat(64), sampleRate: 48000,
-  uuidOrder: "ascending", rowsParam: "all", fill: false, registerSdkVersion: null, rows, ...over
+  uuidOrder: "ascending", rowsParam: "all", fill: false, registerSdkVersion: null, latencyReads: [], rows, ...over
 });
 
 /** A scratch tree with the summary, and the WAV of each row id in `wavs`; returns the root and a library path. */

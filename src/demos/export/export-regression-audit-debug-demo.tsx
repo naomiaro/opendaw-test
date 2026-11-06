@@ -20,7 +20,7 @@ import { installUuidOrder, type UuidNamespace } from "@/lib/audit/ascendingUuids
 import { uploadSummary } from "@/lib/audit/midiEffectBootstrap";
 import { resolveRate } from "@/lib/audit/midiEffectScenarios";
 import {
-  EXPORT_REGRESSION_SCHEMA_VERSION, parseExportRegister, summaryFileName, wavFileName, type ExportRegister, type ExportSummary, type RowRecord,
+  EXPORT_REGRESSION_SCHEMA_VERSION, parseExportRegister, summaryFileName, wavFileName, type ExportRegister, type ExportSummary, type LatencyRead, type RowRecord,
 } from "@/lib/audit/exportRegressionArtifacts";
 import { renderPath } from "@/lib/audit/exportRegressionPaths";
 import { buildHarnessProject, insertLatencyDevices, prepareSources, type HarnessProject } from "@/lib/audit/exportRegressionProject";
@@ -230,11 +230,20 @@ const App: React.FC = () => {
     // Read once per case, not per row: a row adds a bed or a Reverb, or takes the master Maximizer off, and none of
     // that changes the routing a case's figure comes from. A disabled row is not read: its hash is what it proves.
     const latencies = new Map<LatencyCaseId, number>();
+    const latencyReads: LatencyRead[] = [];
     for (const { latencyCase } of ROWS.filter((row) => row.invariants.includes("latency-as-expected"))) {
       if (latencies.has(latencyCase)) continue;
       setAuditState(`running:latency-${latencyCase}`);
       setStatus(`Reading the latency of ${latencyCase}`);
-      latencies.set(latencyCase, await readCaseLatency(harness, latencyCase));
+      const frames = await readCaseLatency(harness, latencyCase);
+      latencies.set(latencyCase, frames);
+      latencyReads.push({ latencyCase, frames: Number.isFinite(frames) ? frames : null, visibility: document.visibilityState });
+    }
+    // The devices came off the live project, which every copy starts from: a figure that stays up says they did not.
+    const lastRead = latencyReads.at(-1);
+    if (lastRead !== undefined) {
+      const left = await waitForFrames(harness, 0);
+      if (left !== 0) throw new Error(`the engine still reports ${left} frames after the devices of ${lastRead.latencyCase} came off the live project`);
     }
 
     const readers = lastReaders(ROWS);
@@ -259,7 +268,7 @@ const App: React.FC = () => {
         const repeatHash = row.repeat ? await sha256OfSamples(await renderPath(harness, row, RATE)) : null;
         const thisRow: RenderedRow = { read, samples: channels, reportedLatencyFrames: reported, repeatHash };
         const refOf = (id: string | null): RenderedRow | null => (id === null ? null : rendered.get(id) ?? null);
-        invariants = judgeInvariants(row, thisRow, { reference: refOf(row.referenceId), noLatency: refOf(row.noLatencyReferenceId) }, RATE);
+        invariants = judgeInvariants(row, thisRow, { reference: refOf(row.referenceId), noLatency: refOf(row.noLatencyReferenceId), warm: refOf(row.warmReferenceId) }, RATE);
         const compared = compareRegister(read, register?.rows[row.id] ?? null);
         registerVerdict = compared.verdict;
         shiftFrames = compared.shiftFrames;
@@ -294,6 +303,7 @@ const App: React.FC = () => {
       rowsParam: rowsParamOf(),
       fill: FILL,
       registerSdkVersion: register === null ? null : register.sdkVersion,
+      latencyReads,
       rows: out,
     };
     // The sink exists on the dev server only: on the public host the verdicts stay on the page, a warning and no error.
@@ -308,8 +318,17 @@ const App: React.FC = () => {
 
   const handleRun = useCallback(() => {
     if (boot === null || running) return;
+    // The engine's figures refresh on animation frames, which stop on a hidden page: its reads could be stale.
+    if (document.visibilityState !== "visible") {
+      const message = `the page is ${document.visibilityState}: the engine's latency figures only refresh on a visible page, so show it and click Run again`;
+      setAuditState(`error:${message}`);
+      setStatus(`Error: ${message}`);
+      return;
+    }
     setRunning(true);
     setRecords([]);
+    // At once, so a poller cannot read the last run's `done` as this run's.
+    setAuditState("running:setup");
     runAudit(boot)
       .then(() => {
         setAuditState("done");

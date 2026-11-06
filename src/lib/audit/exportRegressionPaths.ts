@@ -109,6 +109,23 @@ const renderReset = async (render: Render, frames: number): Promise<Float32Array
   return renderer.step(frames);
 };
 
+/** What follows the first pass. A short render comes out short, for the verdict to read. */
+export const secondPass = (channels: readonly Float32Array[], passFrames: number): Float32Array[] =>
+  channels.map((channel) => channel.slice(passFrames));
+
+/**
+ * The same loop `section-loop-twice` renders, stepped once: its second pass is what that row's kept pass must equal, the
+ * chain warm from the first pass. Its frames per pass come from the tempo map as `renderSection` computes them, which
+ * at 137 bpm is a few more than the row's range.
+ */
+const renderLoopTwice = async (render: Render): Promise<Float32Array[]> => {
+  const { copy, row, pageRate } = render;
+  const end = ppqnAt(row.rangeSeconds, row.bpm);
+  writeLoopArea(render, 0, end);
+  const passFrames = Math.round(copy.tempoMap.intervalToSeconds(0, end) * pageRate);
+  return secondPass(await renderSteps(render, Option.None, 0, [passFrames * 2]), passFrames);
+};
+
 /** AudioData sits on a SharedArrayBuffer and a step's channels do not: every path hands back the same kind of memory. */
 const ownedChannels = ({ frames }: AudioData): Float32Array[] => frames.map((frame) => frame.slice());
 
@@ -237,6 +254,8 @@ const renderRow = async (render: Render): Promise<Float32Array[]> => {
       return renderSteps(render, Option.None, 0, chunkSizes(frames, ODD_CHUNK_FRAMES));
     case "step-reset":
       return renderReset(render, frames);
+    case "step-loop-twice":
+      return renderLoopTwice(render);
     case "start":
       return renderStart(render, Option.None);
     case "section-entire":

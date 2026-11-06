@@ -5,14 +5,14 @@ export type LatencyCaseId =
   | "script-10ms-muted" | "script-150ms-parallel" | "compressor-bus" | "compressor-aux" | "several";
 
 export type PathId =
-  | "step-one" | "step-chunked-whole" | "step-chunked-odd" | "step-reset" | "start"
+  | "step-one" | "step-chunked-whole" | "step-chunked-odd" | "step-reset" | "step-loop-twice" | "start"
   | "section-entire" | "section-loop-once" | "section-loop-twice" | "section-marker" | "section-marker-last"
   | "stems-fx" | "stems-dry" | "stems-sends" | "stems-metronome" | "stems-start" | "stems-section-loop"
   | "bounce-pre-fx" | "bounce-pre-fader" | "bounce-post-fader" | "bounce-merge" | "bounce-loop" | "bounce-tail"
   | "setposition-on-quantum" | "setposition-off-quantum" | "loop-on-copy";
 
 export type InvariantId =
-  | "samples-equal-reference" | "section-is-slice" | "impulse-on-reference" | "impulse-follows-loop" | "impulse-unmoved-by-latency"
+  | "samples-equal-reference" | "samples-equal-warm-pass" | "section-is-slice" | "impulse-on-reference" | "impulse-follows-loop" | "impulse-unmoved-by-latency"
   | "impulse-on-computed-frame" | "no-jump" | "muted-latent-unchanged" | "disabled-equals-absent"
   | "stems-sum-to-mix" | "repeat-identical" | "tail-present" | "tail-absent" | "proves-something"
   | "latency-as-expected" | "differs-from-reference";
@@ -36,6 +36,8 @@ export type ExportRow = {
   repeat: boolean;
   referenceId: string | null;
   noLatencyReferenceId: string | null;
+  /** What a looped section's kept pass is held to: a chain with memory enters its second pass warm, so not the cold reference. */
+  warmReferenceId: string | null;
   invariants: InvariantId[];
 };
 
@@ -101,7 +103,7 @@ const MUTED_HOST_CASES: readonly LatencyCaseId[] = [
 const NO_JUMP_EXEMPT_CASES: readonly LatencyCaseId[] = ["compressor-aux", "several"];
 
 const CORE_PATHS: readonly PathId[] = [
-  "step-one", "step-chunked-whole", "step-chunked-odd", "step-reset", "start",
+  "step-one", "step-chunked-whole", "step-chunked-odd", "step-reset", "step-loop-twice", "start",
   "section-entire", "section-loop-once", "section-loop-twice", "section-marker", "section-marker-last"
 ];
 const STEMS_PATHS: readonly PathId[] = ["stems-fx", "stems-dry", "stems-sends", "stems-metronome"];
@@ -112,7 +114,7 @@ const BOUNCE_PATHS: readonly PathId[] = ["bounce-pre-fx", "bounce-pre-fader", "b
 const BASE_CASES: readonly LatencyCaseId[] = ["none", "autotune-muted", "compressor-track", "compressor-muted"];
 const MASTER_CASES: readonly LatencyCaseId[] = ["none", "compressor-track"];
 const MASTER_PATHS: readonly PathId[] = [
-  "step-one", "step-chunked-whole", "step-chunked-odd", "step-reset", "start",
+  "step-one", "step-chunked-whole", "step-chunked-odd", "step-reset", "step-loop-twice", "start",
   "section-entire", "section-loop-once", "section-loop-twice", "section-marker"
 ];
 
@@ -134,6 +136,7 @@ const make = (spec: Spec): ExportRow => {
     repeat: false,
     referenceId: null,
     noLatencyReferenceId: null,
+    warmReferenceId: null,
     invariants: [],
     ...spec
   };
@@ -153,10 +156,13 @@ const pathInvariants = (
       if (!NO_JUMP_EXEMPT_CASES.includes(latencyCase)) out.push("no-jump");
       if (MUTED_HOST_CASES.includes(latencyCase)) out.push("muted-latent-unchanged");
     }
+  } else if (path === "step-loop-twice") {
+    // a reference: the section-loop-twice row reading it judges the pair
   } else if (path.startsWith("step-")) {
     out.push("samples-equal-reference");
   } else if (path === "start" || path.startsWith("section-")) {
-    out.push("section-is-slice");
+    out.push(path === "section-loop-twice" ? "samples-equal-warm-pass" : "section-is-slice");
+    // The cold reference's hits, on a loop too: a stepped loop would carry the same shift and hide it.
     if (probe) out.push("impulse-on-reference", "no-jump");
   }
   return out;
@@ -182,7 +188,7 @@ const buildCore = (pageRate: number): ExportRow[] => {
   const rows: ExportRow[] = [];
   for (const latencyCase of LATENCY_CASES) {
     for (const path of CORE_PATHS) {
-      const reference = path === "step-one" ? null : coreId(latencyCase, "step-one");
+      const reference = path === "step-one" || path === "step-loop-twice" ? null : coreId(latencyCase, "step-one");
       rows.push(make({
         id: coreId(latencyCase, path),
         label: `${latencyCase} through ${path}`,
@@ -190,6 +196,7 @@ const buildCore = (pageRate: number): ExportRow[] => {
         ...withWindow(path, 4),
         referenceId: reference,
         noLatencyReferenceId: path === "step-one" && latencyCase !== "none" ? coreId("none", "step-one") : null,
+        warmReferenceId: path === "section-loop-twice" ? coreId(latencyCase, "step-loop-twice") : null,
         invariants: [...basics(), ...pathInvariants(path, latencyCase, true, 48000, pageRate)]
       }));
     }
@@ -214,7 +221,8 @@ const buildMaster = (pageRate: number): ExportRow[] => {
         id: stepOne.replace("step-one", path), label: `${latencyCase}, hot signal, master Maximizer, ${path}`,
         group: "master", latencyCase, path, signal: "hot", masterMaximizer: true,
         ...withWindow(path, 4),
-        referenceId: path === "step-one" ? bypassId : stepOne,
+        referenceId: path === "step-one" ? bypassId : path === "step-loop-twice" ? null : stepOne,
+        warmReferenceId: path === "section-loop-twice" ? stepOne.replace("step-one", "step-loop-twice") : null,
         invariants
       }));
     }
@@ -304,10 +312,16 @@ const buildOneFrame = (pageRate: number): ExportRow[] => {
           ...common, id: stepOneId, label: `step-one, ${tag}`, path: "step-one",
           invariants: [...basics(), ...pathInvariants("step-one", "none", true, sourceRate, pageRate)]
         }));
+        const warmId = `one-frame-none-step-loop-twice-${tag}`;
+        rows.push(make({
+          ...common, id: warmId, label: `step-loop-twice, ${tag}`, path: "step-loop-twice",
+          invariants: [...basics(), ...pathInvariants("step-loop-twice", "none", true, sourceRate, pageRate)]
+        }));
         for (const path of ["section-loop-twice", "step-chunked-whole"] as const) {
           rows.push(make({
             ...common, id: `one-frame-none-${path}-${tag}`, label: `${path}, ${tag}`, path,
             referenceId: stepOneId,
+            warmReferenceId: path === "section-loop-twice" ? warmId : null,
             invariants: [...basics(), ...pathInvariants(path, "none", true, sourceRate, pageRate)]
           }));
         }
@@ -333,6 +347,9 @@ const buildTail = (): ExportRow[] => {
   const ringing = { seconds: TAIL_BURST_SECONDS, rangeSeconds: TAIL_BURST_SECONDS, referenceId: null };
   return [
     make({ ...common, id: referenceId, label: "reverb tail, step-one", path: "step-one", invariants: basics() }),
+    // An entire-song render goes through `render`, which trims trailing silence: held to the region's 4 s, it comes up short.
+    tailRow("section-entire", ["section-is-slice"], { id: "tail-none-section-entire-long", label: "reverb tail, section-entire, 4 s region" }),
+    tailRow("start", ["section-is-slice"], { id: "tail-none-start-long", label: "reverb tail, start, 4 s region" }),
     tailRow("section-entire", ["tail-present"], ringing),
     tailRow("bounce-tail", ["tail-present"], ringing),
     tailRow("bounce-pre-fader", ["tail-absent"], ringing),
@@ -392,6 +409,9 @@ export const buildRows = (pageRate: number): ExportRow[] =>
     ? { ...row, repeat: true, invariants: [...row.invariants, "repeat-identical" as const] }
     : row);
 
+const referencesOf = ({ referenceId, noLatencyReferenceId, warmReferenceId }: ExportRow): string[] =>
+  [referenceId, noLatencyReferenceId, warmReferenceId].filter((id): id is string => id !== null);
+
 /**
  * The rows of a run, in catalogue order. A partial run still renders what its rows read against, or every one of
  * them would read "no reference": the references they name come along, and read like any other row.
@@ -417,9 +437,7 @@ export const selectRows = (
   const add = (row: ExportRow): void => {
     if (wanted.has(row.id)) return;
     wanted.add(row.id);
-    for (const id of [row.referenceId, row.noLatencyReferenceId]) {
-      if (id !== null) add(byId.get(id)!);
-    }
+    for (const id of referencesOf(row)) add(byId.get(id)!);
   };
   picked.forEach(add);
   return catalogue.filter((row) => wanted.has(row.id));
@@ -429,9 +447,7 @@ export const selectRows = (
 export const lastReaders = (rows: readonly ExportRow[]): Map<string, number> => {
   const last = new Map<string, number>();
   rows.forEach((row, index) => {
-    for (const id of [row.referenceId, row.noLatencyReferenceId]) {
-      if (id !== null) last.set(id, index);
-    }
+    for (const id of referencesOf(row)) last.set(id, index);
   });
   return last;
 };

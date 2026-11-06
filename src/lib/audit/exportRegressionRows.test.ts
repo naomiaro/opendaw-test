@@ -18,7 +18,7 @@ describe("exportRegressionRows", () => {
   });
   it("crosses every core path with every latency case", () => {
     const rows = buildRows(44100).filter((r) => r.group === "core");
-    expect(rows.length).toBe(11 * 10);
+    expect(rows.length).toBe(11 * 11);
   });
   it("points every reference at a row that exists and renders first", () => {
     for (const rate of [48000, 44100]) {
@@ -26,15 +26,16 @@ describe("exportRegressionRows", () => {
       for (const r of buildRows(rate)) {
         if (r.referenceId !== null) expect(seen.has(r.referenceId), r.id).toBe(true);
         if (r.noLatencyReferenceId !== null) expect(seen.has(r.noLatencyReferenceId), r.id).toBe(true);
+        if (r.warmReferenceId !== null) expect(seen.has(r.warmReferenceId), r.id).toBe(true);
         seen.add(r.id);
       }
     }
   });
   it("drives the default master Maximizer over its limit on the render paths", () => {
     const rows = buildRows(48000).filter((r) => r.group === "master" && r.masterMaximizer);
-    expect(rows.length).toBe(2 * 9);
+    expect(rows.length).toBe(2 * 10);
     rows.forEach((r) => expect(r.signal, r.id).toBe("hot"));
-    expect(new Set(rows.map((r) => r.path)).size).toBe(9);
+    expect(new Set(rows.map((r) => r.path)).size).toBe(10);
     expect(rows.filter((r) => r.path === "step-one").every((r) => r.invariants.includes("differs-from-reference"))).toBe(true);
     rows.forEach((r) => expect(r.invariants, r.id).not.toContain("no-jump"));
   });
@@ -113,8 +114,9 @@ describe("exportRegressionRows", () => {
     const { findingFor } = await import("./exportRegressionFindings.ts");
     const row = buildRows(44100).find((r) => r.id === "core-none-section-loop-twice")!;
     const one = { earlyFrames: 1, firstDifferingFrame: null, lastDifferingFrame: null, largestDifference: null };
-    expect(findingFor(row, "section-is-slice", 44100, one)?.name).toBe("one-frame-early-44100");
-    expect(findingFor(row, "section-is-slice", 48000, one)).toBeNull();
+    expect(findingFor(row, "samples-equal-warm-pass", 44100, one)?.name).toBe("one-frame-early-44100");
+    expect(findingFor(row, "samples-equal-warm-pass", 48000, one)).toBeNull();
+    expect(findingFor(row, "section-is-slice", 44100, one)).toBeNull();
     expect(findingFor(row, "no-jump", 44100, one)).toBeNull();
   });
 });
@@ -154,6 +156,69 @@ describe("setPositionStart", () => {
   });
 });
 
+describe("the warm pass", () => {
+  it("gives every section-loop-twice row a warm and a cold reference, each rendering first", () => {
+    for (const rate of [48000, 44100]) {
+      const rows = buildRows(rate);
+      const byId = new Map(rows.map((r) => [r.id, r]));
+      const index = new Map(rows.map((r, i) => [r.id, i]));
+      const looped = rows.filter((r) => r.path === "section-loop-twice");
+      expect(looped.length).toBe(11 + 2 + 12);
+      for (const row of looped) {
+        const warm = byId.get(row.warmReferenceId!)!;
+        const cold = byId.get(row.referenceId!)!;
+        expect(warm.path, row.id).toBe("step-loop-twice");
+        expect(cold.path, row.id).toBe("step-one");
+        expect(index.get(warm.id)!, row.id).toBeLessThan(index.get(row.id)!);
+        expect(index.get(cold.id)!, row.id).toBeLessThan(index.get(row.id)!);
+        const same = (r: typeof row) => [r.latencyCase, r.signal, r.sourceRate, r.seconds, r.bpm, r.group, r.masterMaximizer, r.withBed, r.rangeStartSeconds, r.rangeSeconds];
+        expect(same(warm), row.id).toEqual(same(row));
+        expect(row.invariants, row.id).toContain("samples-equal-warm-pass");
+        expect(row.invariants, row.id).not.toContain("section-is-slice");
+      }
+    }
+  });
+
+  it("holds the probe's loop rows to the cold reference's impulses, which is what reads a shift", () => {
+    const looped = buildRows(48000).filter((r) => r.path === "section-loop-twice" && r.signal === "probe");
+    expect(looped.length).toBe(11 + 12);
+    looped.forEach((r) => expect(r.invariants, r.id).toContain("impulse-on-reference"));
+  });
+
+  it("has one step-loop-twice row per section-loop-twice row, judged by the row that reads it", () => {
+    for (const rate of [48000, 44100]) {
+      const rows = buildRows(rate).filter((r) => r.path === "step-loop-twice");
+      expect(rows.length).toBe(11 + 2 + 12);
+      for (const row of rows) {
+        expect(row.referenceId, row.id).toBeNull();
+        expect(row.warmReferenceId, row.id).toBeNull();
+        expect(row.invariants.filter((i) => i !== "repeat-identical"), row.id).toEqual(["proves-something", "latency-as-expected"]);
+      }
+    }
+  });
+
+  it("leaves every other row without a warm reference", () => {
+    buildRows(48000).filter((r) => r.path !== "section-loop-twice").forEach((r) => {
+      expect(r.warmReferenceId, r.id).toBeNull();
+      expect(r.invariants, r.id).not.toContain("samples-equal-warm-pass");
+    });
+  });
+});
+
+describe("the long tail rows", () => {
+  it("hold an entire-song render and a start to the 4 s reference, so a render cut short fails", () => {
+    const rows = buildRows(48000);
+    for (const [id, path] of [["tail-none-section-entire-long", "section-entire"], ["tail-none-start-long", "start"]] as const) {
+      const row = rows.find((r) => r.id === id)!;
+      expect(row.path, id).toBe(path);
+      expect(row.signal, id).toBe("tail");
+      expect([row.seconds, row.rangeSeconds, row.rangeStartSeconds], id).toEqual([4, 4, 0]);
+      expect(row.referenceId, id).toBe("tail-none-step-one");
+      expect(row.invariants, id).toEqual(expect.arrayContaining(["proves-something", "latency-as-expected", "section-is-slice"]));
+    }
+  });
+});
+
 describe("the tail rows", () => {
   it("end their region inside the burst wherever a tail is judged, so something still rings there", () => {
     const judged = buildRows(48000).filter((r) => r.invariants.includes("tail-present") || r.invariants.includes("tail-absent"));
@@ -185,6 +250,11 @@ describe("selectRows", () => {
     expect(ids).toEqual(["core-none-step-one", "core-fold-muted-step-one", "core-fold-muted-section-entire"]);
   });
 
+  it("follows a warm reference", () => {
+    const ids = selectRows(catalogue, { rows: "core-none-section-loop-twice", group: null }).map((r) => r.id);
+    expect(ids).toEqual(["core-none-step-one", "core-none-step-loop-twice", "core-none-section-loop-twice"]);
+  });
+
   it("refuses what it cannot name", () => {
     expect(() => selectRows(catalogue, { rows: "control-nudged,no-such-row", group: null })).toThrow(/no-such-row/);
     expect(() => selectRows(catalogue, { rows: null, group: "no-such-group" })).toThrow(/no-such-group/);
@@ -211,5 +281,10 @@ describe("lastReaders", () => {
     const last = lastReaders(rows);
     expect(last.get("core-none-step-one")).toBe(rows.findIndex((r) => r.id === "control-disabled-fold-muted"));
     expect(last.has("control-nudged")).toBe(false);
+  });
+
+  it("counts a warm reference as read", () => {
+    const rows = selectRows(buildRows(48000), { rows: "core-none-section-loop-twice", group: null });
+    expect(lastReaders(rows).get("core-none-step-loop-twice")).toBe(2);
   });
 });
