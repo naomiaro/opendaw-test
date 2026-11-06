@@ -9,6 +9,8 @@ import {
   predictedDroppedFrames,
   readBaseline,
   readRow,
+  rowSummary,
+  runSummary,
   toneStep,
   uniformEarly,
 } from "./sectionRenderGap";
@@ -184,7 +186,7 @@ describe("readRow", () => {
 
   it("reads a clean render as clean when none is predicted", () => {
     const row = readRow({ ...onePass, predicted: 0, sectionHits: [24034, 72034, 120034], sectionStep: quiet });
-    expect(row.verdict).toBe("as-predicted");
+    expect(row.verdict).toBe("matches-formula");
     expect(row.earlyBefore).toEqual([0]);
     expect(row.earlyAfter).toEqual([0, 0]);
     expect(row.jump).toBe("none");
@@ -192,37 +194,37 @@ describe("readRow", () => {
 
   it("reads hits after the boundary early, and a jump on it, as predicted", () => {
     const row = readRow({ ...onePass, predicted: 16, sectionHits: [24034, 72018, 120018], sectionStep: jump });
-    expect(row.verdict).toBe("as-predicted");
+    expect(row.verdict).toBe("matches-formula");
     expect(row.earlyBefore).toEqual([0]);
     expect(row.earlyAfter).toEqual([16, 16]);
     expect(row.jump).toBe("on-boundary");
   });
 
-  describe("calls it changed", () => {
+  describe("reads a difference", () => {
     it("when the predicted shift is absent, the jump being there", () => {
       const row = readRow({ ...onePass, predicted: 16, sectionHits: [24034, 72034, 120034], sectionStep: jump });
-      expect(row.verdict).toBe("changed");
+      expect(row.verdict).toBe("differs-from-formula");
     });
 
     it("when a shift nobody predicted is there", () => {
       const row = readRow({ ...onePass, predicted: 0, sectionHits: [24034, 72018, 120018], sectionStep: quiet });
-      expect(row.verdict).toBe("changed");
+      expect(row.verdict).toBe("differs-from-formula");
     });
 
     it("when the shift is right and the jump is missing", () => {
       const row = readRow({ ...onePass, predicted: 16, sectionHits: [24034, 72018, 120018], sectionStep: quiet });
-      expect(row.verdict).toBe("changed");
+      expect(row.verdict).toBe("differs-from-formula");
     });
 
     it("when a hit before the boundary moved as well", () => {
       const row = readRow({ ...onePass, predicted: 16, sectionHits: [24018, 72018, 120018], sectionStep: jump });
-      expect(row.verdict).toBe("changed");
+      expect(row.verdict).toBe("differs-from-formula");
     });
 
     it("when a jump shows on a row predicting none", () => {
       const row = readRow({ ...onePass, predicted: 0, sectionHits: [24034, 72034, 120034], sectionStep: jump });
       expect(row.jump).toBe("on-boundary");
-      expect(row.verdict).toBe("changed");
+      expect(row.verdict).toBe("differs-from-formula");
     });
 
     it("when the jump is away from the boundary on a row predicting none", () => {
@@ -233,7 +235,7 @@ describe("readRow", () => {
         sectionStep: { step: 0.498, frame: 96000 },
       });
       expect(row.jump).toBe("off-boundary");
-      expect(row.verdict).toBe("changed");
+      expect(row.verdict).toBe("differs-from-formula");
     });
 
     it("when the jump is away from the boundary on a row predicting one", () => {
@@ -245,13 +247,13 @@ describe("readRow", () => {
           sectionStep: { step: 0.498, frame },
         });
         expect(row.jump).toBe("off-boundary");
-        expect(row.verdict).toBe("changed");
+        expect(row.verdict).toBe("differs-from-formula");
       }
     });
 
     it("when a hit is missing or extra", () => {
       const missing = readRow({ ...onePass, predicted: 0, sectionHits: [24034, 72034], sectionStep: quiet });
-      expect(missing.verdict).toBe("changed");
+      expect(missing.verdict).toBe("differs-from-formula");
       const extra = readRow({
         ...onePass,
         predicted: 0,
@@ -259,17 +261,17 @@ describe("readRow", () => {
         sectionHits: [24034, 72034, 120034],
         sectionStep: quiet,
       });
-      expect(extra.verdict).toBe("changed");
+      expect(extra.verdict).toBe("differs-from-formula");
     });
 
     it("when there is nothing to read", () => {
       const row = readRow({ ...onePass, predicted: 0, sliceHits: [], sectionHits: [], sectionStep: quiet });
-      expect(row.verdict).toBe("changed");
+      expect(row.verdict).toBe("differs-from-formula");
     });
 
     it("when a shift is predicted and no hit lies where it would show", () => {
       const row = readRow({ ...onePass, predicted: 16, sliceHits: [24034], sectionHits: [24034], sectionStep: jump });
-      expect(row.verdict).toBe("changed");
+      expect(row.verdict).toBe("differs-from-formula");
     });
   });
 
@@ -313,7 +315,7 @@ describe("readRow", () => {
     });
     expect(row.earlyBefore).toEqual([0]);
     expect(row.earlyAfter).toEqual([16, 16]);
-    expect(row.verdict).toBe("as-predicted");
+    expect(row.verdict).toBe("matches-formula");
   });
 
   describe("with the boundary in the discarded pass", () => {
@@ -323,10 +325,10 @@ describe("readRow", () => {
       const row = readRow({ ...discarded, predicted: 16, sectionHits: [24018, 72018, 120018], sectionStep: quiet });
       expect(row.earlyBefore).toEqual([]);
       expect(row.earlyAfter).toEqual([16, 16, 16]);
-      expect(row.verdict).toBe("as-predicted");
+      expect(row.verdict).toBe("matches-formula");
     });
 
-    it("calls a jump changed, on or off where the boundary would be", () => {
+    it("calls a jump a difference, on or off where the boundary would be", () => {
       for (const frame of [48000, 96000]) {
         const row = readRow({
           ...discarded,
@@ -335,13 +337,13 @@ describe("readRow", () => {
           sectionStep: { step: 0.498, frame },
         });
         expect(row.jump).toBe("off-boundary");
-        expect(row.verdict).toBe("changed");
+        expect(row.verdict).toBe("differs-from-formula");
       }
     });
 
-    it("calls a kept hit on time changed", () => {
+    it("calls a kept hit on time a difference", () => {
       const row = readRow({ ...discarded, predicted: 16, sectionHits: [24034, 72018, 120018], sectionStep: quiet });
-      expect(row.verdict).toBe("changed");
+      expect(row.verdict).toBe("differs-from-formula");
     });
   });
 
@@ -358,10 +360,10 @@ describe("readRow", () => {
       expect(row.earlyBefore).toEqual([0]);
       expect(row.earlyAfter).toEqual([16]);
       expect(row.jump).toBe("on-boundary");
-      expect(row.verdict).toBe("as-predicted");
+      expect(row.verdict).toBe("matches-formula");
     });
 
-    it("calls a jump at frame 48000 changed", () => {
+    it("calls a jump at frame 48000 a difference", () => {
       const row = readRow({
         ...onePass,
         boundaryFrame: 4800,
@@ -370,7 +372,7 @@ describe("readRow", () => {
         sectionHits: [24018],
         sectionStep: { step: 0.498, frame: 48000 },
       });
-      expect(row.verdict).toBe("changed");
+      expect(row.verdict).toBe("differs-from-formula");
     });
   });
 
@@ -380,17 +382,17 @@ describe("readRow", () => {
     it("reads a row at the prediction plus that shift as predicted", () => {
       const row = readRow({ ...discarded, predicted: 36, baseline: 1, sectionHits: [23997, 71997, 119997] });
       expect(row.earlyAfter).toEqual([37, 37, 37]);
-      expect(row.verdict).toBe("as-predicted");
+      expect(row.verdict).toBe("matches-formula");
     });
 
-    it("calls the prediction alone changed", () => {
+    it("calls the prediction alone a difference", () => {
       const row = readRow({ ...discarded, predicted: 36, baseline: 1, sectionHits: [23998, 71998, 119998] });
-      expect(row.verdict).toBe("changed");
+      expect(row.verdict).toBe("differs-from-formula");
     });
 
-    it("calls that shift alone changed when more is predicted", () => {
+    it("calls that shift alone a difference when more is predicted", () => {
       const row = readRow({ ...discarded, predicted: 36, baseline: 1, sectionHits: [24033, 72033, 120033] });
-      expect(row.verdict).toBe("changed");
+      expect(row.verdict).toBe("differs-from-formula");
     });
 
     it("expects it on hits before a boundary as well", () => {
@@ -403,7 +405,7 @@ describe("readRow", () => {
       });
       expect(row.earlyBefore).toEqual([1]);
       expect(row.earlyAfter).toEqual([17, 17]);
-      expect(row.verdict).toBe("as-predicted");
+      expect(row.verdict).toBe("matches-formula");
     });
   });
 });
@@ -447,12 +449,12 @@ describe("readRow with a jump the tone cannot show", () => {
   };
 
   it("expects none, and still holds the shift to the prediction", () => {
-    expect(readRow({ ...row, sectionStep: { step: 0.071, frame: 28008 } }).verdict).toBe("as-predicted");
-    expect(readRow({ ...row, sectionHits: [22081], sectionStep: { step: 0.071, frame: 28008 } }).verdict).toBe("changed");
+    expect(readRow({ ...row, sectionStep: { step: 0.071, frame: 28008 } }).verdict).toBe("matches-formula");
+    expect(readRow({ ...row, sectionHits: [22081], sectionStep: { step: 0.071, frame: 28008 } }).verdict).toBe("differs-from-formula");
   });
 
-  it("calls a jump showing anyway changed", () => {
-    expect(readRow({ ...row, sectionStep: { step: 0.449, frame: 8310 } }).verdict).toBe("changed");
+  it("calls a jump showing anyway a difference", () => {
+    expect(readRow({ ...row, sectionStep: { step: 0.449, frame: 8310 } }).verdict).toBe("differs-from-formula");
   });
 });
 
@@ -473,7 +475,7 @@ describe("measurementProblem", () => {
     expect(measurementProblem({ ...good, tone: { ...good.tone, sectionStep: 0.5 } })).toBeNull();
   });
 
-  it("passes a section missing some hits, which the row reads as changed", () => {
+  it("passes a section missing some hits, which the row reads as a difference", () => {
     const burst = { ...good.burst, sectionHits: [1, 2, 3] };
     expect(measurementProblem({ ...good, burst })).toBeNull();
   });
@@ -507,5 +509,49 @@ describe("measurementProblem", () => {
       const tone = { ...good.tone, sectionStep };
       expect(measurementProblem({ ...good, tone })).toMatch(/tone.*renderSection/);
     }
+  });
+});
+
+describe("rowSummary", () => {
+  const reading = (verdict: "matches-formula" | "differs-from-formula") => ({
+    earlyBefore: [],
+    earlyAfter: [],
+    jump: "none" as const,
+    verdict,
+  });
+
+  it("says the defect is there when frames are lost as the formula gives", () => {
+    expect(rowSummary(reading("matches-formula"), 16, 0)).toBe("defect present: 16 frames lost");
+    expect(rowSummary(reading("matches-formula"), 36, 1)).toBe("defect present: 36 frames lost, 1 more early without any latency");
+  });
+
+  it("says clean when the formula gives no loss", () => {
+    expect(rowSummary(reading("matches-formula"), 0, 0)).toBe("clean: no frames lost");
+  });
+
+  it("keeps the shift a no-latency render shows apart from the defect", () => {
+    expect(rowSummary(reading("matches-formula"), 0, 1)).toBe("clean: no frames lost, 1 early without any latency");
+  });
+
+  it("says when a row does not match, whatever the formula gives", () => {
+    expect(rowSummary(reading("differs-from-formula"), 16, 0)).toBe("DIFFERS FROM THE FORMULA");
+    expect(rowSummary(reading("differs-from-formula"), 0, 0)).toBe("DIFFERS FROM THE FORMULA");
+  });
+});
+
+describe("runSummary", () => {
+  const row = (predicted: number, verdict: "matches-formula" | "differs-from-formula") => ({
+    predicted,
+    reading: { verdict },
+  });
+
+  it("counts the rows with the defect and the clean ones", () => {
+    const rows = [row(16, "matches-formula"), row(113, "matches-formula"), row(0, "matches-formula")];
+    expect(runSummary(rows)).toBe("Done: defect present on 2 rows, clean on 1, all matching the formula");
+  });
+
+  it("leads with the rows that do not match", () => {
+    const rows = [row(16, "matches-formula"), row(0, "differs-from-formula")];
+    expect(runSummary(rows)).toBe("Done: 1 of 2 rows differ from the formula");
   });
 });

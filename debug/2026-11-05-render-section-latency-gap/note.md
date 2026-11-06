@@ -69,7 +69,9 @@ each run's `deviceRateHz`, on the page's first nine rows. Each page rate gave th
 data. These are offline renders, and the device rate moves nothing. The rows added since (the Maximizer and the 0.9 s two-pass sections) ran
 with the device at 44.1 kHz.
 
-Each row's prediction shows on the page before the row runs, and every row held. Three things were found along the way and
+Each row's expected reading shows on the page before the row runs, and every row matched the formula: "defect present" on
+the rows that lose frames, "clean" on the others. Once this is fixed upstream, the rows that lose frames read "differs from the
+formula", and that is the fix landing. Three things were found along the way and
 then built in, not predicted in advance: the 1 frame below, the unreadable join above, and the two-pass rule for sections under
 one chunk.
 

@@ -30,6 +30,8 @@ import {
   predictedDroppedFrames,
   readBaseline,
   readRow,
+  rowSummary,
+  runSummary,
   toneStep,
   type RowReading,
   type Step,
@@ -166,14 +168,14 @@ const JUMP_TEXT: Record<RowReading["jump"], string> = {
 };
 
 const rowText = (row: Row): string => {
-  const { earlyBefore, earlyAfter, jump, verdict } = row.reading;
+  const { earlyBefore, earlyAfter, jump } = row.reading;
   const list = (values: number[]): string => (values.length > 0 ? values.join(", ") : "none");
   return [
-    `${verdict}: latency ${row.reportedLatencyFrames} frames as reported`,
+    rowSummary(row.reading, row.predicted, row.baseline),
+    `engine reports ${row.reportedLatencyFrames} frames of latency`,
     `early before the boundary ${list(earlyBefore)}, from it on ${list(earlyAfter)} frames`,
-    row.baseline === 0 ? `predicted ${row.predicted}` : `predicted ${row.predicted} + ${row.baseline} without latency`,
     `tone step ${row.sectionStep.step.toFixed(3)} at frame ${row.sectionStep.frame} (reference ${row.sliceStep.step.toFixed(3)})`,
-    JUMP_TEXT[jump],
+    jump === "none" && !row.jumpReadable ? "tone too level across the join to show a jump" : JUMP_TEXT[jump],
   ].join("; ");
 };
 
@@ -430,9 +432,8 @@ const App: React.FC = () => {
         rows.push({ label: scenario.label, value: rowText(row) });
         setGot([...rows]);
       }
-      const changed = results.filter((row) => row.reading.verdict === "changed").length;
       setAuditState("done");
-      setStatus(changed === 0 ? `Done: all ${results.length} rows as predicted` : `Done: ${changed} of ${results.length} rows changed`);
+      setStatus(runSummary(results));
     } catch (error) {
       failure = `${current.label}: ${String(error)}`;
       console.error("Run failed: " + failure);
@@ -482,8 +483,10 @@ const App: React.FC = () => {
               <>
                 <Code>early</Code> is the single-step hit minus the <Code>renderSection</Code> hit, on tone bursts at
                 0.5, 1.5, 2.5 and 3.5 s. The tone step is the largest move between neighbouring samples on a steady 997
-                Hz tone. Expected values come from <Code>(128 − (latency mod 128)) mod 128</Code> when the render passes
-                one chunk, and two-pass rows add the no-latency two-pass row's shift.
+                Hz tone. The Expected column comes from a formula for the frames lost,{" "}
+                <Code>(128 − (latency mod 128)) mod 128</Code> when the render passes one chunk, and two-pass rows add
+                the no-latency two-pass row's shift. "Defect present" means frames were lost as that formula gives.
+                Once this is fixed upstream, those rows read "differs from the formula".
               </>
             }
             actions={

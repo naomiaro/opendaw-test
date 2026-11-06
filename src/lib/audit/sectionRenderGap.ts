@@ -12,7 +12,8 @@ export interface Step {
   frame: number;
 }
 
-export type RowVerdict = "as-predicted" | "changed";
+/** Whether a row matches `predictedDroppedFrames`. A match on a row that loses frames means the defect is there. */
+export type RowVerdict = "matches-formula" | "differs-from-formula";
 export type Jump = "none" | "on-boundary" | "off-boundary";
 
 export interface RowReading {
@@ -148,7 +149,26 @@ export function readRow(input: {
     earlyBefore.every((early) => early === baseline) &&
     earlyAfter.every((early) => early === predicted + baseline) &&
     jump === expectedJump;
-  return { earlyBefore, earlyAfter, jump, verdict: holds ? "as-predicted" : "changed" };
+  return { earlyBefore, earlyAfter, jump, verdict: holds ? "matches-formula" : "differs-from-formula" };
+}
+
+/** What a row found, in words that need no knowledge of what was predicted. */
+export function rowSummary(reading: RowReading, predicted: number, baseline: number): string {
+  if (reading.verdict === "differs-from-formula") return "DIFFERS FROM THE FORMULA";
+  if (predicted > 0) {
+    const also = baseline === 0 ? "" : `, ${baseline} more early without any latency`;
+    return `defect present: ${predicted} frames lost${also}`;
+  }
+  const also = baseline === 0 ? "" : `, ${baseline} early without any latency`;
+  return `clean: no frames lost${also}`;
+}
+
+/** The run's result in one line. Once the defect is fixed upstream, its rows read as differing. */
+export function runSummary(rows: ReadonlyArray<{ predicted: number; reading: { verdict: RowVerdict } }>): string {
+  const differing = rows.filter((row) => row.reading.verdict === "differs-from-formula").length;
+  if (differing > 0) return `Done: ${differing} of ${rows.length} rows differ from the formula`;
+  const withDefect = rows.filter((row) => row.predicted > 0).length;
+  return `Done: defect present on ${withDefect} rows, clean on ${rows.length - withDefect}, all matching the formula`;
 }
 
 // The tone is at a known level and the reference has no join, so its step is known to this much.
