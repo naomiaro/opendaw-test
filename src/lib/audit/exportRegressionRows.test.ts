@@ -154,6 +154,17 @@ describe("setPositionStart", () => {
   });
 });
 
+describe("the tail rows", () => {
+  it("end their region inside the burst wherever a tail is judged, so something still rings there", () => {
+    const judged = buildRows(48000).filter((r) => r.invariants.includes("tail-present") || r.invariants.includes("tail-absent"));
+    expect(judged.map((r) => r.id)).toEqual(["tail-none-section-entire", "tail-none-bounce-tail", "tail-none-bounce-pre-fader"]);
+    for (const row of judged) {
+      expect(row.rangeSeconds, row.id).toBe(row.seconds);
+      expect(row.seconds, row.id).toBeLessThanOrEqual(0.2);
+    }
+  });
+});
+
 describe("selectRows", () => {
   const catalogue = buildRows(48000);
 

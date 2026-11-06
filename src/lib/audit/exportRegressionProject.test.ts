@@ -92,11 +92,12 @@ describe("distinctSources", () => {
       sourceKey({ signal: "bed", sourceRate: 44100, seconds: 2 })]);
   });
 
-  it("covers the catalogue: six probes, a sweep, a tail, a hot signal, a bed", () => {
+  it("covers the catalogue: six probes, two tails, a sweep, a hot signal, a bed", () => {
     const sources = distinctSources(buildRows(48000));
     expect(new Set(sources.map(sourceKey)).size).toBe(sources.length);
     expect(sources.filter(({ signal }) => signal === "probe")).toHaveLength(6);
-    for (const signal of ["sweep", "tail", "hot", "bed"] as const) {
+    expect(sources.filter(({ signal }) => signal === "tail").map(({ seconds }) => seconds).sort()).toEqual([0.2, 4]);
+    for (const signal of ["sweep", "hot", "bed"] as const) {
       expect(sources.filter((source) => source.signal === signal))
         .toEqual([{ signal, sourceRate: 48000, seconds: 4 }]);
     }

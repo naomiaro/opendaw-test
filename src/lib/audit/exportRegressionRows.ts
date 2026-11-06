@@ -317,6 +317,8 @@ const buildOneFrame = (pageRate: number): ExportRow[] => {
   return rows;
 };
 
+const TAIL_BURST_SECONDS = 0.2;
+
 const buildTail = (): ExportRow[] => {
   const common = { group: "tail" as const, latencyCase: "none" as const, signal: "tail" as const };
   const referenceId = "tail-none-step-one";
@@ -325,11 +327,15 @@ const buildTail = (): ExportRow[] => {
       ...common, id: `tail-none-${path}`, label: `reverb tail, ${path}`, path, referenceId,
       invariants: [...basics(), ...invariants], ...extra
     });
+  // On these the burst fills the region, so the Reverb still rings where the region ends. On the 4 s region it has
+  // faded by about 1.4 s, a tail has nothing to show, and a bounce keeps its exact span by design (upstream's
+  // audio-bounce.test.ts: "with tail but nothing ringing"). The 4 s reference has no frames of the region's to compare.
+  const ringing = { seconds: TAIL_BURST_SECONDS, rangeSeconds: TAIL_BURST_SECONDS, referenceId: null };
   return [
     make({ ...common, id: referenceId, label: "reverb tail, step-one", path: "step-one", invariants: basics() }),
-    tailRow("section-entire", ["tail-present"]),
-    tailRow("bounce-tail", ["tail-present"]),
-    tailRow("bounce-pre-fader", ["tail-absent"]),
+    tailRow("section-entire", ["tail-present"], ringing),
+    tailRow("bounce-tail", ["tail-present"], ringing),
+    tailRow("bounce-pre-fader", ["tail-absent"], ringing),
     // the 200 ms of content has ended before 1 s: what the reference holds in the range is the ringing reverb
     tailRow("section-marker", ["section-is-slice"], { ...withWindow("section-marker", 4) })
   ];
