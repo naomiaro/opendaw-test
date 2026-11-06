@@ -1088,7 +1088,9 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   `AudioNode.prototype.connect` to tee any `AudioDestinationNode` connection through an
   `AnalyserNode`, read `getFloatTimeDomainData` → RMS over ~2s (RMS≈0 = silent). Inspect the
   live box graph by pulling `project` from the React fiber (`root.__reactContainer$…` → walk
-  `memoizedState` hooks for the obj with `.engine` + `.rootBoxAdapter`). The engine's `connect`
+  `memoizedState` hooks for the obj with `.engine` + `.rootBoxAdapter`). That fiber is the one made at `createRoot`, and React
+  swaps current and alternate on every commit, so for STATE that changes start from `root.__reactContainer$….stateNode.current`:
+  the bare fiber reads the previous commit on every other update, which looks exactly like a page stuck in a stale state. The engine's `connect`
   fires seconds AFTER page load (during "Starting engine…") — inject the patch immediately
   after navigation and the race is winnable on a fresh load; claude-in-chrome's post-load
   round-trip usually loses it. If the race is lost, don't reload-and-retry: swap in a fresh
