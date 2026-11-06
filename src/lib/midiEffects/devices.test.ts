@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { midiEffectFixture } from "@/lib/testing/boxGraphFixtures";
 import { ArpeggioDeviceBoxAdapter, VelocityDeviceBoxAdapter } from "@opendaw/studio-adapters";
 import { noteFilterRule } from "@/lib/audit/midiEffectSemanticsRules";
-import { NOTE_FILTER_BASE } from "@/lib/audit/midiEffectSemanticsRows";
+import { settingsOf, NOTE_FILTER_BASE } from "@/lib/audit/midiEffectSemanticsRows";
+import { stepIndexToUnit, unitToStepIndex } from "@/lib/parameterSteps";
 import { BAR_PPQN, patternById } from "./patterns";
 import { DEVICES, DEVICE_IDS, deviceIdOf, deviceParameters, reseedVelocity } from "./devices";
 
@@ -42,18 +43,20 @@ describe("devices", () => {
     const params = deviceParameters(adapter);
     expect(params.map((p) => p.key)).toEqual(["modeIndex", "rate", "numOctaves", "gate", "repeat", "velocity"]);
     const mode = params[0];
-    expect(mode.positions).toBe(ArpeggioDeviceBoxAdapter.Modes.length);
     expect(mode.parameter.getPrintValue().value).toBe("Up");
   });
 
-  it("the Mode control reaches every walk: a position per mode, each landing on its own name", () => {
-    const { adapter, editing } = midiEffectFixture("arpeggio");
+  it("the Mode control reaches every walk: a position per mode, each landing on its own name and in the box", () => {
+    const { adapter, editing, box } = midiEffectFixture("arpeggio");
     const mode = deviceParameters(adapter).find((p) => p.key === "modeIndex");
     if (mode?.positions === undefined) throw new Error("the Mode control has no positions");
+    const { positions } = mode;
     const names: string[] = [];
-    for (let position = 0; position < mode.positions; position++) {
-      editing.modify(() => mode.parameter.setUnitValue(position / (mode.positions! - 1)));
+    for (let position = 0; position < positions; position++) {
+      editing.modify(() => mode.parameter.setUnitValue(stepIndexToUnit(position, positions)));
       names.push(mode.parameter.getPrintValue().value);
+      expect(settingsOf(box)).toMatchObject({ settings: { modeIndex: position } });
+      expect(unitToStepIndex(mode.parameter.getUnitValue(), positions)).toBe(position);
     }
     expect(names).toEqual(ArpeggioDeviceBoxAdapter.Modes);
   });

@@ -485,8 +485,8 @@ const App: React.FC = () => {
                 0.5, 1.5, 2.5 and 3.5 s. The tone step is the largest move between neighbouring samples on a steady 997
                 Hz tone. The Expected column comes from a formula for the frames lost,{" "}
                 <Code>(128 − (latency mod 128)) mod 128</Code> when the render passes one chunk, and two-pass rows add
-                the no-latency two-pass row's shift. "Defect present" means frames were lost as that formula gives.
-                Fixed upstream (openDAW#530): every row the formula gives frames for now reads "differs from the formula", no frames lost, and that is the expected reading here.
+                the no-latency two-pass row's shift. "Defect present" means frames were lost as that formula gives, which is a regression:
+                the defect is fixed upstream (openDAW#530), so every row the formula gives frames for reads "fixed: no frames lost". "Differs from the formula" is a loss nobody predicted.
               </>
             }
             actions={

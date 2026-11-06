@@ -9,7 +9,8 @@
  * Positions are absolute pulses.
  * The only SDK import is `PPQN`, for the one place pulses become milliseconds. The Arpeggio's rule covers its walk, Order,
  * Octaves, Rate, Gate, Repeat, Velocity, Offset and Seed; Hold, Retrigger and the step lanes stay at the box defaults here,
- * where the crate's step reduces to that walk (its `tests/golden.rs`).
+ * where the crate's `step` (`device-arpeggio/src/lib.rs:589-643`) reduces to that walk (its `tests/golden.rs` pins modes 0-2
+ * against the legacy device; the audit's render pins the rest).
  */
 import { PPQN } from "@opendaw/lib-dsp";
 import { walkIndex } from "./arpeggioWalk";
@@ -147,7 +148,7 @@ export function velocityRule(notes: readonly RuleNote[], computeVelocity: (posit
   return notes.map((note) => ({ ...note, velocity: computeVelocity(note.position, note.velocity) }));
 }
 
-/** Zeitgeist per `process` (`device-zeitgeist/src/lib.rs:35-50`): every record through the groove as a float, the note-off too (manual `zeitgeist.md:53`, as corrected for openDAW#525). */
+/** Zeitgeist per `process` (`device-zeitgeist/src/lib.rs:35-49`): every record through the groove as a float, the note-off too (manual `zeitgeist.md:53`, as corrected for openDAW#525). */
 export function zeitgeistRule(notes: readonly RuleNote[], groove: { warp(position: number): number }): RuleNote[] {
   return notes.map((note) => {
     const position = groove.warp(note.position);
@@ -227,7 +228,7 @@ export function toPredictedFigures(notes: readonly PredictedNote[], bpm: number)
  * duration less three attacks (the reader's pitch window starts two attacks after the onset and stops one before the
  * end) is at least `minCycles + 1` periods long: a window that long holds `minCycles + 1` rising zero crossings whatever
  * the phase, the `minCycles` whole cycles the reader needs. A velocity below `minVelocity` is `too-quiet`. A velocity of exactly 0 is
- * silence, not a quiet note: the Nano's voice gain is `gain × velocity` (`device-nano/src/voice.rs:129`), so the note is
+ * silence, not a quiet note: the Nano's voice gain is `gain × velocity` (`device-nano/src/voice.rs:177`), so the note is
  * left out of the prediction before anything is marked, and it neither sounds nor touches a neighbour.
  * Precedence: overlap, polyphonic, too-short, too-quiet, abutting (a note too short or too quiet to read is unreadable whatever its neighbours; abutting applies to the rest). Sorted by position, then pitch.
  */

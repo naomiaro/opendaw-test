@@ -2,33 +2,40 @@ import { describe, expect, it } from "vitest";
 import { BoxEditing } from "@opendaw/lib-box";
 import { Option, UUID } from "@opendaw/lib-std";
 import type { Box } from "@opendaw/lib-box";
-import { MaximizerDeviceBox, PitchDeviceBox, StereoToolDeviceBox, VelocityDeviceBox, ZeitgeistDeviceBox } from "@opendaw/studio-boxes";
+import { MaximizerDeviceBox, PitchDeviceBox, StereoToolDeviceBox, VelocityDeviceBox, type ZeitgeistDeviceBox } from "@opendaw/studio-boxes";
 import { AudioUnitFactory, ProjectSkeleton } from "@opendaw/studio-adapters";
 import { AudioUnitType } from "@opendaw/studio-enums";
+// by path: the package index reaches for AudioWorkletNode, which Node does not have
+import { EffectFactories } from "../../../node_modules/@opendaw/studio-core/dist/EffectFactories.js";
 import { graphWithZeitgeist, transact } from "@/lib/testing/boxGraphFixtures";
 import { removeMasterMaximizer, removeMidiEffect, removeMidiEffects, zeitgeistGrooveBox } from "./midiEffectChain";
 
 describe("removeMidiEffect", () => {
-  it("deletes a Zeitgeist and leaves the project's groove, whose settings a later Zeitgeist finds", () => {
+  it("deletes a Zeitgeist and leaves the project's groove", () => {
     const { boxGraph, unit, device, groove } = graphWithZeitgeist();
     expect(zeitgeistGrooveBox(device)).toBe(groove);
-    const editing = new BoxEditing(boxGraph);
-    editing.modify(() => groove.amount.setValue(0.8));
-    removeMidiEffect(editing, device);
+    removeMidiEffect(new BoxEditing(boxGraph), device);
     expect(boxGraph.findBox(device.address.uuid).isEmpty()).toBe(true);
     expect(unit.midiEffects.pointerHub.incoming().length).toBe(0);
     expect(boxGraph.findBox(groove.address.uuid).unwrap()).toBe(groove);
-    expect(groove.amount.getValue()).toBeCloseTo(0.8, 6);
   });
-  it("two Zeitgeists of a project share the Global Shuffle: a write through one is the other's", () => {
-    const { boxGraph, unit, device, groove } = graphWithZeitgeist();
-    const second = transact(boxGraph, () => ZeitgeistDeviceBox.create(boxGraph, UUID.generate(), (box) => {
-      box.label.setValue("Zeitgeist");
-      box.index.setValue(1);
-      box.groove.refer(groove);
-      box.host.refer(unit.midiEffects);
-    }));
-    expect(zeitgeistGrooveBox(second)).toBe(zeitgeistGrooveBox(device));
+  it("the factory points every new Zeitgeist at the Global Shuffle: a write through one is the other's, and a later one finds it", () => {
+    const skeleton = ProjectSkeleton.empty({ createOutputMaximizer: false, createDefaultUser: false });
+    const { boxGraph } = skeleton;
+    const global = skeleton.mandatoryBoxes.rootBox.groove.targetVertex.unwrap().box;
+    const context = { boxGraph, rootBoxAdapter: { groove: { box: global } } } as never;
+    const unit = transact(boxGraph, () => AudioUnitFactory.create(skeleton, AudioUnitType.Instrument, Option.None));
+    const insert = (index: number) => transact(boxGraph, () => EffectFactories.Zeitgeist.create(context, unit.midiEffects as never, index)) as ZeitgeistDeviceBox;
+    const first = insert(0);
+    const second = insert(1);
+    expect(zeitgeistGrooveBox(first)).toBe(global);
+    expect(zeitgeistGrooveBox(second)).toBe(global);
+    const editing = new BoxEditing(boxGraph);
+    expect(zeitgeistGrooveBox(second).amount.getValue()).not.toBeCloseTo(0.8, 6);
+    editing.modify(() => zeitgeistGrooveBox(first).amount.setValue(0.8));
+    expect(zeitgeistGrooveBox(second).amount.getValue()).toBeCloseTo(0.8, 6);
+    removeMidiEffects(editing, [first, second]);
+    expect(zeitgeistGrooveBox(insert(0)).amount.getValue()).toBeCloseTo(0.8, 6);
   });
 });
 

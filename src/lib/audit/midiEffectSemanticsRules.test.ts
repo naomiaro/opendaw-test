@@ -105,6 +105,24 @@ describe("arpeggioRule", () => {
     expect(pitches(arpeggioRule(rolled, { ...base, order: 1 }, range), 3)).toEqual([64, 67, 60]);
     expect(pitches(arpeggioRule(rolled, { ...base, order: 1, offset: 2 }, range), 3)).toEqual([60, 64, 67]);
   });
+  it("a tie in Pitch order goes to the note that started first, whose cent the step keeps", () => {
+    const later = { position: 3800, duration: 1790, pitch: 60, cent: 25, velocity: 1 };
+    const earlier = { position: 3780, duration: 1810, pitch: 60, cent: -25, velocity: 1 };
+    const out = arpeggioRule([later, earlier], { ...base, order: 1 }, range);
+    // 16 % 2 = 0: the first of the two
+    expect(out[0].cent).toBe(-25);
+    expect(out[1].cent).toBe(25);
+  });
+  it("the offset adds after the repeat's division", () => {
+    const triad = held([60, 64, 67]);
+    // index 16 / 2 + 1 = 9, 9 % 3 = 0: the first note; (16 + 1) / 2 would give 8, the third
+    expect(arpeggioRule(triad, { ...base, repeat: 2, offset: 1 }, range)[0].pitch).toBe(60);
+  });
+  it("the seed reaches the walk", () => {
+    const triad = held([60, 64, 67]);
+    const walk = (seed: number) => pitches(arpeggioRule(triad, { ...base, modeIndex: 13, seed }, range), 7);
+    expect(walk(1)).not.toEqual(walk(2));
+  });
   it("a later walk reaches the rule through its mode and seed, over the octaves as one row", () => {
     const triad = held([60, 64, 67]);
     // Converge over one octave from index 16: at = 16 % 3 = 1 -> the last, then the middle, then the first
@@ -263,7 +281,7 @@ describe("markReadability", () => {
     ], 120, options);
     expect(marked.map((n) => n.readability)).toEqual(["overlap", "overlap", "polyphonic", "polyphonic", "too-short", "too-quiet", "readable"]);
   });
-  it("a velocity-0 note is silence (the Nano's gain is gain × velocity, device-nano/src/voice.rs:129): left out of the prediction", () => {
+  it("a velocity-0 note is silence (the Nano's gain is gain × velocity, device-nano/src/voice.rs:177): left out of the prediction", () => {
     // the shape of vel-offset-1-sixteenths: 32 sixteenths, every one at velocity 0
     const silent = Array.from({ length: 32 }, (_, k) => at(3840 + k * 240, 120, 60, 0));
     expect(markReadability(silent, 120, options)).toEqual([]);

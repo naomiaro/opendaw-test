@@ -1,10 +1,11 @@
 /**
  * The Arpeggio's eighteen walks as pure arithmetic: which position of the expanded pool (held notes × octaves) a walk
  * step plays. The modes and their order are `ArpeggioDeviceBoxAdapter.Modes`; the behaviour is the manual's table
- * (`manual/devices/midi/arpeggio.md`, "1. Walk") and the crate's `walk_index` (`device-arpeggio/src/lib.rs:300-339`),
- * which the semantics audit checks against a render. Steps can be negative (a neighbour of step 0), so the divisions
- * floor and the remainders are Euclidean, as the crate's `div_euclid` and `rem_euclid`. The random modes follow a
- * 64-bit hash of (seed, step, salt) only: a step plays the same note whatever played before it.
+ * (`manual/.../arpeggio.md`, "1. Walk") and the crate's `walk_index` (`device-arpeggio/src/lib.rs:300-339`),
+ * which the semantics audit checks against a render. The divisions floor and the remainders are Euclidean, as the
+ * crate's `div_euclid` and `rem_euclid`; a walk step is not negative, but the hash also takes Random Once's key -1, as
+ * two's complement. The random modes follow a 64-bit hash of (seed, step, salt) only: a step plays the same note
+ * whatever played before it.
  */
 
 const U64 = 64;

@@ -259,7 +259,7 @@ Plays notes in patterns over a configurable rate and number of octaves. It also 
 | `order` | `Int32Field` | 0–1 | Which note counts as the first: Played (by start, then pitch) or Pitch |
 | `numOctaves` | `Int32Field` | 1–5 | The held notes repeat one octave higher per extra octave; the walk runs over all of them as one row |
 | `hold` | `BooleanField` | — | Keep playing the last notes after the keys are released |
-| `rateIndex` | `Int32Field` | 0–16 | Note rate (1/4, 1/8T, 1/16, …) |
+| `rateIndex` | `Int32Field` | 0–16 | Step rate, an index into `ArpeggioDeviceBoxAdapter.RateFractions`, 1/1 to 1/128 (3/16, 1/6, 3/32 among them) |
 | `repeat` | `Int32Field` | 1–16 | Grid steps per walk step |
 | `retrigger` | `Int32Field` | 0–3 | When the pattern restarts: Off (follows the song position), Note, Bar, Beat |
 | `offset` | `Int32Field` | 0–15 | Starts the walk later by this many notes |
@@ -273,7 +273,7 @@ Plays notes in patterns over a configurable rate and number of octaves. It also 
 | `stepTransposes`, `stepOctaves` | `ArrayField<Int32Field>` | 64 × ±12, ±2 | Semitones and octaves added to the step |
 | `stepRatchets` | `ArrayField<Int32Field>` | 64 × 1–7 | Equal hits within the step |
 
-`namedParameter` on the adapter holds the automatable ones (`modeIndex`, `numOctaves`, `rate`, `gate`, `repeat`, `velocity`, `order`, `hold`, `retrigger`, `offset`); `seed` and the lanes are plain box fields. With everything but the first six at its default, a project sounds as an Up, Down or UpDown arpeggio always did. Every played note keeps the cents of the held note it comes from.
+`namedParameter` on the adapter holds the automatable ones (`modeIndex`, `numOctaves`, `rate`, `gate`, `repeat`, `velocity`, `order`, `hold`, `retrigger`, `offset`); `seed` and the lanes are plain box fields. With `modeIndex` at 0–2 and everything but `modeIndex`, `numOctaves`, `rateIndex`, `gate`, `repeat` and `velocity` at its default, the walk is plain Up, Down or UpDown. Every played note keeps the cents of the held note it comes from.
 
 ### Note Filter
 
@@ -320,7 +320,7 @@ Moves notes in time through a groove of the project's groove list (`project.root
 |---|---|---|
 | `groove` | `PointerField<Groove>` | The groove to play through; none passes the notes through unchanged |
 
-`EffectFactories.Zeitgeist` points a new device at the **Global Shuffle** (`project.rootBoxAdapter.groove`, amount 0.6, duration 1/8), which every new Zeitgeist of the project shares and which stays, with its settings, when a device is deleted. Point the device at a box from `Grooves.create(...)` to give it a groove of its own. `ZeitgeistDeviceBoxAdapter.groove()` is an `Option<GrooveAdapter>`; `amount` and `duration` sit on the `GrooveShuffleBoxAdapter` subclass's `namedParameter`, so narrow it first. While the transport loops, every pass plays as if it started at the loop start: a note the groove pushes past the loop end, or pulls before the loop start, is not played.
+`EffectFactories.Zeitgeist` points a new device at the **Global Shuffle** (`project.rootBoxAdapter.groove`, amount 0.6, duration 1/8), which every new Zeitgeist of the project shares and which stays, with its settings, when a device is deleted. Point the device at a box from `Grooves.create(...)` to give it a groove of its own. `ZeitgeistDeviceBoxAdapter.groove()` is an `Option<GrooveAdapter>`; `GrooveAdapter.amount` and `.duration` are themselves `Option`s (an Offset or a Stack has neither), and a `GrooveShuffleBoxAdapter` also has them on its `namedParameter`. While the transport loops, every pass plays as if it started at the loop start: a note the groove moves across the loop end, or before the loop start, is not played in that pass. Cells count from position 0, so a groove longer than the loop, or as long as a loop that does not start on its grid, can lose notes; one whose cells fit does not.
 
 ### Spielwerk
 

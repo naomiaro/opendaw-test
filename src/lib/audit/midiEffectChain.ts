@@ -1,7 +1,7 @@
 /**
  * Removing a MIDI effect device the audit inserted, and reaching a Zeitgeist's groove box.
  * A groove is a project resource: `EffectFactories.Zeitgeist` points a new device at the Global Shuffle, every
- * Zeitgeist of the project shares it, and it stays when a device goes (the test pins it), its settings included.
+ * new Zeitgeist of the project shares it, and it stays when a device goes (the test pins it), its settings included.
  */
 import type { Box } from "@opendaw/lib-box";
 import { GrooveShuffleBox, MaximizerDeviceBox, type ZeitgeistDeviceBox } from "@opendaw/studio-boxes";

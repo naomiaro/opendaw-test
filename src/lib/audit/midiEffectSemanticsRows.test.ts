@@ -38,10 +38,10 @@ describe("SEMANTICS_ROWS", () => {
   });
   it("counts per group follow the brief", () => {
     const count = (group: RowGroup) => SEMANTICS_ROWS.filter((r) => r.group === group).length;
-    expect(GROUPS.map(count)).toEqual([4, 149, 40, 38, 105, 28, 10, 5]);
+    expect(GROUPS.map(count)).toEqual([4, 150, 40, 38, 105, 28, 10, 5]);
   });
-  it("has 379 rows, 53 of them quick (the counts src/demos/midi/CLAUDE.md gives)", () => {
-    expect(SEMANTICS_ROWS.length).toBe(379);
+  it("has 380 rows, 53 of them quick (the counts src/demos/midi/CLAUDE.md gives)", () => {
+    expect(SEMANTICS_ROWS.length).toBe(380);
     expect(quick.length).toBe(53);
   });
   it("every quick id names a row: a renamed row cannot silently leave the quick subset", () => {
@@ -222,6 +222,18 @@ describe("the Note Filter order and disabled rows", () => {
         expect(composeRules([stage.setting], context, new Set(), input), `${row.id} ${stage.setting.device}`).not.toEqual(input);
       });
     }
+  });
+  it.each([
+    ...[13, 14, 15, 16, 17].flatMap((m) => [1, 999999].map((seed) => [`arp-mode${m}-seed${seed}-held-chord`, `arp-mode${m}-oct2-held-chord`])),
+    ...[1, 2, 7].map((offset) => [`arp-offset${offset}-held-chord`, "arp-mode0-oct1-held-chord"]),
+    ["arp-offset15-oct2-held-chord", "arp-mode0-oct2-held-chord"],
+    ["arp-repeat2-offset1-held-chord", "arp-repeat2-held-chord"],
+    ["arp-order1-held-rolled", "arp-order0-held-rolled"],
+    ...Array.from({ length: 15 }, (_, k) => [`arp-mode${k + 3}-oct2-held-chord`, "arp-mode0-oct2-held-chord"]),
+    ...Array.from({ length: 15 }, (_, k) => [`arp-mode${k + 3}-oct1-chords`, "arp-mode0-oct1-chords"]),
+  ])("%s predicts another walk than %s: a setting that changes nothing there proves nothing", (id, reference) => {
+    const pitches = (rowId: string) => predictedVariants(rowById(rowId), context)[0].notes.map((n) => n.pitch);
+    expect(pitches(id)).not.toEqual(pitches(reference));
   });
   it("flips when fixed: disabled-arpeggio's non-identity (Up, 1 octave, 1/16, gate 0.5, velocity 1) is an identity on the sixteenths, so the row proves nothing (open item in the note)", () => {
     const row = rowById("disabled-arpeggio");

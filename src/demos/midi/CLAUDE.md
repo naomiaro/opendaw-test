@@ -412,7 +412,7 @@ table `node scripts/audit/midi-effect-placement/table.ts`.
 
 ### MIDI Effect Semantics Audit (unlisted)
 `midi-effect-semantics-audit-debug-demo.html[?rate=48000|44100][&rows=all|quick|<id,id,…>][&device=all|arpeggio|pitch|velocity|zeitgeist|note-filter|order|disabled][&pattern=<id>]`
-renders 379 rows offline (a Nano playing a 440 Hz sine, root key 69, 1 ms attack and release), each
+renders 380 rows offline (a Nano playing a 440 Hz sine, root key 69, 1 ms attack and release), each
 with a chain of stock MIDI effects at one setting, reads the left channel back as notes and judges
 them against what the devices DOCUMENT (the placement audit asks when; this one asks what). Register:
 `debug/2026-11-03-midi-effect-semantics/note.md` and `register/<rate>.json`; library
@@ -446,14 +446,14 @@ other answer, a corrupt register, or one of another rate or bpm ends the run in 
   the Arpeggio's velocity (parameter −1..+1, the knob prints 0–100 %: one fixed velocity rising from
   silent at −100 % to full at 0 %, then a blend from full toward the note's own at +100 %) and the Zeitgeist's warped note-off (the groove
   moves note-offs too, so durations change) are the rule. The Arpeggio walks the ABSOLUTE grid:
-  `step_index = k / repeat` with `k` the absolute grid index, so a hold from bar 1 at 1/16 starts at
+  `walk_step = effective / repeat + offset` (`device-arpeggio/src/lib.rs:636`), `effective` the absolute grid index while Retrigger is Off, so a hold from bar 1 at 1/16 starts at
   index 16. Questioned behaviour (`QUESTIONS`): the Pitch drops a note shifted outside 0..127; a row
   that shows it carries `questioned: <name>`.
 - **Readability** (a monophonic reader): `overlap` and `polyphonic` are not judged; `too-short` is a
   note whose duration less three attacks holds fewer than four periods (18.3 ms at key 60; the reader's
   pitch window starts two attacks in, stops one before the end and needs four rising crossings);
   `too-quiet` is velocity above 0 and under 0.01; a velocity of exactly 0 is silence (the Nano's gain is
-  `gain × velocity`, `device-nano/src/voice.rs:129`) and leaves the prediction, so a row whose every
+  `gain × velocity`, `device-nano/src/voice.rs:177`) and leaves the prediction, so a row whose every
   note is at 0 (`vel-offset-1-*`, `vel-magnet0x1-*`) is predicted silent and judged: it holds on
   silence and breaks if anything sounds; `abutting` notes (touching within the release or under the
   reader's 2 ms gap apart, the legato melody, Arpeggio gate 1) are read at their PREDICTED span for
@@ -504,7 +504,7 @@ rule's prediction. The overview page is `midi-overview.tsx` (`midi-demos.html`; 
   the Arpeggio's steps overlap and read unreadable; the lane shades unreadable spans
   (`NoteLane`'s `shadedSpans`).
 - **Prediction.** Windows and readability marks use the variant with EVERY known deviation applied
-  (the engine's), never the audit's intent variant (`settingsOf` in
+  (the engine's; the same as the audit's intent variant while `DEVIATIONS` is empty) (`settingsOf` in
   `src/lib/audit/midiEffectSemanticsRows.ts`). A disabled device is left out. The rule supplies two
   placements and nothing else drawn: an abutting note's dashed edges, and its velocity stem, which
   sits at its PREDICTED onset (the strip marks it no differently). Hollow outlines (silent, too

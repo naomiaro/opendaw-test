@@ -5,7 +5,7 @@
  * Page: `midi-effect-semantics-audit-debug-demo.html`; rules: `midiEffectSemanticsRules.ts`.
  *
  * Sampling: one parameter at a time across its whole range, the others at their base, so a miss names
- * its parameter. Two pairs are swept together because neither reads alone: the Velocity magnet's position
+ * its parameter; the Arpeggio's later walks, Offset and Seed are spot-sampled, and Hold, Retrigger and the lanes stay at their defaults. Two pairs are swept together because neither reads alone: the Velocity magnet's position
  * and strength (a position with no strength moves nothing), and the Arpeggio's rate and gate (the gate is a
  * fraction of the rate's step). Each parameter's identity setting is a row too, as the control. Orderings and
  * disabled devices are one row per device or pair at a single non-identity setting. Nine of the seventeen Arpeggio
@@ -157,6 +157,8 @@ function dryRows(): RowDraft[] {
   }));
 }
 
+const SEEDED_MODES: readonly string[] = ["Random", "Random Other", "Shuffle", "Random Once", "Walk"];
+
 function arpeggioRows(): RowDraft[] {
   const rows: RowDraft[] = [];
   const add = (id: string, label: string, pattern: SemanticsPatternId, settings: ArpeggioSettings): void => {
@@ -197,18 +199,22 @@ function arpeggioRows(): RowDraft[] {
     }
     add(`arp-mode${modeIndex}-oct1-chords`, walk(modeIndex, 1), "chords", { ...ARPEGGIO_BASE, modeIndex });
   }
-  // The seed reaches every random mode; the default seed 0 is in the rows above
-  for (const modeIndex of laterModes.filter((mode) => ArpeggioDeviceBoxAdapter.Modes[mode].startsWith("Random") || ["Shuffle", "Walk"].includes(ArpeggioDeviceBoxAdapter.Modes[mode]))) {
+  // The seed reaches every random mode, over two octaves: a pool of three has too few orders for Random Once to show one. The default seed 0 is in the rows above
+  for (const modeIndex of laterModes.filter((mode) => SEEDED_MODES.includes(ArpeggioDeviceBoxAdapter.Modes[mode]))) {
     for (const seed of [1, ArpeggioDeviceBoxAdapter.MaxSeed]) {
-      add(`arp-mode${modeIndex}-seed${seed}-held-chord`, `${walk(modeIndex, 1)}, seed ${seed}`, "held-chord", { ...ARPEGGIO_BASE, modeIndex, seed });
+      add(`arp-mode${modeIndex}-seed${seed}-held-chord`, `${walk(modeIndex, 2)}, seed ${seed}`, "held-chord", { ...ARPEGGIO_BASE, modeIndex, numOctaves: 2, seed });
     }
   }
   for (const order of [0, 1]) {
     add(`arp-order${order}-held-rolled`, `Arpeggio ${ArpeggioDeviceBoxAdapter.Orders[order]} order`, "held-rolled", { ...ARPEGGIO_BASE, order });
   }
-  for (const offset of [1, 2, 7, 15]) {
+  for (const offset of [1, 2, 7]) {
     add(`arp-offset${offset}-held-chord`, `Arpeggio offset ${offset}`, "held-chord", { ...ARPEGGIO_BASE, offset });
   }
+  // 15 is a whole number of passes over three notes, so the longest offset runs over two octaves
+  add("arp-offset15-oct2-held-chord", "Arpeggio offset 15, 2 octaves", "held-chord", { ...ARPEGGIO_BASE, offset: 15, numOctaves: 2 });
+  // The offset adds after the repeat's division: `effective / repeat + offset`
+  add("arp-repeat2-offset1-held-chord", "Arpeggio repeat ×2, offset 1", "held-chord", { ...ARPEGGIO_BASE, repeat: 2, offset: 1 });
   return rows;
 }
 

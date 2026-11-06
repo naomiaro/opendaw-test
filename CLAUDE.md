@@ -451,7 +451,7 @@ Beyond `boxAdapters` / `rootBoxAdapter` / `sampleManager`, `Project` exposes:
 ### Grooves Are Project Resources
 `project.rootBoxAdapter.grooves` is the groove list, `.groove` the **Global Shuffle** (always in the list, a
 `GrooveShuffleBox` the skeleton creates at amount 0.6, duration 1/8). A groove is shared and has no mandatory
-pointer: `EffectFactories.Zeitgeist` points a new device at the Global Shuffle, every Zeitgeist of a project shares
+pointer: `EffectFactories.Zeitgeist` points a new device at the Global Shuffle, every new Zeitgeist of a project shares
 it, and deleting a device leaves it, its settings included. `GrooveAdapter` is the common shape: `kind` (`"shuffle"
 | "power" | "s-curve" | "random" | "offset" | "stack"`), `warp(ppqn)` / `unwarp(ppqn)`, `amount` / `duration`
 (`Option`: an Offset or a Stack has neither), `cellDuration()`, `users()`, `subscribeChange()`.
@@ -467,8 +467,11 @@ if (shuffle instanceof GrooveShuffleBoxAdapter) {
 `GrooveDurations.PPQNs` / `.Labels` (19 values, 1/24 to 16 bars) are also `GrooveShuffleBoxAdapter.DurationPPQNs` /
 `.DurationStrings`. `Grooves` (from `@opendaw/studio-adapters`) creates, duplicates, replaces and stacks them. Note and
 value regions and clips carry an optional `groove` pointer of their own, and `CubedDeviceBox` one for its pattern.
-**While the transport loops, a groove plays every pass as if it started at the loop start:** a note it pushes past the
-loop end or pulls before the loop start is not played. An offline render without a loop area is untouched.
+**While the transport loops, a Zeitgeist (and a Cubed pattern) plays every pass as if it started at the loop start:** a note the
+groove moves across the loop end or before the loop start is not played in that pass, and a groove whose cells fit the loop loses
+none. Mind the grid: cells count from position 0, so a 2-bar groove on a 2-bar loop that starts at bar 1 straddles a cell and loses
+notes (measured on the MIDI Effects page). A region's own groove differs: it starts at the region's loop start and runs on across its
+cycles. An offline render without a loop area is untouched (`renderOfflineSlice` turns the loop off on its copy).
 
 ### MarkerTrackAdapter (Cue Points)
 `project.timelineBoxAdapter.markerTrack` manages cue point markers:
@@ -804,7 +807,7 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   effect — the recorder reads the capture's raw note signals before the chain).
 - After SDK upgrades, also run the MIDI effect semantics audit:
   `midi-effect-semantics-audit-debug-demo.html` then `?rate=44100` — a real click on Run,
-  deterministic, no hardware, about 70 seconds per rate (379 rows). Expect every row
+  deterministic, no hardware, about 70 seconds per rate (380 rows). Expect every row
   `as-registered`, `as-registered, matches-known-deviation …` or `no rule` (the counts per rate are
   in the note's Runs section). A `changed` row is the finding; a `matches-known-deviation` the register
   lists is not (a deviation that stops matching is a fix landing: retire it in the note). Register
@@ -815,8 +818,8 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   Reading recipe:
   `src/demos/midi/CLAUDE.md`.
 - After SDK upgrades, also run `render-section-latency-debug-demo.html` then `?rate=44100` — a real click on Run, offline, no
-  hardware, about 25 seconds each. Expect no frames lost on any row; a row reading "defect present" is `renderSection` losing
-  frames at a chunk boundary again (openDAW#530). Register `debug/2026-11-05-render-section-latency-gap/note.md`.
+  hardware, about 25 seconds each. Expect `Done: no frames lost on any of 12 rows`; a row reading "defect present" is `renderSection` losing
+  frames at a chunk boundary again (openDAW#530), and "differs from the formula" a loss nobody predicted. At 44.1 kHz the 4 s two-pass rows keep the no-latency baseline's 1 early. Register `debug/2026-11-05-render-section-latency-gap/note.md`.
 - After SDK upgrades, also run the Nano play-modes audit: `nano-play-modes-debug-demo.html` then
   `?rate=44100` — a real click on Run, deterministic, no hardware, about three seconds. Expect every row
   `as-expected` (the expectations are the crate's documented behaviour, no register to accept): Mono 40 dB
