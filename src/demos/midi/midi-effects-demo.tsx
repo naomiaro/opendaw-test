@@ -188,6 +188,8 @@ function MidiEffectsDemo() {
       entry={entry}
       compact={compact}
       page="effects"
+      pattern={currentPattern}
+      onPatternChange={changePattern}
       onEnabledChange={(enabled) => {
         // a toggle's failure stands until the next toggle or chain rebuild; the reconcile keeps its own sentence
         const error = tryDeviceEnabled(project!.editing, entry.id, entry.box, enabled, "midi-effects");

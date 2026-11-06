@@ -43,6 +43,15 @@ describe("EmittedBars", () => {
     ]);
   });
 
+  it("a stop and restart between two frames is not seen: two hits of one pitch read as one bar", () => {
+    const e = new EmittedBars();
+    e.sample(on(60), 100);
+    // a frame later the pitch is on again: nothing says it stopped in between
+    e.sample(on(60), 133);
+    e.sample(on(), 300);
+    expect(e.bars).toEqual([{ pitch: 60, from: 100, to: 300 }]);
+  });
+
   it("drops bars that fell more than a pattern behind", () => {
     const e = new EmittedBars(7680);
     e.sample(on(60), 100);
