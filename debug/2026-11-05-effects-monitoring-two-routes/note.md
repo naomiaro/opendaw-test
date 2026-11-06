@@ -3,7 +3,7 @@
 **Title:** In "With Effects" monitoring the live input leaves the engine on both outputs, and only the main
 output follows delay compensation
 
-**Issue:** [openDAW#528](https://github.com/andremichelle/openDAW/issues/528) (filed 2026-11-05, asks whether the main-mix route is intended).
+**Issue:** [openDAW#528](https://github.com/andremichelle/openDAW/issues/528) (filed 2026-11-05, asks whether the main-mix route is intended); [openDAW#529](https://github.com/andremichelle/openDAW/issues/529) (filed 2026-11-05, the reported figure past the 100 ms cap).
 
 **Verified against:** the public app, https://opendaw.studio, build `adc1d47d-eda2-406c-a1ef-87a7bbd61f83`
 (`/build-info.json`, built 2026-11-04), Chrome on macOS, app sample rate 48 kHz. Source citations are read
