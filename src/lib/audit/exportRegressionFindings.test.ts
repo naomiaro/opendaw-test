@@ -98,9 +98,11 @@ describe("loop-pass-one-frame-short", () => {
     const lost = edit(shape, (out) => { out[1].fill(0, 60000); });
     expect(judge(row, lost, rate, { reference, warm: lost }).standing).toBe("failing");
   });
-  it("does not name the warm pass or the slice", () => {
+  it("does not name the warm pass or the slice, and needs the warm pass to hold", () => {
     const row = rowOf(44100, "core-none-section-loop-twice");
-    const one = { ...NO_EVIDENCE, earlyFrames: 1 };
+    const one = { ...NO_EVIDENCE, earlyFrames: 1, warmHolds: () => true };
+    expect(findingFor(row, "impulse-on-reference", 44100, one)?.name).toBe("loop-pass-one-frame-short");
+    expect(findingFor(row, "impulse-on-reference", 44100, { ...one, warmHolds: () => false })).toBeNull();
     expect(findingFor(row, "samples-equal-warm-pass", 44100, one)).toBeNull();
     expect(findingFor(row, "section-is-slice", 44100, one)).toBeNull();
   });
@@ -335,6 +337,143 @@ describe("loop-wrap-keeps-old-read", () => {
     const [finding] = KNOWN_FINDINGS.filter((f) => f.name === "loop-wrap-keeps-old-read");
     expect(finding.applies(rowOf(48000, "core-none-section-marker"), 48000)).toBe(false);
   });
+});
+
+describe("a bounce row is held to samples, so no standing survives whatever they do", () => {
+  for (const rate of [48000, 44100]) {
+    describe(`at ${rate}`, () => {
+      const reference = freeRunning(rate);
+      const none = reference;
+      for (const path of ["bounce-pre-fx", "bounce-pre-fader", "bounce-post-fader"]) {
+        const row = rowOf(rate, `bounce-none-${path}`);
+        it(`${path} reads clean on the reference's samples, failing on anything else`, () => {
+          expect(judge(row, reference, rate, { reference: none }).standing).toBe("clean");
+          expect(judge(row, gained(reference, 0.97), rate, { reference: none }).standing).toBe("failing");
+          expect(judge(row, gained(reference, 0.5), rate, { reference: none }).standing).toBe("failing");
+          expect(judge(row, edit(reference, (out) => { out[0][100] += 0.45; }), rate, { reference: none }).standing).toBe("failing");
+          expect(judge(row, edit(reference, (out) => { out[0][50000] += 1e-6; }), rate, { reference: none }).standing).toBe("failing");
+          expect(judge(row, short(reference, 128), rate, { reference: none }).standing).toBe("failing");
+        });
+      }
+    });
+  }
+
+  describe("a merge reseats its read at the cut", () => {
+    /** The second region reads from the exact position, the first free-ran to it, and they cross within rounding. */
+    const merged = (rate: number, reference: Channels): Channels => {
+      const seam = 2 * rate;
+      return reference.map((channel, c) => channel.map((v, i) =>
+        (i < seam ? v : interpolated(SOURCE[c], 2 * SOURCE_RATE + (i - seam) * Math.fround(ratio(rate))))));
+    };
+    for (const rate of [48000, 44100]) {
+      const row = rowOf(rate, "bounce-none-bounce-merge");
+      const reference = freeRunning(rate);
+      const seam = 2 * rate;
+      // a differing frame at the crossfade's rounding at 48 kHz, where the read itself is exact
+      const shape = edit(merged(rate, reference), (out) => { out[0][seam + 14] += 3e-8; });
+      it(`reads known at ${rate} on the read seated at the cut, failing on anything else`, () => {
+        expect(judge(row, shape, rate, { reference })).toEqual({ standing: "known-finding", findings: ["merge-seam-reseats-read"] });
+        expect(judge(row, gained(shape, 0.97), rate, { reference }).findings).toEqual([null]);
+        expect(judge(row, edit(shape, (out) => { out[0][seam - 1] += 1e-6; }), rate, { reference }).standing).toBe("failing");
+        expect(judge(row, edit(shape, (out) => { for (let i = seam + 2000; i < out[0].length; i++) out[0][i] += 1e-3; }), rate, { reference }).standing).toBe("failing");
+        expect(judge(row, edit(shape, (out) => { out[0][seam + 100] += 0.1; }), rate, { reference }).standing).toBe("failing");
+        expect(judge(row, short(shape, 128), rate, { reference }).standing).toBe("failing");
+      });
+    }
+  });
+
+  it("names no finding on a slice that differs: none of the labels applies to these paths", () => {
+    const rate = 44100;
+    const row = rowOf(rate, "bounce-none-bounce-pre-fader");
+    const reference = freeRunning(rate);
+    expect(judge(row, gained(reference, 0.97), rate, { reference }).findings).toEqual([null]);
+  });
+
+  it("reads a pre-fx bounce on a latent case against the render with no device at all", () => {
+    for (const rate of [48000, 44100]) {
+      for (const latencyCase of ["none", "autotune-muted", "compressor-track", "compressor-muted"]) {
+        expect(rowOf(rate, `bounce-${latencyCase}-bounce-pre-fx`).referenceId).toBe("core-none-step-one");
+      }
+    }
+  });
+});
+
+describe("a loop bounce is held to the stepped loop's second pass", () => {
+  const rate = 44100;
+  const row = rowOf(rate, "bounce-none-bounce-loop");
+  const reference = freeRunning(rate);
+  const early = reference.map((channel) => {
+    const out = new Float32Array(channel.length);
+    out.set(channel.subarray(1));
+    return out;
+  });
+
+  it("names the short pass only while the warm pass holds", () => {
+    expect(judge(row, early, rate, { reference, warm: early })).toEqual({ standing: "known-finding", findings: ["loop-pass-one-frame-short"] });
+  });
+  it("reads failing, with no name on the shift, when the samples moved too", () => {
+    for (const mutated of [gained(early, 0.97), gained(early, 0.5), edit(early, (out) => { out[0][100] += 0.45; }), edit(early, (out) => { out[0][50000] += 1e-6; })]) {
+      expect(judge(row, mutated, rate, { reference, warm: early })).toEqual({ standing: "failing", findings: [null, null] });
+    }
+  });
+  it("takes the one frame past the short pass, silent in the bounce, on both invariants, and no other frame", () => {
+    const last = early[0].length - 1;
+    const silentEnd = edit(early, (out) => { out[0][last] = 0; out[1][last] = 0; });
+    const warm = edit(early, (out) => { out[0][last] = 0.0707; });
+    const names = ["loop-bounce-last-frame-silent", "loop-pass-one-frame-short"];
+    expect(judge(row, silentEnd, rate, { reference, warm })).toEqual({ standing: "known-finding", findings: names });
+    expect(judge(row, silentEnd, rate, { reference, warm: edit(early, (out) => { out[0][last] = 0.2; }) }).standing).toBe("failing");
+    expect(judge(row, edit(silentEnd, (out) => { out[0][last - 1] += 1e-3; }), rate, { reference, warm }).standing).toBe("failing");
+    expect(judge(row, gained(silentEnd, 0.97), rate, { reference, warm }).standing).toBe("failing");
+  });
+  it("gives a row with its own warm pass no such frame", () => {
+    const loop = rowOf(rate, "core-none-section-loop-twice");
+    const last = early[0].length - 1;
+    const warm = edit(early, (out) => { out[0][last] = 0.0707; });
+    expect(judge(loop, early, rate, { reference, warm }).standing).toBe("failing");
+  });
+  it("reads clean at 48 kHz on a pass that lands exact, failing on any other samples", () => {
+    const at48 = rowOf(48000, "bounce-none-bounce-loop");
+    const same = freeRunning(48000);
+    expect(judge(at48, same, 48000, { reference: same, warm: same }).standing).toBe("clean");
+    expect(judge(at48, gained(same, 0.97), 48000, { reference: same, warm: same }).standing).toBe("failing");
+  });
+  it("reads the same case's stepped loop", () => {
+    for (const r of [48000, 44100]) {
+      for (const latencyCase of ["none", "autotune-muted", "compressor-track", "compressor-muted"]) {
+        const loop = rowOf(r, `bounce-${latencyCase}-bounce-loop`);
+        expect(loop.warmReferenceId).toBe(`core-${latencyCase}-step-loop-twice`);
+        expect(loop.referenceId).toBe(`core-${latencyCase}-step-one`);
+        expect(loop.invariants).toEqual(expect.arrayContaining(["samples-equal-warm-pass", "impulse-on-reference"]));
+        expect(loop.invariants).not.toContain("section-is-slice");
+      }
+    }
+  });
+});
+
+describe("a loop on the copy is held to the reference over its first pass", () => {
+  for (const rate of [48000, 44100]) {
+    describe(`at ${rate}`, () => {
+      const row = rowOf(rate, "position-none-loop-on-copy");
+      const reference = freeRunning(rate);
+      const wrap = 2 * rate;
+      const shape = reference.map((channel) => channel.map((v, i) => {
+        if (i < wrap) return v;
+        const k = i - wrap;
+        return channel[k] + v * Math.max(0, 1 - k / (0.005 * rate));
+      }));
+      it("takes the wrap's own frames as the loop's, and holds the first pass bit for bit", () => {
+        expect(judge(row, shape, rate, { reference })).toEqual({ standing: "known-finding", findings: ["loop-wrap-keeps-old-read"] });
+      });
+      it("reads failing at gain 0.5, and on one frame of the first pass moved", () => {
+        const half = judge(row, gained(shape, 0.5), rate, { reference });
+        expect(half.standing).toBe("failing");
+        expect(half.findings).toContain(null);
+        expect(judge(row, edit(shape, (out) => { out[0][100] += 1e-6; }), rate, { reference }).standing).toBe("failing");
+        expect(judge(row, edit(shape, (out) => { out[0][wrap - 1] += 1e-6; }), rate, { reference }).standing).toBe("failing");
+      });
+    });
+  }
 });
 
 it("lists each finding with a note", () => {

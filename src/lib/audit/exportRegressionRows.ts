@@ -272,14 +272,22 @@ const buildStems = (): ExportRow[] => {
   return rows;
 };
 
+// What each bounce's samples are the same as. The source unit alone, the master removed and the faders at 0 dB, a tap
+// after the devices is the case's own render. A pre-fx tap is before them, so it is the render with no device at all.
+const bounceSamples = (path: PathId, latencyCase: LatencyCaseId): Pick<ExportRow, "referenceId" | "warmReferenceId"> & { held: InvariantId } => {
+  if (path === "bounce-loop") return { referenceId: coreId(latencyCase, "step-one"), warmReferenceId: coreId(latencyCase, "step-loop-twice"), held: "samples-equal-warm-pass" };
+  return { referenceId: coreId(path === "bounce-pre-fx" ? "none" : latencyCase, "step-one"), warmReferenceId: null, held: "section-is-slice" };
+};
+
 const buildBounce = (): ExportRow[] => {
   const rows: ExportRow[] = [];
   for (const latencyCase of BASE_CASES) {
     for (const path of BOUNCE_PATHS) {
+      const { held, ...references } = bounceSamples(path, latencyCase);
       rows.push(make({
         id: `bounce-${latencyCase}-${path}`, label: `${latencyCase} through ${path}`,
-        group: "bounce", latencyCase, path, referenceId: coreId(latencyCase, "step-one"),
-        invariants: [...basics(), "frames-as-expected", "impulse-on-reference", "no-jump"]
+        group: "bounce", latencyCase, path, ...references,
+        invariants: [...basics(), "frames-as-expected", held, "impulse-on-reference", "no-jump"]
       }));
     }
   }
@@ -297,8 +305,8 @@ const buildPosition = (pageRate: number): ExportRow[] => {
         rows.push(make({
           id: `position-${latencyCase}-${path}`, label: `${latencyCase} through ${path}`,
           group: "position", latencyCase, path, referenceId: reference,
-          // the loop repeats the reference's first hits, so its hits are not the reference's
-          invariants: [...basics(), "impulse-follows-loop", "no-jump"]
+          // the loop repeats the reference's first hits, so its hits are not the reference's; its first pass is the reference's
+          invariants: [...basics(), "samples-equal-reference", "impulse-follows-loop", "no-jump"]
         }));
         continue;
       }

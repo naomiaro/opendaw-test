@@ -1,5 +1,7 @@
 // Plain Node must load this file: the table script reads it, so no SDK value imports.
 import { expectedLatencyFrames, LOOP_ON_COPY_SECONDS, type ExportRow, type InvariantId } from "./exportRegressionRows.ts";
+import { PROBE_TONE_HZ, PROBE_TONE_LEVEL } from "./exportRegressionSignals.ts";
+import { toneStep } from "./sectionRenderGap.ts";
 
 /** How far a row may sit from the reference: between `low` and `high` times it, per frame, on a read offset by `readOffset` frames. */
 export type GainBand = {
@@ -31,6 +33,8 @@ export type FindingEvidence = {
   wrapResidue: (wrap: number, fade: number) => number;
   /** The reference's peak over the row's range. */
   referenceRangePeak: () => number;
+  /** Whether the row's samples equal the warm pass it is held to, bit for bit, this frame aside (-1 for none). */
+  warmHolds: (exceptFrame: number) => boolean;
 };
 
 export const NO_EVIDENCE: FindingEvidence = {
@@ -40,7 +44,8 @@ export const NO_EVIDENCE: FindingEvidence = {
   sameDelayedBy: () => false,
   headPeak: () => Infinity,
   wrapResidue: () => Infinity,
-  referenceRangePeak: () => Infinity
+  referenceRangePeak: () => Infinity,
+  warmHolds: () => false
 };
 
 /** A claim that a behaviour has been read and is understood, not that it is right: the note says what was read. */
@@ -75,8 +80,7 @@ const windowTolerance = ({ latencyCase }: ExportRow): number => (latencyCase ===
  * The slack is on a frame's local slope, which understates a linearly interpolated impulse: measured up to 1.7, and 5.3
  * through the Fold of `several`.
  */
-const readOffset = (row: ExportRow, pageRate: number): number => {
-  const startFrame = row.rangeStartSeconds * pageRate;
+const readOffset = (row: ExportRow, pageRate: number, startFrame: number = row.rangeStartSeconds * pageRate): number => {
   const exact = row.sourceRate / pageRate;
   const drift = startFrame * Math.abs(Math.fround(exact) - exact);
   const betweenFrames = Math.abs(startFrame - Math.round(startFrame));
@@ -133,7 +137,31 @@ export const KNOWN_FINDINGS: readonly KnownFinding[] = [
     invariant: "impulse-on-reference",
     note: "a loop's whole-frame pass runs one frame short where the accumulated position lands just under the frame count and the split truncates it: 127.999999997 to 127 at 48 kHz, 137 bpm (crates/transport/src/transport.rs emit_until, and audio_region_player.rs sample_of for a region's loop). Every other rate, length and bpm of the catalogue lands exact, as the same arithmetic predicts",
     applies: (row, pageRate) => (row.path === "section-loop-twice" || row.path === "bounce-loop") && passIsOneFrameShort(row, pageRate),
-    signature: ({ earlyFrames }) => earlyFrames === 1
+    // A shift says nothing about the samples: they must still be the stepped loop's, or this is another defect.
+    signature: ({ earlyFrames, warmHolds }, row, pageRate) =>
+      earlyFrames === 1 && warmHolds(row.path === "bounce-loop" ? rangeFrames(row, pageRate) - 1 : -1)
+  },
+  {
+    name: "loop-bounce-last-frame-silent",
+    invariant: "samples-equal-warm-pass",
+    note: "the short pass again, seen at a bounce's end. The second cycle starts a frame early, so the region is over one frame before the span the bounce keeps: that frame reads past the source's end, silent (audio_region_player.rs render_region, base >= source_frames), where the stepped loop is already in its next pass. Every other frame is bit-identical",
+    applies: (row, pageRate) => row.path === "bounce-loop" && passIsOneFrameShort(row, pageRate),
+    signature: ({ firstDifferingFrame, lastDifferingFrame, comparedFrames, largestDifference }, row, pageRate) => {
+      const last = rangeFrames(row, pageRate) - 1;
+      return firstDifferingFrame === last && lastDifferingFrame === last && comparedFrames === last + 1
+        && largestDifference !== null && largestDifference <= toneStep(PROBE_TONE_LEVEL, PROBE_TONE_HZ, pageRate);
+    }
+  },
+  {
+    name: "merge-seam-reseats-read",
+    invariant: "section-is-slice",
+    note: "at a cut's seam the second region's read is seated at the exact position and the first's old read fades out across its 20 ms fade-in (audio_region_player.rs:942, a transparent self-crossfade). So the merge is bit-identical up to the seam, within rounding across the crossfade (-150.5 dB at 48 kHz), and at a resampled rate within the free-running read's drift from there on, as at a start inside a region",
+    applies: (row) => row.path === "bounce-merge",
+    signature: ({ firstDifferingFrame, comparedFrames, bandExcursion }, row, pageRate) => {
+      const seam = (row.seconds / 2) * pageRate;
+      return firstDifferingFrame !== null && firstDifferingFrame >= seam && comparedFrames === rangeFrames(row, pageRate)
+        && bandExcursion({ from: 0, to: Infinity, low: unity, high: unity, readOffset: readOffset(row, pageRate, seam) }) <= ROUNDING;
+    }
   },
   fadedStart("section-is-slice", (row) => row.group === "core" && row.path.startsWith("section-marker")),
   fadedStart("samples-equal-reference", (row) => row.path.startsWith("setposition-")),

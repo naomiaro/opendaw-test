@@ -279,7 +279,8 @@ describe("judgeInvariants", () => {
     const ref = rendered([[1, 2]], {}, { impulseHits: refHits });
     const judged = (shift: number[] | number, inv: InvariantId = "impulse-on-reference") => {
       const hits = typeof shift === "number" ? refHits.map((h) => h - shift) : shift;
-      return judgeInvariants({ ...loop, invariants: [inv], rangeSeconds: frames / 44100 }, rendered([[1, 2]], {}, { impulseHits: hits }), { reference: ref, noLatency: null, warm: null }, 44100)[0];
+      const got = rendered([[1, 2]], {}, { impulseHits: hits });
+      return judgeInvariants({ ...loop, invariants: [inv], rangeSeconds: frames / 44100 }, got, { reference: ref, noLatency: null, warm: got }, 44100)[0];
     };
     expect(judged(1).holds).toBe(false);
     expect(judged(1).finding).toBe("loop-pass-one-frame-short");
@@ -291,7 +292,7 @@ describe("judgeInvariants", () => {
     const other = judgeInvariants({ ...loop, invariants: ["proves-something"] }, rendered([0], {}, { peak: 0 }), { reference: null, noLatency: null, warm: null }, 44100)[0];
     expect(other.finding).toBeNull();
   });
-  it("names the short pass on impulse-on-reference alone: a warm pass that differs is another matter, and stands failing", () => {
+  it("names the short pass only while the warm pass holds: one that differs stands failing, with no name", () => {
     const loop = buildRows(44100).find((x) => x.id === "core-none-section-loop-twice")!;
     const frames = Math.round(loop.rangeSeconds * 44100);
     const hits = [5000, 20000, 40000];
@@ -306,11 +307,12 @@ describe("judgeInvariants", () => {
     };
     const results = judgeInvariants({ ...loop, invariants: ["samples-equal-warm-pass", "impulse-on-reference"] }, got, { reference: ref, noLatency: null, warm: ref }, 44100);
     expect(results.map((r) => r.holds)).toEqual([false, false]);
-    expect(results.map((r) => r.finding)).toEqual([null, "loop-pass-one-frame-short"]);
+    expect(results.map((r) => r.finding)).toEqual([null, null]);
     expect(rowStanding(results, null)).toBe("failing");
-    const alone = judgeInvariants({ ...loop, invariants: ["impulse-on-reference"] }, got, { reference: ref, noLatency: null, warm: ref }, 44100);
+    const alone = judgeInvariants({ ...loop, invariants: ["samples-equal-warm-pass", "impulse-on-reference"] }, got, { reference: ref, noLatency: null, warm: got }, 44100);
+    expect(alone.map((r) => r.finding)).toEqual([null, "loop-pass-one-frame-short"]);
     expect(rowStanding(alone, null)).toBe("known-finding");
-    const jump = judgeInvariants({ ...loop, invariants: ["impulse-on-reference", "no-jump"] }, { ...got, read: { ...got.read, largestStep: { step: 5, frame: 9 } } }, { reference: ref, noLatency: null, warm: ref }, 44100);
+    const jump = judgeInvariants({ ...loop, invariants: ["impulse-on-reference", "no-jump"] }, { ...got, read: { ...got.read, largestStep: { step: 5, frame: 9 } } }, { reference: ref, noLatency: null, warm: got }, 44100);
     expect(rowStanding(jump, null)).toBe("failing");
   });
   it("names no finding on a warm pass that differs, whatever it measured", () => {

@@ -92,6 +92,19 @@ const peakOver = (samples: readonly Float32Array[], from: number, to: number): n
   return peak;
 };
 
+const equalsBitForBit = (rendered: RenderedRow, other: RenderedRow, exceptFrame: number): boolean => {
+  if (rendered.samples.length !== other.samples.length) return false;
+  for (let c = 0; c < rendered.samples.length; c++) {
+    if (rendered.samples[c].length !== other.samples[c].length) return false;
+    const a = bitsOf(rendered.samples[c]);
+    const b = bitsOf(other.samples[c]);
+    for (let frame = 0; frame < a.length; frame++) {
+      if (a[frame] !== b[frame] && frame !== exceptFrame) return false;
+    }
+  }
+  return true;
+};
+
 /** The render against the reference up to the wrap, then against a fresh pass plus the old read fading over `fade`. */
 const wrapResidueOf = (rendered: RenderedRow, reference: RenderedRow, wrap: number, fade: number): number => {
   if (rendered.samples.length !== reference.samples.length || rendered.samples[0].length !== reference.samples[0].length) return Infinity;
@@ -211,8 +224,14 @@ const judge = (
   const rangeFrames = rangeFramesOf(row, pageRate);
   switch (invariant) {
     case "samples-equal-reference":
-    case "section-is-slice":
-      return needs("reference", refs.reference) ?? compareToSlice(rendered, refs.reference!, start, rangeFrames);
+    case "section-is-slice": {
+      const missing = needs("reference", refs.reference);
+      if (missing !== null) return missing;
+      if (row.path !== "loop-on-copy") return compareToSlice(rendered, refs.reference!, start, rangeFrames);
+      // Past the wrap it is a second pass, which the reference does not hold: only the first pass is the reference's.
+      const firstPass = Math.round(LOOP_ON_COPY_SECONDS * pageRate);
+      return compareToSlice({ ...rendered, samples: rendered.samples.map((channel) => channel.subarray(0, firstPass)) }, refs.reference!, 0, firstPass);
+    }
     case "samples-equal-warm-pass":
       return needs("warm pass", refs.warm) ?? compareToSlice(rendered, refs.warm!, 0, rangeFrames);
     case "impulse-on-reference": {
@@ -364,6 +383,7 @@ export function judgeInvariants(row: ExportRow, rendered: RenderedRow, refs: Ref
     const evidence: FindingEvidence = {
       ...outcome.evidence, earlyFrames,
       silent: rendered.read.frames > 0 && rendered.read.nonFinite === 0 && rendered.read.peak === 0,
+      warmHolds: (exceptFrame) => refs.warm !== null && equalsBitForBit(rendered, refs.warm, exceptFrame),
       referenceRangePeak: () => {
         if (refs.reference === null) return Infinity;
         const start = rangeStartFrame(row, pageRate);

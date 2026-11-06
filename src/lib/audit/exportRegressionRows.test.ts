@@ -157,6 +157,15 @@ describe("exportRegressionRows", () => {
       expect(row.invariants).toContain("differs-from-reference");
     }
   });
+  it("holds every bounce to samples, and a loop on the copy over its first pass", () => {
+    for (const rate of [48000, 44100]) {
+      const rows = buildRows(rate);
+      for (const r of rows.filter((x) => x.group === "bounce")) {
+        expect(r.invariants, r.id).toContain(r.path === "bounce-loop" ? "samples-equal-warm-pass" : "section-is-slice");
+      }
+      for (const r of rows.filter((x) => x.path === "loop-on-copy")) expect(r.invariants, r.id).toContain("samples-equal-reference");
+    }
+  });
   it("has 286 rows at each rate", () => {
     expect(buildRows(48000)).toHaveLength(286);
     expect(buildRows(44100)).toHaveLength(286);
@@ -164,7 +173,7 @@ describe("exportRegressionRows", () => {
   it("labels the one frame only where it was measured", async () => {
     const { findingFor, NO_EVIDENCE } = await import("./exportRegressionFindings.ts");
     const row = buildRows(44100).find((r) => r.id === "core-none-section-loop-twice")!;
-    const one = { ...NO_EVIDENCE, earlyFrames: 1 };
+    const one = { ...NO_EVIDENCE, earlyFrames: 1, warmHolds: () => true };
     expect(findingFor(row, "impulse-on-reference", 44100, one)?.name).toBe("loop-pass-one-frame-short");
     expect(findingFor(row, "impulse-on-reference", 48000, one)).toBeNull();
     expect(findingFor(row, "section-is-slice", 44100, one)).toBeNull();
@@ -249,7 +258,7 @@ describe("the warm pass", () => {
   });
 
   it("leaves every other row without a warm reference", () => {
-    buildRows(48000).filter((r) => r.path !== "section-loop-twice").forEach((r) => {
+    buildRows(48000).filter((r) => r.path !== "section-loop-twice" && r.path !== "bounce-loop").forEach((r) => {
       expect(r.warmReferenceId, r.id).toBeNull();
       expect(r.invariants, r.id).not.toContain("samples-equal-warm-pass");
     });
