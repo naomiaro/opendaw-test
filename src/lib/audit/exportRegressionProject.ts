@@ -7,7 +7,7 @@
  */
 import { asInstanceOf, UUID, type Class } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
-import type { Box } from "@opendaw/lib-box";
+import type { Box, BoxGraph } from "@opendaw/lib-box";
 import { EffectFactories, type Project } from "@opendaw/studio-core";
 import { AudioBusFactory, InstrumentFactories, ScriptCompiler } from "@opendaw/studio-adapters";
 import {
@@ -257,25 +257,40 @@ export const insertLatencyDevices = async (
   return remove;
 };
 
-const placeSource = (project: Project, track: TrackBox, uuid: UUID.Bytes, row: ExportRow, name: string): void => {
-  const { boxGraph } = project;
+const placeRegion = (boxGraph: BoxGraph, track: TrackBox, file: AudioFileBox, position: number, row: ExportRow, name: string): void => {
   const duration = Math.round(PPQN.secondsToPulses(row.seconds, row.bpm));
-  const file = AudioFileBox.create(boxGraph, uuid, (box) => {
-    box.fileName.setValue(name);
-    box.endInSeconds.setValue(row.seconds);
-  });
   const events = ValueEventCollectionBox.create(boxGraph, UUID.generate());
   AudioRegionBox.create(boxGraph, UUID.generate(), (box) => {
     box.regions.refer(track.regions);
     box.file.refer(file);
     box.events.refer(events.owners);
-    box.position.setValue(0);
+    box.position.setValue(position);
     box.duration.setValue(duration);
     box.loopOffset.setValue(0);
     box.loopDuration.setValue(duration);
     box.label.setValue(name);
   });
 };
+
+/** One file, and a region at 0, and a second region of that file where the row asks for one. */
+export const placeSourceRegions = (boxGraph: BoxGraph, track: TrackBox, uuid: UUID.Bytes, row: ExportRow, name: string): void => {
+  const file = AudioFileBox.create(boxGraph, uuid, (box) => {
+    box.fileName.setValue(name);
+    box.endInSeconds.setValue(row.seconds);
+  });
+  placeRegion(boxGraph, track, file, 0, row, name);
+  if (row.secondRegionSeconds !== null) {
+    placeRegion(boxGraph, track, file, Math.round(PPQN.secondsToPulses(row.secondRegionSeconds, row.bpm)), row, name);
+  }
+};
+
+/** Other units' tracks hold one region whatever the row: a second region is the source's. */
+const placeSource = (project: Project, track: TrackBox, uuid: UUID.Bytes, row: ExportRow, name: string): void => {
+  placeSourceRegions(project.boxGraph, track, uuid, name === row.signal ? row : { ...row, secondRegionSeconds: null }, name);
+};
+
+/** A tail row's Reverb gives it something to ring. A gap row's silence must be exact, so it has none. */
+export const rowTakesReverb = ({ signal, secondRegionSeconds }: ExportRow): boolean => signal === "tail" && secondRegionSeconds === null;
 
 const MARKER_SECONDS: readonly number[] = [1, 3];
 
@@ -333,7 +348,7 @@ export const applyRow = async (copy: Project, harness: HarnessProject, row: Expo
     if (row.path.startsWith("section-marker")) placeMarkers(copy, row.bpm);
   });
   settleMasterMaximizer(copy, row.masterMaximizer);
-  if (row.signal === "tail") {
+  if (rowTakesReverb(row)) {
     const field = audioEffectsFieldOf(copy, source);
     editing.modify(() => copy.api.insertEffect(field, EffectFactories.AudioNamed.Reverb));
   }

@@ -147,7 +147,7 @@ export const KNOWN_FINDINGS: readonly KnownFinding[] = [
   {
     name: "loop-bounce-last-frame-silent",
     invariant: "samples-equal-warm-pass",
-    note: "the short pass again, seen at a bounce's end. The second cycle starts a frame early, so the region is over one frame before the span the bounce keeps: that frame reads past the source's end, exactly 0 on both channels (audio_region_player.rs:953, base >= source_frames), where the stepped loop is already in its next pass. Every other frame is bit-identical",
+    note: "the same accumulated position, seen at a bounce's end. A bounce has no loop area: its second cycle starts through sample_of, truncated, a frame early (audio_region_player.rs:868-869, :974-976), while the region still ends on the span's end. So the read reaches the source's end one frame early and the span's last frame reads past it, exactly 0 on both channels (:903-905, base >= source_frames), where the stepped loop is already in its next pass. The source is exactly one loop long here; a longer one would go on reading (read, not measured). Every other frame is bit-identical",
     applies: (row, pageRate) => row.path === "bounce-loop" && passIsOneFrameShort(row, pageRate),
     signature: ({ firstDifferingFrame, lastDifferingFrame, comparedFrames, framePeak, largestDifference }, row, pageRate) => {
       const last = rangeFrames(row, pageRate) - 1;

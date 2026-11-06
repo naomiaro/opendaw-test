@@ -185,9 +185,9 @@ describe("exportRegressionRows", () => {
       expect(rows.filter((r) => r.volumeDb !== 0).map((r) => r.id)).toEqual(taps.map(([id]) => id));
     }
   });
-  it("has 289 rows at each rate", () => {
-    expect(buildRows(48000)).toHaveLength(289);
-    expect(buildRows(44100)).toHaveLength(289);
+  it("has 292 rows at each rate", () => {
+    expect(buildRows(48000)).toHaveLength(292);
+    expect(buildRows(44100)).toHaveLength(292);
   });
   it("labels the one frame only where it was measured", async () => {
     const { findingFor, NO_EVIDENCE } = await import("./exportRegressionFindings.ts");
@@ -294,6 +294,45 @@ describe("the long tail rows", () => {
       expect([row.seconds, row.rangeSeconds, row.rangeStartSeconds], id).toEqual([4, 4, 0]);
       expect(row.referenceId, id).toBe("tail-none-step-one");
       expect(row.invariants, id).toEqual(expect.arrayContaining(["proves-something", "latency-as-expected", "section-is-slice"]));
+    }
+  });
+});
+
+describe("the gap rows", () => {
+  const GAP_IDS = ["gap-none-step-one", "gap-none-start", "gap-none-section-entire"];
+
+  it("put a second 200 ms region of the same source at 16 s, and only these rows have one", () => {
+    for (const rate of [48000, 44100]) {
+      const rows = buildRows(rate);
+      expect(rows.filter((r) => r.secondRegionSeconds !== null).map((r) => r.id), String(rate)).toEqual(GAP_IDS);
+      for (const row of rows.filter((r) => GAP_IDS.includes(r.id))) {
+        expect(row.group, row.id).toBe("tail");
+        expect(row.signal, row.id).toBe("tail");
+        expect(row.latencyCase, row.id).toBe("none");
+        expect([row.seconds, row.rangeStartSeconds, row.secondRegionSeconds], row.id).toEqual([0.2, 0, 16]);
+      }
+    }
+  });
+
+  it("step over the 18 s span for the reference, and render it first", () => {
+    const rows = buildRows(48000);
+    const reference = rows.findIndex((r) => r.id === "gap-none-step-one");
+    expect(rows[reference].path).toBe("step-one");
+    expect(rows[reference].rangeSeconds).toBe(18);
+    expect(rows[reference].referenceId).toBeNull();
+    for (const [id, path] of [["gap-none-start", "start"], ["gap-none-section-entire", "section-entire"]] as const) {
+      const index = rows.findIndex((r) => r.id === id);
+      expect(index, id).toBeGreaterThan(reference);
+      expect(rows[index].path, id).toBe(path);
+      expect(rows[index].referenceId, id).toBe("gap-none-step-one");
+      expect(rows[index].invariants, id).toContain("section-is-slice");
+    }
+  });
+
+  it("hold the two render paths to the end of the second region, so they judge the gap and not the silence after it", () => {
+    const rows = buildRows(48000);
+    for (const id of ["gap-none-start", "gap-none-section-entire"]) {
+      expect(rows.find((r) => r.id === id)!.rangeSeconds, id).toBeCloseTo(16.2, 9);
     }
   });
 });

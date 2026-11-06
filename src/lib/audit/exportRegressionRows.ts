@@ -39,6 +39,8 @@ export type ExportRow = {
   engagedCompressor: boolean;
   /** The source unit's fader. Every other row keeps it at 0 dB, where a bounce's taps share one render. */
   volumeDb: number;
+  /** Where a second region of the same source starts, for the rows that put a long silence inside the song. */
+  secondRegionSeconds: number | null;
   repeat: boolean;
   referenceId: string | null;
   noLatencyReferenceId: string | null;
@@ -151,6 +153,7 @@ const make = (spec: Spec): ExportRow => {
     withThird: false,
     engagedCompressor: false,
     volumeDb: 0,
+    secondRegionSeconds: null,
     repeat: false,
     referenceId: null,
     noLatencyReferenceId: null,
@@ -359,6 +362,27 @@ const buildOneFrame = (pageRate: number): ExportRow[] => {
 };
 
 const TAIL_BURST_SECONDS = 0.2;
+const GAP_SECOND_REGION_SECONDS = 16;
+const GAP_SPAN_SECONDS = 18;
+
+/**
+ * A long silence inside the song: 200 ms at 0 and at 16 s. These rows take no Reverb (`rowTakesReverb`), so the gap is
+ * exact zeros, well under `render`'s -72 dB, and nothing but the regions decides where silence starts. The reference
+ * steps the whole 18 s span. The two render paths are held to the second region's end, not the span's: `render` also
+ * trims silence after the last sound, which the 4 s rows above read, and these rows judge the gap alone.
+ */
+const buildGap = (common: Pick<ExportRow, "group" | "latencyCase" | "signal">): ExportRow[] => {
+  const referenceId = "gap-none-step-one";
+  const gap = { ...common, seconds: TAIL_BURST_SECONDS, secondRegionSeconds: GAP_SECOND_REGION_SECONDS };
+  const end = GAP_SECOND_REGION_SECONDS + TAIL_BURST_SECONDS;
+  return [
+    make({ ...gap, id: referenceId, label: "silent gap, step-one", path: "step-one", rangeSeconds: GAP_SPAN_SECONDS, invariants: basics() }),
+    ...(["start", "section-entire"] as const).map((path) => make({
+      ...gap, id: `gap-none-${path}`, label: `silent gap, ${path}`, path, rangeSeconds: end, referenceId,
+      invariants: [...basics(), "section-is-slice" as const]
+    }))
+  ];
+};
 
 const buildTail = (): ExportRow[] => {
   const common = { group: "tail" as const, latencyCase: "none" as const, signal: "tail" as const };
@@ -381,7 +405,8 @@ const buildTail = (): ExportRow[] => {
     tailRow("bounce-tail", ["tail-present"], ringing),
     tailRow("bounce-pre-fader", ["frames-as-expected", "tail-absent"], ringing),
     // the 200 ms of content has ended before 1 s: what the reference holds in the range is the ringing reverb
-    tailRow("section-marker", ["section-is-slice"], { ...withWindow("section-marker", 4) })
+    tailRow("section-marker", ["section-is-slice"], { ...withWindow("section-marker", 4) }),
+    ...buildGap(common)
   ];
 };
 

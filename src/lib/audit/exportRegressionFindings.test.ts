@@ -303,6 +303,33 @@ describe("trailing-silence-trimmed", () => {
   });
 });
 
+describe("the gap rows", () => {
+  const span = (rate: number): Channels => {
+    const channel = new Float32Array(18 * rate);
+    channel.fill(0.5, 0, Math.round(0.2 * rate));
+    channel.fill(0.5, 16 * rate, Math.round(16.2 * rate));
+    return [channel, channel.slice()];
+  };
+  it("have no label yet: cut at the gap they read failing, on both paths and both rates", () => {
+    for (const rate of [48000, 44100]) {
+      for (const id of ["gap-none-start", "gap-none-section-entire"]) {
+        const row = rowOf(rate, id);
+        const reference = span(rate);
+        const cut = reference.map((c) => c.slice(0, Math.round(0.45 * rate)));
+        expect(KNOWN_FINDINGS.filter((f) => f.applies(row, rate)).map((f) => f.name), id).toEqual([]);
+        expect(judge(row, cut, rate, { reference }), id).toEqual({ standing: "failing", findings: [null] });
+      }
+    }
+  });
+  it("read clean on a render that reaches the second region's end, however much silence it keeps after", () => {
+    for (const rate of [48000, 44100]) {
+      const reference = span(rate);
+      const kept = reference.map((c) => c.slice(0, Math.round(16.45 * rate)));
+      expect(judge(rowOf(rate, "gap-none-start"), kept, rate, { reference }).standing, String(rate)).toBe("clean");
+    }
+  });
+});
+
 describe("loop-wrap-keeps-old-read", () => {
   for (const rate of [48000, 44100]) {
     describe(`at ${rate}`, () => {

@@ -1,11 +1,12 @@
 # Export regression: what the harness found on its first runs
 
-**Title:** Every SDK export path, 289 rows at two page rates: what holds, what each row that does not hold measured, and why a
-full run can stall in the OPFS worker
+**Title:** Every SDK export path, 289 rows at two page rates: what holds, what each row that does not hold measured, and a full run's stall in the OPFS worker
 
 **Status: WAITING FOR THE USER'S READ.** No register is accepted: `--accept` waits for this read, and every row reads
 `unregistered`. Nothing is posted and nothing is in the WAV library. Three drafts wait (below). The other findings are the
 user's call, each with the read it got.
+
+**Three rows have not run.** The catalogue now holds 292 rows: the gap rows of Finding 2 were added after the runs below and read nothing yet, because the browser tool was down. They will read failing, with no label written, and `--accept` refuses a failing row. The run after the user's read measures them and writes their label or their draft's figures, before any accept. Every figure below is from the 289 rows.
 
 **Verified against:** `@opendaw/studio-sdk@0.0.182`, engine `9c44973549a7`, checkout at the tag (`766204efe`). Chrome
 156.0.8078.81 (Playwright's), macOS 15.6.1. The Mac's output device read 44100 Hz (`new AudioContext().sampleRate` on a page,
@@ -53,7 +54,7 @@ Both with `?fill=1`, real clicks 30 s after load, every latency read `visible`. 
 |---|---|---|---|
 | `loop-pass-one-frame-short` | 2 | 17 | [draft](./drafts/TO-REVIEW-openDAW-loop-pass-one-frame-short.md) |
 | `loop-bounce-last-frame-silent` | 0 | 4 (the same rows as 4 of the 17) | in the same draft |
-| `trailing-silence-trimmed` | 2 | 2 | [draft, a question](./drafts/TO-REVIEW-openDAW-entire-song-trailing-silence.md) |
+| `trailing-silence-trimmed` | 2 | 2 | [draft, a question](./drafts/TO-REVIEW-openDAW-entire-song-ends-at-silence.md) |
 | `jump-fade-at-start` | 30 | 30 | the user's call |
 | `jump-fade-cold-maximizer` | 2 | 2 | the user's call |
 | `reset-keeps-compensation-delay` | 11 | 11 | the user's call |
@@ -81,7 +82,7 @@ stays failing, so the labels do not hide those two defects.
 - **Second attempt, fired:** the catalogue gained `control-mix-three-units`, three audible units. Token 1794004015579 reads that row
   `changed` and the other 285 `identical`: `rounding-sized, first differing frame 2, largest -138.5 dB, shift 0 frames, frames 192000 -> 192000`.
   The three bounce tap rows came later and were not in this run.
-- `planAccept` refuses both descending runs, unforced and forced.
+- `planAccept` refuses all three descending runs, unforced and forced.
 
 **The neutral chains prove latency, not processing, so two controls say what they cannot (measured, both rates).**
 
@@ -108,7 +109,7 @@ frame in [the #530 note](../2026-11-05-render-section-latency-gap/note.md) and t
 - **Not resampling, the candidate the #530 note named:** the source rate does not move it, and the cell with source and page both at 48 kHz fails.
 - **Not `renderSection`:** `step-loop-twice`, the loop area stepped by hand, carries the same hits and is bit-identical to `section-loop-twice`.
 - The kept pass holds `samples-equal-warm-pass`, so its samples are the stepped loop's. The shift is the whole of the difference against one pass.
-- In the rest of the catalogue: 11 `core-*-section-loop-twice` and 4 `bounce-*-bounce-loop` rows at 44.1 kHz (4 s, 120 bpm), on every latency case.
+- In the rest of the catalogue, at 44.1 kHz, 4 s, 120 bpm: the 11 `core-*-section-loop-twice` rows, one per latency case, and the 4 `bounce-*-bounce-loop` rows, on 4 of those cases.
 
 **The cause (read).** `render_quantum` advances the position by adding `samples_to_pulses(128, …)` per quantum (`crates/transport/src/transport.rs:218, :281`), so the position
 carries accumulated float error. At the loop's end the block is split by converting the remaining pulses to samples and truncating (`emit_until`, `:342`, `as i64`). The comment above the
@@ -132,40 +133,42 @@ the accumulated position sits a hair above the exact one, the remaining frames c
 | **44100** | **4 s** | **120** | **7680** | **176400** | **15.9999999955** | **176399 each** |
 | 44100 | 4 s | 137 | 8768 | 176400 | 16.0000000008 | 176400 each |
 
-**The emulation predicts exactly the failing rows and no others.** It was written from the source after the rows had read, so it explains them rather than having called them in advance. Two reviewers checked it, and I wrote it again for this note with the same result. It covers positions, not the audio.
+**The emulation marks exactly the failing rows and no others.** It was written from the source after the rows had read, so it explains them rather than having called them in advance. Two reviewers checked it, and I wrote it again for this note with the same result. It covers positions, not the audio.
 
 **The looped bounce's last frame (measured, 44.1 kHz, 120 bpm, 4 s, 4 rows, `loop-bounce-last-frame-silent`).** Exactly one frame differs from the stepped loop: frame 176399, the last, on channel 0. The bounce
 holds 0 on both channels, and the stepped loop holds 0.07072490, which is the source's frame 1. So the stepped loop is one frame into its third pass, which fits a second pass one short.
-*Read:* `AudioBounce.ts:130` makes the region two loop durations long and the render keeps the second, so a short first pass ends the region a frame before the span does. Past the region's end nothing reads.
+*Read, then computed:* the bounce has no loop area: it makes the region two loop durations long and keeps the second (`AudioBounce.ts:130`). The second cycle's start goes through `sample_of`, which truncates the same accumulated position (`audio_region_player.rs:868-869, :974-976`); emulated, it lands on frame 176399, not 176400 (raw 15.9999999955 in its quantum). The region still ends at 352800, so the read reaches the source's end one frame early and the span's last frame reads past it: 176400 × 1.08843541 = 192000.0066 against 192000 source frames (`:903-905`). My source is exactly one loop long; with a longer one the read would continue (read, not measured). At 48 kHz, 4 s, 120 bpm the region's end lands on 383999 yet the last frame reads −0.0651 and all 192000 frames equal the stepped loop, so the region's end is not what silences the frame.
 
 **Inferred, not measured:**
 
 - A bounce of a loop laid back on a timeline to loop has a one-sample dropout at each repeat.
 - Live playback shares this transport, and so this loop length.
-- The looped bounce at 48 kHz and 137 bpm does the same. The catalogue has `bounce-loop` at 120 bpm only. Its loop is `audio_region_player.rs`'s, which I did not emulate.
+- The looped bounce at 48 kHz and 137 bpm does the same. The catalogue has `bounce-loop` at 120 bpm only. Computed: the emulation of the cycle start marks the same two of 12 combinations short as the transport's, and at this one the last frame's read lands on exactly 192000 of 192000, past the end. Still unmeasured.
 
-## Finding 2: an entire-song render stops after 10 s of silence
+## Finding 2: an entire-song render ends at the first 10 s of silence, and what follows is not in the file
 
-**Draft, written as a question:** [`drafts/TO-REVIEW-openDAW-entire-song-trailing-silence.md`](./drafts/TO-REVIEW-openDAW-entire-song-trailing-silence.md). The user decides whether it goes.
+**Draft, written as a question:** [`drafts/TO-REVIEW-openDAW-entire-song-ends-at-silence.md`](./drafts/TO-REVIEW-openDAW-entire-song-ends-at-silence.md). The user decides whether it goes.
 
 **The catalogue's rows (measured, `tail-none-section-entire-long`, `tail-none-start-long`).** A 4 s region holding a 0.2 s burst through a default Reverb. The render is bit-identical to the 4 s reference as far as
 it goes, then ends: 80992 of 192000 frames at 48 kHz, 74001 of 176400 at 44.1 kHz.
 
 **A region after a long gap (measured once at 48 kHz, a console probe on the page, not a catalogue row).** The same project with the region copied to a later position, through `OfflineEngineRenderer.start`:
 
-| second region at | `lastRegionAction`, s | frames rendered | seconds | last sample over 0.01 at |
+| second region at | `lastRegionAction`, s | frames rendered | seconds | last sample over 0.01, channel 0 |
 |---|---|---|---|---|
 | none | 4 | 80992 | 1.687 | 0.562 s |
 | 6 s | 10 | 368992 | 7.687 | 6.562 s |
 | **16 s** | **20** | **80992** | **1.687** | **0.562 s: the second region is not in the render** |
 | **30 s** | **34** | **80992** | **1.687** | **0.562 s: the second region is not in the render** |
 
-**Read.** `offline-worker.ts:426` breaks out of `render` once 10 s of silence has passed (`:399`), and `:440` keeps at most a quarter of a second of it. Nothing in that loop looks at the song's end.
+**Read.** `offline-worker.ts:426` breaks out of `render` once audio has played and 10 s has stayed at or below −72 dB (`:398-399`, render's defaults: `start` and `renderSection` pass only `maxDurationSeconds`), and `:440` keeps at most a quarter of a second of it. Nothing in that loop looks at the song's end; `endPosition` reaches only the progress display. Silence before the first audio does not count (`hasHadAudio`). The render resolves normally.
 `MixdownSection.ts:21` gives "Entire song" `tail: true`, and `Mixdowns.ts:28` sends it to `start`. A bounce keeps its span: "The exact span is always kept, a tail only adds what is still audible after it" (`AudioBounce.ts:138`).
 
-**Computed.** Last frame over the −72 dB threshold: 68992 at 48 kHz (80992 − 12000), 62976 at 44.1 kHz (74001 − 11025), about 1.43 s. So on this project a region starting after about 11.4 s is lost.
+**Measured, then computed.** Last frame over −72 dB, across channels: 69069 at 48 kHz, 63019 at 44.1 kHz. They sit in the quanta ending at 69120 and 63104, and the kept length is that end less one quantum plus a quarter second: 80992 = 69120 − 128 + 12000, 74001 = 63104 − 128 + 11025. Computed from that: on this project a region starting after about 11.44 s is lost at 48 kHz. Between 6 s and 16 s nothing was run.
 
-Not run: the last marker section, which `collect` also marks `tail: true`, with a gap. Unknown: whether upstream means this. **I would add a catalogue row for the gap if the user wants it standing.**
+**The rows that make the register see it (added, not run):** `gap-none-step-one`, the reference, a `step` over an 18 s span; `gap-none-start` and `gap-none-section-entire`, `section-is-slice` against it, held to the second region's end at 16.2 s so they judge the gap and not the silence after it. All `signal: "tail"`, a 200 ms burst region at 0 and at 16 s, no Reverb, so the gap is exact zeros. They will read failing until measured. No label is written: the run after the user's read writes it.
+
+Not run: `renderSection` with a gap, 44.1 kHz with a gap, the last marker section, which `collect` also marks `tail: true`, with a gap. Unknown: whether upstream means this.
 
 ## The others: the user's call, no drafts
 
@@ -173,12 +176,12 @@ Each paragraph gives what was measured, then my read. My read is not a decision.
 
 **`jump-fade-at-start`** (30 rows at each rate: `section-marker`, `section-marker-last`, `setposition-*`). At 48 kHz the row differs on frames 0..239 only, rendered / reference exactly i/240, then bit-identical. At 44.1 kHz the same fade over 221 frames, then a
 difference across the whole render on the impulses: −56.6 dB from a 1 s start, −47.0 from 3 s, −50.0 from 2.13 s. Read: `audio_region_player.rs:862` fades in when a block is discontinuous and past the region's start, and upstream's test
-`transport_jump_inside_a_native_region_crossfades` pins it. The 44.1 kHz remainder is `:849` dividing two f32 rates, so a free-running read drifts 3.73e-8 source frames per output frame; computed × the 0.9 impulse, that gives all three figures exactly. My read: by design for a live
+`transport_jump_inside_a_native_region_crossfades` pins it. The 44.1 kHz remainder is `:849` dividing two f32 rates, so a free-running read drifts 3.73e-8 source frames per output frame; computed × the 0.9 impulse, that gives all three figures exactly. `setposition-off-quantum` at 44.1 kHz adds −29.4 dB from the row's start falling 0.031 frame off a whole frame, which is the comparison's own rounding. My read: by design for a live
 jump, a question for an export, whose first block is treated as a jump. The drift is rounding-class. A residual: on the 4 `setposition-off-quantum` rows at 44.1 kHz a single click fits the per-frame allowance, up to +0.0073 / −0.0024 (bisected).
 
 **`jump-fade-cold-maximizer`** (2 rows at each rate: `master-{none,compressor-track}-section-marker`). The fade above, and the master Maximizer starting cold. At 48 kHz the render differs on frames 0..3430, up to 1.48× the reference after the fade, largest difference −0.7 dB. It is within
 rounding of the warm limiter from frame 1168 at 48 kHz and 1627 at 44.1, bit-identical from 3431 at 48 kHz. Not an invariant of any row: the section's peak is 1.46, its 182 samples over 1.0 end at frame 445; `master-none-step-one` has 166 over 1.0 ending at frame 205, peak 1.50. Read: with look-ahead off the Maximizer applies its gain
-directly with no hard clamp (`device-maximizer/src/lib.rs`). My read: by design. A hot render through the default Maximizer exceeds 1.0 for its first 5 to 10 ms.
+directly with no hard clamp (`device-maximizer/src/lib.rs`). My read: by design. At 48 kHz a hot render through the default Maximizer exceeds 1.0 only in its first 5 to 10 ms; at 44.1 kHz samples past 10 ms still do: 68 on `master-none-section-marker`, up to 1.0007, and 116 on `master-none-step-one`, up to 1.0002.
 
 **`reset-keeps-compensation-delay`** (11 rows at each rate: the latent `*-step-reset`). A second play on one renderer after a stop with reset: from `latency` on, the render is the reference delayed by exactly the reported frames, bit-identical on all 11 at both rates. The first frames are silent (`several`: at most 0.0031 at 48 kHz, 0.0023 at 44.1).
 Read: `offline-worker.ts` spends the trim once, in `settle` and `trimStart`. Inferred, not checked across every caller: no SDK export path replays on one renderer. My read: a limit more than a defect today.
@@ -205,11 +208,11 @@ Then the row and those sharing its sample time out at 60 s each; a later row wit
 
 **What the hang is not.**
 
-- *Two writes holding one content-addressed sample's handle.* Read: `GlobalSampleLoaderManager.#load` keeps one load per uuid through `#pending`, and `OpfsWorker.#acquireLock` serialises each path. A second handle on an open file rejects rather than waits (a web-platform test reads so). Measured earlier: with the page hung, a fresh worker opened that same `audio.wav` through `createSyncAccessHandle` in 0.7 ms, so nothing held it.
+- *Two writes holding one content-addressed sample's handle.* Read: `GlobalSampleLoaderManager.#load` keeps one load per uuid through `#pending`, and `OpfsWorker.#acquireLock` serialises each path. A second handle on an open file rejects rather than waits (the web-platform test `file-system-access/sandboxed_FileSystemFileHandle-sync-access-handle-lock.https.tentative.worker.js` reads so). Measured earlier: with the page hung, a fresh worker opened that same `audio.wav` through `createSyncAccessHandle` in 0.7 ms, so nothing held it.
 - *The sweep at page load.* Read: `clearStoredSamples` is awaited before the page goes on, and the file is created long after it. No evidence for it, and it does not explain one row.
 - *A harness fault.* The harness only asks for samples. The call that never settles is the SDK worker's, on a file it has just created.
 
-**The cause, reproduced: the promise is lost when the `FileSystemFileHandle` is collected in flight.**
+**A mechanism that reproduces: the promise is lost when the handle is collected in flight. Whether the natural stall is this is inferred, below.**
 
 **Without the SDK (measured, [`sync-handle-gc-probe.js`](./sync-handle-gc-probe.js), a dedicated worker).** A microtask allocates 800 MB of ArrayBuffers right after the call, so a collection runs before the reply can be delivered. Lost means pending 2 s or more after the arm's last open. The controls: the accounting reads a never-settling promise as pending, and a sentinel object is finalized by the burn.
 
@@ -231,13 +234,26 @@ No promise rejected in any arm. The fourth arm has the shape of `OpfsWorker.ts:1
 **Inferred, and not caught.** That the natural hang is this. The evidence: the same step and lines, a promise that never settles and never rejects, a file nothing holds, and only one of the three files lost, which fits a collection landing inside one open's flight.
 What I did not get: an observed natural hang with the observer attached. Two runs with a wrapper at the 2 s click (one watching every open, tokens 1794006553434; one only `audio.wav`, 1794007066683) and the plain re-run all passed, and a wrapper changes the worker's allocations. So the wrappers may have moved the collection, or the hang may have been rarer than its first three runs read.
 
+**The probes' own runs, all deleted after the hash compare.** None was an unforced full run, so "3 of 4" and "4 in 18" stand. All at 44.1 kHz with `?fill=1` unless named. Which is which comes from the click order and the gaps between the tokens.
+
+| token | what it was | files |
+|---|---|---|
+| 1794006553434 | full, wrapper on every open, no burn | summary, hashes equal |
+| 1794006690745 | `?group=core`, forced burn, stopped by my 16 s window, no summary | 48 |
+| 1794006709211 | `?group=core`, forced burn with the handle held, stopped by the window, no summary | 47 |
+| 1794006902080 | full, forced burn, the forced stall above, no summary | 139 |
+| 1794006971612 | full, forced burn with the handle held | summary, hashes equal |
+| 1794007066683 | full, wrapper on `audio.wav` only, no burn | summary, hashes equal |
+| 1794007165739 | full, plain, no wrapper: the one unforced run here | summary, hashes equal |
+| 1794007349562 | `?rate=48000&rows=tail-none-section-entire-long,tail-none-step-one`, the page state for the gap probe of Finding 2 | summary and 2 WAVs |
+
 **Also inferred.**
 - Why one row: the worker's allocations follow the catalogue, so a collection lands at the same place, and row 235's fresh 705 KB message is a large allocation. An idle wait before Run changes the heap, hence the click-time difference.
 - Why not early opens: first losses at open 172 and 190, and the SDK's at 557, fit an optimizing tier saving only live registers across the await, with the frame unoptimized before that holding the handle. I have no trace of that tier-up.
 
 **Reach (read).** Every `Workers.Opfs` read and write opens through `#resolveFile`. A lost open never answers and keeps that path's lock for the life of the worker, so later operations on the path wait behind it. A sample's load or a recording's save is built on those calls and would wait with them; I measured the load only. The SDK's 5 s and 10 s warnings are what names it.
 
-**Standing.** Not a harness fault. A Chromium behaviour reproduced without the SDK, with an SDK path exposed to it, so a draft: [`drafts/TO-REVIEW-chromium-sync-access-handle-lost-on-collection.md`](./drafts/TO-REVIEW-chromium-sync-access-handle-lost-on-collection.md). Not tried: Firefox, Safari, the user's own Chrome. The Chromium tracker has not been searched; a web search found no report, so search it before posting. No entry in `docs/known-vendor-issues.md` yet: it goes in with the user's read.
+**Standing.** Not a harness fault. A Chromium behaviour reproduced without the SDK, with an SDK path exposed to it, so a draft, which is not ready to post (its head says what is missing): [`drafts/TO-REVIEW-chromium-sync-access-handle-does-not-settle.md`](./drafts/TO-REVIEW-chromium-sync-access-handle-does-not-settle.md). Not tried: Firefox, Safari, the user's own Chrome. The Chromium tracker has not been searched; a web search found no report, so search it before posting. No entry in `docs/known-vendor-issues.md` yet: it goes in with the user's read.
 
 **For a person running the page.** A run stuck on a row with those two console lines is this. Its rows error at 60 s each. Reload and wait about 30 s before Run: both times that was done right after a hang, the run passed. Reloading and clicking at about 2 s hung again twice. This lowers the odds at best, on small counts. It is not a fix.
 
@@ -253,7 +269,7 @@ Once a release ships a fix, the row's invariant holds, its hash moves so it read
 
 ## Limits
 
-- One machine, one browser: Chrome on a Mac. Firefox and Safari have not run this page.
+- One machine, one browser: Chrome on a Mac. Firefox and Safari have not run this page. Not run with the device at 48 kHz; these renders are offline, and the offline semantics audit found the device rate moves nothing, but this page has not shown it.
 - **The neutral chains prove latency only.** A Compressor at ratio 1 and a Maximizer that never engages show that their delay is compensated, not that they process. The two engaged controls above are the only exception. Device coverage, every device through one path, is the second phase by the user's decision.
 - `?uuid=descending` was not repeated for the 3 bounce tap rows.
 - The gap measurement above is one console probe at 48 kHz, on `start`.

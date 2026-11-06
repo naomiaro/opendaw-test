@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { UUID } from "@opendaw/lib-std";
-import { distinctSources, latencyDevices, sourceKey, sourceSamples, sourceUuid } from "./exportRegressionProject";
+import { Option, UUID } from "@opendaw/lib-std";
+import { AudioFileBox, AudioRegionBox, TrackBox } from "@opendaw/studio-boxes";
+import { AudioUnitFactory, ProjectSkeleton } from "@opendaw/studio-adapters";
+import { AudioUnitType } from "@opendaw/studio-enums";
+import { transact, type Graph } from "@/lib/testing/boxGraphFixtures";
+import { distinctSources, latencyDevices, placeSourceRegions, rowTakesReverb, sourceKey, sourceSamples, sourceUuid } from "./exportRegressionProject";
 import { LATENCY_CASES, buildRows, type ExportRow } from "./exportRegressionRows";
 import { probeSource } from "./exportRegressionSignals";
 
@@ -38,6 +42,58 @@ describe("latencyDevices", () => {
         expect(script !== undefined).toBe(device === "Werkstatt");
       }
     }
+  });
+});
+
+describe("placeSourceRegions", () => {
+  const rowOf = (id: string): ExportRow => buildRows(48000).find((row) => row.id === id)!;
+
+  const place = (row: ExportRow): { regions: AudioRegionBox[]; files: AudioFileBox[] } => {
+    const skeleton = ProjectSkeleton.empty({ createOutputMaximizer: false, createDefaultUser: false });
+    const boxGraph = skeleton.boxGraph as Graph;
+    const uuid = UUID.generate();
+    transact(boxGraph, () => {
+      const unit = AudioUnitFactory.create(skeleton, AudioUnitType.Instrument, Option.None);
+      const track = TrackBox.create(boxGraph, UUID.generate(), (box) => {
+        box.tracks.refer(unit.tracks);
+        box.target.refer(unit);
+      });
+      placeSourceRegions(boxGraph, track, uuid, row, row.signal);
+    });
+    return {
+      regions: boxGraph.boxes().filter((box): box is AudioRegionBox => box instanceof AudioRegionBox),
+      files: boxGraph.boxes().filter((box): box is AudioFileBox => box instanceof AudioFileBox),
+    };
+  };
+
+  it("places one region at 0 for a row with no second region", () => {
+    const { regions, files } = place(rowOf("tail-none-step-one"));
+    expect(regions.map((region) => region.position.getValue())).toEqual([0]);
+    expect(files).toHaveLength(1);
+  });
+
+  it("places the second region of a gap row at its position, the same length, on the same file", () => {
+    const { regions, files } = place(rowOf("gap-none-step-one"));
+    expect(files).toHaveLength(1);
+    expect(regions.map((region) => region.position.getValue()).sort((a, b) => a - b)).toEqual([0, 30720]);
+    for (const region of regions) {
+      expect(region.duration.getValue()).toBe(384);
+      expect(region.loopDuration.getValue()).toBe(384);
+      expect(region.file.targetVertex.unwrap().box).toBe(files[0]);
+    }
+  });
+});
+
+describe("rowTakesReverb", () => {
+  it("gives a tail row its Reverb, and a gap row none: its gap must be exact silence", () => {
+    const rows = buildRows(48000);
+    const of = (id: string): boolean => rowTakesReverb(rows.find((row) => row.id === id)!);
+    expect(of("tail-none-step-one")).toBe(true);
+    expect(of("tail-none-start-long")).toBe(true);
+    expect(of("core-none-step-one")).toBe(false);
+    expect(of("gap-none-step-one")).toBe(false);
+    expect(of("gap-none-start")).toBe(false);
+    expect(of("gap-none-section-entire")).toBe(false);
   });
 });
 
