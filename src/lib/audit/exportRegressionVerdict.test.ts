@@ -17,7 +17,7 @@ const rendered = (samples: number[] | number[][], over: Partial<RenderedRow> = {
   return { read: read({ frames: channels[0].length, channels: channels.length, ...r }), samples: channels, reportedLatencyFrames: 0, repeatHash: null, ...over };
 };
 const row = (over: Partial<ExportRow> = {}): ExportRow => ({
-  ...buildRows(48000).find((x) => x.id === "core-none-step-one")!, rangeStartSeconds: 0, invariants: [], ...over
+  ...buildRows(48000).find((x) => x.id === "core-none-step-one")!, rangeStartSeconds: 0, rangeSeconds: 5 / 48000, invariants: [], ...over
 });
 const one = (inv: InvariantId, r: ExportRow, got: RenderedRow, refs: { reference?: RenderedRow | null; noLatency?: RenderedRow | null } = {}, rate = 48000) =>
   judgeInvariants({ ...r, invariants: [inv] }, got, { reference: refs.reference ?? null, noLatency: refs.noLatency ?? null }, rate)[0];
@@ -33,12 +33,24 @@ describe("judgeInvariants", () => {
   });
   it("compares a longer render over the reference's frames", () => {
     const ref = rendered([1, 2, 3]);
-    expect(one("samples-equal-reference", row(), rendered([1, 2, 3, 9, 9]), { reference: ref }).holds).toBe(true);
-    expect(one("samples-equal-reference", row(), rendered([1, 2, 4, 9, 9]), { reference: ref }).holds).toBe(false);
+    const r = row({ rangeSeconds: 3 / 48000 });
+    const longer = one("samples-equal-reference", r, rendered([1, 2, 3, 9, 9]), { reference: ref });
+    expect(longer.holds).toBe(true);
+    expect(longer.detail).toContain("2 frames past the reference not compared");
+    expect(one("samples-equal-reference", r, rendered([1, 2, 4, 9, 9]), { reference: ref }).holds).toBe(false);
+  });
+  it("fails a render or a reference too short for the range, naming both counts", () => {
+    const ref = rendered([1, 2, 3, 4, 5]);
+    const short = one("section-is-slice", row(), rendered([1, 2]), { reference: ref });
+    expect(short.holds).toBe(false);
+    expect(short.detail).toContain("2 of the range's 5");
+    const shortRef = one("section-is-slice", row(), rendered([1, 2, 3, 4, 5]), { reference: rendered([1, 2, 3]) });
+    expect(shortRef.holds).toBe(false);
+    expect(shortRef.detail).toContain("3 of the range's 5");
   });
   it("compares a setposition row with the reference from its start frame", () => {
     const ref = rendered([9, 9, 1, 2, 3, 4]);
-    const r = row({ rangeStartSeconds: 2 / 48000 });
+    const r = row({ rangeStartSeconds: 2 / 48000, rangeSeconds: 4 / 48000 });
     expect(one("samples-equal-reference", r, rendered([1, 2, 3, 4]), { reference: ref }).holds).toBe(true);
     expect(one("samples-equal-reference", r, rendered([9, 9, 1, 2]), { reference: ref }).holds).toBe(false);
   });
@@ -86,6 +98,19 @@ describe("judgeInvariants", () => {
     const r = row({ referenceId: "x" });
     expect(one("no-jump", r, rendered([0], {}, { largestStep: { step: 0.21, frame: 1 } }), { reference: ref }).holds).toBe(true);
     expect(one("no-jump", r, rendered([0], {}, { largestStep: { step: 0.22, frame: 1 } }), { reference: ref }).holds).toBe(false);
+  });
+  it("fails no-jump when no step was measured", () => {
+    expect(one("no-jump", row(), rendered([0], {}, { largestStep: { step: 0, frame: -1 } })).holds).toBe(false);
+    expect(one("no-jump", row(), rendered([0], {}, { largestStep: { step: 0, frame: 7 } })).holds).toBe(false);
+  });
+  it("fails on zero frames or zero channels", () => {
+    const empty = rendered([[]]);
+    const none: RenderedRow = { ...empty, samples: [] };
+    for (const bad of [empty, none]) {
+      expect(one("muted-latent-unchanged", row(), bad, { noLatency: bad }).holds).toBe(false);
+      expect(one("stems-sum-to-mix", row(), bad, { reference: bad }).holds).toBe(false);
+      expect(one("samples-equal-reference", row(), bad, { reference: bad }).holds).toBe(false);
+    }
   });
   it("says what muted-latent-unchanged read: exact, or past how many frames", () => {
     const base = rendered(Array.from({ length: 300 }, (_, i) => i));
@@ -137,15 +162,38 @@ describe("judgeInvariants", () => {
     expect(bad.detail).toContain("4800");
     expect(one("latency-as-expected", r, rendered([1], { reportedLatencyFrames: 4800 })).holds).toBe(true);
   });
-  it("puts a known finding's name on a failing invariant and only there", () => {
+  it("puts a known finding's name on a failing invariant whose measurement matches, and only there", () => {
     const loop = buildRows(44100).find((x) => x.id === "core-none-section-loop-twice")!;
-    const ref = rendered([0, 0, 1, 0, 0]);
-    const [bad] = judgeInvariants({ ...loop, invariants: ["section-is-slice"] }, rendered([0, 1, 0, 0, 0]), { reference: ref, noLatency: null }, 44100);
-    expect(bad.finding).toBe("one-frame-early-44100");
-    const [good] = judgeInvariants({ ...loop, invariants: ["section-is-slice"] }, rendered([0, 0, 1, 0, 0]), { reference: ref, noLatency: null }, 44100);
-    expect(good.finding).toBeNull();
-    const [other] = judgeInvariants({ ...loop, invariants: ["proves-something"] }, rendered([0], {}, { peak: 0 }), { reference: null, noLatency: null }, 44100);
+    const frames = Math.round(loop.rangeSeconds * 44100);
+    const refHits = [5000, 20000, 40000];
+    const ref = rendered([[1, 2]], {}, { impulseHits: refHits });
+    const judged = (shift: number[] | number, inv: InvariantId = "impulse-on-reference") => {
+      const hits = typeof shift === "number" ? refHits.map((h) => h - shift) : shift;
+      return judgeInvariants({ ...loop, invariants: [inv], rangeSeconds: frames / 44100 }, rendered([[1, 2]], {}, { impulseHits: hits }), { reference: ref, noLatency: null }, 44100)[0];
+    };
+    expect(judged(1).holds).toBe(false);
+    expect(judged(1).finding).toBe("one-frame-early-44100");
+    expect(judged(1000).finding).toBeNull();
+    expect(judged(37).finding).toBeNull();
+    expect(judged([4999, 19999, 39998]).finding).toBeNull();
+    expect(judged(0).holds).toBe(true);
+    expect(judged(0).finding).toBeNull();
+    const other = judgeInvariants({ ...loop, invariants: ["proves-something"] }, rendered([0], {}, { peak: 0 }), { reference: null, noLatency: null }, 44100)[0];
     expect(other.finding).toBeNull();
+  });
+  it("names the slice finding only on a one-frame-early measurement", () => {
+    const loop = buildRows(44100).find((x) => x.id === "core-none-section-loop-twice")!;
+    const r = { ...loop, invariants: ["section-is-slice" as const], rangeSeconds: 5 / 44100 };
+    // a sample slice carries no impulses, so it measures no shift and no finding matches
+    const [bad] = judgeInvariants(r, rendered([0, 1, 0, 0, 0]), { reference: rendered([0, 0, 1, 0, 0]), noLatency: null }, 44100);
+    expect(bad.holds).toBe(false);
+    expect(bad.finding).toBeNull();
+  });
+  it("gives a failure that compared nothing no finding", () => {
+    const loop = buildRows(44100).find((x) => x.id === "core-none-section-loop-twice")!;
+    const [r] = judgeInvariants({ ...loop, invariants: ["impulse-on-reference"] }, rendered([0], {}, { impulseHits: [1] }), { reference: null, noLatency: null }, 44100);
+    expect(r.holds).toBe(false);
+    expect(r.finding).toBeNull();
   });
 });
 
@@ -182,5 +230,6 @@ describe("rowStanding", () => {
     expect(rowStanding([fails("one-frame-early-44100")], null)).toBe("known-finding");
     expect(rowStanding([fails(null), fails("x")], null)).toBe("failing");
     expect(rowStanding([holds()], "worker hung")).toBe("errored");
+    expect(rowStanding([], null)).toBe("failing");
   });
 });

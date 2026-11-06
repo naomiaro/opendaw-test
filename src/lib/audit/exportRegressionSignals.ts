@@ -64,3 +64,7 @@ export const hotSource = (sourceRate: number, seconds: number): Stereo => {
   const left = sine(sourceRate, framesOf(sourceRate, seconds), PROBE_TONE_HZ, 1.5);
   return [left, left.slice()];
 };
+
+/** Where a source frame lands at the page rate. */
+export const computedFrame = (sourceFrame: number, sourceRate: number, pageRate: number): number =>
+  Math.round((sourceFrame * pageRate) / sourceRate);

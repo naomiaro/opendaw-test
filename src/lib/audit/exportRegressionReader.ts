@@ -50,8 +50,7 @@ export const findImpulses = (channel: Float32Array, threshold: number, minGapFra
   return hits;
 };
 
-export const computedFrame = (sourceFrame: number, sourceRate: number, pageRate: number): number =>
-  Math.round((sourceFrame * pageRate) / sourceRate);
+export { computedFrame } from "./exportRegressionSignals.ts";
 
 export const readRender = async (
   channels: readonly Float32Array[],

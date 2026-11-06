@@ -79,9 +79,10 @@ describe("exportRegressionRows", () => {
   it("labels the one frame only where it was measured", async () => {
     const { findingFor } = await import("./exportRegressionFindings.ts");
     const row = buildRows(44100).find((r) => r.id === "core-none-section-loop-twice")!;
-    expect(findingFor(row, "section-is-slice", 44100)?.name).toBe("one-frame-early-44100");
-    expect(findingFor(row, "section-is-slice", 48000)).toBeNull();
-    expect(findingFor(row, "no-jump", 44100)).toBeNull();
+    const one = { earlyFrames: 1, firstDifferingFrame: null, lastDifferingFrame: null, largestDifference: null };
+    expect(findingFor(row, "section-is-slice", 44100, one)?.name).toBe("one-frame-early-44100");
+    expect(findingFor(row, "section-is-slice", 48000, one)).toBeNull();
+    expect(findingFor(row, "no-jump", 44100, one)).toBeNull();
   });
 });
 

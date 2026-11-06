@@ -1,8 +1,8 @@
 // Plain Node must load this file: the table script judges runs with it, so no SDK value imports.
 import { expectedLatencyFrames, type ExportRow, type InvariantId } from "./exportRegressionRows.ts";
-import { findingFor } from "./exportRegressionFindings.ts";
-import { IMPULSE_SOURCE_FRAMES, PROBE_TONE_HZ, PROBE_TONE_LEVEL } from "./exportRegressionSignals.ts";
-import { toneStep } from "./sectionRenderGap.ts";
+import { findingFor, NO_EVIDENCE, type FindingEvidence } from "./exportRegressionFindings.ts";
+import { computedFrame, IMPULSE_SOURCE_FRAMES, PROBE_TONE_HZ, PROBE_TONE_LEVEL } from "./exportRegressionSignals.ts";
+import { toneStep, uniformEarly } from "./sectionRenderGap.ts";
 import type { RenderRead } from "./exportRegressionReader.ts";
 
 export type RenderedRow = {
@@ -36,46 +36,81 @@ const TAIL_PRESENT_RMS = 1e-4;
 // 2^-21, the rounding of summing float32 stems; nothing above it is rounding
 const STEM_SUM_TOLERANCE = 4.8e-7;
 
-type Outcome = { holds: boolean; detail: string };
-const pass = (detail: string): Outcome => ({ holds: true, detail });
-const fail = (detail: string): Outcome => ({ holds: false, detail });
+// `compared` is false for a failure that looked at nothing (a missing read, a shape mismatch): no finding fits it
+type Outcome = { holds: boolean; detail: string; compared: boolean; evidence: FindingEvidence };
+const pass = (detail: string, evidence: FindingEvidence = NO_EVIDENCE): Outcome =>
+  ({ holds: true, detail, compared: true, evidence });
+const fail = (detail: string, evidence: FindingEvidence = NO_EVIDENCE): Outcome =>
+  ({ holds: false, detail, compared: true, evidence });
+const failUncompared = (detail: string): Outcome =>
+  ({ holds: false, detail, compared: false, evidence: NO_EVIDENCE });
 
 const bitsOf = (channel: Float32Array): Uint32Array =>
   new Uint32Array(channel.buffer, channel.byteOffset, channel.length);
 
+const hasNoFrames = (r: RenderedRow): boolean => r.samples.length === 0 || r.samples[0].length === 0;
+
 const rangeFramesOf = (row: ExportRow, pageRate: number): number => Math.round(row.rangeSeconds * pageRate);
 const rangeStartFrame = (row: ExportRow, pageRate: number): number => Math.round(row.rangeStartSeconds * pageRate);
 
-/** Bit patterns of the row's frames against the reference from `offset`, over the frames both hold. */
-const compareToSlice = (rendered: RenderedRow, reference: RenderedRow, offset: number): Outcome => {
+/**
+ * Bit patterns of the row's frames against the reference from `offset`, over the frames both hold. The
+ * range's frames must all be compared: a short render or a short reference fails by itself.
+ */
+const compareToSlice = (rendered: RenderedRow, reference: RenderedRow, offset: number, rangeFrames: number): Outcome => {
+  if (hasNoFrames(rendered) || hasNoFrames(reference)) return failUncompared("a render holds no frames");
   if (rendered.samples.length !== reference.samples.length) {
-    return fail(`channel counts differ: ${rendered.samples.length} against the reference's ${reference.samples.length}`);
+    return failUncompared(`channel counts differ: ${rendered.samples.length} against the reference's ${reference.samples.length}`);
   }
-  const shared = Math.min(rendered.samples[0].length, reference.samples[0].length - offset);
-  if (!(shared > 0)) return fail(`no frames to compare from reference frame ${offset}`);
-  for (let frame = 0; frame < shared; frame++) {
-    for (let c = 0; c < rendered.samples.length; c++) {
-      if (bitsOf(rendered.samples[c])[frame] !== bitsOf(reference.samples[c])[offset + frame]) {
-        return fail(`differs at frame ${frame} of channel ${c} (reference frame ${offset + frame}), ${shared} frames compared`);
+  const rowFrames = rendered.samples[0].length;
+  const shared = Math.min(rowFrames, reference.samples[0].length - offset);
+  if (!(shared > 0)) return failUncompared(`no frames to compare from reference frame ${offset}`);
+  let first = -1;
+  let last = -1;
+  let largest = 0;
+  let firstChannel = 0;
+  for (let c = 0; c < rendered.samples.length; c++) {
+    const a = bitsOf(rendered.samples[c]);
+    const b = bitsOf(reference.samples[c]);
+    const x = rendered.samples[c];
+    const y = reference.samples[c];
+    for (let frame = 0; frame < shared; frame++) {
+      if (a[frame] === b[offset + frame]) continue;
+      if (first < 0 || frame < first) {
+        first = frame;
+        firstChannel = c;
       }
+      if (frame > last) last = frame;
+      const delta = Math.abs(x[frame] - y[offset + frame]);
+      largest = Number.isNaN(delta) ? Infinity : Math.max(largest, delta);
     }
   }
-  return pass(`${shared} frames bit-identical from reference frame ${offset}`);
+  if (first >= 0) {
+    return fail(
+      `differs at frame ${first} of channel ${firstChannel} (reference frame ${offset + first}), last at ${last}, ${shared} frames compared`,
+      { earlyFrames: null, firstDifferingFrame: first, lastDifferingFrame: last, largestDifference: largest }
+    );
+  }
+  if (shared < rangeFrames) return fail(`only ${shared} of the range's ${rangeFrames} frames could be compared (render ${rowFrames}, reference from frame ${offset}: ${reference.samples[0].length - offset})`);
+  const spare = rowFrames - shared;
+  const tail = spare > 0 ? `, ${spare} frames past the reference not compared` : "";
+  return pass(`${shared} frames bit-identical from reference frame ${offset}${tail}`);
 };
 
 const compareHits = (got: readonly number[], expected: readonly number[], against: string): Outcome => {
-  if (expected.length === 0) return fail(`${against} has no impulse in the range, so nothing is proven`);
+  if (expected.length === 0) return failUncompared(`${against} has no impulse in the range, so nothing is proven`);
+  const evidence = { ...NO_EVIDENCE, earlyFrames: uniformEarly([...expected], [...got]) };
   const missing = expected.filter((frame) => !got.includes(frame));
   const extra = got.filter((frame) => !expected.includes(frame));
-  if (missing.length === 0 && extra.length === 0) return pass(`impulses at [${got.join(", ")}]`);
+  if (missing.length === 0 && extra.length === 0) return pass(`impulses at [${got.join(", ")}]`, evidence);
   const parts: string[] = [];
   if (missing.length > 0) parts.push(`missing frames ${missing.join(", ")}`);
   if (extra.length > 0) parts.push(`extra frames ${extra.join(", ")}`);
-  return fail(`${parts.join("; ")}; got [${got.join(", ")}], ${against} [${expected.join(", ")}]`);
+  return fail(`${parts.join("; ")}; got [${got.join(", ")}], ${against} [${expected.join(", ")}]`, evidence);
 };
 
 const needs = (what: string, ref: RenderedRow | null): Outcome | null =>
-  ref === null ? fail(`no ${what} read, so nothing can be compared`) : null;
+  ref === null ? failUncompared(`no ${what} read, so nothing can be compared`) : null;
 
 const judge = (
   invariant: InvariantId, row: ExportRow, rendered: RenderedRow, refs: Refs, pageRate: number
@@ -86,7 +121,7 @@ const judge = (
   switch (invariant) {
     case "samples-equal-reference":
     case "section-is-slice":
-      return needs("reference", refs.reference) ?? compareToSlice(rendered, refs.reference!, start);
+      return needs("reference", refs.reference) ?? compareToSlice(rendered, refs.reference!, start, rangeFrames);
     case "impulse-on-reference": {
       const missing = needs("reference", refs.reference);
       if (missing !== null) return missing;
@@ -97,8 +132,7 @@ const judge = (
     case "impulse-on-computed-frame": {
       const sourceFrames = Math.round(row.sourceRate * row.seconds);
       const expected = IMPULSE_SOURCE_FRAMES.filter((frame) => frame < sourceFrames)
-        // the same rounding as computedFrame in exportRegressionReader, which this file cannot import
-        .map((frame) => Math.round((frame * pageRate) / row.sourceRate))
+        .map((frame) => computedFrame(frame, row.sourceRate, pageRate))
         .filter((frame) => frame >= start && frame < start + rangeFrames).map((frame) => frame - start);
       return compareHits(read.impulseHits, expected, "the computed frames");
     }
@@ -108,21 +142,23 @@ const judge = (
       return compareHits(read.impulseHits, refs.noLatency!.read.impulseHits, "the no-latency render");
     }
     case "no-jump": {
-      if (row.referenceId !== null && refs.reference === null) return fail("no reference read, so the limit is unknown");
+      if (row.referenceId !== null && refs.reference === null) return failUncompared("no reference read, so the limit is unknown");
       const base = refs.reference !== null
         ? refs.reference.read.largestStep.step
         : toneStep(PROBE_TONE_LEVEL, PROBE_TONE_HZ, pageRate);
       const limit = base * NO_JUMP_RATIO;
       const { step, frame } = read.largestStep;
       const detail = `largest step ${step} at frame ${frame}, limit ${limit}`;
+      if (frame < 0 || step === 0) return failUncompared(`no step measured (${detail}): a silent or empty window proves nothing`);
       return step <= limit ? pass(detail) : fail(detail);
     }
     case "muted-latent-unchanged": {
       const missing = needs("no-latency", refs.noLatency);
       if (missing !== null) return missing;
       const other = refs.noLatency!;
+      if (hasNoFrames(rendered) || hasNoFrames(other)) return failUncompared("a render holds no frames");
       if (rendered.samples.length !== other.samples.length || rendered.samples[0].length !== other.samples[0].length) {
-        return fail(`shape differs: ${rendered.samples.length} x ${rendered.samples[0].length} against ${other.samples.length} x ${other.samples[0].length}`);
+        return failUncompared(`shape differs: ${rendered.samples.length} x ${rendered.samples[0].length} against ${other.samples.length} x ${other.samples[0].length}`);
       }
       let last = -1;
       for (let c = 0; c < rendered.samples.length; c++) {
@@ -151,8 +187,9 @@ const judge = (
       const missing = needs("mix", refs.reference);
       if (missing !== null) return missing;
       const mix = refs.reference!;
+      if (hasNoFrames(rendered) || hasNoFrames(mix)) return failUncompared("a render holds no frames");
       if (rendered.samples.length !== mix.samples.length || rendered.samples[0].length !== mix.samples[0].length) {
-        return fail(`shape differs: ${rendered.samples.length} x ${rendered.samples[0].length} against the mix's ${mix.samples.length} x ${mix.samples[0].length}`);
+        return failUncompared(`shape differs: ${rendered.samples.length} x ${rendered.samples[0].length} against the mix's ${mix.samples.length} x ${mix.samples[0].length}`);
       }
       let worst = 0;
       for (let c = 0; c < rendered.samples.length; c++) {
@@ -166,7 +203,7 @@ const judge = (
       return worst <= STEM_SUM_TOLERANCE ? pass(detail) : fail(detail);
     }
     case "repeat-identical":
-      if (rendered.repeatHash === null) return fail("no repeat read");
+      if (rendered.repeatHash === null) return failUncompared("no repeat read");
       return rendered.repeatHash === read.hash ? pass("repeat hash equals the first render's") : fail(`repeat hash ${rendered.repeatHash} differs from ${read.hash}`);
     case "tail-present": {
       const energy = read.energyPastRange;
@@ -193,8 +230,8 @@ const judge = (
 
 export function judgeInvariants(row: ExportRow, rendered: RenderedRow, refs: Refs, pageRate: number): InvariantResult[] {
   return row.invariants.map((invariant) => {
-    const { holds, detail } = judge(invariant, row, rendered, refs, pageRate);
-    const finding = holds ? null : findingFor(row, invariant, pageRate)?.name ?? null;
+    const { holds, detail, compared, evidence } = judge(invariant, row, rendered, refs, pageRate);
+    const finding = holds || !compared ? null : findingFor(row, invariant, pageRate, evidence)?.name ?? null;
     return { invariant, holds, detail, finding };
   });
 }
@@ -205,19 +242,15 @@ export function compareRegister(
   if (entry === null) return { verdict: "unregistered", shiftFrames: null, framesChanged: false };
   const framesChanged = read.frames !== entry.frames;
   if (read.hash === entry.hash) return { verdict: "identical", shiftFrames: null, framesChanged };
-  const hits = read.impulseHits;
-  let shiftFrames: number | null = null;
-  if (hits.length > 0 && hits.length === entry.impulseHits.length) {
-    const first = hits[0] - entry.impulseHits[0];
-    if (hits.every((hit, i) => hit - entry.impulseHits[i] === first)) shiftFrames = first;
-  }
-  return { verdict: "changed", shiftFrames, framesChanged };
+  // uniformEarly reads first minus second: the run's hits against the register's, so earlier reads negative
+  return { verdict: "changed", shiftFrames: uniformEarly(read.impulseHits, entry.impulseHits), framesChanged };
 }
 
 export function rowStanding(
   results: readonly InvariantResult[], error: string | null
 ): "clean" | "known-finding" | "failing" | "errored" {
   if (error !== null) return "errored";
+  if (results.length === 0) return "failing";
   const failed = results.filter((r) => !r.holds);
   if (failed.length === 0) return "clean";
   return failed.every((r) => r.finding !== null) ? "known-finding" : "failing";
