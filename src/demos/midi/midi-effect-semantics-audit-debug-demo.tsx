@@ -203,7 +203,7 @@ const App: React.FC = () => {
             const adapter = project.boxAdapters.adapterFor(box as VelocityDeviceBox, VelocityDeviceBoxAdapter);
             context.computeVelocity = (position, original) => adapter.computeVelocity(position as never, original);
           } else if (stage.setting.device === "zeitgeist") {
-            const groove = project.boxAdapters.adapterFor(box as ZeitgeistDeviceBox, ZeitgeistDeviceBoxAdapter).groove();
+            const groove = project.boxAdapters.adapterFor(box as ZeitgeistDeviceBox, ZeitgeistDeviceBoxAdapter).groove().unwrap("Zeitgeist has no groove");
             context.warp = (position) => groove.warp(position as never);
           }
         });
@@ -342,7 +342,7 @@ const App: React.FC = () => {
             { label: "Register: debug/2026-11-03-midi-effect-semantics/note.md", href: NOTE_URL, kind: "note" },
             { label: "openDAW#524 (Arpeggio velocity: closed, manual corrected)", href: "https://github.com/andremichelle/openDAW/issues/524", kind: "note" },
             { label: "openDAW#525 (Zeitgeist note-offs: closed, manual corrected)", href: "https://github.com/andremichelle/openDAW/issues/525", kind: "note" },
-            { label: "openDAW#526 (Arpeggio drops the cent: a question)", href: "https://github.com/andremichelle/openDAW/issues/526", kind: "note" },
+            { label: "openDAW#526 (Arpeggio dropped the cent: closed, fixed)", href: "https://github.com/andremichelle/openDAW/issues/526", kind: "note" },
           ]} />
           <Text size="2" color="gray">
             A Nano sampler plays a {SAMPLE_HZ} Hz sine on a note pattern. Each row puts a chain of MIDI effects before it, renders

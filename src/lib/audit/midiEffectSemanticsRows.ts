@@ -5,7 +5,7 @@
  * Page: `midi-effect-semantics-audit-debug-demo.html`; rules: `midiEffectSemanticsRules.ts`.
  *
  * Sampling: one parameter at a time across its whole range, the others at their base, so a miss names
- * its parameter. Two pairs are swept together because neither reads alone: the Velocity magnet's position
+ * its parameter; the Arpeggio's later walks, Offset and Seed are spot-sampled, and Hold, Retrigger and the lanes stay at their defaults. Two pairs are swept together because neither reads alone: the Velocity magnet's position
  * and strength (a position with no strength moves nothing), and the Arpeggio's rate and gate (the gate is a
  * fraction of the rate's step). Each parameter's identity setting is a row too, as the control. Orderings and
  * disabled devices are one row per device or pair at a single non-identity setting. Nine of the seventeen Arpeggio
@@ -20,8 +20,7 @@
  * and the sixteenths.
  *
  * Id readings: a number prints as JavaScript prints it (`-0.5`, `12.5`), no padding, so `vel-offset-1-melody`
- * is offset -1. The Zeitgeist rows take every DISTINCT `GrooveShuffleBoxAdapter.DurationPPQNs` value, 8 of
- * 9 (960 is listed twice). The SDK's `Pattern.id` is a closed union that has no room for the audit's own
+ * is offset -1. The Zeitgeist rows take every `GrooveShuffleBoxAdapter.DurationPPQNs` value. The SDK's `Pattern.id` is a closed union that has no room for the audit's own
  * patterns, so the audit's carry `AuditPattern`, the same shape with a wider id.
  */
 import { PPQN } from "@opendaw/lib-dsp";
@@ -50,7 +49,7 @@ export const NANO_RELEASE_SECONDS = 0.001;
 /** 1750 pulses = 0.911 s at 120 bpm, and 3840 + 1750 = 5590 is not on the 1/16 grid (5520 + 70), so the held note ends 70 pulses into the last Arpeggio step: the row shows that step running its full gate length past the held note. */
 export const HELD_NOTE_PPQN = 1750;
 
-export type SemanticsPatternId = "held-note" | "held-chord" | "chromatic" | "chords" | "sixteenths" | "melody" | "melody-gaps";
+export type SemanticsPatternId = "held-note" | "held-chord" | "held-rolled" | "chromatic" | "chords" | "sixteenths" | "melody" | "melody-gaps";
 
 export interface AuditPattern extends Omit<Pattern, "id"> { readonly id: SemanticsPatternId }
 
@@ -70,6 +69,14 @@ export const HELD_CHORD: AuditPattern = {
   notes: [60, 64, 67].map((pitch) => ({ position: 0, duration: HELD_NOTE_PPQN, pitch, velocity: 0.8 })),
 };
 
+/** Three notes entering top first, all held by the second step and ending together: Played order and Pitch order walk them opposite ways. */
+export const HELD_ROLLED: AuditPattern = {
+  id: "held-rolled",
+  label: "Held rolled chord",
+  blurb: "A C major triad entering from the top down: the order the notes were played is the reverse of their pitch.",
+  notes: [[67, 0], [64, 60], [60, 120]].map(([pitch, position]) => ({ position, duration: HELD_NOTE_PPQN - position, pitch, velocity: 0.8 })),
+};
+
 export const CHROMATIC: AuditPattern = {
   id: "chromatic",
   label: "Chromatic",
@@ -82,7 +89,7 @@ const demoPattern = (id: "chords" | "sixteenths" | "melody"): AuditPattern => ({
 /** The demo melody with every eighth at 90 % (432 pulses): a 48-pulse (25 ms) gap the one-voice reader splits on, so a note a filter should have dropped between two survivors starts a read note of its own instead of hiding inside its neighbours' legato (the Rendered page gaps its melody the same way). */
 export const MELODY_GAPS: AuditPattern = { ...withGaps(patternById("melody"), 0.9), id: "melody-gaps", label: "Melody, gapped", blurb: "The demo melody with every eighth at 90 %: every survivor of a filter is read on its own." };
 
-export const AUDIT_PATTERNS: readonly AuditPattern[] = [HELD_NOTE, HELD_CHORD, CHROMATIC, demoPattern("chords"), demoPattern("sixteenths"), demoPattern("melody"), MELODY_GAPS];
+export const AUDIT_PATTERNS: readonly AuditPattern[] = [HELD_NOTE, HELD_CHORD, HELD_ROLLED, CHROMATIC, demoPattern("chords"), demoPattern("sixteenths"), demoPattern("melody"), MELODY_GAPS];
 
 export type RowGroup = "dry" | "arpeggio" | "pitch" | "velocity" | "zeitgeist" | "note-filter" | "order" | "disabled";
 
@@ -99,7 +106,7 @@ export interface SemanticsRow {
   quick: boolean;
 }
 
-export const ARPEGGIO_BASE: ArpeggioSettings = { modeIndex: 0, numOctaves: 1, rateIndex: 9, gate: 0.5, repeat: 1, velocity: 1 };
+export const ARPEGGIO_BASE: ArpeggioSettings = { modeIndex: 0, order: 0, numOctaves: 1, rateIndex: 9, gate: 0.5, repeat: 1, velocity: 1, offset: 0, seed: 0 };
 export const PITCH_BASE: PitchSettings = { semiTones: 0, cents: 0, octaves: 0 };
 export const NOTE_FILTER_BASE: NoteFilterSettings = { min: 0, max: 127, set: false, transpose: 0, key: 60 };
 export const VELOCITY_BASE: VelocitySettings = { magnetPosition: 0.5, magnetStrength: 0, randomAmount: 0, offset: 0, mix: 1 };
@@ -109,7 +116,6 @@ export const FACTORY_KEYS: Record<SemanticsDevice, "Arpeggio" | "NoteFilter" | "
   arpeggio: "Arpeggio", "note-filter": "NoteFilter", pitch: "Pitch", velocity: "Velocity", zeitgeist: "Zeitgeist",
 };
 
-const MODE_NAMES = ["Up", "Down", "UpDown"] as const;
 const rateName = (index: number): string => {
   const [n, d] = ArpeggioDeviceBoxAdapter.RateFractions[index];
   return `${n}/${d}`;
@@ -133,6 +139,7 @@ export const CALIBRATION_ROW_ID = "dry-sixteenths";
 export const QUICK_IDS: ReadonlySet<string> = new Set([
   "dry-sixteenths", "dry-melody", "dry-chromatic", "dry-held-note",
   ...[0, 1, 2].flatMap((m) => [`arp-mode${m}-oct1-held-chord`, `arp-mode${m}-oct3-held-chord`, `arp-mode${m}-oct2-gate1-held-chord`]),
+  "arp-mode6-oct1-held-chord", "arp-mode13-oct1-held-chord", "arp-order1-held-rolled",
   "arp-rate9-gate1-held-note", "arp-rate6-gate0.5-held-note", "arp-rate12-gate0.5-held-note",
   "arp-repeat2-held-chord", "arp-vel0-held-chord", "arp-vel0.5-held-chord",
   "pitch-st7-chromatic", "pitch-oct1-chromatic", "pitch-ct12.5-chromatic", "pitch-oct7-chromatic",
@@ -150,12 +157,14 @@ function dryRows(): RowDraft[] {
   }));
 }
 
+const SEEDED_MODES: readonly string[] = ["Random", "Random Other", "Shuffle", "Random Once", "Walk"];
+
 function arpeggioRows(): RowDraft[] {
   const rows: RowDraft[] = [];
   const add = (id: string, label: string, pattern: SemanticsPatternId, settings: ArpeggioSettings): void => {
     rows.push({ id, label: `${label} — ${patternLabel(pattern)}`, group: "arpeggio", pattern, chain: [one(arp(settings))] });
   };
-  const walk = (mode: 0 | 1 | 2, octaves: number): string => `Arpeggio ${MODE_NAMES[mode]}, ${plural(octaves, "octave")}`;
+  const walk = (mode: number, octaves: number): string => `Arpeggio ${ArpeggioDeviceBoxAdapter.Modes[mode]}, ${plural(octaves, "octave")}`;
   for (const pattern of ["held-chord", "chords"] as const) {
     for (const modeIndex of [0, 1, 2] as const) {
       for (let numOctaves = 1; numOctaves <= 5; numOctaves++) {
@@ -182,6 +191,30 @@ function arpeggioRows(): RowDraft[] {
       add(`arp-vel${v}-${pattern}`, `Arpeggio velocity ${percent(v)}`, pattern, { ...ARPEGGIO_BASE, velocity: v });
     }
   }
+  // Every walk past the first three, on the stack of three alone and over two octaves (a longer pool), and on the changing stacks of the chords
+  const laterModes = ArpeggioDeviceBoxAdapter.Modes.map((_, mode) => mode).filter((mode) => mode > 2);
+  for (const modeIndex of laterModes) {
+    for (const numOctaves of [1, 2]) {
+      add(`arp-mode${modeIndex}-oct${numOctaves}-held-chord`, walk(modeIndex, numOctaves), "held-chord", { ...ARPEGGIO_BASE, modeIndex, numOctaves });
+    }
+    add(`arp-mode${modeIndex}-oct1-chords`, walk(modeIndex, 1), "chords", { ...ARPEGGIO_BASE, modeIndex });
+  }
+  // The seed reaches every random mode, over two octaves: a pool of three has too few orders for Random Once to show one. The default seed 0 is in the rows above
+  for (const modeIndex of laterModes.filter((mode) => SEEDED_MODES.includes(ArpeggioDeviceBoxAdapter.Modes[mode]))) {
+    for (const seed of [1, ArpeggioDeviceBoxAdapter.MaxSeed]) {
+      add(`arp-mode${modeIndex}-seed${seed}-held-chord`, `${walk(modeIndex, 2)}, seed ${seed}`, "held-chord", { ...ARPEGGIO_BASE, modeIndex, numOctaves: 2, seed });
+    }
+  }
+  for (const order of [0, 1]) {
+    add(`arp-order${order}-held-rolled`, `Arpeggio ${ArpeggioDeviceBoxAdapter.Orders[order]} order`, "held-rolled", { ...ARPEGGIO_BASE, order });
+  }
+  for (const offset of [1, 2, 7]) {
+    add(`arp-offset${offset}-held-chord`, `Arpeggio offset ${offset}`, "held-chord", { ...ARPEGGIO_BASE, offset });
+  }
+  // 15 is a whole number of passes over three notes, so the longest offset runs over two octaves
+  add("arp-offset15-oct2-held-chord", "Arpeggio offset 15, 2 octaves", "held-chord", { ...ARPEGGIO_BASE, offset: 15, numOctaves: 2 });
+  // The offset adds after the repeat's division: `effective / repeat + offset`
+  add("arp-repeat2-offset1-held-chord", "Arpeggio repeat ×2, offset 1", "held-chord", { ...ARPEGGIO_BASE, repeat: 2, offset: 1 });
   return rows;
 }
 
@@ -351,6 +384,9 @@ export function applySettings(box: EffectBox, setting: DeviceSetting): void {
       box.gate.setValue(s.gate);
       box.repeat.setValue(s.repeat);
       box.velocity.setValue(s.velocity);
+      box.order.setValue(s.order);
+      box.offset.setValue(s.offset);
+      box.seed.setValue(s.seed);
       return;
     }
     case "note-filter": {
@@ -396,8 +432,8 @@ export function settingsOf(box: EffectBox): DeviceSetting {
     return {
       device: "arpeggio",
       settings: {
-        modeIndex: box.modeIndex.getValue() as 0 | 1 | 2, numOctaves: box.numOctaves.getValue(), rateIndex: box.rateIndex.getValue(),
-        gate: box.gate.getValue(), repeat: box.repeat.getValue(), velocity: box.velocity.getValue(),
+        modeIndex: box.modeIndex.getValue(), order: box.order.getValue(), numOctaves: box.numOctaves.getValue(), rateIndex: box.rateIndex.getValue(),
+        gate: box.gate.getValue(), repeat: box.repeat.getValue(), velocity: box.velocity.getValue(), offset: box.offset.getValue(), seed: box.seed.getValue(),
       },
     };
   }

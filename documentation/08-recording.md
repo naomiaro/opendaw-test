@@ -401,6 +401,8 @@ const isMonitoring = capture.isMonitoring; // boolean
 
 **Important**: Enabling monitoring automatically arms the capture if it isn't already armed.
 
+**Where "effects" is heard**: only through the engine's monitor output. While a track is monitored this way it feeds neither its output bus, nor its aux sends, nor an audio sink, so nothing of it reaches the main mix or the master meters; a frozen track keeps its routes, and when monitoring ends everything is routed as before.
+
 **Note**: Unlike `captureBox.deviceId`/`gainDb`/`requestChannels`, `monitoringMode` is not a box graph field — it manipulates Web Audio nodes directly. Do **not** set it inside `editing.modify()`.
 
 ## Loop Recording & Takes

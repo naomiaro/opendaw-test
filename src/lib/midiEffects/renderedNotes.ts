@@ -5,9 +5,8 @@
  * answers which predicted note, which notes overlap, which are too short, too quiet or silenced.
  * Two placements come from the rule: an abutting note's edges (drawn dashed) and its velocity stem,
  * which sits at its PREDICTED onset because the reader cannot find that note's edges.
- * The prediction applies EVERY known deviation of the enabled devices, the engine's variant, so its
- * windows are the ones the render has (the audit's intent variant would keep a note's cent through an
- * Arpeggio). Pure: the only SDK import is `PPQN`.
+ * The prediction applies every known deviation of the enabled devices (none today), so its windows are
+ * the ones the render has. Pure: the only SDK import is `PPQN`.
  */
 import { PPQN } from "@opendaw/lib-dsp";
 import type { LaneNote } from "@/components/NoteLane";

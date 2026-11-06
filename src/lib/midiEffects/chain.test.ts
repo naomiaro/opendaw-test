@@ -85,11 +85,11 @@ describe("chain", () => {
     expect(chainBoxes(unit.midiEffects).map((b) => b.index.getValue())).toEqual([0, 1]);
   });
 
-  it("removeDevice of a zeitgeist takes its groove with it", () => {
+  it("removeDevice of a zeitgeist leaves the project's groove", () => {
     const { boxGraph, unit, device, groove } = graphWithZeitgeist();
     removeDevice(new BoxEditing(boxGraph), unit.midiEffects, device);
     expect(chainBoxes(unit.midiEffects)).toHaveLength(0);
-    expect(groove.isAttached()).toBe(false);
+    expect(groove.isAttached()).toBe(true);
   });
 });
 

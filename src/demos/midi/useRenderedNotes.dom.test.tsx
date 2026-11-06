@@ -265,7 +265,7 @@ describe("useRenderedNotes on live device adapters", () => {
       id: "sixteenths", label: "two sixteenths", blurb: "",
       notes: [{ position: 0, duration: sixteenth / 2, pitch: 69, velocity: 1 }, { position: sixteenth, duration: sixteenth / 2, pitch: 69, velocity: 1 }],
     };
-    const groove = (fixture.adapter as ZeitgeistDeviceBoxAdapter).groove();
+    const groove = (fixture.adapter as ZeitgeistDeviceBoxAdapter).groove().unwrap("no groove");
     const warped = groove.warp((REGION_POSITION_PPQN + sixteenth) as never) - REGION_POSITION_PPQN;
     expect(Math.round(warped - sixteenth)).toBe(47);
 

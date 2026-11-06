@@ -74,11 +74,10 @@ see above; engine preferences never travel into an offline render). Provide a no
 Pass a copy (not the live project) — the renderer connects the source's
 `liveStreamReceiver`, which conflicts with a live engine.
 
-**Render an exact range in ONE `step`.** A `step` discards the rest of its last quantum, and the
-worker trims the settled delay compensation out of the first step, so a second `step` on one
-renderer loses frames unless everything before it, trim included, comes to whole quanta. The SDK's own
-`renderSection` with `tail: false` hits this when a render, all passes counted, runs past 48000 frames
-with a latency that is not whole quanta (measured, openDAW#530, `debug/2026-11-05-render-section-latency-gap/note.md`).
+**A `step` keeps the rest of its last quantum for the next one**, so an exact range can be rendered in several
+`step`s on one renderer, whatever the latency; a `setPosition` or a reset clears it. `renderSection` with `tail: false`
+relies on this (regression page `render-section-latency-debug-demo.html`, openDAW#530,
+`debug/2026-11-05-render-section-latency-gap/note.md`).
 A stock Maximizer's look-ahead is on by default (the Compressor's is off), and the one `Project.new` puts on
 the master has it off.
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
+import { type RowVerdict,
   boundaryInOutput,
   findHits,
   joinMove,
@@ -390,8 +390,13 @@ describe("readRow", () => {
       expect(row.verdict).toBe("differs-from-formula");
     });
 
-    it("calls that shift alone a difference when more is predicted", () => {
+    it("reads that shift alone as no frames lost when more is predicted: the baseline is not the defect", () => {
       const row = readRow({ ...discarded, predicted: 36, baseline: 1, sectionHits: [24033, 72033, 120033] });
+      expect(row.verdict).toBe("no-frames-lost");
+    });
+
+    it("calls a shift past that baseline, short of the prediction, a difference", () => {
+      const row = readRow({ ...discarded, predicted: 36, baseline: 1, sectionHits: [24031, 72031, 120031] });
       expect(row.verdict).toBe("differs-from-formula");
     });
 
@@ -450,7 +455,8 @@ describe("readRow with a jump the tone cannot show", () => {
 
   it("expects none, and still holds the shift to the prediction", () => {
     expect(readRow({ ...row, sectionStep: { step: 0.071, frame: 28008 } }).verdict).toBe("matches-formula");
-    expect(readRow({ ...row, sectionHits: [22081], sectionStep: { step: 0.071, frame: 28008 } }).verdict).toBe("differs-from-formula");
+    expect(readRow({ ...row, sectionHits: [22081], sectionStep: { step: 0.071, frame: 28008 } }).verdict).toBe("no-frames-lost");
+    expect(readRow({ ...row, sectionHits: [22080], sectionStep: { step: 0.071, frame: 28008 } }).verdict).toBe("differs-from-formula");
   });
 
   it("calls a jump showing anyway a difference", () => {
@@ -513,7 +519,7 @@ describe("measurementProblem", () => {
 });
 
 describe("rowSummary", () => {
-  const reading = (verdict: "matches-formula" | "differs-from-formula") => ({
+  const reading = (verdict: RowVerdict) => ({
     earlyBefore: [],
     earlyAfter: [],
     jump: "none" as const,
@@ -534,23 +540,30 @@ describe("rowSummary", () => {
   });
 
   it("says when a row does not match, whatever the formula gives", () => {
+    expect(rowSummary(reading("no-frames-lost"), 16, 0)).toBe("fixed: no frames lost");
+    expect(rowSummary(reading("no-frames-lost"), 36, 1)).toBe("fixed: no frames lost, 1 early without any latency");
     expect(rowSummary(reading("differs-from-formula"), 16, 0)).toBe("DIFFERS FROM THE FORMULA");
     expect(rowSummary(reading("differs-from-formula"), 0, 0)).toBe("DIFFERS FROM THE FORMULA");
   });
 });
 
 describe("runSummary", () => {
-  const row = (predicted: number, verdict: "matches-formula" | "differs-from-formula") => ({
+  const row = (predicted: number, verdict: RowVerdict) => ({
     predicted,
     reading: { verdict },
   });
 
-  it("counts the rows with the defect and the clean ones", () => {
-    const rows = [row(16, "matches-formula"), row(113, "matches-formula"), row(0, "matches-formula")];
-    expect(runSummary(rows)).toBe("Done: defect present on 2 rows, clean on 1, all matching the formula");
+  it("names the rows with the defect back, the fixed ones and the clean ones", () => {
+    const rows = [row(16, "matches-formula"), row(113, "no-frames-lost"), row(0, "matches-formula")];
+    expect(runSummary(rows)).toBe("Done: DEFECT on 1 rows, as the formula gives, 1 fixed, clean on 1");
   });
 
-  it("leads with the rows that do not match", () => {
+  it("a good run loses no frames on any row", () => {
+    const rows = [row(16, "no-frames-lost"), row(113, "no-frames-lost"), row(0, "matches-formula")];
+    expect(runSummary(rows)).toBe("Done: no frames lost on any of 3 rows");
+  });
+
+  it("leads with the rows that fit neither reading", () => {
     const rows = [row(16, "matches-formula"), row(0, "differs-from-formula")];
     expect(runSummary(rows)).toBe("Done: 1 of 2 rows differ from the formula");
   });

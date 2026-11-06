@@ -973,6 +973,12 @@ What these rows show:
 Filed on the SDK's tracker as [openDAW#527](https://github.com/andremichelle/openDAW/issues/527) on 2026-11-04
 (the worker's sync-handle write and bare `removeEntry()` paths, unchanged at 0.0.181; both Chromium trackers
 re-read that day, open and unchanged since the 2026-09-25 root-cause comment).
+**Fixed on the SDK's side in 0.0.182 (openDAW#527 closed 2026-11-06), measured 2026-11-06 across two restarts of Playwright's
+Chrome (`browser_close`, the same profile):** the window with the two probes' plain deletes (`opfs-usage` 67 109 044 bytes,
+`opfs-flush` 356 515 840 bytes) drifted −423 749 996 (`chromium-opfs-usage-mw58s584-7otb.json`), the positive control; the next
+window, where a page load's sweep removed the 42 sample files the loudness pages left (245 921 890 bytes) and one
+`&truncateFirst=1` probe ran, drifted **−10 090** (`chromium-opfs-usage-mw58somf-6sd3.json`, read in `…-mw58szhn-fb7d.json`). The verdict stays `NEGATIVE USAGE`: the
+saved figure already negative (−1 322 284 263) does not heal. Chrome's own behaviour is unchanged, as the plain arm shows.
 
 **Reproduced in the user's Chrome: a plain run's delete, then a restart, reads `NEGATIVE USAGE`.** The
 restart round comes first below, then the in-session runs in Playwright's Chrome.

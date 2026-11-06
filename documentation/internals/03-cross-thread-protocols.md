@@ -261,6 +261,7 @@ export const EngineStateSchema = Schema.createBuilder({
     isRecording: Schema.bool,
     recordingStopTime: Schema.double,
     compensationLatency: Schema.float,
+    compensationExceeded: Schema.bool,
     perfIndex: Schema.int32,
     perfBuffer: Schema.floats(PERF_BUFFER_SIZE)
 })
@@ -293,6 +294,7 @@ this.#stateSender = SyncStream.writer(EngineStateSchema(), syncStreamBuffer, sta
     state.isRecording = view.getUint8(18) === 1
     state.recordingStopTime = this.#recordingStopTime
     state.compensationLatency = engine.compensation_latency() / sampleRate
+    state.compensationExceeded = engine.compensation_exceeded() !== 0
     if (this.#measureLoad) {
         state.perfBuffer.set(this.#perfBuffer)
         state.perfIndex = this.#perfWriteIndex
@@ -319,6 +321,7 @@ const reader = SyncStream.reader<EngineState>(EngineStateSchema(), state => {
     this.#isCountingIn.setValue(state.isCountingIn)
     this.#countInBeatsRemaining.setValue(state.countInBeatsRemaining)
     this.#compensationLatency.setValue(state.compensationLatency)
+    this.#compensationExceeded.setValue(state.compensationExceeded)
     this.#playbackTimestamp.setValue(state.playbackTimestamp)
     this.#bpm.setValue(state.bpm)
     this.#perfBuffer = state.perfBuffer

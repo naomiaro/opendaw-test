@@ -33,7 +33,7 @@ export function insertDevice(
 
 /**
  * One transaction: the survivors' indices are compacted first (`IndexedBox.removeOrder` takes the
- * box's POSITION in the sorted chain), then the box goes; a Zeitgeist takes its groove box with it.
+ * box's POSITION in the sorted chain), then the box goes; a Zeitgeist's groove stays in the project.
  * A bare delete would leave a gap, and the SDK's insert (`insertOrder`) appends at `length`, which
  * then collides with a survivor's index.
  */

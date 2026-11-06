@@ -98,7 +98,7 @@ function ruleContext(project: Project, entries: readonly ChainEntry[], bpm: numb
     if (adapter instanceof VelocityDeviceBoxAdapter) {
       context.computeVelocity = (position, original) => adapter.computeVelocity(position as never, original);
     } else if (adapter instanceof ZeitgeistDeviceBoxAdapter) {
-      const groove = adapter.groove();
+      const groove = adapter.groove().unwrap("Zeitgeist has no groove");
       context.warp = (position) => groove.warp(position as never);
     }
   }
