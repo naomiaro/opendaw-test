@@ -1,5 +1,5 @@
 // Plain Node must load this file: the table script judges runs with it, so no SDK value imports.
-import { expectedLatencyFrames, type ExportRow, type InvariantId } from "./exportRegressionRows.ts";
+import { expectedLatencyFrames, LOOP_ON_COPY_SECONDS, type ExportRow, type InvariantId } from "./exportRegressionRows.ts";
 import { findingFor, NO_EVIDENCE, type FindingEvidence } from "./exportRegressionFindings.ts";
 import { computedFrame, IMPULSE_SOURCE_FRAMES, PROBE_TONE_HZ, PROBE_TONE_LEVEL } from "./exportRegressionSignals.ts";
 import { toneStep, uniformEarly } from "./sectionRenderGap.ts";
@@ -112,6 +112,15 @@ const compareHits = (got: readonly number[], expected: readonly number[], agains
 const needs = (what: string, ref: RenderedRow | null): Outcome | null =>
   ref === null ? failUncompared(`no ${what} read, so nothing can be compared`) : null;
 
+/** One side of the stems' stereo pairs; a Float32Array rounds each add to 32 bits, as the engine's bus does. */
+const sumStems = (samples: readonly Float32Array[], side: number): Float32Array => {
+  const sum = new Float32Array(samples[0].length);
+  for (let c = side; c < samples.length; c += 2) {
+    for (let f = 0; f < sum.length; f++) sum[f] += samples[c][f];
+  }
+  return sum;
+};
+
 const judge = (
   invariant: InvariantId, row: ExportRow, rendered: RenderedRow, refs: Refs, pageRate: number
 ): Outcome => {
@@ -128,6 +137,14 @@ const judge = (
       const expected = refs.reference!.read.impulseHits
         .filter((hit) => hit >= start && hit < start + rangeFrames).map((hit) => hit - start);
       return compareHits(read.impulseHits, expected, "the reference");
+    }
+    case "impulse-follows-loop": {
+      const missing = needs("reference", refs.reference);
+      if (missing !== null) return missing;
+      const loopFrames = Math.round(LOOP_ON_COPY_SECONDS * pageRate);
+      const inLoop = refs.reference!.read.impulseHits.filter((hit) => hit < loopFrames);
+      const expected = [...inLoop, ...inLoop.map((hit) => hit + loopFrames)].filter((hit) => hit < rangeFrames);
+      return compareHits(read.impulseHits, expected, "the reference's hits through the loop");
     }
     case "impulse-on-computed-frame": {
       const sourceFrames = Math.round(row.sourceRate * row.seconds);
@@ -188,14 +205,17 @@ const judge = (
       if (missing !== null) return missing;
       const mix = refs.reference!;
       if (hasNoFrames(rendered) || hasNoFrames(mix)) return failUncompared("a render holds no frames");
-      if (rendered.samples.length !== mix.samples.length || rendered.samples[0].length !== mix.samples[0].length) {
-        return failUncompared(`shape differs: ${rendered.samples.length} x ${rendered.samples[0].length} against the mix's ${mix.samples.length} x ${mix.samples[0].length}`);
-      }
+      if (rendered.samples.length % 2 !== 0) return failUncompared(`${rendered.samples.length} channels do not make stereo stems`);
+      if (mix.samples.length !== 2) return failUncompared(`the mix has ${mix.samples.length} channels, stems sum to 2`);
+      const frames = mix.samples[0].length;
+      const uneven = [...rendered.samples, ...mix.samples].find((channel) => channel.length !== frames);
+      if (uneven !== undefined) return failUncompared(`a channel holds ${uneven.length} frames, the mix ${frames}`);
       let worst = 0;
-      for (let c = 0; c < rendered.samples.length; c++) {
-        for (let f = 0; f < rendered.samples[c].length; f++) {
-          const delta = Math.abs(rendered.samples[c][f] - mix.samples[c][f]);
-          if (Number.isNaN(delta)) return fail(`non-finite difference at frame ${f} of channel ${c}`);
+      for (let side = 0; side < 2; side++) {
+        const sum = sumStems(rendered.samples, side);
+        for (let f = 0; f < frames; f++) {
+          const delta = Math.abs(sum[f] - mix.samples[side][f]);
+          if (Number.isNaN(delta)) return fail(`non-finite difference at frame ${f} of side ${side}`);
           if (delta > worst) worst = delta;
         }
       }

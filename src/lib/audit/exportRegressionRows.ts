@@ -12,7 +12,7 @@ export type PathId =
   | "setposition-on-quantum" | "setposition-off-quantum" | "loop-on-copy";
 
 export type InvariantId =
-  | "samples-equal-reference" | "section-is-slice" | "impulse-on-reference" | "impulse-unmoved-by-latency"
+  | "samples-equal-reference" | "section-is-slice" | "impulse-on-reference" | "impulse-follows-loop" | "impulse-unmoved-by-latency"
   | "impulse-on-computed-frame" | "no-jump" | "muted-latent-unchanged" | "disabled-equals-absent"
   | "stems-sum-to-mix" | "repeat-identical" | "tail-present" | "tail-absent" | "proves-something"
   | "latency-as-expected" | "differs-from-reference";
@@ -65,6 +65,11 @@ export const expectedLatencyFrames = (latencyCase: LatencyCaseId, pageRate: numb
   if (pageRate === 44100) return at44;
   throw new Error(`no latency figures for page rate ${pageRate}`);
 };
+
+/** Where a setposition row starts from; the render path recomputes its ppqn from this. */
+export const SET_POSITION_SECONDS = 1;
+/** The loop `loop-on-copy` writes, from the song's start; the render path writes it and the verdict expects its repeats. */
+export const LOOP_ON_COPY_SECONDS = 2;
 
 const QUANTUM = 128;
 
@@ -257,11 +262,12 @@ const buildPosition = (pageRate: number): ExportRow[] => {
         rows.push(make({
           id: `position-${latencyCase}-${path}`, label: `${latencyCase} through ${path}`,
           group: "position", latencyCase, path, referenceId: reference,
-          invariants: [...basics(), "impulse-on-reference", "no-jump"]
+          // the loop repeats the reference's first hits, so its hits are not the reference's
+          invariants: [...basics(), "impulse-follows-loop", "no-jump"]
         }));
         continue;
       }
-      const { ppqn } = setPositionStart(1, bpm, pageRate, path === "setposition-on-quantum");
+      const { ppqn } = setPositionStart(SET_POSITION_SECONDS, bpm, pageRate, path === "setposition-on-quantum");
       const start = ppqnToFrame(ppqn, bpm, pageRate) / pageRate;
       rows.push(make({
         id: `position-${latencyCase}-${path}`, label: `${latencyCase} through ${path}`,

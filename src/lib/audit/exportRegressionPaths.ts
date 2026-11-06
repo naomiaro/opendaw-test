@@ -1,6 +1,8 @@
 /**
  * One render of a row through its SDK export path, on a copy of its own. What differs between the paths is what the
- * harness tests, so each goes through the SDK entry its users call, never a helper of this repo that stands in for it.
+ * harness tests, so each goes through the SDK's own calls, never a helper of this repo that stands in for them. The stems
+ * step the renderer for an exact range instead of the `start` or `renderSection` the studio's stem dialog calls, since
+ * `stems-sum-to-mix` needs the mix's frames; the bounce runs `AudioBounce.bounce`'s exported pieces.
  *
  * The step paths use the order `src/demos/export/CLAUDE.md` documents (setPosition, play, waitForLoading, step).
  * `renderSection` and the bounce wait for loading once more before the setPosition. The worker renders nothing before
@@ -14,15 +16,12 @@ import { RegionEditing, type ExportConfiguration } from "@opendaw/studio-adapter
 import { getAllAudioRegions } from "@/lib/adapterUtils";
 import { withDeadline } from "@/lib/deadline";
 import { applyRow, type HarnessProject } from "./exportRegressionProject";
-import { setPositionStart, type ExportRow, type PathId } from "./exportRegressionRows";
+import { LOOP_ON_COPY_SECONDS, SET_POSITION_SECONDS, setPositionStart, type ExportRow, type PathId } from "./exportRegressionRows";
 import { CHUNK_FRAMES } from "./sectionRenderGap";
 
 export const RENDER_DEADLINE_MS = 60_000;
 
 const ODD_CHUNK_FRAMES = 1000;
-const LOOP_ON_COPY_SECONDS = 2;
-// The start `buildPosition` gives every setposition row; the row carries the frame it lands on, not this.
-const SET_POSITION_SECONDS = 1;
 
 type Render = {
   copy: Project;

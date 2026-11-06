@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { buildRows, type ExportRow, type InvariantId } from "./exportRegressionRows.ts";
+import { buildRows, LOOP_ON_COPY_SECONDS, type ExportRow, type InvariantId } from "./exportRegressionRows.ts";
 import { toneStep } from "./sectionRenderGap.ts";
-import { IMPULSE_SOURCE_FRAMES, PROBE_TONE_HZ, PROBE_TONE_LEVEL } from "./exportRegressionSignals.ts";
+import { computedFrame, IMPULSE_SOURCE_FRAMES, PROBE_TONE_HZ, PROBE_TONE_LEVEL } from "./exportRegressionSignals.ts";
 import type { RenderRead } from "./exportRegressionReader.ts";
 import {
   compareRegister, judgeInvariants, parseRegisterResponse, rowStanding,
@@ -55,7 +55,7 @@ describe("judgeInvariants", () => {
     expect(one("samples-equal-reference", r, rendered([9, 9, 1, 2]), { reference: ref }).holds).toBe(false);
   });
   it("fails when the reference it needs is missing, never by default", () => {
-    for (const inv of ["samples-equal-reference", "impulse-on-reference", "disabled-equals-absent", "differs-from-reference", "stems-sum-to-mix"] as const) {
+    for (const inv of ["samples-equal-reference", "impulse-on-reference", "impulse-follows-loop", "disabled-equals-absent", "differs-from-reference", "stems-sum-to-mix"] as const) {
       expect(one(inv, row(), rendered([1])).holds).toBe(false);
     }
     expect(one("muted-latent-unchanged", row(), rendered([1])).detail).toContain("no no-latency");
@@ -122,11 +122,103 @@ describe("judgeInvariants", () => {
     expect(diff.holds).toBe(false);
     expect(diff.detail).toBe("differs up to frame 199");
   });
-  it("holds stems-sum-to-mix within rounding only", () => {
-    const mix = rendered([0.5, 0.25]);
-    expect(one("stems-sum-to-mix", row(), rendered([0.5 + 4.7e-7, 0.25]), { reference: mix }).holds).toBe(true);
-    expect(one("stems-sum-to-mix", row(), rendered([0.5 + 1e-4, 0.25]), { reference: mix }).holds).toBe(false);
-    expect(one("stems-sum-to-mix", row(), rendered([0.5, NaN]), { reference: mix }).holds).toBe(false);
+  describe("stems-sum-to-mix", () => {
+    const mix = rendered([[0.75, 0.5], [0.25, 0.125]]);
+    const stems = (bedLeft: number, sourceRight = 0.25) =>
+      rendered([[0.5, 0.25], [sourceRight, 0.125], [bedLeft, 0.25], [0, 0]]);
+    const judged = (got: RenderedRow, against: RenderedRow = mix) => one("stems-sum-to-mix", row(), got, { reference: against });
+
+    it("holds a source and a bed that sum to the mix, within rounding only", () => {
+      expect(judged(stems(0.25)).holds).toBe(true);
+      expect(judged(stems(0.25 + 4.7e-7)).holds).toBe(true);
+      const off = judged(stems(0.25 + 1e-4));
+      expect(off.holds).toBe(false);
+      expect(off.detail).toContain("largest difference");
+      expect(judged(stems(0.25, 0.25 + 1e-4)).holds).toBe(false);
+      expect(judged(stems(NaN)).holds).toBe(false);
+    });
+    it("pairs channels 0,2,… as the left and 1,3,… as the right", () => {
+      const got = rendered([[0.5], [0.25], [0.125], [0.5]]);
+      expect(judged(got, rendered([[0.625], [0.75]])).holds).toBe(true);
+      expect(judged(got, rendered([[0.75], [0.625]])).holds).toBe(false);
+    });
+    it("sums every pair, not only the first two", () => {
+      const three = rendered([[0.5], [0.25], [0.125], [0.25], [0.125], [0.25]]);
+      expect(judged(three, rendered([[0.75], [0.75]])).holds).toBe(true);
+      expect(judged(three, rendered([[0.625], [0.5]])).holds).toBe(false);
+    });
+    it("sums in 32-bit float, as the mix did", () => {
+      const got = rendered([[1], [0], [1e-8], [0]]);
+      expect(judged(got, rendered([[1], [0]])).detail).toBe("largest difference 0, limit 4.8e-7");
+    });
+    it("fails uncompared on an odd channel count, a mix that is not stereo, or a length that differs", () => {
+      const odd = judged(rendered([[0.5, 0.25], [0.25, 0.125], [0.25, 0.25]]));
+      expect(odd.holds).toBe(false);
+      expect(odd.detail).toContain("3 channels");
+      const mono = judged(stems(0.25), rendered([[0.75, 0.5]]));
+      expect(mono.holds).toBe(false);
+      expect(mono.detail).toContain("1 channels");
+      const short = judged(rendered([[0.5], [0.25], [0.25], [0]]));
+      expect(short.holds).toBe(false);
+      expect(short.detail).toContain("frames");
+      const uneven = judged(rendered([[0.5, 0.25], [0.25, 0.125], [0.25], [0, 0]]));
+      expect(uneven.holds).toBe(false);
+      expect(uneven.detail).toContain("frames");
+    });
+  });
+  describe("impulse-follows-loop", () => {
+    const looped = (rate: number): ExportRow => buildRows(rate).find((x) => x.id === "position-none-loop-on-copy")!;
+    const reference = (rate: number): number[] => IMPULSE_SOURCE_FRAMES.map((f) => computedFrame(f, 48000, rate));
+    const pattern = (rate: number): number[] => {
+      const loop = Math.round(LOOP_ON_COPY_SECONDS * rate);
+      const first = reference(rate).filter((hit) => hit < loop);
+      return [...first, ...first.map((hit) => hit + loop)];
+    };
+    const judged = (rate: number, hits: number[], over: Partial<ExportRow> = {}, refHits: number[] = reference(rate)) =>
+      one("impulse-follows-loop", { ...looped(rate), ...over }, rendered([0], {}, { impulseHits: hits }),
+        { reference: rendered([0], {}, { impulseHits: refHits }) }, rate);
+
+    it("spells the pattern the loop gives at 48 kHz", () => {
+      expect(pattern(48000)).toEqual([4096, 24037, 72064, 100096, 120037, 168064]);
+    });
+    it("holds on the exact pattern at both page rates", () => {
+      for (const rate of [48000, 44100]) expect(judged(rate, pattern(rate)).holds, String(rate)).toBe(true);
+    });
+    it("fails a hit one frame off, naming both frames", () => {
+      for (const rate of [48000, 44100]) {
+        const hits = pattern(rate);
+        const moved = hits.map((hit, index) => (index === 3 ? hit - 1 : hit));
+        const result = judged(rate, moved);
+        expect(result.holds, String(rate)).toBe(false);
+        expect(result.detail).toContain(`missing frames ${hits[3]}`);
+        expect(result.detail).toContain(`extra frames ${hits[3] - 1}`);
+      }
+    });
+    it("fails the unlooped reference's hits: the loop did not repeat", () => {
+      for (const rate of [48000, 44100]) {
+        const result = judged(rate, reference(rate));
+        expect(result.holds, String(rate)).toBe(false);
+        expect(result.detail).toContain(`missing frames ${pattern(rate)[3]}`);
+      }
+    });
+    it("fails an extra hit", () => {
+      const result = judged(48000, [...pattern(48000), 180000]);
+      expect(result.holds).toBe(false);
+      expect(result.detail).toContain("extra frames 180000");
+    });
+    it("expects only the hits inside the range", () => {
+      const threeSeconds = { rangeSeconds: 3 };
+      expect(judged(48000, [4096, 24037, 72064, 100096, 120037], threeSeconds).holds).toBe(true);
+      expect(judged(48000, pattern(48000), threeSeconds).holds).toBe(false);
+    });
+    it("takes no hit at the loop's end into the loop", () => {
+      expect(judged(48000, [4096, 100096], {}, [4096, 96000]).holds).toBe(true);
+    });
+    it("fails uncompared when the reference has no hit inside the loop", () => {
+      const result = judged(48000, [], {}, [96000, 120037]);
+      expect(result.holds).toBe(false);
+      expect(result.detail).toContain("no impulse in the range");
+    });
   });
   it("holds repeat-identical on equal hashes and fails without a repeat", () => {
     expect(one("repeat-identical", row(), rendered([1], { repeatHash: "h" })).holds).toBe(true);

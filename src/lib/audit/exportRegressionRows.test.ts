@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRows, expectedLatencyFrames, setPositionStart } from "./exportRegressionRows.ts";
+import { buildRows, expectedLatencyFrames, LOOP_ON_COPY_SECONDS, setPositionStart, SET_POSITION_SECONDS } from "./exportRegressionRows.ts";
 
 describe("exportRegressionRows", () => {
   it("gives the latency figures the crates and the #530 note read", () => {
@@ -76,6 +76,20 @@ describe("exportRegressionRows", () => {
     expect([marker.rangeStartSeconds, marker.rangeSeconds]).toEqual([1, 2]);
     expect([last.rangeStartSeconds, last.rangeSeconds]).toEqual([3, 1]);
   });
+  it("reads a loop on the copy against the loop's pattern, never the unlooped reference's hits", () => {
+    for (const rate of [48000, 44100]) {
+      const rows = buildRows(rate).filter((r) => r.path === "loop-on-copy");
+      expect(rows.length).toBe(4);
+      rows.forEach((r) => {
+        expect(r.invariants, r.id).toContain("impulse-follows-loop");
+        expect(r.invariants, r.id).not.toContain("impulse-on-reference");
+        expect(r.referenceId, r.id).toMatch(/^core-.*-step-one$/);
+      });
+      buildRows(rate).filter((r) => r.path !== "loop-on-copy")
+        .forEach((r) => expect(r.invariants, r.id).not.toContain("impulse-follows-loop"));
+    }
+    expect(LOOP_ON_COPY_SECONDS).toBe(2);
+  });
   it("labels the one frame only where it was measured", async () => {
     const { findingFor } = await import("./exportRegressionFindings.ts");
     const row = buildRows(44100).find((r) => r.id === "core-none-section-loop-twice")!;
@@ -108,6 +122,9 @@ describe("setPositionStart", () => {
       rows.forEach((r) => {
         expect(r.rangeStartSeconds, r.id).toBeGreaterThan(0);
         expect(r.rangeStartSeconds + r.rangeSeconds, r.id).toBeCloseTo(r.seconds, 9);
+        // what the render path recomputes from the same constant, and refuses to run on if the two drift apart
+        const { ppqn } = setPositionStart(SET_POSITION_SECONDS, r.bpm, rate, r.path === "setposition-on-quantum");
+        expect(ppqn / (16 * r.bpm), r.id).toBeCloseTo(r.rangeStartSeconds, 9);
       });
     }
   });
