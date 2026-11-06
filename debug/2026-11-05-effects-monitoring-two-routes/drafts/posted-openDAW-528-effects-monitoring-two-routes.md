@@ -1,4 +1,4 @@
-<!-- Not posted. Waiting for a read. The note link below needs the note pushed to main first. -->
+<!-- Posted as https://github.com/andremichelle/openDAW/issues/528 on 2026-11-05. Body as filed. -->
 
 # "With Effects" monitoring reaches the output twice: is the main-mix route intended?
 
