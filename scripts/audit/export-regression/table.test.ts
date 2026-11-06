@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { acceptPath, formatRows, hashSamples, parseArgs, runLine } from "./table.ts";
@@ -16,7 +16,7 @@ const record = (over: Partial<RowRecord> = {}): RowRecord => ({
   id: "a", label: "A", group: "core", read: {
     hash: "0123456789abcdef", frames: 4, channels: 2, peak: 1, nonFinite: 0, impulseHits: [1],
     largestStep: { step: 0.1, frame: 1 }, energyPastRange: null
-  }, reportedLatencyFrames: 0, invariants: [], register: "unregistered", shiftFrames: null, standing: "clean",
+  }, reportedLatencyFrames: 0, invariants: [{ invariant: "proves-something", holds: true, detail: "", finding: null }], register: "unregistered", shiftFrames: null, standing: "clean",
   wavUploaded: true, error: null, renderMs: 5, ...over
 });
 const summary = (rows: RowRecord[], over: Partial<ExportSummary> = {}): ExportSummary => ({
@@ -49,8 +49,9 @@ describe("hashSamples", () => {
 
 describe("parseArgs", () => {
   it("reads the token, flags and values", () => {
-    const parsed = parseArgs(["17", "--accept", "--force", "--library", "/x/lib", "--diff", "row"], {});
-    expect(parsed).toEqual({ token: "17", accept: true, force: true, diff: "row", library: "/x/lib" });
+    expect(parseArgs(["17", "--accept", "--force", "--library", "/x/lib"], {}))
+      .toEqual({ token: "17", accept: true, force: true, diff: undefined, library: "/x/lib" });
+    expect(parseArgs(["--diff", "row"], {})).toMatchObject({ token: undefined, accept: false, diff: "row" });
   });
   it("takes the library from the environment, and is null when nothing resolves", () => {
     expect(parseArgs([], { EXPORT_WAV_LIBRARY: "/e/lib" }).library).toBe("/e/lib");
@@ -59,6 +60,10 @@ describe("parseArgs", () => {
   it("refuses an unknown flag and a flag without its value", () => {
     expect(() => parseArgs(["--acept"], {})).toThrow('unknown flag "--acept"');
     expect(() => parseArgs(["--library"], {})).toThrow(/needs a value/);
+  });
+  it("refuses two tokens, and --accept with --diff, instead of choosing one", () => {
+    expect(() => parseArgs(["7", "8"], {})).toThrow(/one run token/);
+    expect(() => parseArgs(["7", "--accept", "--diff", "a"], {})).toThrow(/--accept.*--diff/);
   });
 });
 
@@ -97,7 +102,7 @@ describe("the script", () => {
 
   it("--accept writes the register and copies the WAV by hash", () => {
     const { s, hash, root, library } = good();
-    const result = run(root, ["--accept", "--library", library]);
+    const result = run(root, ["7", "--accept", "--force", "--library", library]);
     expect(result.status).toBe(0);
     expect(existsSync(join(library, "wav", `${hash}.wav`))).toBe(true);
     const register = JSON.parse(readFileSync(acceptPath(s.sampleRate, root), "utf8"));
@@ -107,8 +112,8 @@ describe("the script", () => {
 
   it("a second accept of the same run copies nothing", () => {
     const { root, library } = good();
-    run(root, ["--accept", "--library", library]);
-    const again = run(root, ["--accept", "--library", library]);
+    run(root, ["7", "--accept", "--force", "--library", library]);
+    const again = run(root, ["7", "--accept", "--force", "--library", library]);
     expect(again.status).toBe(0);
     expect(again.stdout).toContain("0 WAV(s) copied");
     expect(again.stdout).toContain("no differences");
@@ -117,7 +122,7 @@ describe("the script", () => {
   it("verifies a WAV's samples hash before copying it, and writes nothing", () => {
     const s = summary([record({ read: { ...record().read!, hash: "f".repeat(64) } })]);
     const { root, library } = scratch(s, { a: samples });
-    const result = run(root, ["--accept", "--library", library]);
+    const result = run(root, ["7", "--accept", "--force", "--library", library]);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("nothing written");
     expect(existsSync(join(library, "wav"))).toBe(false);
@@ -126,7 +131,7 @@ describe("the script", () => {
 
   it("refuses with no library when there is something to copy, naming how to set it", () => {
     const { s, root } = good();
-    const result = run(root, ["--accept"]);
+    const result = run(root, ["7", "--accept", "--force"]);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("--library");
     expect(result.stderr).toContain("EXPORT_WAV_LIBRARY");
@@ -134,9 +139,9 @@ describe("the script", () => {
   });
 
   it("refuses a failing row, even forced, and writes nothing", () => {
-    const s = summary([record({ standing: "failing" })]);
+    const s = summary([record({ standing: "failing", invariants: [{ invariant: "no-jump", holds: false, detail: "", finding: null }] })]);
     const { root, library } = scratch(s, { a: samples });
-    const result = run(root, ["--accept", "--force", "--library", library]);
+    const result = run(root, ["7", "--accept", "--force", "--library", library]);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("no known finding");
     expect(existsSync(acceptPath(s.sampleRate, root))).toBe(false);
@@ -144,7 +149,7 @@ describe("the script", () => {
 
   it("--diff reports figures against the accepted render, and says so when no library is present", () => {
     const { s, hash, root, library } = good();
-    run(root, ["--accept", "--library", library]);
+    run(root, ["7", "--accept", "--force", "--library", library]);
     const moved = [Float32Array.from([0, 0, 0.5, -0.25]), samples[1]];
     const next = summary([record({ read: { ...record().read!, hash: "d".repeat(64) }, register: "changed" })], { runToken: 8 });
     writeFileSync(join(root, ".verify-output", "exportreg-summary-8.json"), JSON.stringify(next));
@@ -158,6 +163,78 @@ describe("the script", () => {
     expect(without.status).toBe(0);
     expect(without.stdout).toContain("no library");
     expect(hash).toBe(s.rows[0].read!.hash);
+  });
+
+  it("--accept without a run token is an error, writing nothing", () => {
+    const { s, root, library } = good();
+    const result = run(root, ["--accept", "--force", "--library", library]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("run token");
+    expect(existsSync(acceptPath(s.sampleRate, root))).toBe(false);
+  });
+
+  it("refuses a library that is not an existing directory, creating nothing", () => {
+    const { s, root } = good();
+    const missing = join(root, "no-such-library");
+    const result = run(root, ["7", "--accept", "--force", "--library", missing]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("not an existing directory");
+    expect(existsSync(missing)).toBe(false);
+    expect(existsSync(acceptPath(s.sampleRate, root))).toBe(false);
+  });
+
+  it("refuses a held hash whose WAV the library lacks, naming the row, before any write", () => {
+    const { s, hash, root, library } = good();
+    run(root, ["7", "--accept", "--force", "--library", library]);
+    rmSync(join(library, "wav", `${hash}.wav`));
+    const before = readFileSync(acceptPath(s.sampleRate, root), "utf8");
+    const result = run(root, ["7", "--accept", "--force", "--library", library]);
+    expect(result.status).toBe(1);
+    expect(result.stderr.trim()).toMatch(/library lacks.*: a$/);
+    expect(readFileSync(acceptPath(s.sampleRate, root), "utf8")).toBe(before);
+  });
+
+  it("says the library was not checked when none resolves, and prints a pending library", () => {
+    const { root, library } = good();
+    run(root, ["7", "--accept", "--force", "--library", library]);
+    const unchecked = run(root, ["7", "--accept", "--force"]);
+    expect(unchecked.status).toBe(0);
+    expect(unchecked.stdout).toContain("library not checked");
+    spawnSync("git", ["init", "-q", library]);
+    const pending = run(root, ["7", "--accept", "--force", "--library", library]);
+    expect(pending.status).toBe(0);
+    expect(pending.stdout).toContain("uncommitted changes under wav");
+  });
+
+  it("reports the register rows a full run drops, and does not call that no differences", () => {
+    const { s, root, library } = good();
+    const path = acceptPath(s.sampleRate, root);
+    run(root, ["7", "--accept", "--force", "--library", library]);
+    const register = JSON.parse(readFileSync(path, "utf8"));
+    register.rows.z = { ...register.rows.a };
+    writeFileSync(path, JSON.stringify(register));
+    const result = run(root, ["7", "--accept", "--force", "--library", library]);
+    expect(result.stdout).toContain("removed: z");
+    expect(result.stdout).not.toContain("no differences");
+  });
+
+  it("refuses a WAV whose rate, channel count or frame count is not the row's", () => {
+    const hash = hashSamples(samples);
+    const base = record().read!;
+    const cases: [string, RowRecord, number][] = [
+      ["frames", record({ read: { ...base, hash, frames: 99 } }), 48000],
+      ["channels", record({ read: { ...base, hash, channels: 1 } }), 48000],
+      ["rate", record({ read: { ...base, hash } }), 44100]
+    ];
+    for (const [what, row, wavRate] of cases) {
+      const s = summary([row]);
+      const { root, library } = scratch(s);
+      writeFileSync(join(root, ".verify-output", wavFileName(7, "a")), new Uint8Array(encodeFloatWav(samples, wavRate)));
+      const result = run(root, ["7", "--accept", "--force", "--library", library]);
+      expect(result.status, what).toBe(1);
+      expect(result.stderr, what).toContain(what);
+      expect(existsSync(acceptPath(s.sampleRate, root)), what).toBe(false);
+    }
   });
 
   it("prints stale findings and the standing counts on the run line", () => {

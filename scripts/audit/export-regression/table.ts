@@ -6,7 +6,8 @@
  * `../opendaw-export-wavs`); it is a person's read of this table, never an automatic step.
  */
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -49,8 +50,11 @@ export function parseArgs(
       }
     } else if (token === undefined) {
       token = arg;
+    } else {
+      throw new Error(`one run token only: got "${token}" and "${arg}"`);
     }
   }
+  if (args.includes("--accept") && diff !== undefined) throw new Error("--accept and --diff do not combine: pick one");
   return {
     token, accept: args.includes("--accept"), force: args.includes("--force"), diff,
     library: library ?? defaultLibrary(env, root)
@@ -153,9 +157,16 @@ function changeLine(
   return `${row.id}: ${diff.kind}, first differing frame ${diff.firstDifferingFrame ?? "-"}, largest ${db}, ${shift}, frames ${diff.acceptedFrames} -> ${diff.nextFrames}`;
 }
 
+/** What the library clone says it has not committed under `wav`; null when git cannot say. */
+const pendingInLibrary = (library: string): string | null => {
+  const result = spawnSync("git", ["-C", library, "status", "--porcelain", "wav"], { encoding: "utf8" });
+  return result.status === 0 ? result.stdout.trim() : null;
+};
+
 /**
- * Plans, then verifies every WAV against its row's hash, then copies, then writes the register: the register is
- * the last write, so a refusal or a bad WAV leaves register and library as they were.
+ * Plans, then checks everything that can fail (the library, every uploaded WAV against its row, every registered WAV
+ * against the library), then copies, then writes the register: the register is the last write, so a refusal or a
+ * bad WAV leaves register and library as they were.
  */
 export function runAccept(
   summary: ExportSummary, options: { force: boolean; library: string | null; root?: string; acceptedAt?: string }
@@ -166,15 +177,36 @@ export function runAccept(
   const { register, wavsToCopy } = planAccept(summary, onDisk, uploadedRows(summary, root), {
     force: options.force, acceptedAt: options.acceptedAt ?? new Date().toISOString()
   });
-  if (wavsToCopy.length > 0 && options.library === null) {
+  const { library } = options;
+  if (library !== null && !(existsSync(library) && statSync(library).isDirectory())) {
+    throw new Error(`library ${library} is not an existing directory`);
+  }
+  if (wavsToCopy.length > 0 && library === null) {
     throw new Error(`${wavsToCopy.length} WAV(s) to copy and no library: pass --library <path> or set $EXPORT_WAV_LIBRARY`);
   }
-  const staged = wavsToCopy.map(({ rowId, hash }) => {
-    const source = resolve(verifyDir(root), wavFileName(summary.runToken, rowId));
-    const got = hashSamples(decodeFile(source).channels);
-    if (got !== hash) throw new Error(`${source}: samples hash ${got}, the row ${rowId} read ${hash}; nothing written`);
-    return { source, target: resolve(options.library!, register.rows[rowId].wav) };
-  });
+  // A WAV is uploaded for every row that moved from its register entry; each must be the render the row read
+  for (const row of summary.rows) {
+    if (onDisk?.rows[row.id]?.hash === row.read!.hash) continue;
+    const source = resolve(verifyDir(root), wavFileName(summary.runToken, row.id));
+    const wav = decodeFile(source);
+    const got = hashSamples(wav.channels);
+    if (got !== row.read!.hash) throw new Error(`${source}: samples hash ${got}, the row ${row.id} read ${row.read!.hash}; nothing written`);
+    const frames = wav.channels[0]?.length ?? 0;
+    if (wav.sampleRate !== summary.sampleRate) throw new Error(`${source}: rate ${wav.sampleRate} Hz, the run is ${summary.sampleRate} Hz; nothing written`);
+    if (wav.channels.length !== row.read!.channels) throw new Error(`${source}: channels ${wav.channels.length}, the row read ${row.read!.channels}; nothing written`);
+    if (frames !== row.read!.frames) throw new Error(`${source}: frames ${frames}, the row read ${row.read!.frames}; nothing written`);
+  }
+  if (library !== null) {
+    const copying = new Set(wavsToCopy.map((w) => w.hash));
+    const absent = Object.entries(register.rows)
+      .filter(([, entry]) => !copying.has(entry.hash) && !existsSync(resolve(library, entry.wav)))
+      .map(([id]) => id);
+    if (absent.length > 0) throw new Error(`library lacks the WAV of registered rows, nothing written: ${absent.join(", ")}`);
+  }
+  const staged = wavsToCopy.map(({ rowId, hash }) => ({
+    source: resolve(verifyDir(root), wavFileName(summary.runToken, rowId)),
+    target: resolve(library!, `wav/${hash}.wav`)
+  }));
   for (const { source, target } of staged) {
     mkdirSync(dirname(target), { recursive: true });
     copyFileSync(source, target);
@@ -185,13 +217,20 @@ export function runAccept(
   if (options.force) lines.push("FORCED");
   const added = Object.keys(register.rows).filter((id) => onDisk?.rows[id] === undefined);
   const changed = Object.keys(register.rows).filter((id) => onDisk?.rows[id] !== undefined && onDisk.rows[id].hash !== register.rows[id].hash);
+  const removed = Object.keys(onDisk?.rows ?? {}).filter((id) => register.rows[id] === undefined);
   if (onDisk === null) lines.push("no previous register");
   if (added.length > 0) lines.push(`added: ${added.join(", ")}`);
   if (changed.length > 0) lines.push(`changed: ${changed.join(", ")}`);
-  if (added.length === 0 && changed.length === 0) lines.push("no differences");
+  if (removed.length > 0) lines.push(`removed: ${removed.join(", ")}`);
+  if (added.length + changed.length + removed.length === 0) lines.push("no differences");
   lines.push(`register ${path}`, `${staged.length} WAV(s) copied`);
-  if (staged.length > 0) {
-    lines.push(`commit in the library: git -C ${options.library} add wav && git -C ${options.library} commit -m "export regression run ${summary.runToken}"`);
+  if (library === null) {
+    lines.push("library not checked: none resolved, so the registered WAVs were not looked for");
+  } else if (staged.length > 0) {
+    lines.push(`commit in the library: git -C ${library} add wav && git -C ${library} commit -m "export regression run ${summary.runToken}"`);
+  } else {
+    const pending = pendingInLibrary(library);
+    if (pending !== null && pending !== "") lines.push(`the library has uncommitted changes under wav:\n${pending}`);
   }
   return lines;
 }
@@ -218,6 +257,9 @@ function diffRow(summary: ExportSummary, rowId: string, library: string | null, 
 function main(): void {
   try {
     const parsed = parseArgs(process.argv.slice(2));
+    if (parsed.accept && parsed.token === undefined) {
+      throw new Error("--accept needs the run token of the table you read: node scripts/audit/export-regression/table.ts <runToken> --accept");
+    }
     const summary = loadSummary(parsed.token, REPO_ROOT);
     if (parsed.diff !== undefined) {
       for (const line of diffRow(summary, parsed.diff, parsed.library, REPO_ROOT)) console.log(line);

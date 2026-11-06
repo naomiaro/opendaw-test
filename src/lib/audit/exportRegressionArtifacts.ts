@@ -1,7 +1,7 @@
 // Plain Node must load this file: the table script reads it, so SDK and reader imports are types only.
 import { buildRows, type ExportRow } from "./exportRegressionRows.ts";
 import { KNOWN_FINDINGS } from "./exportRegressionFindings.ts";
-import type { InvariantResult, RegisterEntry, RegisterVerdict, rowStanding } from "./exportRegressionVerdict.ts";
+import { rowStanding, type InvariantResult, type RegisterEntry, type RegisterVerdict } from "./exportRegressionVerdict.ts";
 import type { RenderRead } from "./exportRegressionReader";
 
 export const EXPORT_REGRESSION_SCHEMA_VERSION = 1;
@@ -113,12 +113,32 @@ export function parseExportRegister(json: unknown): ExportRegister {
 
 export const libraryWavPath = (hash: string): string => `wav/${hash}.wav`;
 
+/** The rows the accept gate cannot take: judged from the invariants, never from the stored label. */
+function refusedRows(rows: readonly RowRecord[]): { errored: string[]; unreadable: string[]; failing: string[] } {
+  const errored: string[] = [];
+  const unreadable: string[] = [];
+  const failing: string[] = [];
+  for (const row of rows) {
+    if (row.error !== null || row.read === null) {
+      errored.push(row.id);
+      continue;
+    }
+    const standing = rowStanding(row.invariants, row.error);
+    const named = row.invariants.every((r) => r.holds || KNOWN_FINDINGS.some(
+      (finding) => finding.name === r.finding && finding.invariant === r.invariant));
+    if (standing === "failing" || !named) failing.push(row.id);
+    else if (standing !== row.standing) unreadable.push(row.id);
+  }
+  return { errored, unreadable, failing };
+}
+
 /**
- * The register a run makes, or the refusal. Refused outright, even forced: an errored row (it read nothing), a failing
- * row (a failing invariant no known finding names: accepting it would bless a defect), a control run (descending UUIDs),
- * a rate other than the register's, a schema this code cannot read. Refused unless forced: a partial run, which then
- * merges into the register on disk. A row whose hash is new to the register needs its WAV uploaded, unless the library
- * already holds that hash; `wavsToCopy` is each hash the library does not hold yet, once.
+ * The register a run makes, or the refusal. Refused outright, even forced: an errored row (it read nothing), a row
+ * whose own invariants fail with no known finding of that invariant (accepting it would bless a defect: the stored
+ * `standing` is not trusted, it is recomputed and must agree), a control run (descending UUIDs), a rate other than the
+ * register's, a schema this code cannot read. Refused unless forced: a partial run, which then merges into the register
+ * on disk, and a full run whose rows are not the catalogue's. Every row whose hash differs from its register entry
+ * needs its WAV uploaded; `wavsToCopy` is each hash the register does not hold yet, once.
  */
 export function planAccept(
   summary: ExportSummary, onDisk: ExportRegister | null, uploaded: ReadonlySet<string>,
@@ -131,11 +151,13 @@ export function planAccept(
   if (summary.uuidOrder === "descending") {
     throw new Error(`${where} is a control run (uuidOrder descending): never accepted, not even forced`);
   }
-  const errored = summary.rows.filter((r) => r.error !== null || r.standing === "errored" || r.read === null).map((r) => r.id);
+  const { errored, unreadable, failing } = refusedRows(summary.rows);
   if (errored.length > 0) throw new Error(`${where} has errored rows, never accepted, not even forced: ${errored.join(", ")}`);
-  const failing = summary.rows.filter((r) => r.standing === "failing").map((r) => r.id);
   if (failing.length > 0) {
     throw new Error(`${where} has rows with a failing invariant and no known finding, never accepted, not even forced: ${failing.join(", ")}`);
+  }
+  if (unreadable.length > 0) {
+    throw new Error(`${where} has rows whose stored standing disagrees with their invariants, never accepted, not even forced: ${unreadable.join(", ")}`);
   }
   if (onDisk !== null) {
     if (onDisk.schemaVersion !== EXPORT_REGRESSION_SCHEMA_VERSION) {
@@ -153,6 +175,14 @@ export function planAccept(
     && (onDisk.sdkVersion !== summary.sdkVersion || onDisk.engineWasmSha256 !== summary.engineWasmSha256)) {
     throw new Error(`${where} is partial and cannot merge into a register of another build: sdk ${onDisk.sdkVersion} / engine ${onDisk.engineWasmSha256.slice(0, 12)} in the register, sdk ${summary.sdkVersion} / engine ${summary.engineWasmSha256.slice(0, 12)} in the run`);
   }
+  if (!partial && !options.force) {
+    const catalogue = new Set(buildRows(summary.sampleRate).map((r) => r.id));
+    const present = new Set(summary.rows.map((r) => r.id));
+    const missing = [...catalogue].filter((id) => !present.has(id));
+    const stray = [...present].filter((id) => !catalogue.has(id));
+    if (missing.length > 0) throw new Error(`${where} is a full run missing catalogue rows, not accepted without force: ${missing.join(", ")}`);
+    if (stray.length > 0) throw new Error(`${where} is a full run with rows not in the catalogue, not accepted without force: ${stray.join(", ")}`);
+  }
 
   const rows: Record<string, RegisterEntry> = partial && onDisk !== null ? { ...onDisk.rows } : {};
   const held = new Set(Object.values(onDisk?.rows ?? {}).map((entry) => entry.hash));
@@ -166,11 +196,11 @@ export function planAccept(
       rows[row.id] = existing;
       continue;
     }
+    if (!uploaded.has(row.id)) {
+      missingWav.push(row.id);
+      continue;
+    }
     if (!held.has(read.hash) && !queued.has(read.hash)) {
-      if (!uploaded.has(row.id)) {
-        missingWav.push(row.id);
-        continue;
-      }
       queued.add(read.hash);
       wavsToCopy.push({ rowId: row.id, hash: read.hash });
     }
