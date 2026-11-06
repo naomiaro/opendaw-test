@@ -426,6 +426,16 @@ describe("a loop bounce is held to the stepped loop's second pass", () => {
     expect(judge(row, edit(silentEnd, (out) => { out[0][last - 1] += 1e-3; }), rate, { reference, warm }).standing).toBe("failing");
     expect(judge(row, gained(silentEnd, 0.97), rate, { reference, warm }).standing).toBe("failing");
   });
+  it("reads failing unless that frame is silent on both channels", () => {
+    const last = early[0].length - 1;
+    const silentEnd = edit(early, (out) => { out[0][last] = 0; out[1][last] = 0; });
+    const warm = edit(early, (out) => { out[0][last] = 0.0707; out[1][last] = 0; });
+    expect(judge(row, silentEnd, rate, { reference, warm }).standing).toBe("known-finding");
+    for (const value of [0.05, 0.14, -0.05, 1e-6]) {
+      expect(judge(row, edit(silentEnd, (out) => { out[0][last] = value; }), rate, { reference, warm }).standing, String(value)).toBe("failing");
+    }
+    expect(judge(row, edit(silentEnd, (out) => { out[1][last] = 0.049; }), rate, { reference, warm }).standing).toBe("failing");
+  });
   it("gives a row with its own warm pass no such frame", () => {
     const loop = rowOf(rate, "core-none-section-loop-twice");
     const last = early[0].length - 1;

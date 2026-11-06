@@ -29,6 +29,8 @@ export type FindingEvidence = {
   sameDelayedBy: (frames: number) => boolean;
   /** The row's peak over its first frames. */
   headPeak: (frames: number) => number;
+  /** The row's peak on one frame, across its channels. */
+  framePeak: (frame: number) => number;
   /** How far the row sits from a loop of the reference that wraps at `wrap`: a fresh pass, with the old read fading over `fade`. */
   wrapResidue: (wrap: number, fade: number) => number;
   /** The reference's peak over the row's range. */
@@ -43,6 +45,7 @@ export const NO_EVIDENCE: FindingEvidence = {
   bandExcursion: () => Infinity,
   sameDelayedBy: () => false,
   headPeak: () => Infinity,
+  framePeak: () => Infinity,
   wrapResidue: () => Infinity,
   referenceRangePeak: () => Infinity,
   warmHolds: () => false
@@ -144,11 +147,12 @@ export const KNOWN_FINDINGS: readonly KnownFinding[] = [
   {
     name: "loop-bounce-last-frame-silent",
     invariant: "samples-equal-warm-pass",
-    note: "the short pass again, seen at a bounce's end. The second cycle starts a frame early, so the region is over one frame before the span the bounce keeps: that frame reads past the source's end, silent (audio_region_player.rs render_region, base >= source_frames), where the stepped loop is already in its next pass. Every other frame is bit-identical",
+    note: "the short pass again, seen at a bounce's end. The second cycle starts a frame early, so the region is over one frame before the span the bounce keeps: that frame reads past the source's end, exactly 0 on both channels (audio_region_player.rs:953, base >= source_frames), where the stepped loop is already in its next pass. Every other frame is bit-identical",
     applies: (row, pageRate) => row.path === "bounce-loop" && passIsOneFrameShort(row, pageRate),
-    signature: ({ firstDifferingFrame, lastDifferingFrame, comparedFrames, largestDifference }, row, pageRate) => {
+    signature: ({ firstDifferingFrame, lastDifferingFrame, comparedFrames, framePeak, largestDifference }, row, pageRate) => {
       const last = rangeFrames(row, pageRate) - 1;
       return firstDifferingFrame === last && lastDifferingFrame === last && comparedFrames === last + 1
+        && framePeak(last) === 0
         && largestDifference !== null && largestDifference <= toneStep(PROBE_TONE_LEVEL, PROBE_TONE_HZ, pageRate);
     }
   },

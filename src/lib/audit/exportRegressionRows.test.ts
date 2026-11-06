@@ -151,7 +151,8 @@ describe("exportRegressionRows", () => {
     for (const rate of [48000, 44100]) {
       const rows = buildRows(rate);
       const engaged = rows.filter((r) => r.engagedCompressor);
-      expect(engaged.map((r) => r.id)).toEqual(["control-compressor-engaged"]);
+      expect(engaged.map((r) => r.id)).toEqual([
+        "control-compressor-engaged", "control-bounce-tap-pre-fx", "control-bounce-tap-pre-fader", "control-bounce-tap-post-fader"]);
       const [row] = engaged;
       expect(row).toMatchObject({ group: "control", path: "step-one", latencyCase: "compressor-track", referenceId: "core-compressor-track-step-one" });
       expect(row.invariants).toContain("differs-from-reference");
@@ -166,9 +167,27 @@ describe("exportRegressionRows", () => {
       for (const r of rows.filter((x) => x.path === "loop-on-copy")) expect(r.invariants, r.id).toContain("samples-equal-reference");
     }
   });
-  it("has 286 rows at each rate", () => {
-    expect(buildRows(48000)).toHaveLength(286);
-    expect(buildRows(44100)).toHaveLength(286);
+  it("proves the bounce's tap points on a device that acts and a fader that is not at 0 dB, each against the tap before it", () => {
+    for (const rate of [48000, 44100]) {
+      const rows = buildRows(rate);
+      const byId = (id: string) => rows.find((r) => r.id === id)!;
+      const taps = [
+        ["control-bounce-tap-pre-fx", "bounce-pre-fx", "core-none-step-one", "section-is-slice"],
+        ["control-bounce-tap-pre-fader", "bounce-pre-fader", "control-bounce-tap-pre-fx", "differs-from-reference"],
+        ["control-bounce-tap-post-fader", "bounce-post-fader", "control-bounce-tap-pre-fader", "differs-from-reference"]
+      ] as const;
+      for (const [id, path, referenceId, invariant] of taps) {
+        const row = byId(id);
+        expect(row).toMatchObject({ group: "control", path, referenceId, latencyCase: "compressor-track", engagedCompressor: true, volumeDb: -6 });
+        expect(row.invariants, id).toContain(invariant);
+        expect(rows.indexOf(byId(referenceId)), id).toBeLessThan(rows.indexOf(row));
+      }
+      expect(rows.filter((r) => r.volumeDb !== 0).map((r) => r.id)).toEqual(taps.map(([id]) => id));
+    }
+  });
+  it("has 289 rows at each rate", () => {
+    expect(buildRows(48000)).toHaveLength(289);
+    expect(buildRows(44100)).toHaveLength(289);
   });
   it("labels the one frame only where it was measured", async () => {
     const { findingFor, NO_EVIDENCE } = await import("./exportRegressionFindings.ts");
@@ -302,6 +321,7 @@ describe("selectRows", () => {
     expect(ids).toEqual([
       "core-none-step-one", "core-compressor-track-step-one", "control-nudged", "control-disabled-compressor-track",
       "control-disabled-fold-muted", "control-master-maximizer", "control-mix-three-units", "control-compressor-engaged",
+      "control-bounce-tap-pre-fx", "control-bounce-tap-pre-fader", "control-bounce-tap-post-fader",
     ]);
   });
 
@@ -339,7 +359,8 @@ describe("lastReaders", () => {
   it("gives each referenced row the index of the last row reading it, and leaves out the rest", () => {
     const rows = selectRows(buildRows(48000), { rows: null, group: "control" });
     const last = lastReaders(rows);
-    expect(last.get("core-none-step-one")).toBe(rows.findIndex((r) => r.id === "control-disabled-fold-muted"));
+    expect(last.get("core-none-step-one")).toBe(rows.findIndex((r) => r.id === "control-bounce-tap-pre-fx"));
+    expect(last.get("control-bounce-tap-pre-fader")).toBe(rows.findIndex((r) => r.id === "control-bounce-tap-post-fader"));
     expect(last.has("control-nudged")).toBe(false);
   });
 

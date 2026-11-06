@@ -177,7 +177,8 @@ const compareToSlice = (rendered: RenderedRow, reference: RenderedRow, offset: n
         ...NO_EVIDENCE, firstDifferingFrame: first, lastDifferingFrame: last, largestDifference: largest, comparedFrames: shared,
         bandExcursion: (band) => largestBandExcursion(rendered, reference, offset, shared, band),
         sameDelayedBy: (frames) => isDelayedBy(rendered, reference, offset, shared, frames),
-        headPeak: (frames) => peakOver(rendered.samples, 0, frames)
+        headPeak: (frames) => peakOver(rendered.samples, 0, frames),
+        framePeak: (frame) => (frame < shared ? peakOver(rendered.samples, frame, frame + 1) : Infinity)
       }
     );
   }

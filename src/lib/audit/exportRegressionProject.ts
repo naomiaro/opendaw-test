@@ -329,6 +329,7 @@ export const applyRow = async (copy: Project, harness: HarnessProject, row: Expo
     bed.mute.setValue(!row.withBed);
     holder.mute.setValue(!row.withThird);
     if (row.nudgeVolume) source.volume.setValue(0.0001);
+    if (row.volumeDb !== 0) source.volume.setValue(row.volumeDb);
     if (row.path.startsWith("section-marker")) placeMarkers(copy, row.bpm);
   });
   settleMasterMaximizer(copy, row.masterMaximizer);

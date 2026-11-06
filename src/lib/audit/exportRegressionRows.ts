@@ -37,6 +37,8 @@ export type ExportRow = {
   withThird: boolean;
   /** The case's Compressor set to compress. Every other row keeps it neutral, so those prove its latency, not that it processes. */
   engagedCompressor: boolean;
+  /** The source unit's fader. Every other row keeps it at 0 dB, where a bounce's taps share one render. */
+  volumeDb: number;
   repeat: boolean;
   referenceId: string | null;
   noLatencyReferenceId: string | null;
@@ -148,6 +150,7 @@ const make = (spec: Spec): ExportRow => {
     withBed: false,
     withThird: false,
     engagedCompressor: false,
+    volumeDb: 0,
     repeat: false,
     referenceId: null,
     noLatencyReferenceId: null,
@@ -398,6 +401,13 @@ const buildSweep = (pageRate: number): ExportRow[] => {
   return rows;
 };
 
+const bounceTap = (path: "bounce-pre-fx" | "bounce-pre-fader" | "bounce-post-fader", referenceId: string, held: InvariantId): ExportRow =>
+  make({
+    id: `control-bounce-tap-${path.slice("bounce-".length)}`, label: `an engaged Compressor and a fader at -6 dB through ${path}`,
+    group: "control", latencyCase: "compressor-track", path, engagedCompressor: true, volumeDb: -6, referenceId,
+    invariants: [...basics(), "frames-as-expected", held]
+  });
+
 const buildControl = (): ExportRow[] => {
   const disabled = (latencyCase: LatencyCaseId): ExportRow =>
     make({
@@ -429,7 +439,11 @@ const buildControl = (): ExportRow[] => {
       latencyCase: "compressor-track", path: "step-one", engagedCompressor: true,
       referenceId: coreId("compressor-track", "step-one"),
       invariants: [...basics(), "differs-from-reference"]
-    })
+    }),
+    // A device and a fader that both act, or the taps read the same: each must show what the tap before it does not.
+    bounceTap("bounce-pre-fx", coreId("none", "step-one"), "section-is-slice"),
+    bounceTap("bounce-pre-fader", "control-bounce-tap-pre-fx", "differs-from-reference"),
+    bounceTap("bounce-post-fader", "control-bounce-tap-pre-fader", "differs-from-reference")
   ];
 };
 

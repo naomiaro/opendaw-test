@@ -374,6 +374,23 @@ describe("judgeInvariants", () => {
     expect(of(192000 - 128).detail).toContain("191872 frames, expected 192000");
     expect(of(192000 + 1).holds).toBe(false);
   });
+  it("fails a bounce tap whose render equals the tap before it: the fader or the device did not reach it", () => {
+    const byId = (id: string) => buildRows(48000).find((x) => x.id === id)!;
+    const earlier = rendered([1, 2, 3, 4, 5], {}, { hash: "earlier" });
+    for (const id of ["control-bounce-tap-pre-fader", "control-bounce-tap-post-fader"]) {
+      const same = one("differs-from-reference", byId(id), rendered([1, 2, 3, 4, 5], {}, { hash: "earlier" }), { reference: earlier });
+      expect(same.holds, id).toBe(false);
+      expect(same.finding, id).toBeNull();
+      expect(one("differs-from-reference", byId(id), rendered([5, 4, 3, 2, 1], {}, { hash: "later" }), { reference: earlier }).holds, id).toBe(true);
+    }
+    const preFx = byId("control-bounce-tap-pre-fx");
+    const clean = Float32Array.from({ length: 192000 }, (_, i) => Math.sin(i / 9));
+    const reference = { ...rendered([0]), samples: [clean], read: read({ frames: 192000 }) };
+    const reached = { ...rendered([0]), samples: [clean.map((v) => v / 2)], read: read({ frames: 192000 }) };
+    const [hit] = judgeInvariants({ ...preFx, invariants: ["section-is-slice"] }, reached, { reference, noLatency: null, warm: null }, 48000);
+    expect(hit.holds).toBe(false);
+    expect(hit.finding).toBeNull();
+  });
   it("gives a failure that compared nothing no finding", () => {
     const loop = buildRows(44100).find((x) => x.id === "core-none-section-loop-twice")!;
     const [r] = judgeInvariants({ ...loop, invariants: ["impulse-on-reference"] }, rendered([0], {}, { impulseHits: [1] }), { reference: null, noLatency: null, warm: null }, 44100);
