@@ -385,3 +385,47 @@ export const buildRows = (pageRate: number): ExportRow[] =>
   ].map((row) => REPEATED_CASES.includes(row.latencyCase)
     ? { ...row, repeat: true, invariants: [...row.invariants, "repeat-identical" as const] }
     : row);
+
+/**
+ * The rows of a run, in catalogue order. A partial run still renders what its rows read against, or every one of
+ * them would read "no reference": the references they name come along, and read like any other row.
+ */
+export const selectRows = (
+  catalogue: readonly ExportRow[], filter: { rows: string | null; group: string | null }
+): ExportRow[] => {
+  if (filter.rows !== null && filter.group !== null) throw new Error("?rows= and ?group= do not combine: pick one of them");
+  if (filter.rows === null && filter.group === null) return [...catalogue];
+  const byId = new Map(catalogue.map((row) => [row.id, row]));
+  let picked: readonly ExportRow[];
+  if (filter.rows !== null) {
+    const ids = filter.rows.split(",").map((id) => id.trim()).filter((id) => id !== "");
+    if (ids.length === 0) throw new Error("?rows= names no row");
+    const unknown = ids.filter((id) => !byId.has(id));
+    if (unknown.length > 0) throw new Error(`?rows= names rows the catalogue does not have: ${unknown.join(", ")}`);
+    picked = ids.map((id) => byId.get(id)!);
+  } else {
+    picked = catalogue.filter((row) => row.group === filter.group);
+    if (picked.length === 0) throw new Error(`?group= names a group the catalogue does not have: ${filter.group}`);
+  }
+  const wanted = new Set<string>();
+  const add = (row: ExportRow): void => {
+    if (wanted.has(row.id)) return;
+    wanted.add(row.id);
+    for (const id of [row.referenceId, row.noLatencyReferenceId]) {
+      if (id !== null) add(byId.get(id)!);
+    }
+  };
+  picked.forEach(add);
+  return catalogue.filter((row) => wanted.has(row.id));
+};
+
+/** Per referenced row, the index of the last row that reads it: a run can let its samples go after that one. */
+export const lastReaders = (rows: readonly ExportRow[]): Map<string, number> => {
+  const last = new Map<string, number>();
+  rows.forEach((row, index) => {
+    for (const id of [row.referenceId, row.noLatencyReferenceId]) {
+      if (id !== null) last.set(id, index);
+    }
+  });
+  return last;
+};

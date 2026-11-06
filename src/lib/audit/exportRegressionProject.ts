@@ -119,10 +119,7 @@ export const prepareSources = async (
   }
 };
 
-/** The context and the buffers are not read here: `prepareSources` takes them when it has the rows. */
-export const buildHarnessProject = (
-  project: Project, _audioContext: BaseAudioContext, _buffers: Map<string, AudioBuffer>, order: "ascending" | "descending",
-): HarnessProject => {
+export const buildHarnessProject = (project: Project, order: "ascending" | "descending"): HarnessProject => {
   const { editing, api, skeleton, timelineBox } = project;
   const createTape = () => editing.modify(() => api.createInstrument(InstrumentFactories.Tape)).unwrap("no tape was created");
   const source = createTape();

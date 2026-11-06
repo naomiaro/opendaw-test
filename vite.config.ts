@@ -188,6 +188,7 @@ export default defineConfig(({command}) => ({
                 pureWebaudioTargetDebug: resolve(__dirname, "pure-webaudio-target-debug-demo.html"),
                 pluginDelayCompensationDebug: resolve(__dirname, "plugin-delay-compensation-debug-demo.html"),
                 renderSectionLatencyDebug: resolve(__dirname, "render-section-latency-debug-demo.html"),
+                exportRegressionAuditDebug: resolve(__dirname, "export-regression-audit-debug-demo.html"),
                 sharedSourceDoubleProcessDebug: resolve(__dirname, "shared-source-double-process-debug-demo.html"),
                 voiceFadeinClipFadeinProductDebug: resolve(__dirname, "voice-fadein-clip-fadein-product-debug-demo.html"),
                 timePitchStartPositionDebug: resolve(__dirname, "time-pitch-start-position-debug-demo.html"),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRows, expectedLatencyFrames, LOOP_ON_COPY_SECONDS, setPositionStart, SET_POSITION_SECONDS } from "./exportRegressionRows.ts";
+import { buildRows, expectedLatencyFrames, lastReaders, LOOP_ON_COPY_SECONDS, selectRows, setPositionStart, SET_POSITION_SECONDS } from "./exportRegressionRows.ts";
 
 describe("exportRegressionRows", () => {
   it("gives the latency figures the crates and the #530 note read", () => {
@@ -151,5 +151,54 @@ describe("setPositionStart", () => {
         expect(ppqn / (16 * r.bpm), r.id).toBeCloseTo(r.rangeStartSeconds, 9);
       });
     }
+  });
+});
+
+describe("selectRows", () => {
+  const catalogue = buildRows(48000);
+
+  it("takes the whole catalogue with no filter", () => {
+    expect(selectRows(catalogue, { rows: null, group: null })).toEqual(catalogue);
+  });
+
+  it("runs what a group's rows read against, in catalogue order", () => {
+    const ids = selectRows(catalogue, { rows: null, group: "control" }).map((r) => r.id);
+    expect(ids).toEqual([
+      "core-none-step-one", "control-nudged", "control-disabled-compressor-track", "control-disabled-fold-muted",
+      "control-master-maximizer",
+    ]);
+  });
+
+  it("follows a reference of a reference and a no-latency reference", () => {
+    const ids = selectRows(catalogue, { rows: "core-fold-muted-section-entire", group: null }).map((r) => r.id);
+    expect(ids).toEqual(["core-none-step-one", "core-fold-muted-step-one", "core-fold-muted-section-entire"]);
+  });
+
+  it("refuses what it cannot name", () => {
+    expect(() => selectRows(catalogue, { rows: "control-nudged,no-such-row", group: null })).toThrow(/no-such-row/);
+    expect(() => selectRows(catalogue, { rows: null, group: "no-such-group" })).toThrow(/no-such-group/);
+    expect(() => selectRows(catalogue, { rows: "", group: null })).toThrow(/names no row/);
+    expect(() => selectRows(catalogue, { rows: "control-nudged", group: "control" })).toThrow(/one of/);
+  });
+
+  it("finds every row's references before the row, so a run in catalogue order can read them", () => {
+    for (const rate of [48000, 44100]) {
+      const seen = new Set<string>();
+      for (const row of buildRows(rate)) {
+        for (const id of [row.referenceId, row.noLatencyReferenceId]) {
+          if (id !== null) expect(seen.has(id), `${row.id} reads ${id}`).toBe(true);
+        }
+        seen.add(row.id);
+      }
+    }
+  });
+});
+
+describe("lastReaders", () => {
+  it("gives each referenced row the index of the last row reading it, and leaves out the rest", () => {
+    const rows = selectRows(buildRows(48000), { rows: null, group: "control" });
+    const last = lastReaders(rows);
+    expect(last.get("core-none-step-one")).toBe(rows.findIndex((r) => r.id === "control-disabled-fold-muted"));
+    expect(last.has("control-nudged")).toBe(false);
   });
 });
