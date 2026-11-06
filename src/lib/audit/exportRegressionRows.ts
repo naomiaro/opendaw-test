@@ -7,7 +7,7 @@ export type LatencyCaseId =
 export type PathId =
   | "step-one" | "step-chunked-whole" | "step-chunked-odd" | "step-reset" | "start"
   | "section-entire" | "section-loop-once" | "section-loop-twice" | "section-marker" | "section-marker-last"
-  | "stems-fx" | "stems-dry" | "stems-sends" | "stems-metronome"
+  | "stems-fx" | "stems-dry" | "stems-sends" | "stems-metronome" | "stems-start" | "stems-section-loop"
   | "bounce-pre-fx" | "bounce-pre-fader" | "bounce-post-fader" | "bounce-merge" | "bounce-loop" | "bounce-tail"
   | "setposition-on-quantum" | "setposition-off-quantum" | "loop-on-copy";
 
@@ -81,6 +81,8 @@ export const setPositionStart = (
   seconds: number, bpm: number, pageRate: number, onQuantum: boolean
 ): { ppqn: number; offQuantumFrames: number } => {
   let ppqn = Math.ceil(seconds * 16 * bpm);
+  // Checked here, not by the loop's bound: a NaN or a -Infinity never passes it and the loop would spin for good.
+  if (!Number.isFinite(ppqn)) throw new Error(`no ppqn for a start of ${seconds} s at ${bpm} bpm`);
   for (;;) {
     const frame = ppqnToFrame(ppqn, bpm, pageRate);
     const nearest = Math.round(frame / QUANTUM) * QUANTUM;
@@ -103,6 +105,8 @@ const CORE_PATHS: readonly PathId[] = [
   "section-entire", "section-loop-once", "section-loop-twice", "section-marker", "section-marker-last"
 ];
 const STEMS_PATHS: readonly PathId[] = ["stems-fx", "stems-dry", "stems-sends", "stems-metronome"];
+// What the studio's stem dialog calls; the stepped stems-fx, already held to the mix, is what they must equal.
+const STEMS_ROUTE_PATHS: readonly PathId[] = ["stems-start", "stems-section-loop"];
 // bounce-tail belongs to the tail group, where a Reverb gives it something to render
 const BOUNCE_PATHS: readonly PathId[] = ["bounce-pre-fx", "bounce-pre-fader", "bounce-post-fader", "bounce-merge", "bounce-loop"];
 const BASE_CASES: readonly LatencyCaseId[] = ["none", "autotune-muted", "compressor-track", "compressor-muted"];
@@ -231,6 +235,13 @@ const buildStems = (): ExportRow[] => {
         id: `stems-${latencyCase}-${path}`, label: `${latencyCase} through ${path}`,
         group: "stems", latencyCase, path, withBed: true, referenceId: mixId,
         invariants: [...basics(), ...(path === "stems-fx" ? ["stems-sum-to-mix" as const] : [])]
+      }));
+    }
+    for (const path of STEMS_ROUTE_PATHS) {
+      rows.push(make({
+        id: `stems-${latencyCase}-${path}`, label: `${latencyCase} through ${path}`,
+        group: "stems", latencyCase, path, withBed: true, referenceId: `stems-${latencyCase}-stems-fx`,
+        invariants: [...basics(), "section-is-slice"]
       }));
     }
   }

@@ -66,8 +66,27 @@ describe("exportRegressionRows", () => {
     const rows = buildRows(48000);
     const bed = rows.filter((r) => r.withBed).map((r) => r.group + ":" + r.path);
     expect(new Set(bed)).toEqual(new Set(["stems:step-one", "stems:stems-fx", "stems:stems-dry", "stems:stems-sends",
-      "stems:stems-metronome", "control:step-one"]));
-    rows.filter((r) => r.path.startsWith("stems-")).forEach((r) => expect(r.referenceId, r.id).toMatch(/^mix-/));
+      "stems:stems-metronome", "stems:stems-start", "stems:stems-section-loop", "control:step-one"]));
+    rows.filter((r) => ["stems-fx", "stems-dry", "stems-sends", "stems-metronome"].includes(r.path))
+      .forEach((r) => expect(r.referenceId, r.id).toMatch(/^mix-/));
+  });
+  it("reads the studio's stem route against the stepped stems of the same case", () => {
+    for (const rate of [48000, 44100]) {
+      const rows = buildRows(rate);
+      expect(rows.filter((r) => r.group === "stems").length, String(rate)).toBe(4 * 7);
+      for (const latencyCase of ["none", "autotune-muted", "compressor-track", "compressor-muted"]) {
+        for (const path of ["stems-start", "stems-section-loop"]) {
+          const row = rows.find((r) => r.id === `stems-${latencyCase}-${path}`)!;
+          expect(row.path).toBe(path);
+          expect(row.group).toBe("stems");
+          expect(row.withBed, row.id).toBe(true);
+          expect(row.referenceId, row.id).toBe(`stems-${latencyCase}-stems-fx`);
+          expect(row.invariants, row.id).toEqual(expect.arrayContaining(["proves-something", "latency-as-expected", "section-is-slice"]));
+          expect(row.invariants, row.id).not.toContain("stems-sum-to-mix");
+          expect([row.rangeStartSeconds, row.rangeSeconds], row.id).toEqual([0, row.seconds]);
+        }
+      }
+    }
   });
   it("starts the section windows where the brief puts them", () => {
     const rows = buildRows(48000);
@@ -101,6 +120,11 @@ describe("exportRegressionRows", () => {
 });
 
 describe("setPositionStart", () => {
+  it("throws on a non-finite start, which would otherwise never find a frame", () => {
+    for (const seconds of [NaN, Infinity, -Infinity]) {
+      expect(() => setPositionStart(seconds, 120, 48000, true), String(seconds)).toThrow("ppqn");
+    }
+  });
   it("lands a whole multiple of 128 frames at 48 kHz on quantum, and off it when asked", () => {
     const on = setPositionStart(1, 120, 48000, true);
     expect(on.offQuantumFrames).toBe(0);

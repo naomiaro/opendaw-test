@@ -1,8 +1,9 @@
 /**
  * One render of a row through its SDK export path, on a copy of its own. What differs between the paths is what the
- * harness tests, so each goes through the SDK's own calls, never a helper of this repo that stands in for them. The stems
- * step the renderer for an exact range instead of the `start` or `renderSection` the studio's stem dialog calls, since
- * `stems-sum-to-mix` needs the mix's frames; the bounce runs `AudioBounce.bounce`'s exported pieces.
+ * harness tests, so each goes through the SDK's own calls, never a helper of this repo that stands in for them. Most stem
+ * paths step the renderer for an exact range, since `stems-sum-to-mix` needs the mix's frames; `stems-start` and
+ * `stems-section-loop` take the `start` and `renderSection` the studio's stem dialog calls. The bounce runs
+ * `AudioBounce.bounce`'s exported pieces.
  *
  * The step paths use the order `src/demos/export/CLAUDE.md` documents (setPosition, play, waitForLoading, step).
  * `renderSection` and the bounce wait for loading once more before the setPosition. The worker renders nothing before
@@ -32,7 +33,7 @@ type Render = {
   finished: AbortSignal;
 };
 
-type SectionPathId = Extract<PathId, `section-${string}`>;
+type SectionPathId = Extract<PathId, `section-${string}`> | "stems-section-loop";
 type StemsPathId = Extract<PathId, `stems-${string}`>;
 type BouncePathId = Extract<PathId, `bounce-${string}`>;
 
@@ -126,9 +127,12 @@ const SECTIONS: Record<SectionPathId, Pick<MixdownSection, "type" | "passes">> =
   "section-loop-twice": { type: "loop", passes: 2 },
   "section-marker": { type: "marker", passes: 1 },
   "section-marker-last": { type: "marker", passes: 1 },
+  "stems-section-loop": { type: "loop", passes: 1 },
 };
 
-const renderSectionPath = async (render: Render, path: SectionPathId): Promise<Float32Array[]> => {
+const renderSectionPath = async (
+  render: Render, path: SectionPathId, config: Option<ExportConfiguration>,
+): Promise<Float32Array[]> => {
   const { copy, row, pageRate, finished } = render;
   const start = ppqnAt(row.rangeStartSeconds, row.bpm);
   const { type, passes } = SECTIONS[path];
@@ -142,10 +146,16 @@ const renderSectionPath = async (render: Render, path: SectionPathId): Promise<F
   }
   // The deadline has only this to take a section's worker down with: the renderer stays inside the SDK.
   const audio = await OfflineEngineRenderer.renderSection(
-    copy, Option.None, section, new DefaultObservableValue(0), finished, pageRate,
+    copy, config, section, new DefaultObservableValue(0), finished, pageRate,
   );
   return ownedChannels(audio);
 };
+
+/** The signal, not `undefined`: without it nothing could take this path's worker down on a deadline. */
+const renderStart = async (
+  { copy, pageRate, finished }: Render, config: Option<ExportConfiguration>,
+): Promise<Float32Array[]> =>
+  ownedChannels(await OfflineEngineRenderer.start(copy, config, new DefaultObservableValue(0), finished, pageRate));
 
 /** The source's stem comes first and object keys keep their insertion order, so channels 0 and 1 are the source. */
 const stemsConfiguration = ({ harness: { units } }: Render, path: StemsPathId): ExportConfiguration => {
@@ -214,7 +224,7 @@ const setPositionPpqn = ({ row, pageRate }: Render, onQuantum: boolean): number 
 };
 
 const renderRow = async (render: Render): Promise<Float32Array[]> => {
-  const { copy, harness, row, pageRate, finished } = render;
+  const { copy, harness, row, pageRate } = render;
   await applyRow(copy, harness, row);
   const frames = Math.round(row.rangeSeconds * pageRate);
   const { path } = row;
@@ -227,22 +237,23 @@ const renderRow = async (render: Render): Promise<Float32Array[]> => {
       return renderSteps(render, Option.None, 0, chunkSizes(frames, ODD_CHUNK_FRAMES));
     case "step-reset":
       return renderReset(render, frames);
-    case "start": {
-      // The signal, not `undefined`: without it nothing could take this path's worker down on a deadline.
-      const audio = await OfflineEngineRenderer.start(copy, Option.None, new DefaultObservableValue(0), finished, pageRate);
-      return ownedChannels(audio);
-    }
+    case "start":
+      return renderStart(render, Option.None);
     case "section-entire":
     case "section-loop-once":
     case "section-loop-twice":
     case "section-marker":
     case "section-marker-last":
-      return renderSectionPath(render, path);
+      return renderSectionPath(render, path, Option.None);
     case "stems-fx":
     case "stems-dry":
     case "stems-sends":
     case "stems-metronome":
       return renderSteps(render, Option.wrap(stemsConfiguration(render, path)), 0, [frames]);
+    case "stems-start":
+      return renderStart(render, Option.wrap(stemsConfiguration(render, path)));
+    case "stems-section-loop":
+      return renderSectionPath(render, path, Option.wrap(stemsConfiguration(render, path)));
     case "bounce-pre-fx":
     case "bounce-pre-fader":
     case "bounce-post-fader":

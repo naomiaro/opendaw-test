@@ -48,6 +48,24 @@ describe("judgeInvariants", () => {
     expect(shortRef.holds).toBe(false);
     expect(shortRef.detail).toContain("3 of the range's 5");
   });
+  it("compares every channel of a stem render with the stepped stems", () => {
+    const stepped = rendered([[1, 2, 3, 4, 5], [6, 7, 8, 9, 1], [2, 3, 4, 5, 6], [7, 8, 9, 1, 2]]);
+    const same = () => [[1, 2, 3, 4, 5], [6, 7, 8, 9, 1], [2, 3, 4, 5, 6], [7, 8, 9, 1, 2]];
+    expect(one("section-is-slice", row(), rendered(same()), { reference: stepped }).holds).toBe(true);
+    // the last channel is the bed's right: a comparison of the source's pair alone would pass this
+    const bedOff = same();
+    bedOff[3][4] = 2.5;
+    const off = one("section-is-slice", row(), rendered(bedOff), { reference: stepped });
+    expect(off.holds).toBe(false);
+    expect(off.detail).toContain("differs at frame 4 of channel 3");
+    // `start` runs on past the range: the frames past the stepped render are not its to judge
+    const longer = one("section-is-slice", row(), rendered(same().map((c) => [...c, 9, 9])), { reference: stepped });
+    expect(longer.holds).toBe(true);
+    expect(longer.detail).toContain("2 frames past the reference not compared");
+    const sourceOnly = one("section-is-slice", row(), rendered(same().slice(0, 2)), { reference: stepped });
+    expect(sourceOnly.holds).toBe(false);
+    expect(sourceOnly.detail).toContain("channel counts differ: 2 against the reference's 4");
+  });
   it("compares a setposition row with the reference from its start frame", () => {
     const ref = rendered([9, 9, 1, 2, 3, 4]);
     const r = row({ rangeStartSeconds: 2 / 48000, rangeSeconds: 4 / 48000 });
