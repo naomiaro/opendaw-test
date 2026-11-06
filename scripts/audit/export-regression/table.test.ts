@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { acceptPath, formatRows, hashSamples, parseArgs, runLine } from "./table.ts";
+import { acceptPath, compareDeviceRates, formatRows, hashSamples, parseArgs, runLine } from "./table.ts";
 import { sha256OfSamples } from "../../../src/lib/audit/exportRegressionReader.ts";
 import { encodeFloatWav } from "../../../src/lib/audit/exportRegressionWav.ts";
 import { buildRows } from "../../../src/lib/audit/exportRegressionRows.ts";
@@ -21,7 +21,7 @@ const record = (over: Partial<RowRecord> = {}): RowRecord => ({
 });
 const summary = (rows: RowRecord[], over: Partial<ExportSummary> = {}): ExportSummary => ({
   schemaVersion: 1, runToken: 7, userAgent: "ua", sdkVersion: "0.0.182", engineWasmSha256: "e".repeat(64), sampleRate: 48000,
-  uuidOrder: "ascending", rowsParam: "all", fill: false, registerSdkVersion: null, latencyReads: [], rows, ...over
+  uuidOrder: "ascending", rowsParam: "all", fill: false, registerSdkVersion: null, latencyReads: [], deviceRateHz: null, rows, ...over
 });
 
 /** A scratch tree with the summary, and the WAV of each row id in `wavs`; returns the root and a library path. */
@@ -48,6 +48,11 @@ describe("hashSamples", () => {
 });
 
 describe("parseArgs", () => {
+  it("reads --compare-device with two tokens, and refuses it beside other work", () => {
+    expect(parseArgs(["--compare-device", "1", "2"], {}).compareDevice).toEqual(["1", "2"]);
+    expect(() => parseArgs(["--compare-device", "1"], {})).toThrow(/two/);
+    expect(() => parseArgs(["--compare-device", "1", "2", "--accept"], {})).toThrow(/combine/);
+  });
   it("reads the token, flags and values", () => {
     expect(parseArgs(["17", "--accept", "--force", "--library", "/x/lib"], {}))
       .toEqual({ token: "17", accept: true, force: true, diff: undefined, library: "/x/lib" });
@@ -93,12 +98,63 @@ describe("formatRows and runLine", () => {
   });
 });
 
+describe("the device rate on the run line", () => {
+  it("prints the rate, or unknown", () => {
+    expect(runLine(summary([record()], { deviceRateHz: 44100 }))).toContain("| device 44100 Hz |");
+    expect(runLine(summary([record()]))).toContain("| device unknown |");
+  });
+});
+
+describe("compareDeviceRates", () => {
+  const at = (device: number | null, hashes: Record<string, string>, over: Partial<ExportSummary> = {}) =>
+    summary(Object.entries(hashes).map(([id, hash]) => record({ id, read: { ...record().read!, hash } })),
+      { deviceRateHz: device, ...over });
+  it("counts identical rows and succeeds when none differ", () => {
+    const result = compareDeviceRates(at(44100, { a: "h1", b: "h2" }, { runToken: 1 }), at(48000, { a: "h1", b: "h2" }, { runToken: 2 }));
+    expect(result.differing).toBe(0);
+    expect(result.lines).toEqual(["device rates 44100 and 48000: 2 of 2 rows identical"]);
+  });
+  it("names each differing row with both hashes", () => {
+    const result = compareDeviceRates(at(44100, { a: "h1", b: "h2" }), at(48000, { a: "h1", b: "h3" }));
+    expect(result.differing).toBe(1);
+    expect(result.lines).toEqual(["b | h2 | h3", "device rates 44100 and 48000: 1 of 2 rows identical"]);
+  });
+  it("counts a row missing from one run, or errored, as differing", () => {
+    const errored = record({ id: "b", read: null, error: "x", standing: "errored" });
+    const result = compareDeviceRates(at(44100, { a: "h1", b: "h2" }), summary([record({ id: "a", read: { ...record().read!, hash: "h1" } }), errored], { deviceRateHz: 48000 }));
+    expect(result.lines[0]).toBe("b | h2 | -");
+    const missing = compareDeviceRates(at(44100, { a: "h1", b: "h2" }), at(48000, { a: "h1" }));
+    expect(missing.lines[0]).toBe("b | h2 | -");
+  });
+  it("refuses a page-rate mismatch, equal device rates and an unknown device rate", () => {
+    expect(() => compareDeviceRates(at(44100, { a: "h" }), at(48000, { a: "h" }, { sampleRate: 44100 }))).toThrow(/page rate/);
+    expect(() => compareDeviceRates(at(44100, { a: "h" }), at(44100, { a: "h" }))).toThrow(/equal/);
+    expect(() => compareDeviceRates(at(44100, { a: "h" }), at(null, { a: "h" }))).toThrow(/unknown/);
+  });
+});
+
 describe("the script", () => {
   const good = () => {
     const hash = hashSamples(samples);
     const s = summary([record({ read: { ...record().read!, hash } })]);
     return { s, hash, ...scratch(s, { a: samples }) };
   };
+
+  it("--compare-device exits 0 on identical hashes and 1 on a differing row, writing nothing", () => {
+    const withHash = (token: number, device: number, hash: string) =>
+      summary([record({ read: { ...record().read!, hash } })], { runToken: token, deviceRateHz: device });
+    const { root } = scratch(withHash(1, 44100, "h1"));
+    writeFileSync(join(root, ".verify-output", "exportreg-summary-2.json"), JSON.stringify(withHash(2, 48000, "h1")));
+    writeFileSync(join(root, ".verify-output", "exportreg-summary-3.json"), JSON.stringify(withHash(3, 48000, "h9")));
+    const same = run(root, ["--compare-device", "1", "2"]);
+    expect(same.status).toBe(0);
+    expect(same.stdout).toContain("device rates 44100 and 48000: 1 of 1 rows identical");
+    const differ = run(root, ["--compare-device", "1", "3"]);
+    expect(differ.status).toBe(1);
+    expect(differ.stdout).toContain("a | h1 | h9");
+    expect(differ.stdout).toContain("0 of 1 rows identical");
+    expect(existsSync(join(root, "debug"))).toBe(false);
+  });
 
   it("--accept writes the register and copies the WAV by hash", () => {
     const { s, hash, root, library } = good();

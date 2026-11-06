@@ -1,9 +1,11 @@
 /**
  * Register table from an export regression summary in `.verify-output/`:
  *   node scripts/audit/export-regression/table.ts [runToken] [--accept] [--force] [--library <path>] [--diff <rowId>]
+ *   node scripts/audit/export-regression/table.ts --compare-device <tokenA> <tokenB>
  * One line per row, then the run line. Newest summary when no token is given. `--accept` writes the accepted hash
  * register and copies the accepted WAVs into the local library clone (`--library`, `$EXPORT_WAV_LIBRARY`, else
  * `../opendaw-export-wavs`); it is a person's read of this table, never an automatic step.
+ * `--compare-device` reads two runs of one page rate made at different device rates and compares hashes only.
  */
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
@@ -33,13 +35,21 @@ const defaultLibrary = (env: NodeJS.ProcessEnv, root: string): string | null => 
 /** The token (the first bare argument), the flags and their values; an unknown flag or a missing value throws. */
 export function parseArgs(
   args: readonly string[], env: NodeJS.ProcessEnv = process.env, root: string = REPO_ROOT
-): { token?: string; accept: boolean; force: boolean; diff?: string; library: string | null } {
+): { token?: string; accept: boolean; force: boolean; diff?: string; library: string | null; compareDevice?: [string, string] } {
   let token: string | undefined;
+  let compareDevice: [string, string] | undefined;
   let diff: string | undefined;
   let library: string | null = null;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    if ((VALUE_FLAGS as readonly string[]).includes(arg)) {
+    if (arg === "--compare-device") {
+      const [a, b] = [args[i + 1], args[i + 2]];
+      if (a === undefined || b === undefined || a.startsWith("--") || b.startsWith("--")) {
+        throw new Error("--compare-device needs two run tokens");
+      }
+      compareDevice = [a, b];
+      i += 2;
+    } else if ((VALUE_FLAGS as readonly string[]).includes(arg)) {
       const value = args[++i];
       if (value === undefined || value.startsWith("--")) throw new Error(`${arg} needs a value`);
       if (arg === "--diff") diff = value;
@@ -55,9 +65,12 @@ export function parseArgs(
     }
   }
   if (args.includes("--accept") && diff !== undefined) throw new Error("--accept and --diff do not combine: pick one");
+  if (compareDevice !== undefined && (args.includes("--accept") || diff !== undefined || token !== undefined)) {
+    throw new Error("--compare-device does not combine with a token, --accept or --diff: it takes its own two tokens");
+  }
   return {
     token, accept: args.includes("--accept"), force: args.includes("--force"), diff,
-    library: library ?? defaultLibrary(env, root)
+    library: library ?? defaultLibrary(env, root), compareDevice
   };
 }
 
@@ -92,9 +105,36 @@ export function formatRows(summary: ExportSummary): string[] {
 export function runLine(summary: ExportSummary): string {
   const count = (standing: RowRecord["standing"]): number => summary.rows.filter((r) => r.standing === standing).length;
   return `run ${summary.runToken} (${new Date(summary.runToken).toISOString()}) | sdk ${summary.sdkVersion} | `
-    + `engine ${summary.engineWasmSha256.slice(0, 12)} | ${summary.sampleRate} Hz | uuids ${summary.uuidOrder} | `
+    + `engine ${summary.engineWasmSha256.slice(0, 12)} | ${summary.sampleRate} Hz | `
+    + `${summary.deviceRateHz === null ? "device unknown" : `device ${summary.deviceRateHz} Hz`} | uuids ${summary.uuidOrder} | `
     + `register ${summary.registerSdkVersion ?? "none"} | rows ${summary.rows.length} (${summary.rowsParam}) | `
     + `clean ${count("clean")}, known finding ${count("known-finding")}, failing ${count("failing")}, errored ${count("errored")}`;
+}
+
+/**
+ * Two runs of one page rate at different device rates, compared by hash alone. A row missing from one run or
+ * errored there counts as differing. Throws when the comparison cannot mean anything: another page rate, or device
+ * rates that are equal or unknown.
+ */
+export function compareDeviceRates(a: ExportSummary, b: ExportSummary): { lines: string[]; differing: number } {
+  if (a.sampleRate !== b.sampleRate) throw new Error(`page rate ${a.sampleRate} Hz in run ${a.runToken}, ${b.sampleRate} Hz in run ${b.runToken}`);
+  if (a.deviceRateHz === null || b.deviceRateHz === null) {
+    throw new Error(`device rate unknown in run ${a.deviceRateHz === null ? a.runToken : b.runToken}: nothing to compare across`);
+  }
+  if (a.deviceRateHz === b.deviceRateHz) throw new Error(`device rates are equal (${a.deviceRateHz} Hz) in runs ${a.runToken} and ${b.runToken}`);
+  const hashes = (s: ExportSummary) => new Map(s.rows.map((r) => [r.id, r.read === null ? "-" : r.read.hash]));
+  const [hashA, hashB] = [hashes(a), hashes(b)];
+  const ids = [...new Set([...hashA.keys(), ...hashB.keys()])];
+  const lines: string[] = [];
+  let differing = 0;
+  for (const id of ids) {
+    const [x, y] = [hashA.get(id) ?? "-", hashB.get(id) ?? "-"];
+    if (x === y && x !== "-") continue;
+    differing++;
+    lines.push(`${id} | ${x} | ${y}`);
+  }
+  lines.push(`device rates ${a.deviceRateHz} and ${b.deviceRateHz}: ${ids.length - differing} of ${ids.length} rows identical`);
+  return { lines, differing };
 }
 
 function readJson(path: string): unknown {
@@ -259,6 +299,14 @@ function main(): void {
     const parsed = parseArgs(process.argv.slice(2));
     if (parsed.accept && parsed.token === undefined) {
       throw new Error("--accept needs the run token of the table you read: node scripts/audit/export-regression/table.ts <runToken> --accept");
+    }
+    if (parsed.compareDevice !== undefined) {
+      const { lines, differing } = compareDeviceRates(
+        loadSummary(parsed.compareDevice[0], REPO_ROOT), loadSummary(parsed.compareDevice[1], REPO_ROOT)
+      );
+      for (const line of lines) console.log(line);
+      if (differing > 0) process.exit(1);
+      return;
     }
     const summary = loadSummary(parsed.token, REPO_ROOT);
     if (parsed.diff !== undefined) {

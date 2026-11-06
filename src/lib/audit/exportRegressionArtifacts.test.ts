@@ -18,7 +18,7 @@ const record = (over: Partial<RowRecord> = {}): RowRecord => ({
 });
 const summary = (rows: RowRecord[], over: Partial<ExportSummary> = {}): ExportSummary => ({
   schemaVersion: 1, runToken: 7, userAgent: "ua", sdkVersion: "0.0.182", engineWasmSha256: "e".repeat(64), sampleRate: 48000,
-  uuidOrder: "ascending", rowsParam: "all", fill: false, registerSdkVersion: null, latencyReads: [], rows, ...over
+  uuidOrder: "ascending", rowsParam: "all", fill: false, registerSdkVersion: null, latencyReads: [], deviceRateHz: null, rows, ...over
 });
 const registerAt = (rate: number, rows: ExportRegister["rows"] = {}): ExportRegister => ({
   schemaVersion: 1, sdkVersion: "0.0.182", engineWasmSha256: "e".repeat(64), acceptedRunToken: 1, acceptedAt, sampleRate: rate, rows
@@ -44,6 +44,17 @@ describe("parse", () => {
     expect(parseExportSummary(JSON.parse(JSON.stringify(s)), 7).rows[0].id).toBe("a");
     const r = registerAt(48000, { a: entry("h") });
     expect(parseExportRegister(JSON.parse(JSON.stringify(r))).rows.a.hash).toBe("h");
+  });
+  it("reads the device rate, and null for a summary written before the field", () => {
+    const s = summary([record()], { deviceRateHz: 44100 });
+    expect(parseExportSummary(JSON.parse(JSON.stringify(s)), 7).deviceRateHz).toBe(44100);
+    const { deviceRateHz: _dropped, ...old } = summary([record()]);
+    expect(parseExportSummary(JSON.parse(JSON.stringify(old)), 7).deviceRateHz).toBeNull();
+    expect(parseExportSummary({ ...old, deviceRateHz: null }, 7).deviceRateHz).toBeNull();
+  });
+  it("refuses a device rate that is neither a finite number nor null", () => {
+    expect(() => parseExportSummary({ ...summary([]), deviceRateHz: "44100" }, 7)).toThrow(/deviceRateHz/);
+    expect(() => parseExportSummary({ ...summary([]), deviceRateHz: Infinity }, 7)).toThrow(/deviceRateHz/);
   });
   it("refuses a row with neither error nor read", () => {
     expect(() => parseExportSummary({ ...summary([]), rows: [{ id: "a", invariants: [], standing: "clean", error: null, read: null }] }, 7)).toThrow(/no error and no read/);

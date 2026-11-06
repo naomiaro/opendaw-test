@@ -45,6 +45,8 @@ export type ExportSummary = {
   fill: boolean;
   registerSdkVersion: string | null;
   latencyReads: LatencyRead[];
+  /** The Mac's output device rate, which a page left at its default context rate runs at; null when it could not be read. */
+  deviceRateHz: number | null;
   rows: RowRecord[];
 };
 
@@ -84,6 +86,7 @@ export function parseExportSummary(json: unknown, runToken: number): ExportSumma
   if (json.uuidOrder !== "ascending" && json.uuidOrder !== "descending") {
     throw new Error(`${where}: uuidOrder is ${String(json.uuidOrder)}, not ascending or descending`);
   }
+  if (json.deviceRateHz !== undefined && json.deviceRateHz !== null) requireFinite(json.deviceRateHz, `${where}: deviceRateHz`);
   if (!Array.isArray(json.rows)) throw new Error(`${where}: rows is not an array`);
   json.rows.forEach((row: unknown, i: number) => {
     if (!isObject(row)) throw new Error(`${where}: row ${i} is not an object`);
@@ -97,7 +100,8 @@ export function parseExportSummary(json: unknown, runToken: number): ExportSumma
       requireFinite(row.read.frames, `${at} read.frames`);
     }
   });
-  return json as unknown as ExportSummary;
+  // A summary written before the field existed reads null
+  return { ...json, deviceRateHz: json.deviceRateHz ?? null } as unknown as ExportSummary;
 }
 
 export function parseExportRegister(json: unknown): ExportRegister {

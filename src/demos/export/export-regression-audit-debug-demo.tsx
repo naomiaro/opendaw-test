@@ -107,6 +107,20 @@ const hashEngineWasm = async (): Promise<string> => {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 };
 
+// A context left at its default takes the output device's rate; closed at once, it plays nothing.
+// Null when it cannot be read: the renders do not depend on it, so it must not cost the run.
+const readDeviceRate = async (): Promise<number | null> => {
+  try {
+    const probe = new AudioContext();
+    const rate = probe.sampleRate;
+    await withDeadline(probe.close(), LATENCY_DEADLINE_MS, "closing the device-rate probe");
+    return rate;
+  } catch (error) {
+    console.warn("Could not read the device rate: " + String(error));
+    return null;
+  }
+};
+
 const framesReported = ({ project }: HarnessProject): number => Math.round(project.engine.compensationLatency.getValue() * RATE);
 
 /** What the engine reports once it reads `expected`, or at the deadline whatever it reads then. */
@@ -223,6 +237,7 @@ const App: React.FC = () => {
   const runAudit = useCallback(async ({ harness, audioContext, register, engineWasmSha256 }: Boot): Promise<void> => {
     const runToken = Date.now();
     const out: RowRecord[] = [];
+    const deviceRateHz = await readDeviceRate();
     // The live engine reports latency only while its context runs. Nothing plays.
     await withDeadline(audioContext.resume(), FETCH_DEADLINE_MS, "resuming the context");
     await prepareSources(harness, ROWS, audioContext, buffersRef.current);
@@ -304,6 +319,7 @@ const App: React.FC = () => {
       fill: FILL,
       registerSdkVersion: register === null ? null : register.sdkVersion,
       latencyReads,
+      deviceRateHz,
       rows: out,
     };
     // The sink exists on the dev server only: on the public host the verdicts stay on the page, a warning and no error.
