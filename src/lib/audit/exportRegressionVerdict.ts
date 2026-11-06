@@ -1,6 +1,6 @@
 // Plain Node must load this file: the table script judges runs with it, so no SDK value imports.
-import { expectedLatencyFrames, LOOP_ON_COPY_SECONDS, type ExportRow, type InvariantId } from "./exportRegressionRows.ts";
-import { findingFor, NO_EVIDENCE, type FindingEvidence } from "./exportRegressionFindings.ts";
+import { expectedFrames, expectedLatencyFrames, LOOP_ON_COPY_SECONDS, type ExportRow, type InvariantId } from "./exportRegressionRows.ts";
+import { findingFor, NO_EVIDENCE, type FindingEvidence, type GainBand } from "./exportRegressionFindings.ts";
 import { computedFrame, IMPULSE_SOURCE_FRAMES, PROBE_TONE_HZ, PROBE_TONE_LEVEL } from "./exportRegressionSignals.ts";
 import { toneStep, uniformEarly } from "./sectionRenderGap.ts";
 import type { RenderRead } from "./exportRegressionReader.ts";
@@ -53,15 +53,56 @@ const hasNoFrames = (r: RenderedRow): boolean => r.samples.length === 0 || r.sam
 const rangeFramesOf = (row: ExportRow, pageRate: number): number => Math.round(row.rangeSeconds * pageRate);
 const rangeStartFrame = (row: ExportRow, pageRate: number): number => Math.round(row.rangeStartSeconds * pageRate);
 
-const largestDifferencePast = (
-  rendered: RenderedRow, reference: RenderedRow, offset: number, shared: number, from: number
+/** Nothing to compare in the band reads as Infinity: a limit must not pass on frames that are not there. */
+const largestBandExcursion = (
+  rendered: RenderedRow, reference: RenderedRow, offset: number, shared: number, { from, to, low, high, readOffset }: GainBand
 ): number => {
+  const end = Math.min(to, shared);
+  if (from >= end) return Infinity;
   let largest = 0;
   for (let c = 0; c < rendered.samples.length; c++) {
     const x = rendered.samples[c];
     const y = reference.samples[c];
-    for (let frame = from; frame < shared; frame++) {
-      const delta = Math.abs(x[frame] - y[offset + frame]);
+    for (let frame = from; frame < end; frame++) {
+      const at = offset + frame;
+      const here = y[at];
+      const a = low(frame) * here;
+      const b = high(frame) * here;
+      const outside = Math.max(Math.min(a, b) - x[frame], x[frame] - Math.max(a, b), 0);
+      if (Number.isNaN(x[frame]) || Number.isNaN(here)) return Infinity;
+      if (outside === 0) continue;
+      const slope = Math.max(Math.abs(here - (y[at - 1] ?? here)), Math.abs((y[at + 1] ?? here) - here));
+      const excursion = outside - readOffset * slope;
+      if (excursion > largest) largest = excursion;
+    }
+  }
+  return largest;
+};
+
+const peakOver = (samples: readonly Float32Array[], from: number, to: number): number => {
+  let peak = 0;
+  for (const channel of samples) {
+    const end = Math.min(to, channel.length);
+    for (let frame = from; frame < end; frame++) {
+      const magnitude = Math.abs(channel[frame]);
+      if (Number.isNaN(magnitude)) return Infinity;
+      if (magnitude > peak) peak = magnitude;
+    }
+  }
+  return peak;
+};
+
+/** The render against the reference up to the wrap, then against a fresh pass plus the old read fading over `fade`. */
+const wrapResidueOf = (rendered: RenderedRow, reference: RenderedRow, wrap: number, fade: number): number => {
+  if (rendered.samples.length !== reference.samples.length || rendered.samples[0].length !== reference.samples[0].length) return Infinity;
+  let largest = 0;
+  for (let c = 0; c < rendered.samples.length; c++) {
+    const x = rendered.samples[c];
+    const y = reference.samples[c];
+    for (let frame = 0; frame < x.length; frame++) {
+      const passFrame = frame - wrap;
+      const expected = passFrame < 0 ? y[frame] : y[passFrame] + y[frame] * Math.max(0, 1 - passFrame / fade);
+      const delta = Math.abs(x[frame] - expected);
       if (Number.isNaN(delta)) return Infinity;
       if (delta > largest) largest = delta;
     }
@@ -120,9 +161,10 @@ const compareToSlice = (rendered: RenderedRow, reference: RenderedRow, offset: n
     return fail(
       `differs at frame ${first} of channel ${firstChannel} (reference frame ${offset + first}), last at ${last}, ${shared} frames compared`,
       {
-        ...NO_EVIDENCE, firstDifferingFrame: first, lastDifferingFrame: last, largestDifference: largest,
-        differencePast: (from) => largestDifferencePast(rendered, reference, offset, shared, from),
-        sameDelayedBy: (frames) => isDelayedBy(rendered, reference, offset, shared, frames)
+        ...NO_EVIDENCE, firstDifferingFrame: first, lastDifferingFrame: last, largestDifference: largest, comparedFrames: shared,
+        bandExcursion: (band) => largestBandExcursion(rendered, reference, offset, shared, band),
+        sameDelayedBy: (frames) => isDelayedBy(rendered, reference, offset, shared, frames),
+        headPeak: (frames) => peakOver(rendered.samples, 0, frames)
       }
     );
   }
@@ -209,7 +251,12 @@ const judge = (
       const { step, frame } = read.largestStep;
       const detail = `largest step ${step} at frame ${frame}, limit ${limit}`;
       if (frame < 0 || step === 0) return failUncompared(`no step measured (${detail}): a silent or empty window proves nothing`);
-      return step <= limit ? pass(detail) : fail(detail, { ...NO_EVIDENCE, largestStep: { step, frame } });
+      if (step <= limit) return pass(detail);
+      const { reference } = refs;
+      return fail(detail, {
+        ...NO_EVIDENCE, largestStep: { step, frame },
+        wrapResidue: (wrap, fade) => (reference === null ? Infinity : wrapResidueOf(rendered, reference, wrap, fade))
+      });
     }
     case "muted-latent-unchanged": {
       const missing = needs("no-latency", refs.noLatency);
@@ -278,9 +325,14 @@ const judge = (
       return energy === null || energy === 0 ? pass(`exactly the range's ${rangeFrames} frames`) : fail(`rms past the range ${energy}`);
     }
     case "proves-something": {
-      if (read.nonFinite > 0) return fail(`${read.nonFinite} non-finite samples`, { ...NO_EVIDENCE, silent: false });
-      if (!(read.peak > 0) || read.frames === 0) return fail(`silent render: peak ${read.peak}, ${read.frames} frames`, { ...NO_EVIDENCE, silent: true });
+      if (read.nonFinite > 0) return fail(`${read.nonFinite} non-finite samples`);
+      if (!(read.peak > 0) || read.frames === 0) return fail(`silent render: peak ${read.peak}, ${read.frames} frames`);
       return pass(`peak ${read.peak}, ${read.frames} frames`);
+    }
+    case "frames-as-expected": {
+      const expected = expectedFrames(row, pageRate);
+      const detail = `${read.frames} frames, expected ${expected}`;
+      return read.frames === expected ? pass(detail) : fail(detail);
     }
     case "latency-as-expected": {
       const expected = expectedLatencyFrames(row.latencyCase, pageRate);
@@ -309,7 +361,15 @@ export function judgeInvariants(row: ExportRow, rendered: RenderedRow, refs: Ref
   return row.invariants.map((invariant) => {
     const outcome = judge(invariant, row, rendered, refs, pageRate);
     const { holds, detail, compared } = outcome;
-    const evidence = { ...outcome.evidence, earlyFrames };
+    const evidence: FindingEvidence = {
+      ...outcome.evidence, earlyFrames,
+      silent: rendered.read.frames > 0 && rendered.read.nonFinite === 0 && rendered.read.peak === 0,
+      referenceRangePeak: () => {
+        if (refs.reference === null) return Infinity;
+        const start = rangeStartFrame(row, pageRate);
+        return peakOver(refs.reference.samples, start, start + rangeFramesOf(row, pageRate));
+      }
+    };
     const finding = holds || !compared ? null : findingFor(row, invariant, pageRate, evidence)?.name ?? null;
     return { invariant, holds, detail, finding };
   });

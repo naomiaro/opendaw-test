@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRows, expectedLatencyFrames, lastReaders, LOOP_ON_COPY_SECONDS, selectRows, setPositionStart, SET_POSITION_SECONDS } from "./exportRegressionRows.ts";
+import { buildRows, expectedFrames, expectedLatencyFrames, lastReaders, LOOP_ON_COPY_SECONDS, selectRows, setPositionStart, SET_POSITION_SECONDS } from "./exportRegressionRows.ts";
 
 describe("exportRegressionRows", () => {
   it("gives the latency figures the crates and the #530 note read", () => {
@@ -110,6 +110,57 @@ describe("exportRegressionRows", () => {
     }
     expect(LOOP_ON_COPY_SECONDS).toBe(2);
   });
+  it("holds every exact-range path with no slice to its frames, and no other", () => {
+    for (const rate of [48000, 44100]) {
+      const rows = buildRows(rate);
+      const held = rows.filter((r) => r.invariants.includes("frames-as-expected"));
+      for (const r of rows) {
+        const exact = r.path === "step-loop-twice" || r.group === "sweep"
+          || (r.path.startsWith("bounce-") && r.path !== "bounce-tail")
+          || ["stems-fx", "stems-dry", "stems-sends", "stems-metronome"].includes(r.path);
+        expect(held.includes(r), r.id).toBe(exact);
+      }
+      expect(held.filter((r) => r.group === "bounce")).toHaveLength(20);
+      expect(rows.find((r) => r.id === "tail-none-bounce-tail")!.invariants).not.toContain("frames-as-expected");
+      expect(rows.find((r) => r.id === "tail-none-bounce-pre-fader")!.invariants).toContain("frames-as-expected");
+      expect(rows.find((r) => r.id === "stems-none-stems-start")!.invariants).not.toContain("frames-as-expected");
+    }
+  });
+  it("expects a loop's pass in whole ppqn, as its render computes it, and the range's frames elsewhere", () => {
+    const of = (rate: number, id: string) => expectedFrames(buildRows(rate).find((r) => r.id === id)!, rate);
+    expect(of(48000, "one-frame-none-step-loop-twice-48000-0p9-137")).toBe(43204);
+    expect(of(44100, "one-frame-none-step-loop-twice-48000-0p9-137")).toBe(39694);
+    expect(of(48000, "one-frame-none-step-loop-twice-48000-0p9-120")).toBe(43200);
+    expect(of(44100, "core-none-step-loop-twice")).toBe(176400);
+    expect(of(48000, "bounce-none-bounce-loop")).toBe(192000);
+    expect(of(48000, "tail-none-bounce-pre-fader")).toBe(9600);
+  });
+  it("carries a mix of three audible units so the summing order can reach the bits", () => {
+    for (const rate of [48000, 44100]) {
+      const rows = buildRows(rate);
+      const third = rows.filter((r) => r.withThird);
+      expect(third.map((r) => r.id)).toEqual(["control-mix-three-units"]);
+      const [row] = third;
+      expect(row).toMatchObject({ group: "control", path: "step-one", withBed: true, masterMaximizer: false, latencyCase: "none", signal: "probe" });
+      expect(row.invariants).toEqual(expect.arrayContaining(["proves-something", "latency-as-expected"]));
+      expect(row.invariants).not.toContain("impulse-on-computed-frame");
+      expect(row.invariants).not.toContain("impulse-on-reference");
+    }
+  });
+  it("carries a Compressor that compresses, held to differ from the neutral one", () => {
+    for (const rate of [48000, 44100]) {
+      const rows = buildRows(rate);
+      const engaged = rows.filter((r) => r.engagedCompressor);
+      expect(engaged.map((r) => r.id)).toEqual(["control-compressor-engaged"]);
+      const [row] = engaged;
+      expect(row).toMatchObject({ group: "control", path: "step-one", latencyCase: "compressor-track", referenceId: "core-compressor-track-step-one" });
+      expect(row.invariants).toContain("differs-from-reference");
+    }
+  });
+  it("has 286 rows at each rate", () => {
+    expect(buildRows(48000)).toHaveLength(286);
+    expect(buildRows(44100)).toHaveLength(286);
+  });
   it("labels the one frame only where it was measured", async () => {
     const { findingFor, NO_EVIDENCE } = await import("./exportRegressionFindings.ts");
     const row = buildRows(44100).find((r) => r.id === "core-none-section-loop-twice")!;
@@ -192,7 +243,7 @@ describe("the warm pass", () => {
       for (const row of rows) {
         expect(row.referenceId, row.id).toBeNull();
         expect(row.warmReferenceId, row.id).toBeNull();
-        expect(row.invariants.filter((i) => i !== "repeat-identical"), row.id).toEqual(["proves-something", "latency-as-expected"]);
+        expect(row.invariants.filter((i) => i !== "repeat-identical"), row.id).toEqual(["proves-something", "latency-as-expected", "frames-as-expected"]);
       }
     }
   });
@@ -240,8 +291,8 @@ describe("selectRows", () => {
   it("runs what a group's rows read against, in catalogue order", () => {
     const ids = selectRows(catalogue, { rows: null, group: "control" }).map((r) => r.id);
     expect(ids).toEqual([
-      "core-none-step-one", "control-nudged", "control-disabled-compressor-track", "control-disabled-fold-muted",
-      "control-master-maximizer",
+      "core-none-step-one", "core-compressor-track-step-one", "control-nudged", "control-disabled-compressor-track",
+      "control-disabled-fold-muted", "control-master-maximizer", "control-mix-three-units", "control-compressor-engaged",
     ]);
   });
 

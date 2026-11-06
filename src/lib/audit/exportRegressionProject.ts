@@ -24,7 +24,7 @@ import { bedSource, hotSource, probeSource, sweepSource, tailSource } from "./ex
 export type HarnessProject = {
   project: Project;
   units: { source: AudioUnitBox; bed: AudioUnitBox; holder: AudioUnitBox };
-  tracks: { source: TrackBox; bed: TrackBox };
+  tracks: { source: TrackBox; bed: TrackBox; holder: TrackBox };
   bus: AudioBusBox;
   aux: AudioBusBox;
   sources: Map<string, UUID.Bytes>;
@@ -84,13 +84,14 @@ export const sourceSamples = ({ signal, sourceRate, seconds }: SourceId): [Float
   }
 };
 
-/** One per signal, rate and length the rows use, and one bed per rate and length a row with a bed uses. */
+/** One per signal, rate and length the rows use, and a bed or a third unit's sweep per rate and length a row with one uses. */
 export const distinctSources = (rows: readonly ExportRow[]): SourceId[] => {
   const sources = new Map<string, SourceId>();
   const add = (id: SourceId): void => void sources.set(sourceKey(id), id);
-  for (const { signal, sourceRate, seconds, withBed } of rows) {
+  for (const { signal, sourceRate, seconds, withBed, withThird } of rows) {
     add({ signal, sourceRate, seconds });
     if (withBed) add({ signal: "bed", sourceRate, seconds });
+    if (withThird) add({ signal: "sweep", sourceRate, seconds });
   }
   return [...sources.values()];
 };
@@ -140,7 +141,7 @@ export const buildHarnessProject = (project: Project, order: "ascending" | "desc
   return {
     project,
     units: { source: source.audioUnitBox, bed: bed.audioUnitBox, holder: holder.audioUnitBox },
-    tracks: { source: source.trackBox, bed: bed.trackBox },
+    tracks: { source: source.trackBox, bed: bed.trackBox, holder: holder.trackBox },
     bus,
     aux,
     sources: new Map(),
@@ -163,6 +164,13 @@ const FACTORIES = {
   Maximizer: EffectFactories.AudioNamed.Maximizer,
   Fold: EffectFactories.AudioNamed.Fold,
   Werkstatt: EffectFactories.AudioNamed.Werkstatt,
+};
+
+/** Well into the probe's 0.5 tone, for the one row that shows the Compressor still processes. */
+const engage = (box: CompressorDeviceBox): void => {
+  neutralise(box);
+  box.threshold.setValue(-24);
+  box.ratio.setValue(4);
 };
 
 const werkstattCompiler = ScriptCompiler.create({
@@ -189,7 +197,7 @@ const neutralise = (box: CompressorDeviceBox): void => {
  * next index is read from pointers that resolve when the transaction ends, so two in one would share an index.
  */
 export const insertLatencyDevices = async (
-  project: Project, harness: HarnessProject, latencyCase: LatencyCaseId, enabled: boolean = true,
+  project: Project, harness: HarnessProject, latencyCase: LatencyCaseId, enabled: boolean = true, engaged: boolean = false,
 ): Promise<() => void> => {
   const { api, boxGraph, editing, skeleton } = project;
   const inserted: UUID.Bytes[] = [];
@@ -231,7 +239,7 @@ export const insertLatencyDevices = async (
       const box = editing
         .modify(() => {
           const effect = api.insertEffect(field, FACTORIES[device]);
-          if (device === "Compressor") neutralise(asInstanceOf(effect, CompressorDeviceBox));
+          if (device === "Compressor") (engaged ? engage : neutralise)(asInstanceOf(effect, CompressorDeviceBox));
           effect.enabled.setValue(enabled);
           return effect;
         })
@@ -310,13 +318,16 @@ export const applyRow = async (copy: Project, harness: HarnessProject, row: Expo
   const bedTrack = resolve(copy, harness.tracks.bed, TrackBox);
   const sourceSample = sampleOf(sourceId);
   const bedSample = row.withBed ? sampleOf(bedId) : null;
+  const thirdSample = row.withThird ? sampleOf({ signal: "sweep", sourceRate: row.sourceRate, seconds: row.seconds }) : null;
+  const holderTrack = resolve(copy, harness.tracks.holder, TrackBox);
 
   editing.modify(() => {
     timelineBox.bpm.setValue(row.bpm);
     placeSource(copy, sourceTrack, sourceSample, row, row.signal);
     if (bedSample !== null) placeSource(copy, bedTrack, bedSample, row, "bed");
+    if (thirdSample !== null) placeSource(copy, holderTrack, thirdSample, row, "third");
     bed.mute.setValue(!row.withBed);
-    holder.mute.setValue(true);
+    holder.mute.setValue(!row.withThird);
     if (row.nudgeVolume) source.volume.setValue(0.0001);
     if (row.path.startsWith("section-marker")) placeMarkers(copy, row.bpm);
   });
@@ -325,5 +336,5 @@ export const applyRow = async (copy: Project, harness: HarnessProject, row: Expo
     const field = audioEffectsFieldOf(copy, source);
     editing.modify(() => copy.api.insertEffect(field, EffectFactories.AudioNamed.Reverb));
   }
-  await insertLatencyDevices(copy, harness, row.latencyCase, !row.disabledDevice);
+  await insertLatencyDevices(copy, harness, row.latencyCase, !row.disabledDevice, row.engagedCompressor);
 };

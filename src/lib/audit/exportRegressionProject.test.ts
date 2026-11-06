@@ -79,7 +79,7 @@ describe("source identity", () => {
 
 describe("distinctSources", () => {
   const row = (spec: Partial<ExportRow>): ExportRow =>
-    ({ signal: "probe", sourceRate: 48000, seconds: 4, withBed: false, ...spec }) as ExportRow;
+    ({ signal: "probe", sourceRate: 48000, seconds: 4, withBed: false, withThird: false, ...spec }) as ExportRow;
 
   it("lists a source once however many rows use it", () => {
     expect(distinctSources([row({}), row({})]).map(sourceKey)).toEqual([
@@ -90,6 +90,12 @@ describe("distinctSources", () => {
     expect(distinctSources([row({ sourceRate: 44100, seconds: 2, withBed: true })]).map(sourceKey)).toEqual([
       sourceKey({ signal: "probe", sourceRate: 44100, seconds: 2 }),
       sourceKey({ signal: "bed", sourceRate: 44100, seconds: 2 })]);
+  });
+
+  it("adds the sweep for a third unit, at that row's rate and length", () => {
+    expect(distinctSources([row({ sourceRate: 44100, seconds: 2, withThird: true })]).map(sourceKey)).toEqual([
+      sourceKey({ signal: "probe", sourceRate: 44100, seconds: 2 }),
+      sourceKey({ signal: "sweep", sourceRate: 44100, seconds: 2 })]);
   });
 
   it("covers the catalogue: six probes, two tails, a sweep, a hot signal, a bed", () => {

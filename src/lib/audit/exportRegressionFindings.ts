@@ -1,6 +1,14 @@
 // Plain Node must load this file: the table script reads it, so no SDK value imports.
 import { expectedLatencyFrames, LOOP_ON_COPY_SECONDS, type ExportRow, type InvariantId } from "./exportRegressionRows.ts";
-import { IMPULSE_LEVEL, PROBE_TONE_LEVEL } from "./exportRegressionSignals.ts";
+
+/** How far a row may sit from the reference: between `low` and `high` times it, per frame, on a read offset by `readOffset` frames. */
+export type GainBand = {
+  from: number;
+  to: number;
+  low: (frame: number) => number;
+  high: (frame: number) => number;
+  readOffset: number;
+};
 
 /** What the verdict measured on a failing invariant; null where the invariant took no such measurement. */
 export type FindingEvidence = {
@@ -8,21 +16,31 @@ export type FindingEvidence = {
   firstDifferingFrame: number | null;
   lastDifferingFrame: number | null;
   largestDifference: number | null;
-  /** Frames a comparison held bit for bit, set when it ran out of them with nothing differing. */
+  /** The frames the comparison reached, whatever it found on them. */
   comparedFrames: number | null;
+  /** The render holds no signal at all, and nothing non-finite. */
   silent: boolean | null;
   largestStep: { step: number; frame: number } | null;
-  /** The largest difference from this frame of the row on. Nothing compared reads as Infinity, so no limit passes it. */
-  differencePast: (frame: number) => number;
+  /** The largest distance outside the band, past what the read's offset explains. Nothing compared reads as Infinity. */
+  bandExcursion: (band: GainBand) => number;
   /** Whether the row, from `frames` on, is the reference delayed by `frames`, bit for bit. */
   sameDelayedBy: (frames: number) => boolean;
+  /** The row's peak over its first frames. */
+  headPeak: (frames: number) => number;
+  /** How far the row sits from a loop of the reference that wraps at `wrap`: a fresh pass, with the old read fading over `fade`. */
+  wrapResidue: (wrap: number, fade: number) => number;
+  /** The reference's peak over the row's range. */
+  referenceRangePeak: () => number;
 };
 
 export const NO_EVIDENCE: FindingEvidence = {
   earlyFrames: null, firstDifferingFrame: null, lastDifferingFrame: null, largestDifference: null,
   comparedFrames: null, silent: null, largestStep: null,
-  differencePast: () => Infinity,
-  sameDelayedBy: () => false
+  bandExcursion: () => Infinity,
+  sameDelayedBy: () => false,
+  headPeak: () => Infinity,
+  wrapResidue: () => Infinity,
+  referenceRangePeak: () => Infinity
 };
 
 /** A claim that a behaviour has been read and is understood, not that it is right: the note says what was read. */
@@ -34,42 +52,59 @@ export type KnownFinding = {
   signature: (evidence: FindingEvidence, row: ExportRow, pageRate: number) => boolean;
 };
 
-// crates/engine/src/audio_region_player.rs JUMP_FADE_DURATION, in frames of the page: 220.5 at 44.1 kHz counts down over 221
-const fadeFrames = (pageRate: number): number => Math.ceil(0.005 * pageRate);
-// Measured: the first 8 frames past the fade still differ with a Compressor and a Fold on the source (-89 dB at 48 kHz).
+const rangeFrames = (row: ExportRow, pageRate: number): number => Math.round(row.rangeSeconds * pageRate);
+
+// crates/engine/src/audio_region_player.rs JUMP_FADE_DURATION, in frames of the page; 220.5 at 44.1 kHz counts down over 221
+const fadeLength = (pageRate: number): number => 0.005 * pageRate;
+const fadeFrames = (pageRate: number): number => Math.ceil(fadeLength(pageRate));
+const rampOf = (pageRate: number) => (frame: number): number => Math.min(1, frame / fadeLength(pageRate));
+const unity = (): number => 1;
+
+// Measured: the rounding of a read scaled by the ramp, 4e-8 on every row without a device on its chain.
+const ROUNDING = 2e-7;
+// Measured on `several` alone, a Compressor and a Fold on the source: the ramp reaches their memory, 5.6e-5 inside the
+// fade and 3.5e-5 over the 8 frames after it, -89 dB. Bit-identical from there at 48 kHz.
 const chainFrames = ({ latencyCase }: ExportRow): number => (latencyCase === "several" ? 8 : 0);
-// The aux send carries the source a second time, so everything the fade and the read do arrives twice.
-const paths = ({ latencyCase }: ExportRow): number => (latencyCase === "compressor-aux" ? 2 : 1);
-const RATIO_SLACK = 1.05;
+const windowTolerance = ({ latencyCase }: ExportRow): number => (latencyCase === "several" ? 7e-5 : ROUNDING);
 
 /**
- * What a read started at the row's own start may differ from a read that free-ran there, on an impulse. The free-running
- * read advances by `(source_rate / engine_rate) as f64` of two f32s (audio_region_player.rs), so it drifts from the exact
- * ratio per output frame; a read seated at the start has no such drift. A start between two frames adds its fraction,
- * which the comparison at the nearest whole frame sees. At equal rates and a whole frame this is 0: nothing may differ.
+ * Frames a read started at the row's own start sits from a read that free-ran there. The free-running read advances by
+ * `(source_rate / engine_rate) as f64` of two f32s (audio_region_player.rs:849), so it drifts from the exact ratio per
+ * output frame; a read seated at the start has no such drift. A start between two frames adds its fraction, which the
+ * comparison at the nearest whole frame sees. At equal rates and a whole frame this is 0: nothing may differ.
+ * The slack is on a frame's local slope, which understates a linearly interpolated impulse: measured up to 1.7, and 5.3
+ * through the Fold of `several`.
  */
-const readOffsetLimit = (row: ExportRow, pageRate: number): number => {
+const readOffset = (row: ExportRow, pageRate: number): number => {
   const startFrame = row.rangeStartSeconds * pageRate;
   const exact = row.sourceRate / pageRate;
   const drift = startFrame * Math.abs(Math.fround(exact) - exact);
-  const betweenFrames = Math.abs(startFrame - Math.round(startFrame)) * exact;
-  return (drift + betweenFrames) * IMPULSE_LEVEL * paths(row) * RATIO_SLACK;
+  const betweenFrames = Math.abs(startFrame - Math.round(startFrame));
+  const slack = row.latencyCase === "several" ? 6 : 2;
+  return (drift / exact + betweenFrames) * slack;
 };
 
 const fadedStart = (invariant: InvariantId, applies: KnownFinding["applies"]): KnownFinding => ({
   name: "jump-fade-at-start",
   invariant,
-  note: "the first block of a render that starts inside a region is a transport jump: the region's read fades in linearly over 5 ms, frame i at i/240 at 48 kHz (audio_region_player.rs:862, :913; upstream test transport_jump_inside_a_native_region_crossfades). A reference that ran through that point has no fade. Past the fade the row is bit-identical, or at a resampled rate within the read's own drift",
+  note: "the first block of a render that starts inside a region is a transport jump: the region's read fades in linearly over 5 ms, frame i at i/240 at 48 kHz (audio_region_player.rs:862, :913; upstream test transport_jump_inside_a_native_region_crossfades). A reference that ran through that point has no fade. The signature holds the row to that ramp inside the window and to the reference past it, bit for bit at 48 kHz, within the read's own drift at a resampled rate",
   applies,
-  signature: ({ firstDifferingFrame, largestDifference, differencePast }, row, pageRate) =>
-    firstDifferingFrame === 0
-    && largestDifference !== null && largestDifference <= PROBE_TONE_LEVEL * paths(row)
-    && differencePast(fadeFrames(pageRate) + chainFrames(row)) <= readOffsetLimit(row, pageRate)
+  signature: ({ firstDifferingFrame, comparedFrames, bandExcursion }, row, pageRate) => {
+    const offset = readOffset(row, pageRate);
+    const ramp = rampOf(pageRate);
+    const settled = fadeFrames(pageRate) + chainFrames(row);
+    return firstDifferingFrame === 0 && comparedFrames === rangeFrames(row, pageRate)
+      && bandExcursion({ from: 0, to: settled, low: ramp, high: ramp, readOffset: offset }) <= windowTolerance(row)
+      && bandExcursion({ from: settled, to: Infinity, low: unity, high: unity, readOffset: offset }) <= ROUNDING;
+  }
 });
 
-// Measured at 44.1 kHz: -73.3 dB past the cold limiter's window, on a 1.5 sine: the same read drift as above, on the tone's slope.
-const COLD_MAXIMIZER_READ_LIMIT: Readonly<Record<number, number>> = { 48000: 0, 44100: 2.5e-4 };
-const COLD_MAXIMIZER_FRAMES = 3431;
+// Measured: the frame the cold limiter is within rounding of the warm one (bit-identical from 3431 at 48 kHz), and what
+// it holds until then. Against the faded reference it runs from 1.0 to 1.50 at 48 kHz, 0.996 to 1.504 at 44.1, where the
+// read's drift moves the ratio a little.
+const COLD_MAXIMIZER_FRAMES: Readonly<Record<number, number>> = { 48000: 1168, 44100: 1627 };
+const COLD_MAXIMIZER_LOW = 0.99;
+const COLD_MAXIMIZER_HIGH = 1.51;
 
 const missingTail = (invariant: InvariantId, signature: KnownFinding["signature"]): KnownFinding => ({
   name: "range-missing-tail",
@@ -79,7 +114,11 @@ const missingTail = (invariant: InvariantId, signature: KnownFinding["signature"
   signature
 });
 
-const TAIL_REFERENCE_LEVEL = 0.003;
+// Measured: the reverb's peak over the range, 0.0021 at 48 kHz and 0.0020 at 44.1. Silent there too, no tail is missing.
+const TAIL_REFERENCE_LOW = 0.001;
+const TAIL_REFERENCE_HIGH = 0.003;
+// Measured: the head of a reset is exact silence, except through `several` (0.0031 at 48 kHz, 0.0023 at 44.1).
+const resetHeadLimit = ({ latencyCase }: ExportRow): number => (latencyCase === "several" ? 0.0035 : 0);
 // The frames `render` keeps of a 4 s region whose 200 ms burst has rung out, tail and 250 ms included.
 const TRIMMED_FRAMES: Readonly<Record<number, number>> = { 48000: 80992, 44100: 74001 };
 // The doubled tone's largest step at each rate, rounded up from what was measured on every case.
@@ -101,23 +140,39 @@ export const KNOWN_FINDINGS: readonly KnownFinding[] = [
   {
     name: "jump-fade-cold-maximizer",
     invariant: "section-is-slice",
-    note: "the jump fade again, through a master Maximizer that starts cold where the reference's has been limiting since frame 0 (peak-hold + 200 ms release, device-maximizer). The two meet at frame 3430 at 48 kHz: until then the section is up to 1.48x the reference, inferred to be the reference's envelope still holding an older, higher sampled peak",
+    note: "the jump fade again, through a master Maximizer that starts cold where the reference's has been limiting since frame 0 (peak-hold + 200 ms release, device-maximizer). The two are within rounding from frame 1168 and bit-identical from 3431 at 48 kHz: until then the section is up to 1.5x the reference, inferred to be the reference's envelope still holding an older, higher sampled peak",
     applies: (row) => row.group === "master" && row.path === "section-marker",
-    signature: ({ firstDifferingFrame, largestDifference, differencePast }, _row, pageRate) =>
-      firstDifferingFrame === 0 && largestDifference !== null && largestDifference <= 1
-      && differencePast(COLD_MAXIMIZER_FRAMES) <= (COLD_MAXIMIZER_READ_LIMIT[pageRate] ?? -1)
+    signature: ({ firstDifferingFrame, comparedFrames, bandExcursion }, row, pageRate) => {
+      const offset = readOffset(row, pageRate);
+      const ramp = rampOf(pageRate);
+      const settled = COLD_MAXIMIZER_FRAMES[pageRate] ?? Infinity;
+      return firstDifferingFrame === 0 && comparedFrames === rangeFrames(row, pageRate)
+        && bandExcursion({
+          from: 0, to: settled, readOffset: offset,
+          low: (frame) => ramp(frame) * COLD_MAXIMIZER_LOW, high: (frame) => ramp(frame) * COLD_MAXIMIZER_HIGH
+        }) <= ROUNDING
+        && bandExcursion({ from: settled, to: Infinity, low: unity, high: unity, readOffset: offset }) <= ROUNDING;
+    }
   },
   {
     name: "reset-keeps-compensation-delay",
     invariant: "samples-equal-reference",
-    note: "a second play on one renderer keeps the compensation delay: the worker settles once and trims once per renderer (latencyToTrim, core-wasm offline-worker.ts settle and trimStart), so after a stop the first latency frames stay in. The render is the reference delayed by exactly the reported figure, bit for bit",
+    note: "a second play on one renderer keeps the compensation delay: the worker settles once and trims once per renderer (latencyToTrim, core-wasm offline-worker.ts settle and trimStart), so after a stop the first latency frames stay in. The render is a silent head, then the reference delayed by exactly the reported figure, bit for bit",
     applies: (row) => row.path === "step-reset" && row.latencyCase !== "none",
-    signature: ({ sameDelayedBy }, row, pageRate) => sameDelayedBy(expectedLatencyFrames(row.latencyCase, pageRate))
+    signature: ({ comparedFrames, sameDelayedBy, headPeak }, row, pageRate) => {
+      const latency = expectedLatencyFrames(row.latencyCase, pageRate);
+      return comparedFrames === rangeFrames(row, pageRate) && sameDelayedBy(latency) && headPeak(latency) <= resetHeadLimit(row);
+    }
   },
-  missingTail("proves-something", ({ silent }) => silent === true),
-  missingTail("section-is-slice", ({ firstDifferingFrame, lastDifferingFrame, largestDifference }, row, pageRate) =>
-    firstDifferingFrame === 0 && lastDifferingFrame === Math.round(row.rangeSeconds * pageRate) - 1
-    && largestDifference !== null && largestDifference <= TAIL_REFERENCE_LEVEL),
+  missingTail("proves-something", ({ silent, referenceRangePeak }) => {
+    if (silent !== true) return false;
+    const peak = referenceRangePeak();
+    return peak >= TAIL_REFERENCE_LOW && peak <= TAIL_REFERENCE_HIGH;
+  }),
+  missingTail("section-is-slice", ({ silent, firstDifferingFrame, lastDifferingFrame, comparedFrames, largestDifference }, row, pageRate) =>
+    silent === true && comparedFrames === rangeFrames(row, pageRate)
+    && firstDifferingFrame === 0 && lastDifferingFrame === rangeFrames(row, pageRate) - 1
+    && largestDifference !== null && largestDifference <= TAIL_REFERENCE_HIGH),
   {
     name: "trailing-silence-trimmed",
     invariant: "section-is-slice",
@@ -129,11 +184,14 @@ export const KNOWN_FINDINGS: readonly KnownFinding[] = [
   {
     name: "loop-wrap-keeps-old-read",
     invariant: "no-jump",
-    note: "at a loop wrap to a region's start the new read starts at full level and only the old one fades, over 5 ms (audio_region_player.rs:322 seeds the tail, :862 fades in only past the region start; upstream test transport_jump_to_the_region_start_keeps_the_onset): in phase the two sum, here a 0.5 sine reaching 0.975 for 240 frames at 48 kHz",
+    note: "at a loop wrap to a region's start the new read starts at full level and only the old one fades, over 5 ms (audio_region_player.rs:322 seeds the tail, :862 fades in only past the region start; upstream test transport_jump_to_the_region_start_keeps_the_onset): in phase the two sum, here a 0.5 sine reaching 0.975 for 240 frames at 48 kHz. The signature holds the whole render to that: the reference up to the wrap, the fresh pass and the fading old read over 5 ms, the fresh pass after, so no other jump passes under the wrap's step",
     applies: (row) => row.path === "loop-on-copy",
-    signature: ({ largestStep }, _row, pageRate) =>
-      largestStep !== null && largestStep.frame === LOOP_ON_COPY_SECONDS * pageRate + 1
-      && largestStep.step <= (WRAP_STEP_LIMIT[pageRate] ?? -1)
+    signature: ({ largestStep, wrapResidue }, _row, pageRate) => {
+      const wrap = LOOP_ON_COPY_SECONDS * pageRate;
+      return largestStep !== null && largestStep.frame === wrap + 1
+        && largestStep.step <= (WRAP_STEP_LIMIT[pageRate] ?? -1)
+        && wrapResidue(wrap, fadeLength(pageRate)) <= ROUNDING;
+    }
   }
 ];
 

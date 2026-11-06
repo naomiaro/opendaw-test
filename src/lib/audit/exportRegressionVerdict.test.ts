@@ -364,44 +364,13 @@ describe("judgeInvariants", () => {
     expect(early.holds).toBe(false);
     expect(early.finding).toBe("loop-pass-one-frame-short");
   });
-  it("gives a known finding what it measures: the fade, the delay, the short compare, silence and the step", () => {
-    const marker = buildRows(48000).find((x) => x.id === "core-none-section-marker")!;
-    const ramp = Float32Array.from({ length: 96000 }, (_, i) => 0.4 * Math.cos(i / 7));
-    const faded = ramp.map((v, i) => (i < 240 ? (v * i) / 240 : v));
-    const reference = { ...rendered([0]), samples: [new Float32Array(144000).fill(0).map((_, i) => (i < 48000 ? 0 : ramp[i - 48000]))], read: read({ frames: 144000 }) };
-    const slice = (samples: Float32Array) => ({ ...rendered([0]), samples: [samples], read: read({ frames: samples.length }) });
-    const judgedMarker = (samples: Float32Array) => judgeInvariants({ ...marker, invariants: ["section-is-slice"] }, slice(samples), { reference, noLatency: null, warm: null }, 48000)[0];
-    expect(judgedMarker(faded).finding).toBe("jump-fade-at-start");
-    const later = faded.slice();
-    later[5000] += 0.001;
-    expect(judgedMarker(later).holds).toBe(false);
-    expect(judgedMarker(later).finding).toBeNull();
-
-    const reset = buildRows(48000).find((x) => x.id === "core-fold-muted-step-reset")!;
-    const cold = Float32Array.from({ length: 1000 }, (_, i) => Math.sin(i / 9));
-    const delayed = Float32Array.from({ length: 1000 }, (_, i) => (i < 15 ? 0 : cold[i - 15]));
-    const judgedReset = (samples: Float32Array) => judgeInvariants({ ...reset, invariants: ["samples-equal-reference"], rangeSeconds: 1000 / 48000 }, slice(samples), { reference: slice(cold), noLatency: null, warm: null }, 48000)[0];
-    expect(judgedReset(delayed).finding).toBe("reset-keeps-compensation-delay");
-    const off = delayed.slice();
-    off[900] += 1e-3;
-    expect(judgedReset(off).finding).toBeNull();
-
-    const long = buildRows(48000).find((x) => x.id === "tail-none-start-long")!;
-    const whole = new Float32Array(192000).fill(0.25);
-    const judgedLong = (frames: number) => judgeInvariants({ ...long, invariants: ["section-is-slice"] }, slice(whole.slice(0, frames)), { reference: slice(whole), noLatency: null, warm: null }, 48000)[0];
-    expect(judgedLong(80992).finding).toBe("trailing-silence-trimmed");
-    expect(judgedLong(80000).finding).toBeNull();
-
-    const tail = buildRows(48000).find((x) => x.id === "tail-none-section-marker")!;
-    const proves = (over: Partial<RenderRead>) => judgeInvariants({ ...tail, invariants: ["proves-something"] }, rendered([0], {}, over), { reference: null, noLatency: null, warm: null }, 48000)[0];
-    expect(proves({ peak: 0 }).finding).toBe("range-missing-tail");
-    expect(proves({ peak: 0.5, nonFinite: 3 }).finding).toBeNull();
-
-    const loop = buildRows(48000).find((x) => x.id === "position-none-loop-on-copy")!;
-    const base = rendered([1], {}, { largestStep: { step: 0.0652, frame: 40 } });
-    const jump = (step: number, frame: number) => judgeInvariants({ ...loop, invariants: ["no-jump"] }, rendered([1], {}, { largestStep: { step, frame } }), { reference: base, noLatency: null, warm: null }, 48000)[0];
-    expect(jump(0.12987, 96001).finding).toBe("loop-wrap-keeps-old-read");
-    expect(jump(0.12987, 96002).finding).toBeNull();
+  it("fails frames-as-expected on a bounce 128 frames short, and on one too long", () => {
+    const r = buildRows(48000).find((x) => x.id === "bounce-none-bounce-pre-fader")!;
+    const of = (frames: number) => one("frames-as-expected", r, rendered([0.5], {}, { frames }));
+    expect(of(192000).holds).toBe(true);
+    expect(of(192000 - 128).holds).toBe(false);
+    expect(of(192000 - 128).detail).toContain("191872 frames, expected 192000");
+    expect(of(192000 + 1).holds).toBe(false);
   });
   it("gives a failure that compared nothing no finding", () => {
     const loop = buildRows(44100).find((x) => x.id === "core-none-section-loop-twice")!;

@@ -15,7 +15,7 @@ export type InvariantId =
   | "samples-equal-reference" | "samples-equal-warm-pass" | "section-is-slice" | "impulse-on-reference" | "impulse-follows-loop" | "impulse-unmoved-by-latency"
   | "impulse-on-computed-frame" | "no-jump" | "muted-latent-unchanged" | "disabled-equals-absent"
   | "stems-sum-to-mix" | "repeat-identical" | "tail-present" | "tail-absent" | "proves-something"
-  | "latency-as-expected" | "differs-from-reference";
+  | "latency-as-expected" | "differs-from-reference" | "frames-as-expected";
 
 export type ExportRow = {
   id: string;
@@ -33,6 +33,10 @@ export type ExportRow = {
   disabledDevice: boolean;
   nudgeVolume: boolean;
   withBed: boolean;
+  /** A third audible unit: with two, float32 addition is commutative and the summing order cannot reach the bits. */
+  withThird: boolean;
+  /** The case's Compressor set to compress. Every other row keeps it neutral, so those prove its latency, not that it processes. */
+  engagedCompressor: boolean;
   repeat: boolean;
   referenceId: string | null;
   noLatencyReferenceId: string | null;
@@ -77,6 +81,15 @@ const QUANTUM = 128;
 
 /** The frame a ppqn lands on: ppqn * 60 / (960 * bpm) seconds, written as one division. */
 const ppqnToFrame = (ppqn: number, bpm: number, pageRate: number): number => (ppqn * pageRate) / (16 * bpm);
+
+/**
+ * The frames an exact-range render holds. A loop's pass is a whole number of ppqn, as its render computes it, which at
+ * 0.9 s and 137 bpm is 43204 frames at 48 kHz, not the 43200 of the row's seconds.
+ */
+export const expectedFrames = ({ path, rangeSeconds, bpm }: ExportRow, pageRate: number): number =>
+  path === "step-loop-twice"
+    ? Math.round(ppqnToFrame(Math.round(rangeSeconds * 16 * bpm), bpm, pageRate))
+    : Math.round(rangeSeconds * pageRate);
 
 /** On quantum: the first integer ppqn at or after `seconds` whose frame is a whole multiple of 128; off: that + 1. */
 export const setPositionStart = (
@@ -133,6 +146,8 @@ const make = (spec: Spec): ExportRow => {
     disabledDevice: false,
     nudgeVolume: false,
     withBed: false,
+    withThird: false,
+    engagedCompressor: false,
     repeat: false,
     referenceId: null,
     noLatencyReferenceId: null,
@@ -158,6 +173,7 @@ const pathInvariants = (
     }
   } else if (path === "step-loop-twice") {
     // a reference: the section-loop-twice row reading it judges the pair
+    out.push("frames-as-expected");
   } else if (path.startsWith("step-")) {
     out.push("samples-equal-reference");
   } else if (path === "start" || path.startsWith("section-")) {
@@ -242,7 +258,7 @@ const buildStems = (): ExportRow[] => {
       rows.push(make({
         id: `stems-${latencyCase}-${path}`, label: `${latencyCase} through ${path}`,
         group: "stems", latencyCase, path, withBed: true, referenceId: mixId,
-        invariants: [...basics(), ...(path === "stems-fx" ? ["stems-sum-to-mix" as const] : [])]
+        invariants: [...basics(), "frames-as-expected", ...(path === "stems-fx" ? ["stems-sum-to-mix" as const] : [])]
       }));
     }
     for (const path of STEMS_ROUTE_PATHS) {
@@ -263,7 +279,7 @@ const buildBounce = (): ExportRow[] => {
       rows.push(make({
         id: `bounce-${latencyCase}-${path}`, label: `${latencyCase} through ${path}`,
         group: "bounce", latencyCase, path, referenceId: coreId(latencyCase, "step-one"),
-        invariants: [...basics(), "impulse-on-reference", "no-jump"]
+        invariants: [...basics(), "frames-as-expected", "impulse-on-reference", "no-jump"]
       }));
     }
   }
@@ -352,7 +368,7 @@ const buildTail = (): ExportRow[] => {
     tailRow("start", ["section-is-slice"], { id: "tail-none-start-long", label: "reverb tail, start, 4 s region" }),
     tailRow("section-entire", ["tail-present"], ringing),
     tailRow("bounce-tail", ["tail-present"], ringing),
-    tailRow("bounce-pre-fader", ["tail-absent"], ringing),
+    tailRow("bounce-pre-fader", ["frames-as-expected", "tail-absent"], ringing),
     // the 200 ms of content has ended before 1 s: what the reference holds in the range is the ringing reverb
     tailRow("section-marker", ["section-is-slice"], { ...withWindow("section-marker", 4) })
   ];
@@ -367,7 +383,7 @@ const buildSweep = (pageRate: number): ExportRow[] => {
         id: `sweep-${latencyCase}-${path}`, label: `${latencyCase} sweep through ${path}`,
         group: "sweep", latencyCase, path, signal: "sweep",
         referenceId: path === "step-one" ? null : stepOneId,
-        invariants: [...basics(), ...pathInvariants(path, latencyCase, false, 48000, pageRate)]
+        invariants: [...basics(), "frames-as-expected", ...pathInvariants(path, latencyCase, false, 48000, pageRate)]
       }));
     }
   }
@@ -394,6 +410,17 @@ const buildControl = (): ExportRow[] => {
     make({
       id: "control-master-maximizer", label: "master Maximizer with the bed", group: "control",
       latencyCase: "none", path: "step-one", masterMaximizer: true, withBed: true, invariants: basics()
+    }),
+    // What ?uuid=descending must read as changed; its impulses sit under the other units, so they are not read.
+    make({
+      id: "control-mix-three-units", label: "three audible units, no master Maximizer", group: "control",
+      latencyCase: "none", path: "step-one", withBed: true, withThird: true, invariants: basics()
+    }),
+    make({
+      id: "control-compressor-engaged", label: "a Compressor that compresses", group: "control",
+      latencyCase: "compressor-track", path: "step-one", engagedCompressor: true,
+      referenceId: coreId("compressor-track", "step-one"),
+      invariants: [...basics(), "differs-from-reference"]
     })
   ];
 };
