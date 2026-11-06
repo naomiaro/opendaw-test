@@ -905,6 +905,51 @@ instead — `ExportConfiguration.metronome` (see [Metronome Preferences](#metron
 below and [Range-Bounded Export](#range-bounded-export-via-the-step-api)) —
 not through any preferences object set after the fact.
 
+#### Bit-Exact Renders and Audio Unit UUIDs
+
+An offline render loads the project from its bytes and sums audio units in UUID order, not mixer
+order. (A running engine appends a unit when it arrives, so its order also depends on the edit
+history.) Addition in 32-bit float depends on order, so two projects that differ only in their UUIDs
+can render different last bits wherever several units meet on a bus. You cannot hear this, but it
+changes a hash of the output.
+
+`project.copy()` keeps every UUID, so rendering a project again is bit-identical. Building the same
+project again is not, because `UUID.generate()` gives it new UUIDs. Measured on five units summed to
+the master:
+
+| Rendered | Compared with | Result |
+|---|---|---|
+| The same project, through `project.copy()` | Itself | Bit-identical |
+| One audio unit, with the others muted | The same content built again | Bit-identical |
+| Stems | The same content built again | Bit-identical |
+| Several units summed | The same content built again | About 40 % of samples differ, by at most 1.2e-7 (−138.5 dBFS) with no master Maximizer, and up to 2.1e-6 (−113 dBFS) through it |
+
+To compare mixdowns between separately built projects, for example hashes across SDK versions in a
+regression test, fix the order yourself. `UUID.generate` is a replaceable property, and `Project.new`,
+`createInstrument` and `insertEffect` all go through it. Replace it before the project is created, in
+test code only:
+
+```typescript
+import { UUID } from "@opendaw/lib-std";
+
+let next = 1;
+(UUID as { generate: () => UUID.Bytes }).generate = () => {
+  const bytes = new Uint8Array(UUID.length);
+  new DataView(bytes.buffer).setUint32(12, next++);
+  bytes[6] = 0x40;
+  bytes[8] = 0x80;
+  return bytes;
+};
+```
+
+Use UUIDs that only ever count up, as here, and not a seeded random stream. Only the units' relative
+order matters, so this keeps the same hashes when an SDK update makes more `generate()` calls between
+two units (measured with 0, 3 and 17 extra calls per unit). A seeded stream would give every unit a
+different UUID after one extra call.
+
+Hash the rendered audio, not `project.toArrayBuffer()`: the project also stores its creation time, so
+its bytes differ on every build even when the audio does not.
+
 #### Metronome Preferences
 
 Live-playback metronome settings are stored in `EnginePreferences`, not the box graph:
