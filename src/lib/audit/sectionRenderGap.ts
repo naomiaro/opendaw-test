@@ -1,8 +1,9 @@
-// What `OfflineEngineRenderer.renderSection` with `tail: false` does when the project's delay compensation
-// is not a whole number of render quanta. Rendering in chunks loses the first chunk's remainder: the
-// chunk is a whole number of quanta (375), the worker first drops the settled latency from the start
-// of the output, so the chunk ends part way through a quantum, and `step` discards the rest of it.
-// Everything rendered after that comes out early by the frames discarded.
+// What `OfflineEngineRenderer.renderSection` with `tail: false` did when the project's delay compensation
+// was not a whole number of render quanta (openDAW#530, fixed: a `step` now keeps the rest of its last
+// quantum for the next one). Rendering in chunks lost the first chunk's remainder: the chunk is a whole
+// number of quanta (375), the worker first drops the settled latency from the start of the output, so the
+// chunk ended part way through a quantum, and `step` discarded the rest of it. Everything rendered after
+// that came out early by the frames discarded. The formula stays as the page's regression reading.
 
 export const RENDER_QUANTUM = 128;
 export const CHUNK_FRAMES = RENDER_QUANTUM * 375;

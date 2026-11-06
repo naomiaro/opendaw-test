@@ -42,10 +42,9 @@ import { InfoCircledIcon, PlayIcon } from "@radix-ui/react-icons";
 
 // Repro for `debug/2026-11-05-render-section-latency-gap/note.md`.
 //
-// With `tail: false`, `OfflineEngineRenderer.renderSection` renders in chunks of 375 quanta and says why
-// they must be quantum multiples: a step discards the rest of its last quantum. The worker also drops
-// the settled delay compensation from the start of the output, so when the latency is not a whole
-// number of quanta the first chunk ends part way through one.
+// With `tail: false`, `OfflineEngineRenderer.renderSection` renders in chunks of 375 quanta. The worker drops
+// the settled delay compensation from the start of the output, so when the latency is not a whole number of
+// quanta the first chunk ends part way through one, whose rest the next step must keep (openDAW#530, fixed).
 //
 // Each row renders the section through `renderSection` and in one `step` over the same frames
 // (`renderOfflineSlice`, the reference), once with bursts for the shift in frames and once with a tone
@@ -487,7 +486,7 @@ const App: React.FC = () => {
                 Hz tone. The Expected column comes from a formula for the frames lost,{" "}
                 <Code>(128 − (latency mod 128)) mod 128</Code> when the render passes one chunk, and two-pass rows add
                 the no-latency two-pass row's shift. "Defect present" means frames were lost as that formula gives.
-                Once this is fixed upstream, those rows read "differs from the formula".
+                Fixed upstream (openDAW#530): every row the formula gives frames for now reads "differs from the formula", no frames lost, and that is the expected reading here.
               </>
             }
             actions={

@@ -3,15 +3,11 @@
 **Title:** MIDI Effect Semantics Audit — does each stock MIDI effect emit what its documented rule
 says, across the whole range of every parameter, and has anything changed since the last accepted run
 
-**SDK Pin:** `@opendaw/studio-sdk@0.0.181` (installed npm package; WASM engine only; first accepted on
-0.0.180, unchanged by 0.0.181; re-accepted on 0.0.181 on 2026-11-04 with the 33 Note Filter rows, the 230
-earlier entries unchanged, so both registers carry `sdkVersion` 0.0.181). The crate citations below are read in the openDAW checkout
-pinned to the installed release (the Arpeggio's shifted by one line in the header and by six from its
-`process` on 0.0.181, where `release_all` was added; Pitch, Velocity, Zeitgeist and the wiring fold are
-untouched); the two manual citations
-marked "as corrected" (`arpeggio.md:90-94`, `zeitgeist.md:59`) are read at upstream `0b371e0b3` and
-`2922ba25d`, the commits that answered openDAW#524 and #525, ahead of the pinned tag (at the tag those
-lines carry the old text).
+**SDK Pin:** `@opendaw/studio-sdk@0.0.182` (installed npm package; WASM engine only; first accepted on
+0.0.180). The crate and manual citations below are read in the openDAW checkout pinned to the installed release:
+the Arpeggio crate and manual were rewritten on 0.0.182 and the Zeitgeist's shortened, so their citations moved;
+Pitch, Velocity, Note Filter and the wiring fold are untouched. **The registers still carry 0.0.181 and await a
+person's read of the 2026-11-06 runs** (see the Runs section: one row changed as predicted, 116 new rows).
 
 **Filed (2026-11-03) and closed (2026-11-04), the manuals corrected:**
 [openDAW#524](https://github.com/andremichelle/openDAW/issues/524) the Arpeggio's Velocity control is
@@ -32,22 +28,22 @@ rule (the `unreadable` counts of 24 rows with a Zeitgeist per rate changed, not 
 Later the same day `arpeggio-uncapped-note-off` was retired as well, on the manual alone: "5. Gate" defines
 the note length as a percentage of the step rate and says nothing about the held note's end, so the
 cap at the held note was this audit's own reading, not the manual's (the registers did not change:
-every row as-registered). The one deviation left is `arpeggio-drops-cent`, and it is the subject of a
+every row as-registered). The last deviation, `arpeggio-drops-cent`, was the subject of a
 question filed 2026-11-04 as [openDAW#526](https://github.com/andremichelle/openDAW/issues/526)
 (`drafts/posted-openDAW-526-arpeggio-drops-cent.md`, which also asks about the uncapped step); the
-maintainer's answer settles both.
+maintainer's answer settled both, the fix shipped on 0.0.182, and the deviation is retired: no deviation is left.
 
 **Harness:** unlisted debug demo
 `midi-effect-semantics-audit-debug-demo.html[?rate=48000|44100][&rows=all|quick|<id,id,…>][&device=all|arpeggio|pitch|velocity|zeitgeist|note-filter|order|disabled][&pattern=<id>]`
-on the dev server, Chrome, a real click on "Run audit"; deterministic, no hardware, about 40
-seconds per rate for the 263 rows. The summary JSON (`midisem-summary-<runToken>.json`, one record
+on the dev server, Chrome, a real click on "Run audit"; deterministic, no hardware, about 70
+seconds per rate for the 379 rows. The summary JSON (`midisem-summary-<runToken>.json`, one record
 per row with every predicted and read note) lands in `.verify-output/` via the dev server's
 `/__verify` sink; `node scripts/audit/midi-effect-semantics/table.ts [runToken] [--accept] [--force]`
 prints the table below and, with `--accept`, writes the run as the register
 (`register/48000.json`, `register/44100.json` beside this note) the next run is judged against.
 
 **Measurement library:** `src/lib/audit/midiEffectSemanticsReader.ts` (the note reader),
-`midiEffectSemanticsRules.ts` (what each device's rule predicts, the known deviations, the
+`midiEffectSemanticsRules.ts` and `arpeggioWalk.ts` (what each device's rule predicts, the known deviations, the
 questioned behaviours, readability), `midiEffectSemanticsRows.ts` (rows, patterns, constants, the
 rules' range), `midiEffectSemanticsVerdict.ts` (the rule and register judgements and the verdict),
 `midiEffectSemanticsArtifacts.ts` (summary and register schema), `midiEffectBootstrap.ts` (the Nano
@@ -141,10 +137,10 @@ mappings. Positions are absolute pulses.
 
 | device | rule | crate | adapter |
 |---|---|---|---|
-| Arpeggio | On the absolute rate grid, one note per step from the notes held at that step, walked up, down or up-down over the octaves, each as long as the gate says, past the held note's end too (`arpeggio.md:76`, "note length as a percentage of the step rate"; nothing cuts it at the held note). The walk indexes the ABSOLUTE grid (`step_index = k / repeat`, `k` the absolute grid index; the manual: "syncs to transport position", `arpeggio.md:98`), so a hold from bar 1 at 1/16 starts at grid index 16, not 0: an Up walk over a C major triad starts on E. Velocity per the manual as corrected for openDAW#524 (`arpeggio.md:90-94`): below 0 % one fixed velocity `1 + v` ignoring the input (silent at −100 %, full at 0 %), above it a blend from full toward the note's own (`velocity × v + (1 − v)`). | `device-arpeggio/src/lib.rs:253-318` (`process`), `:128-152` (the walk), `:204-207` (`first_index`), `:304` (`step_index`) | `ArpeggioDeviceBoxAdapter.ts:13-19` (`RateFractions`, `floor(3840 / d) × n`) |
+| Arpeggio | On the absolute rate grid, one note per step from the notes held at that step, in Played (by start, then pitch) or Pitch order (`arpeggio.md:55-58`), walked by its mode over the octaves as one row of `notes × octaves` (`arpeggio.md:28-51`, `:62`), the walk starting `offset` notes later (`:108`), the random modes following the seed only (`:51`, `:173`), each as long as the gate says, past the held note's end too (`:116`, "Note length as a percentage of the step rate"; `:175`: "lasts its full gate length, even when the held key is released"). A played note keeps the cents of the held note it comes from (`:174`, openDAW#526). The walk indexes the ABSOLUTE grid (`effective / repeat + offset`, the manual: "syncs to transport position", `:172`), so a hold from bar 1 at 1/16 starts at grid index 16, not 0: an Up walk over a C major triad starts on E. Velocity (`arpeggio.md:122-132`): below 0 % one fixed velocity `1 + v` ignoring the input (silent at −100 %, full at 0 %), above it a blend from full toward the note's own (`velocity × v + (1 − v)`). Hold, Retrigger and the step lanes are not in the rule: the rows leave them at their defaults, where the crate's step reduces to this walk (`tests/golden.rs`). | `device-arpeggio/src/lib.rs:589-643` (`step`), `:679-687` (the grid loop), `:300-339` (`walk_index`), `:214-224` (`hash`), `:414-417` (`first_index`), `:193-205` (the velocity matrix) | `ArpeggioDeviceBoxAdapter.ts:13-19` (`RateFractions`, `floor(3840 / d) × n`), `:23-25` (`Modes`) |
 | Pitch | Every note moves by `octaves × 12 + semitones`, its cent by the cents setting; a note shifted outside 0..127 is dropped. | `device-pitch/src/lib.rs:101-133` (`transform`), `:8-11` (the drop) | `PitchDeviceBoxAdapter.ts:50-58` (octaves ±7, semitones ±36, cents ±50) |
 | Velocity | Every note's velocity is the adapter's `computeVelocity` at the note's absolute position (magnet, random from the seeded generator, offset, clamped, mixed). | `device-velocity/src/lib.rs:70-77` (`compute_velocity`, the adapter's formula ported) | `VelocityDeviceBoxAdapter.ts:31-39` |
-| Zeitgeist | Every note starts where the groove warps its position to and ends where it warps its note-off to, so its duration changes with its place in the cell (`zeitgeist.md:59`, as corrected for openDAW#525). The warp is the cell's Möbius ease at the squashed amount (`0.01 + 0.98 × amount`), read through the device adapter's `groove()` and kept as a float pulse. | `device-zeitgeist/src/lib.rs:124-138` (`process`: warp each record, clamp into the block's range) | `GrooveShuffleBoxAdapter.ts:31-32, 46` |
+| Zeitgeist | Every note starts where the groove warps its position to and ends where it warps its note-off to, so its duration changes with its place in the cell (`zeitgeist.md:53`, as corrected for openDAW#525). The warp is the cell's Möbius ease at the squashed amount (`0.01 + 0.98 × amount`), read through the device adapter's `groove()` and kept as a float pulse. | `device-zeitgeist/src/lib.rs:35-50` (`process`: warp each record, clamp into the block's range; the groove reached through the engine's registry) | `GrooveShuffleBoxAdapter.ts:23-26`, `CellGrooveBoxAdapter` (the cell) |
 | Note Filter | Only a note between min and max, both included, passes (`note-filter.md` §1: "The lowest key that passes, included", "The highest key that passes, included", "If Min is above Max, no note passes"); it then moves by the transpose semitones, or plays as the key when set is on (§2); a result outside 0..127 is ignored (§2). The 64 held-note cap (`MAX_HELD`) is not modelled; no pattern reaches it. | `device-note-filter/src/lib.rs:45-49` (`output_pitch`), `:105-118` (`transform`) | `NoteFilterDeviceBoxAdapter` (key and min/max 0..127, transpose −127..127) |
 
 A chain composes the rules in index order (`crates/engine/src/audio_unit/wiring.rs:1061-1066`); a
@@ -159,13 +155,13 @@ error; a row that matches only with a deviation on reads `matches-known-deviatio
 | name | what the engine does | crate line | first seen | retired on |
 |---|---|---|---|---|
 | `arpeggio-velocity-matrix` (retired) | One fixed velocity `1 + v` below 0, a blend `velocity × v + (1 − v)` above it, where the manual of the time blended full velocity with the note's own; the engine still does exactly this, and it is the rule since 2026-11-04. | `device-arpeggio/src/lib.rs:109-119` | 0.0.180 (first run) | 2026-11-04: openDAW#524 closed, the manual corrected (`0b371e0b3`); the matrix is the rule |
-| `arpeggio-drops-cent` | Emits every arpeggiated note-on with cent 0, so a source note's detune is lost. Asked upstream as openDAW#526; answered 2026-11-04: the cent was dropped by mistake, the fix (every held note's cents kept on walk notes, chord steps, ratchets and octave copies) ships with the release after 0.0.181, and the manual now says so. Retire it when `order-pitch-arpeggio` reads `changed, rule holds` on that release. | `device-arpeggio/src/lib.rs:310` (0.0.181; `:304` on 0.0.180) | 0.0.180 | — |
+| `arpeggio-drops-cent` (retired) | Emitted every arpeggiated note-on with cent 0, so a source note's detune was lost. Asked upstream as openDAW#526; answered 2026-11-04: the cent was dropped by mistake. | `device-arpeggio/src/lib.rs:310` (0.0.181) | 0.0.180 | 2026-11-06, on 0.0.182: `order-pitch-arpeggio` reads `changed, rule holds` at both rates (12.5 cents on every step); the crate passes `note.cent` (`lib.rs:630,641`) |
 | `arpeggio-uncapped-note-off` (retired) | Ends a step at its position plus its length, never at the end of the source note, so the last step outlasts the held note; the engine still does exactly this, and it is the rule since 2026-11-04. | `device-arpeggio/src/lib.rs:309-312` | 0.0.180 | 2026-11-04: the manual's gate definition (`arpeggio.md:76`) matches the engine; the cap was this audit's reading. Asked in one line of the dropped-cent question, openDAW#526 |
 | `zeitgeist-warps-note-off` (retired) | Warps the note-off like any other record, so a duration stretches or shrinks with the groove, where the manual of the time said durations remain unchanged; the engine still does exactly this, and it is the rule since 2026-11-04. | `device-zeitgeist/src/lib.rs:124-138` | 0.0.180 | 2026-11-04: openDAW#525 closed, the manual corrected (`2922ba25d`); the warped note-off is the rule |
 
 ## Row sampling
 
-263 rows, every one in the register. One parameter at a time across its whole range, the others at
+379 rows (the registers hold 263 of them until the 2026-11-06 runs are accepted). One parameter at a time across its whole range, the others at
 their base, so a miss names its parameter; each parameter's identity setting is a row too, as the
 control.
 
@@ -184,9 +180,12 @@ control.
   0, 12.5, 50; one combined row; each on the chromatic pattern and the demo melody.
 - **Velocity**: magnet 3 × 3, random 0, 0.5, 1, offset −1, −0.5, 0, 0.5, mix 0, 0.5, 1 of a full magnet;
   on the demo sixteenths and melody.
-- **Zeitgeist**: amounts 0, 0.25, 0.5, 0.75, 1 × every DISTINCT groove duration (8 of the 9 listed
-  in `GrooveShuffleBoxAdapter.Durations`; 960 is listed twice), 1/8 to 16 bars, on the sixteenths;
-  amounts × 1/8 and 1 bar on the melody.
+- **Arpeggio walks past the first three**: modes 3–17 × 1 and 2 octaves on the held chord, and × 1 octave on the demo's
+  chords (changing stacks); modes 13–17 (the seeded ones) × seeds 1 and 999999 on the held chord (seed 0 is in the rows
+  before); Order Played and Pitch on a rolled chord (top note first, so the two orders are opposite); Offset 1, 2, 7, 15.
+- **Zeitgeist**: amounts 0, 0.25, 0.5, 0.75, 1 × all 19 groove durations
+  (`GrooveShuffleBoxAdapter.DurationPPQNs`, 1/24 to 16 bars) on the sixteenths;
+  amounts × 1/8 and 1 bar on the melody. Every Zeitgeist of a project shares the Global Shuffle, which outlives the row; each row writes both fields first.
 - **Note Filter**: range windows on the gapped melody (0..127, 62..67, 65..127, 0..64, 64..64, 67..62:
   some notes filtered out, every survivor read on its own) and inclusive ends on the chromatic run (min 60 and 61, max
   71 and 70: an off-by-one drops exactly one note); transpose −12, −7, −1, 0, +1, +7, +12, +24 on the
@@ -465,6 +464,33 @@ from 1793823187726): 263 rows each, the 230 earlier entries unchanged entry for 
 `unregistered` (the verdict column reads 244 `rule holds`, 1 deviation, 18 `no rule`). The 44.1 kHz register has
 no re-run yet; its first standing run is the check.
 
+### 2026-11-06, SDK 0.0.182 (Chrome, macOS, the Mac's output device at 44.1 kHz)
+
+The release rewrites the Arpeggio (18 walks, Order, Hold, Retrigger, Offset, Seed, a 64-step sequencer, cents kept) and
+makes grooves shared project resources (19 durations, a new Zeitgeist on the Global Shuffle). The rule gained the walks,
+Order, Offset and Seed, `arpeggio-drops-cent` was retired BEFORE the run so a still-dropped cent would read `rule broken`,
+and the rows grew by 61 Arpeggio and 55 Zeitgeist (11 new durations × 5 amounts): 379.
+
+| rate | run | rule holds | deviation | broken | no rule | as-registered | changed | unregistered | error |
+|---|---|---|---|---|---|---|---|---|---|
+| 48 kHz | 1793982353205 | 356 | 0 | 0 | 23 | 262 | 1 | 116 | 0 |
+| 44.1 kHz | 1793982450749 | 356 | 0 | 0 | 23 | 262 | 1 | 116 | 0 |
+
+- **The one changed row is the fix:** `order-pitch-arpeggio`, `register note 0 cents 12.5 expected 0.0`, at both rates. A
+  Pitch's cents now reach every arpeggio step. openDAW#526 closes here.
+- **Modes 0–2, every old Zeitgeist row, Pitch, Velocity and Note Filter did not move a note:** the 262 as registered, the
+  18 old `no rule` rows among them. The golden claim in the crate holds on the render.
+- **The seeded walks match the engine note for note,** which is the check on the rule's port of the hash: Random, Random
+  Other, Shuffle, Random Once and Walk at seeds 0, 1 and 999999, on one and two octaves, read `rule holds` with 0.00 ms
+  and 0.0 cents, and the read pitches differ between seeds (Random at seed 0: 67 67 67 64 64 60 67 64; seed 1: 64 64 60 64
+  67 64 60 60; seed 999999: 60 60 64 67 64 60 64 60).
+- **Five new rows read `no rule, unregistered`,** all Zeitgeist extremes where the warp leaves notes too short for the
+  reader, the kind of the registered `zg-amount0-dur480`: `zg-amount0-dur240`, `-dur720`, `-dur23040`, `-dur46080` and
+  `zg-amount1-dur11520` on the sixteenths.
+- The verdict column is identical across the two rates. Reference peak 0.7079 / 0.7078, instrument offset 6 frames.
+
+**Not accepted yet.** `--accept` waits for a person's read of these two runs.
+
 ## Reading
 
 - **The Arpeggio walks the absolute grid, in every mode, at every octave count, rate and repeat,
@@ -522,7 +548,7 @@ the engine warps the note-offs, measured as 26.4 / 63.6 ms note lengths at 25 % 
 at 75 % for notes held 62.5 ms; `drafts/posted-openDAW-525-zeitgeist-warps-note-offs-vs-manual.md`).
 The Pitch drop is not filed: the manual is silent on it. Filed 2026-11-04 as a question, openDAW#526
 (`drafts/posted-openDAW-526-arpeggio-drops-cent.md`): the dropped cent, and in one line the step that
-runs its full gate length past the held note's release.
+runs its full gate length past the held note's release. Answered, and the cent fixed on 0.0.182.
 
 - **`pitch-drops-out-of-range`.** The engine drops a note shifted outside 0..127, and its note-off
   passes through unshifted; the crate documents this as its deviation from the TS device, which
@@ -542,8 +568,8 @@ runs its full gate length past the held note's release.
 ## Status
 
 **Standing regression check after SDK upgrades** (root CLAUDE.md, "Build & Verification"; the
-current registers are the 2026-11-04 accept with the Note Filter rows, on the corrected manuals; on
-the rule as it stands they read 244 holds / 1 deviation / 18 no rule per rate, 263 rows):
+current registers are the 2026-11-04 accept with the Note Filter rows, on the corrected manuals, 263 rows; the
+2026-11-06 runs on 0.0.182, 379 rows, read 356 holds / 0 deviations / 23 no rule per rate and await a read):
 `?rows=all` at 48 kHz, then `?rate=44100`; expect every row `as-registered`, `as-registered,
 matches-known-deviation …` or `no rule`. A `changed` row is the finding: read its first mismatch
 against the crate before anything else. A `matches-known-deviation` the register lists is not a
@@ -554,6 +580,9 @@ register instead of replacing it, and only into a register of the same SDK, bpm 
 row is never accepted, forced or not: it keeps its registered entry, or stays out of the register.
 
 ## Open items
+
+- **Hold, Retrigger and the Arpeggio's step lanes are not judged.** The rule, the rows and the demos' cards leave them at
+  their defaults. Nor are the Power, S-Curve, Random, Offset and Stack grooves: every Zeitgeist row runs the Global Shuffle.
 
 - **`disabled-arpeggio` proves nothing.** The Arpeggio's non-identity (Up, 1 octave, 1/16, gate 0.5,
   velocity 1) reproduces the sixteenths exactly (one 120-pulse step at pitch 60 per grid line, the

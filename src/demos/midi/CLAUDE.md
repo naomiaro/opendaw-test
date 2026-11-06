@@ -145,12 +145,12 @@ MIDI effects sit between capture and instrument in the signal chain.
 Access via `audioUnitBoxAdapter.midiEffects` — an
 `Option<IndexedBoxAdapterCollection>` (unwrap first; `None` means the host has no
 midi chain, e.g. an effect-composite branch):
-- **ArpeggioDeviceBoxAdapter** — arpeggiator patterns (up, down, random, etc.)
+- **ArpeggioDeviceBoxAdapter** — 18 walks (`ArpeggioDeviceBoxAdapter.Modes`; 0..2 Up, Down, UpDown), `order` (Played / Pitch), `hold`, `retrigger` (Off / Note / Bar / Beat), `offset` 0–15; plain box fields `seed` (0–999999) and the 64-step lanes (`stepKinds`, `stepVelocities`, `stepGates`, `stepTransposes`, `stepOctaves`, `stepChances`, `stepRatchets`, `patternLength`, default 16). A control over `modeIndex` needs `Modes.length` positions. A played note keeps the cents of the held note it comes from
 - **NoteFilterDeviceBoxAdapter** — key range (`min` / `max`, both included; a note outside it is dropped) then `transpose` semitones or one `key` (`set`); a transposed note outside 0..127 is dropped, velocity and cent pass through, a note ends on the key it started with; `EffectFactories.NoteFilter`
 - **PitchDeviceBoxAdapter** — pitch transpose/shift
 - **VelocityDeviceBoxAdapter** — velocity curve mapping
 - **SpielwerkDeviceBoxAdapter** — scriptable MIDI effect (JavaScript)
-- **ZeitgeistDeviceBoxAdapter** — shuffle groove on note timing (its own `GrooveShuffleBox`; `groove()` + `instanceof GrooveShuffleBoxAdapter` for `amount` / `duration`)
+- **ZeitgeistDeviceBoxAdapter** — note timing through a groove of the project's list (a new device points at the shared Global Shuffle, which stays when the device goes; `groove()` is `Option<GrooveAdapter>`, `None` passes the notes through; unwrap, then `instanceof GrooveShuffleBoxAdapter` for `namedParameter.amount` / `duration`). See "Grooves Are Project Resources" in the root CLAUDE.md
 
 Insert via the adapter layer: `project.api.insertEffect(midiEffectsFieldOf(project,
 audioUnitBox), EffectFactories.Arpeggio)` (`midiEffectsFieldOf` from
@@ -412,12 +412,12 @@ table `node scripts/audit/midi-effect-placement/table.ts`.
 
 ### MIDI Effect Semantics Audit (unlisted)
 `midi-effect-semantics-audit-debug-demo.html[?rate=48000|44100][&rows=all|quick|<id,id,…>][&device=all|arpeggio|pitch|velocity|zeitgeist|note-filter|order|disabled][&pattern=<id>]`
-renders 263 rows offline (a Nano playing a 440 Hz sine, root key 69, 1 ms attack and release), each
+renders 379 rows offline (a Nano playing a 440 Hz sine, root key 69, 1 ms attack and release), each
 with a chain of stock MIDI effects at one setting, reads the left channel back as notes and judges
 them against what the devices DOCUMENT (the placement audit asks when; this one asks what). Register:
 `debug/2026-11-03-midi-effect-semantics/note.md` and `register/<rate>.json`; library
 `src/lib/audit/midiEffectSemantics*.ts`; table `node scripts/audit/midi-effect-semantics/table.ts
-[runToken] [--accept] [--force]`. `&rows=quick` is a 50-row subset; the dry rows always run and
+[runToken] [--accept] [--force]`. `&rows=quick` is a 53-row subset; the dry rows always run and
 `dry-sixteenths` calibrates (reference peak, instrument offset; 32 notes and a positive finite peak,
 or the run aborts; a run whose calibration row did not render ends in `error:` too). `#audit-state`
 reads `done` with `data-error-rows="<n>"` counting the rows that failed on their own (0 on a clean
@@ -439,7 +439,7 @@ other answer, a corrupt register, or one of another rate or bpm ends the run in 
   sits inside a tolerance.
 - **The rule** is the crate's and the manual's, intent first; each subset of the row's known
   deviations is tried after it, smallest first. Deviations (`DEVIATIONS` in the rules module, with
-  crate lines): `arpeggio-drops-cent` only (asked upstream as openDAW#526, with the uncapped step). A step runs its full
+  crate lines): none today; the last one, `arpeggio-drops-cent`, was retired when openDAW#526 was fixed, so the machinery waits empty. The Arpeggio's rule covers its 18 walks (`src/lib/audit/arpeggioWalk.ts`, the seeded ones included), Order, Octaves, Rate, Gate, Repeat, Velocity, Offset and Seed; Hold, Retrigger and the step lanes stay at their defaults, in the rows and on the demos' cards, so nothing here judges them yet. A step runs its full
   gate length past the held note's release by the rule (the manual: note length as a percentage of
   the step; `arpeggio-uncapped-note-off` retired 2026-11-04 on that). Two more were retired the same
   day when openDAW#524 and #525 closed with the MANUALS corrected:

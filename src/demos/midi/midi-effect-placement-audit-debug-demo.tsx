@@ -167,7 +167,7 @@ function applySettings(box: EffectBox, device: MidiEffectDevice): void {
 }
 
 /** The positions a rule row's device is expected to sound, absolute pulses. Resolved while the device exists
- *  (Zeitgeist's warp is read through the device's own groove, so the page uses the mapping the engine ports). */
+ *  (Zeitgeist's warp is read through the device's groove, so the page uses the mapping the engine ports). */
 function expectedPositions(scenario: MidiEffectScenario, project: Project, box: EffectBox | null): number[] {
   switch (scenario.rule) {
     case "arpeggio":
@@ -175,7 +175,7 @@ function expectedPositions(scenario: MidiEffectScenario, project: Project, box: 
     case "zeitgeist": {
       if (!(box instanceof ZeitgeistDeviceBox)) throw new Error("zeitgeist row without a Zeitgeist device");
       const adapter = project.boxAdapters.adapterFor(box, ZeitgeistDeviceBoxAdapter);
-      return zeitgeistWarped(DRY_ABSOLUTE, adapter.groove());
+      return zeitgeistWarped(DRY_ABSOLUTE, adapter.groove().unwrap("Zeitgeist has no groove"));
     }
     case "echo":
       return echoCopies(REGION_POSITION_PPQN, ECHO_DELAY_PPQN, ECHO_REPEATS);

@@ -3,6 +3,14 @@
 **Title:** With delay compensation that is not a whole number of quanta, `OfflineEngineRenderer.renderSection` with
 `tail: false` drops frames at the first chunk boundary: everything after it comes out early, and a sustained sound jumps there
 
+**Status: FIXED in `@opendaw/studio-sdk@0.0.182`** (`48ca856dc`, closed 2026-11-06): a `step` keeps the rest of its last
+quantum for the next one (`QuantumStepper`, `core-wasm/src/quantum-stepper.ts`), a `setPosition` or a reset clears it.
+**Measured on 0.0.182, 2026-11-06, both page rates, the device at 44.1 kHz:** every row the formula gave frames for reads
+"differs from the formula": 0 frames early, before and after the boundary, on all hits, the tone step 0.065 at frame 21834
+as the reference, no jump (Compressor 240 / 220, Maximizer 240 / 221, Fold 15 frames of latency; two passes and the 0.9 s
+sections too). At 44.1 kHz the 4 s two-pass rows keep their 1 early, the no-latency baseline of that length. The figures
+below are the defect as measured on 0.0.181.
+
 **Issue:** [openDAW#530](https://github.com/andremichelle/openDAW/issues/530) (filed 2026-11-05). Body as filed: [`drafts/posted-openDAW-530-render-section-latency-gap.md`](./drafts/posted-openDAW-530-render-section-latency-gap.md)
 
 **Verified against:** `@opendaw/studio-sdk@0.0.181` (`5820e7791`), Chrome on macOS. Source citations are read at that tag.

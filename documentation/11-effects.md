@@ -1427,7 +1427,7 @@ Audio Interface Output
 A device that delays its signal (Compressor or Maximizer look-ahead, Fold oversampling, Autotune, a script that declares [`// @latency`](#latency-declaration-latency)) reports that latency, and the engine delays the parallel paths so everything stays aligned. `project.engine.compensationLatency` holds the project's total in seconds, and all live output is that much later. Offline renders trim it from the start.
 
 - **Mute and solo do not change it.** A device on a muted track still holds the whole project back. Removing the device removes the delay.
-- **The delay is capped at 0.1 s per stage.** Above that, the reported figure keeps rising while the audio does not. A script declaring `// @latency 150` reads `compensationLatency` 0.150 and delays the other paths by 0.100, which leaves them 50 ms short of alignment. Nothing warns about this, so check for it through the signal graph:
+- **The delay is capped at 0.1 s per stage.** `compensationLatency` reports the delay the mix actually gets, and `project.engine.compensationExceeded` (an `ObservableValue<boolean>`) turns true when a path needs more than the cap. A script declaring `// @latency 150` beside a parallel track reads 0.100 and exceeded: the other paths get 100 ms and stay 50 ms short of alignment. With nothing parallel to delay, the same script reads 0.150 and not exceeded, since that is simply the mix's delay. The signal graph names the paths:
 
 ```typescript
 const graph = await project.engine.querySignalGraph();

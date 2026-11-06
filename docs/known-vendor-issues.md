@@ -61,8 +61,8 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   three natural events, forced churn); SDK-free probe `worklet-clock-debug-demo.html`; forced with
   `&graphChurn=on` on the recording-alignment harness (48 of 48 rows at 0 / 0 quanta since the
   workaround); natural tally `node scripts/audit/recording-alignment/one-quantum-events.ts`.
-- **Last checked:** 2026-11-04 (SDK 0.0.181 sweep, Chrome 156: 0 events in 76 repeats, forced 48 / 48, as
-  on 0.0.179 and 0.0.180; the tracker unchanged since comment #5). The
+- **Last checked:** 2026-11-06 (SDK 0.0.182 sweep, Chrome 156: 0 events in 76 repeats, forced 48 / 48, as
+  on 0.0.179, 0.0.180 and 0.0.181; the tracker unchanged since comment #5). The
   browser is unchanged; re-read the tracker at each SDK upgrade and retire the repairs only on a
   Chrome that reads true under the probe.
 
@@ -95,9 +95,13 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   reporter's: truncate a file to 0 through a sync access handle before `removeEntry()`, which keeps the
   saved usage from going negative, confirmed here on the saved figure across a restart. The SDK's OPFS
   worker (lib-fusion's `OpfsWorker`) writes through sync access handles (`createSyncAccessHandle` on its
-  write path) and deletes through `removeEntry` on its delete paths with no `truncate(0)` before them,
-  so the demos' page-load sweep lowers the saved figure by every sample it removes (the dist lines are
-  in the note). Filed upstream as [openDAW#527](https://github.com/andremichelle/openDAW/issues/527) on 2026-11-04. (`clearStoredSamples()` in `src/lib/storedSamples.ts` also checks
+  write path) and, since [openDAW#527](https://github.com/andremichelle/openDAW/issues/527) (filed from this repo,
+  closed 2026-11-06, in SDK 0.0.182), empties every file with `truncate(0)` right before `removeEntry` on all its
+  delete paths, recursively through a folder; a file it cannot open is logged with a `console.warn` and removed
+  anyway. So the demos' page-load sweep no longer lowers the saved figure, measured across two restarts of Playwright's Chrome on
+  2026-11-06: the sweep removed 42 files, 245 921 890 bytes, plus a truncate-first probe run, and the drift read **−10 090 bytes**
+  (`restartDriftBytes`), where the window before it, two plain deletes by the probes (67 109 044 and 356 515 840 bytes), read
+  −423 749 996. A negative figure already saved stays (−1 322 284 263 here). The probe's plain arm calls `removeEntry` itself and keeps showing Chrome's behaviour. (`clearStoredSamples()` in `src/lib/storedSamples.ts` also checks
   with `Workers.Opfs.exists` after a delete because `Workers.Opfs.delete` reports nothing when it fails
   — an SDK quirk, not the browser's.)
 - **Evidence:** root CLAUDE.md, "Stored Samples Are Swept at Page Load" ([repo PR #132](https://github.com/naomiaro/opendaw-test/pull/132));
@@ -112,7 +116,9 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   sweep, Playwright's Chrome): `COUNTED` (+67 109 044 of 67 108 864 bytes, 0 left after the delete;
   `chromium-opfs-usage-mvtrnspq-5x1m.json`); again on Chrome 156.0.8078.81, 2026-11-04 (SDK 0.0.181 sweep):
   `COUNTED` (+67 109 044 of 67 108 864 bytes, 0 left after the delete; `chromium-opfs-usage-mw2djyvu-ln2m.json`);
-  the tracker unchanged since 2026-09-25; the restart half not run on 156.
+  the tracker unchanged since 2026-09-25. The restart half on Chrome 156.0.8078.81, Playwright's Chrome, 2026-11-06: `NEGATIVE USAGE`
+  (`chromium-opfs-usage-mw57u54d-qkob.json`, `-mw58s584-7otb.json`, saved figure −898 524 177 then −1 322 274 173). Closing the Playwright browser's
+  last page restarts Chrome on the same profile, and the probe reads that as a restart, so this row needs no hand there.
 
 ### Chromium [516995393](https://issues.chromium.org/issues/516995393) — no input-latency figure in the Web Audio API (a spec gap)
 
@@ -167,8 +173,8 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
 - **Evidence:** `debug/2026-10-22-chromium-watched-issues/note.md`, "first-read"; probe
   `chromium-watched-issues-debug-demo.html?issue=first-read`, envelope
   `chromium-first-read-mvk1dr2x-2os8.json` (each run's raw frames).
-- **Last checked:** Chrome 156, macOS, Playwright's Chrome, 2026-11-04 (SDK 0.0.181 sweep): `STALE FIRST
-  READ`, 13 of 15 runs (none 3, large 5, slow 5; largest lag 2 / 8 / 40 quanta;
+- **Last checked:** Chrome 156.0.8078.81, macOS, Playwright's Chrome, 2026-11-06 (SDK 0.0.182 sweep): `STALE FIRST
+  READ`, 15 of 15 runs (none 5, large 5, slow 5; largest lag 2 / 8 / 36 quanta; `chromium-first-read-mw57tdrx-4pf5.json`). 2026-11-04 (SDK 0.0.181 sweep): 13 of 15 runs (none 3, large 5, slow 5; largest lag 2 / 8 / 40 quanta;
   `chromium-first-read-mw2dew78-uuru.json`); the tracker unchanged since 2026-10-09. Chrome 156.0.8078.74,
   2026-10-30 (SDK 0.0.180 sweep): 15 of 15 runs (none 5, large 5, slow 5; `chromium-first-read-mvvenof5-os3b.json`).
   Chrome 156.0.8078.49, 2026-10-29 (SDK 0.0.179 sweep): `STALE FIRST READ`, 14 of 15 runs (none 4, large 5, slow 5; `chromium-first-read-mvtrhq4m-4ncj.json`),
@@ -317,7 +323,8 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   `HALF RATE`); controls `…-mvk67nwz-e5jp.json` (no stall, `CLEAN`), `…-mvk66w4s-yjmr.json` (Blob
   module), `…-mvk69i2k-w85k.json` (500 ms gap), `…-mvk66fux-d534.json` (5 cycles, `NOT CHECKED`);
   microphone-only candidates `…-mvk5pda3-2kmc.json`, `…-mvk5rajg-qii2.json`, `…-mvk68gjz-2bwp.json`.
-- **Last checked:** Chrome 156, macOS 15.6.1, 2026-11-04 (SDK 0.0.181 sweep): `HALF RATE` on the first run
+- **Last checked:** Chrome 156.0.8078.81, macOS 15.6.1, 2026-11-06 (SDK 0.0.182 sweep): `HALF RATE` on the first run
+  (`chromium-suspend-resume-mw57thxh-0ews.json`: clock ratio about 0.50 from cycle 4, 0.4985 at the lowest). 2026-11-04 (SDK 0.0.181 sweep): `HALF RATE` on the first run
   (`chromium-suspend-resume-mw2dffkz-v49t.json`: clock ratio 0.537 from cycle 2, 0.5365 at the lowest, 20 of 20
   cycles distorted); the tracker assigned, unchanged since 2026-09-15. Chrome 156.0.8078.74, 2026-10-30 (SDK
   0.0.180 sweep): `HALF RATE` on the first run (`chromium-suspend-resume-mvvenrus-8onb.json`: clock ratio 0.487
@@ -448,7 +455,7 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   441 frames after the tone (`chromium-capture-gaps-mvtrn8ia-fvqb.json`); again on Chrome 156.0.8078.74,
   2026-10-30 (SDK 0.0.180 sweep): `CLEAN` at 48 000, `START GAPS` with one 441-frame start run at 44 100, and
   the same two readings with the Mac's output device at 48 kHz — the start run follows the context's rate, not
-  the device's. Again on Chrome 156, 2026-11-04 (SDK 0.0.181 sweep): `CLEAN` at 48 000
+  the device's. Again on Chrome 156.0.8078.81, 2026-11-06 (SDK 0.0.182 sweep): `CLEAN` at 48 000 (`chromium-capture-gaps-mw57vgjm-kait.json`), `START GAPS` at 44 100 (one start run; `chromium-capture-gaps-mw57wtqk-gt1o.json`). 2026-11-04 (SDK 0.0.181 sweep): `CLEAN` at 48 000
   (`chromium-capture-gaps-mw2dhjz4-usyp.json`, 0 zero runs in 60 s), `START GAPS` at 44 100 with the one
   441-frame start run 1394 frames in (`chromium-capture-gaps-mw2dj7um-tw2n.json`); the tracker unchanged since
   2025-05. The microphone rows on Chrome 156, the user's Chrome, 2026-11-04 (SDK 0.0.181 sweep, the built-in
@@ -549,7 +556,7 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   sweep): median 0.63 ms per 1 MiB (max 1.16), 1.53 ms per 16 MiB (max 1.60), one run; Chrome
   156.0.8078.74, 2026-10-30 (SDK 0.0.180 sweep): median 0.80 ms per 1 MiB (max 1.55), 1.66 ms per 16 MiB
   (max 1.88), one run (`chromium-opfs-flush-mvver78d-6u51.json`), the in-session `opfs-usage` `COUNTED`
-  (`chromium-opfs-flush-mvtrnk3s-cf8v.json`); Chrome 156.0.8078.81, 2026-11-04 (SDK 0.0.181 sweep): median
+  (`chromium-opfs-flush-mvtrnk3s-cf8v.json`); Chrome 156.0.8078.81, 2026-11-06 (SDK 0.0.182 sweep): median 0.65 ms per 1 MiB (max 1.04), 1.53 ms per 16 MiB (max 22.54, one run of 20; `chromium-opfs-flush-mw57u1cl-w2wv.json`); 2026-11-04 (SDK 0.0.181 sweep): median
   0.70 ms per 1 MiB (max 1.03), 1.55 ms per 16 MiB (max 1.67), one run (`chromium-opfs-flush-mw2djies-rjgd.json`). The tracker's claim is a comparison with other
   browsers, which this repo does not make. The sentinel: no probe, out of scope; it needs the origin's
   quota exhausted or an incognito profile.
@@ -897,7 +904,7 @@ upstream tracker, or are by design.
   netted skew; a raw multi-mic skew is never quoted as an SDK finding. A worklet module must be loaded
   before the first take (a load still running delays that take's first frame, 117 ms measured).
 - **Evidence:** `debug/2026-09-02-recording-start-alignment/note.md` (stream-tap measurement, repo PRs [#136](https://github.com/naomiaro/opendaw-test/pull/136) and [#138](https://github.com/naomiaro/opendaw-test/pull/138)).
-- **Last checked:** 2026-11-04 (SDK 0.0.181 sweep, the same figures as the 0.0.180 sweep: 32 multi-mic rows, raw skew 0.00 on all 16 repeats, node delays 12.0–21.3 ms;
+- **Last checked:** 2026-11-06 (SDK 0.0.182 sweep: 32 multi-mic rows, largest raw skew 0.67 ms on the janked cell, 5.33 ms on a forced run, 0.00 left over after the node delays, 12.0–21.3 ms). 2026-11-04 (SDK 0.0.181 sweep, the same figures as the 0.0.180 sweep: 32 multi-mic rows, raw skew 0.00 on all 16 repeats, node delays 12.0–21.3 ms;
   the SDK now rebuilds a live input's source node 250 ms after another stream opens, and the taps saw one node per tape per
   repeat on 29 of 32 tapes, as on 0.0.179). 2026-10-29 (SDK 0.0.179 sweep: one janked repeat read −9.33 ms raw, 0.00 left over).
 

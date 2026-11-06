@@ -252,7 +252,8 @@ Use raw `sampleLoader.subscribe()` only when you need state change callbacks wit
 - `.audioUnits` — `IndexedBoxAdapterCollection<AudioUnitBoxAdapter>` (all channels)
 - `.audioBusses` — `BoxAdapterCollection<AudioBusBoxAdapter>` (aux/group buses)
 - `.clips` — clip pool
-- `.groove` — `GrooveBoxAdapter` (groove/shuffle quantization)
+- `.grooves` — `IndexedBoxAdapterCollection<GrooveAdapter>` (the project's groove list)
+- `.groove` — `GrooveAdapter` of the Global Shuffle
 - `.timeline` — `TimelineBoxAdapter` (signature, tempo, markers)
 - `.pianoMode` — piano mode state
 - `.midiOutputDevices` — external MIDI output devices
@@ -447,22 +448,27 @@ Beyond `boxAdapters` / `rootBoxAdapter` / `sampleManager`, `Project` exposes:
   per-parameter adapter keeps `setUnitValue` and gains `optTracks()` (lane owner).
 - `project.editing: Editing` — target of every `editing.modify()`.
 
-### GrooveBoxAdapter (Swing/Shuffle)
-`project.rootBoxAdapter.groove` wraps a `GrooveShuffleBoxAdapter` for swing quantization:
+### Grooves Are Project Resources
+`project.rootBoxAdapter.grooves` is the groove list, `.groove` the **Global Shuffle** (always in the list, a
+`GrooveShuffleBox` the skeleton creates at amount 0.6, duration 1/8). A groove is shared and has no mandatory
+pointer: `EffectFactories.Zeitgeist` points a new device at the Global Shuffle, every Zeitgeist of a project shares
+it, and deleting a device leaves it, its settings included. `GrooveAdapter` is the common shape: `kind` (`"shuffle"
+| "power" | "s-curve" | "random" | "offset" | "stack"`), `warp(ppqn)` / `unwarp(ppqn)`, `amount` / `duration`
+(`Option`: an Offset or a Stack has neither), `cellDuration()`, `users()`, `subscribeChange()`.
 ```typescript
-const groove = project.rootBoxAdapter.groove; // GrooveBoxAdapter
-
-// GrooveShuffleBoxAdapter provides:
-groove.namedParameter.duration  // musical duration selection (1/8, 1/4, etc.)
-groove.namedParameter.amount    // shuffle amount (0-1, unitValue)
-
-// Timing warp/unwarp for swing
-groove.warp(ppqn)    // apply groove timing
-groove.unwarp(ppqn)  // reverse groove timing
+const zeit = project.boxAdapters.adapterFor(box, ZeitgeistDeviceBoxAdapter);
+const groove = zeit.groove(); // Option<GrooveAdapter>: None means the notes pass through
+// `namedParameter` is on the subclass, so narrow first
+const shuffle = groove.unwrap("no groove");
+if (shuffle instanceof GrooveShuffleBoxAdapter) {
+  project.editing.modify(() => shuffle.namedParameter.amount.setValue(0.6));
+}
 ```
-Static data: `GrooveShuffleBoxAdapter.Durations` (ratio pairs),
-`.DurationPPQNs` (PPQN values), `.DurationStrings` (labels like "1/8", "1/4").
-Uses Möbius-Ease easing for smooth swing transitions between on/off-beat timing.
+`GrooveDurations.PPQNs` / `.Labels` (19 values, 1/24 to 16 bars) are also `GrooveShuffleBoxAdapter.DurationPPQNs` /
+`.DurationStrings`. `Grooves` (from `@opendaw/studio-adapters`) creates, duplicates, replaces and stacks them. Note and
+value regions and clips carry an optional `groove` pointer of their own, and `CubedDeviceBox` one for its pattern.
+**While the transport loops, a groove plays every pass as if it started at the loop start:** a note it pushes past the
+loop end or pulls before the loop start is not played. An offline render without a loop area is untouched.
 
 ### MarkerTrackAdapter (Cue Points)
 `project.timelineBoxAdapter.markerTrack` manages cue point markers:
@@ -798,7 +804,7 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   effect — the recorder reads the capture's raw note signals before the chain).
 - After SDK upgrades, also run the MIDI effect semantics audit:
   `midi-effect-semantics-audit-debug-demo.html` then `?rate=44100` — a real click on Run,
-  deterministic, no hardware, about 40 seconds per rate (263 rows). Expect every row
+  deterministic, no hardware, about 70 seconds per rate (379 rows). Expect every row
   `as-registered`, `as-registered, matches-known-deviation …` or `no rule` (the counts per rate are
   in the note's Runs section). A `changed` row is the finding; a `matches-known-deviation` the register
   lists is not (a deviation that stops matching is a fix landing: retire it in the note). Register
@@ -808,6 +814,9 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   then merges into a register of the same SDK, bpm and rate; an errored row is never accepted).
   Reading recipe:
   `src/demos/midi/CLAUDE.md`.
+- After SDK upgrades, also run `render-section-latency-debug-demo.html` then `?rate=44100` — a real click on Run, offline, no
+  hardware, about 25 seconds each. Expect no frames lost on any row; a row reading "defect present" is `renderSection` losing
+  frames at a chunk boundary again (openDAW#530). Register `debug/2026-11-05-render-section-latency-gap/note.md`.
 - After SDK upgrades, also run the Nano play-modes audit: `nano-play-modes-debug-demo.html` then
   `?rate=44100` — a real click on Run, deterministic, no hardware, about three seconds. Expect every row
   `as-expected` (the expectations are the crate's documented behaviour, no register to accept): Mono 40 dB
@@ -1113,8 +1122,9 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   run is on.
 - The harness refuses page-side OPFS deletes (`removeEntry`) and even `localStorage.setItem` as
   irreversible: hand the user the one-liners to paste into DevTools instead of retrying. A real
-  Chrome restart needs the user (Cmd+Q, the URL typed by hand — session restore carries
-  `sessionStorage` over).
+  restart of the USER'S Chrome needs the user (Cmd+Q, the URL typed by hand — session restore carries
+  `sessionStorage` over); the Playwright MCP's Chrome restarts on `browser_close` (its last page, same profile, OPFS kept),
+  which the OPFS usage probe reads as a restart.
 - Radix Slider in browser tests: click the slider, then send the `End`/`Home` key —
   jumps to max/min through the real onValueChange path (no fragile drag math).
 - After `resize_window`, screenshot pixel coordinates can stop mapping 1:1 to the

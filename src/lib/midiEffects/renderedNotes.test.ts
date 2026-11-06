@@ -45,15 +45,14 @@ describe("predictChain", () => {
     expect(silenced.every((n) => n.velocity === 0)).toBe(true);
   });
 
-  it("applies the known deviation of an enabled device: a Pitch's cents before an Arpeggio read 0 on every step", () => {
+  it("a Pitch's cents reach every Arpeggio step, before it as after it (openDAW#526)", () => {
     const chain: ChainSetting[] = [
       { setting: { device: "pitch", settings: { semiTones: 0, cents: 12.5, octaves: 0 } }, enabled: true },
       { setting: { device: "arpeggio", settings: { ...ARPEGGIO_BASE } }, enabled: true },
     ];
     const { predicted } = predictChain(chain, context, patternById("chords"), PATTERN_BPM, mark);
     expect(predicted.length).toBeGreaterThan(0);
-    expect(predicted.every((n) => n.cent === 0)).toBe(true);
-    // the same Pitch after the Arpeggio keeps its cents
+    expect(predicted.every((n) => n.cent === 12.5)).toBe(true);
     const swapped = predictChain([chain[1], chain[0]], context, patternById("chords"), PATTERN_BPM, mark);
     expect(swapped.predicted.every((n) => n.cent === 12.5)).toBe(true);
   });

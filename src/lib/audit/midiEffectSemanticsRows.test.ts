@@ -27,22 +27,22 @@ const GROUPS: RowGroup[] = ["dry", "arpeggio", "pitch", "velocity", "zeitgeist",
 const quick = SEMANTICS_ROWS.filter((row) => row.quick);
 
 describe("SEMANTICS_ROWS", () => {
-  it("has unique ids, dry-sixteenths first, every group present, between 180 and 320 rows", () => {
+  it("has unique ids, dry-sixteenths first, every group present, between 180 and 400 rows", () => {
     expect(new Set(SEMANTICS_ROWS.map((r) => r.id)).size).toBe(SEMANTICS_ROWS.length);
     expect(SEMANTICS_ROWS[0].id).toBe("dry-sixteenths");
     for (const group of GROUPS) expect(SEMANTICS_ROWS.some((r) => r.group === group)).toBe(true);
     expect(SEMANTICS_ROWS.length).toBeGreaterThanOrEqual(180);
-    expect(SEMANTICS_ROWS.length).toBeLessThanOrEqual(320);
+    expect(SEMANTICS_ROWS.length).toBeLessThanOrEqual(400);
     expect(SEMANTICS_ROWS.filter((r) => r.group === "dry").map((r) => r.id)).toEqual(["dry-sixteenths", "dry-melody", "dry-chromatic", "dry-held-note"]);
     expect(SEMANTICS_ROWS.filter((r) => r.group === "dry").every((r) => r.chain.length === 0)).toBe(true);
   });
   it("counts per group follow the brief", () => {
     const count = (group: RowGroup) => SEMANTICS_ROWS.filter((r) => r.group === group).length;
-    expect(GROUPS.map(count)).toEqual([4, 88, 40, 38, 50, 28, 10, 5]);
+    expect(GROUPS.map(count)).toEqual([4, 149, 40, 38, 105, 28, 10, 5]);
   });
-  it("has 263 rows, 50 of them quick (the counts src/demos/midi/CLAUDE.md gives)", () => {
-    expect(SEMANTICS_ROWS.length).toBe(263);
-    expect(quick.length).toBe(50);
+  it("has 379 rows, 53 of them quick (the counts src/demos/midi/CLAUDE.md gives)", () => {
+    expect(SEMANTICS_ROWS.length).toBe(379);
+    expect(quick.length).toBe(53);
   });
   it("every quick id names a row: a renamed row cannot silently leave the quick subset", () => {
     const ids = new Set(SEMANTICS_ROWS.map((r) => r.id));
@@ -79,19 +79,19 @@ describe("SEMANTICS_ROWS", () => {
   it("the held-note pattern ends off the grid (70 pulses into the last step) and the base Arpeggio row's last step runs its full 120", () => {
     const row = rowById("arp-oct1-held-note");
     expect(HELD_NOTE.notes[0].duration).toBe(1750);
-    const steps = arpeggioRule(rowNotes(row), ARPEGGIO_BASE, new Set(), context.range);
+    const steps = arpeggioRule(rowNotes(row), ARPEGGIO_BASE, context.range);
     expect(steps.at(-1)?.position).toBe(3840 + 1680);
     expect(steps.at(-1)?.duration).toBe(120);
-    expect(predictedVariants(row, context).map((v) => [...v.deviations].sort().join("+")).sort()).toEqual(["", "arpeggio-drops-cent"]);
+    expect(predictedVariants(row, context).map((v) => [...v.deviations].sort().join("+")).sort()).toEqual([""]);
   });
-  it("the zeitgeist rows cover each distinct duration once (8 values, 960 once)", () => {
+  it("the zeitgeist rows cover each duration once (19 values, none listed twice)", () => {
     const distinct = [...new Set(GrooveShuffleBoxAdapter.DurationPPQNs)];
-    expect(distinct.length).toBe(8);
-    expect(GrooveShuffleBoxAdapter.DurationPPQNs.length).toBe(9);
+    expect(distinct.length).toBe(19);
+    expect(GrooveShuffleBoxAdapter.DurationPPQNs.length).toBe(19);
     for (const d of distinct) {
       expect(SEMANTICS_ROWS.filter((r) => r.id.startsWith("zg-amount") && r.id.endsWith(`-dur${d}-sixteenths`)).length).toBe(5);
     }
-    expect(SEMANTICS_ROWS.filter((r) => r.id.endsWith("-sixteenths") && r.id.startsWith("zg-")).length).toBe(40);
+    expect(SEMANTICS_ROWS.filter((r) => r.id.endsWith("-sixteenths") && r.id.startsWith("zg-")).length).toBe(95);
     expect(SEMANTICS_ROWS.filter((r) => r.id.startsWith("zg-") && r.id.endsWith("-melody")).map((r) => r.id)).toEqual(
       [0, 0.25, 0.5, 0.75, 1].flatMap((a) => [480, 3840].map((d) => `zg-amount${a}-dur${d}-melody`)));
   });
@@ -119,7 +119,7 @@ describe("SEMANTICS_ROWS", () => {
     expect(notes.length).toBe(32);
     expect(notes[0].position).toBe(BAR_PPQN);
     expect(notes[1].position).toBe(BAR_PPQN + 240);
-    expect(AUDIT_PATTERNS.map((p) => p.id)).toEqual(["held-note", "held-chord", "chromatic", "chords", "sixteenths", "melody", "melody-gaps"]);
+    expect(AUDIT_PATTERNS.map((p) => p.id)).toEqual(["held-note", "held-chord", "held-rolled", "chromatic", "chords", "sixteenths", "melody", "melody-gaps"]);
     // the gapped melody: the demo melody with every eighth at 90 % (432 pulses), a 48-pulse (25 ms) gap the reader splits on, so a note that leaks through a filter between two survivors starts a read note of its own
     const gapped = AUDIT_PATTERNS.find((p) => p.id === "melody-gaps")!;
     expect(gapped.notes.map((n) => n.pitch)).toEqual(patternById("melody").notes.map((n) => n.pitch));
@@ -276,10 +276,12 @@ describe("resolveRows", () => {
 describe("applySettings", () => {
   it("writes every Arpeggio field and the Zeitgeist groove fields", () => {
     const arp = midiEffectFixture("arpeggio");
-    const settings = { modeIndex: 2 as const, numOctaves: 4, rateIndex: 12, gate: 1.5, repeat: 4, velocity: -0.5 };
+    const settings = { modeIndex: 13, order: 1, numOctaves: 4, rateIndex: 12, gate: 1.5, repeat: 4, velocity: -0.5, offset: 7, seed: 999999 };
     transact(arp.boxGraph, () => applySettings(arp.box, { device: "arpeggio", settings }));
     const a = arp.box as ArpeggioDeviceBox;
-    expect([a.modeIndex.getValue(), a.numOctaves.getValue(), a.rateIndex.getValue(), a.gate.getValue(), a.repeat.getValue(), a.velocity.getValue()]).toEqual([2, 4, 12, 1.5, 4, -0.5]);
+    expect([a.modeIndex.getValue(), a.numOctaves.getValue(), a.rateIndex.getValue(), a.gate.getValue(), a.repeat.getValue(), a.velocity.getValue()]).toEqual([13, 4, 12, 1.5, 4, -0.5]);
+    expect([a.order.getValue(), a.offset.getValue(), a.seed.getValue()]).toEqual([1, 7, 999999]);
+    expect(settingsOf(arp.box)).toEqual({ device: "arpeggio", settings });
 
     const zg = midiEffectFixture("zeitgeist");
     transact(zg.boxGraph, () => applySettings(zg.box, { device: "zeitgeist", settings: { amount: 0.25, duration: 1920 } }));
@@ -312,7 +314,7 @@ describe("settingsOf", () => {
   });
   it("round-trips every device through applySettings", () => {
     for (const setting of [
-      { device: "arpeggio", settings: { modeIndex: 2, numOctaves: 3, rateIndex: 5, gate: 0.75, repeat: 3, velocity: 0.5 } },
+      { device: "arpeggio", settings: { modeIndex: 2, order: 1, numOctaves: 3, rateIndex: 5, gate: 0.75, repeat: 3, velocity: 0.5, offset: 3, seed: 42 } },
       { device: "pitch", settings: { semiTones: 7, cents: -25, octaves: -1 } },
       { device: "velocity", settings: { magnetPosition: 0.25, magnetStrength: 0.5, randomAmount: 0.5, offset: -0.25, mix: 0.75 } },
       { device: "zeitgeist", settings: { amount: 0.75, duration: 960 } },

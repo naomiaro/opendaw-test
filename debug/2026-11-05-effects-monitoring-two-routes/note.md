@@ -3,6 +3,21 @@
 **Title:** In "With Effects" monitoring the live input leaves the engine on both outputs, and only the main
 output follows delay compensation
 
+**Status: both FIXED in `@opendaw/studio-sdk@0.0.182`** (closed 2026-11-06).
+
+- **#528** (`d251a8796`): a unit in With Effects leaves its output bus, aux sends and audio sinks for as long as it is
+  monitored (`returns_through_monitor`, `routing.rs`), so it reaches the output once. **Measured on 0.0.182, 2026-11-06,**
+  with the probe below on `recording-api-react-demo.html` (Playwright's Chrome, the device at 44.1 kHz, one Tape): Effects
+  main peak 0, monitor peak 0.3 on 5 of 5 bursts; Direct and Off 0 and 0. No latent-device row was re-run: with nothing on
+  the main output there is nothing to arrive apart.
+- **#529** (`9402f6450`): `compensationLatency` reports the delay the mix gets (`landing_of`), and the new
+  `engine.compensationExceeded` says a path needs more. **Measured on 0.0.182, 2026-11-06** on `werkstatt-demo.html` through
+  the page's compiler, with a second unit in the project: `// @latency 99` reads 0.099 / false, `// @latency 150` reads
+  0.100 / true, no declaration 0 / false. With no parallel path the same script reads 0.150 / false: nothing is capped, the
+  mix really is 150 ms late.
+
+The figures below are the behaviour as measured on the public app before the fixes.
+
 **Issue:** [openDAW#528](https://github.com/andremichelle/openDAW/issues/528) (filed 2026-11-05, asks whether the main-mix route is intended); [openDAW#529](https://github.com/andremichelle/openDAW/issues/529) (filed 2026-11-05, the reported figure past the 100 ms cap).
 
 **Verified against:** the public app, https://opendaw.studio, build `adc1d47d-eda2-406c-a1ef-87a7bbd61f83`

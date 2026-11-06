@@ -1,8 +1,7 @@
 /**
  * Removing a MIDI effect device the audit inserted, and reaching a Zeitgeist's groove box.
- * The groove box requires an incoming edge and the Zeitgeist's pointer is its only one, so the
- * graph unstages it with the device (the test pins it): one `delete()` in one transaction
- * leaves nothing behind. A groove shared by two devices would stay.
+ * A groove is a project resource: `EffectFactories.Zeitgeist` points a new device at the Global Shuffle, every
+ * Zeitgeist of the project shares it, and it stays when a device goes (the test pins it), its settings included.
  */
 import type { Box } from "@opendaw/lib-box";
 import { GrooveShuffleBox, MaximizerDeviceBox, type ZeitgeistDeviceBox } from "@opendaw/studio-boxes";
@@ -14,7 +13,7 @@ export function zeitgeistGrooveBox(box: ZeitgeistDeviceBox): GrooveShuffleBox {
   return groove;
 }
 
-/** One transaction; a Zeitgeist takes its groove box with it. */
+/** One transaction; a Zeitgeist's groove stays in the project. */
 export function removeMidiEffect(editing: { modify(fn: () => void): unknown }, box: EffectBox): void {
   editing.modify(() => box.delete());
 }

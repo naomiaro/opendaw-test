@@ -203,7 +203,7 @@ const App: React.FC = () => {
             const adapter = project.boxAdapters.adapterFor(box as VelocityDeviceBox, VelocityDeviceBoxAdapter);
             context.computeVelocity = (position, original) => adapter.computeVelocity(position as never, original);
           } else if (stage.setting.device === "zeitgeist") {
-            const groove = project.boxAdapters.adapterFor(box as ZeitgeistDeviceBox, ZeitgeistDeviceBoxAdapter).groove();
+            const groove = project.boxAdapters.adapterFor(box as ZeitgeistDeviceBox, ZeitgeistDeviceBoxAdapter).groove().unwrap("Zeitgeist has no groove");
             context.warp = (position) => groove.warp(position as never);
           }
         });

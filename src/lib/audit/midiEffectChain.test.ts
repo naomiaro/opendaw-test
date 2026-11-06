@@ -1,32 +1,34 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { BoxEditing } from "@opendaw/lib-box";
 import { Option, UUID } from "@opendaw/lib-std";
 import type { Box } from "@opendaw/lib-box";
-import { MaximizerDeviceBox, PitchDeviceBox, StereoToolDeviceBox, VelocityDeviceBox } from "@opendaw/studio-boxes";
+import { MaximizerDeviceBox, PitchDeviceBox, StereoToolDeviceBox, VelocityDeviceBox, ZeitgeistDeviceBox } from "@opendaw/studio-boxes";
 import { AudioUnitFactory, ProjectSkeleton } from "@opendaw/studio-adapters";
 import { AudioUnitType } from "@opendaw/studio-enums";
 import { graphWithZeitgeist, transact } from "@/lib/testing/boxGraphFixtures";
 import { removeMasterMaximizer, removeMidiEffect, removeMidiEffects, zeitgeistGrooveBox } from "./midiEffectChain";
 
 describe("removeMidiEffect", () => {
-  it("deletes a Zeitgeist together with its groove, leaving no box behind", () => {
+  it("deletes a Zeitgeist and leaves the project's groove, whose settings a later Zeitgeist finds", () => {
     const { boxGraph, unit, device, groove } = graphWithZeitgeist();
     expect(zeitgeistGrooveBox(device)).toBe(groove);
-    removeMidiEffect(new BoxEditing(boxGraph), device);
+    const editing = new BoxEditing(boxGraph);
+    editing.modify(() => groove.amount.setValue(0.8));
+    removeMidiEffect(editing, device);
     expect(boxGraph.findBox(device.address.uuid).isEmpty()).toBe(true);
-    expect(boxGraph.findBox(groove.address.uuid).isEmpty()).toBe(true);
     expect(unit.midiEffects.pointerHub.incoming().length).toBe(0);
+    expect(boxGraph.findBox(groove.address.uuid).unwrap()).toBe(groove);
+    expect(groove.amount.getValue()).toBeCloseTo(0.8, 6);
   });
-  it("relies on the box graph taking the groove with the device: no throw, no warning, no orphan", () => {
-    const { boxGraph, device, groove } = graphWithZeitgeist();
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      expect(() => new BoxEditing(boxGraph).modify(() => device.delete())).not.toThrow();
-      expect(warn).not.toHaveBeenCalled();
-    } finally {
-      warn.mockRestore();
-    }
-    expect(boxGraph.findBox(groove.address.uuid).isEmpty()).toBe(true);
+  it("two Zeitgeists of a project share the Global Shuffle: a write through one is the other's", () => {
+    const { boxGraph, unit, device, groove } = graphWithZeitgeist();
+    const second = transact(boxGraph, () => ZeitgeistDeviceBox.create(boxGraph, UUID.generate(), (box) => {
+      box.label.setValue("Zeitgeist");
+      box.index.setValue(1);
+      box.groove.refer(groove);
+      box.host.refer(unit.midiEffects);
+    }));
+    expect(zeitgeistGrooveBox(second)).toBe(zeitgeistGrooveBox(device));
   });
 });
 

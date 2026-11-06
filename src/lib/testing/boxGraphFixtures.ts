@@ -70,6 +70,13 @@ export function samplerFixture(): SamplerFixture {
   return { boxGraph, box, adapter, project: { editing: new BoxEditing(boxGraph) } };
 }
 
+/** The skeleton's Global Shuffle, the groove `EffectFactories.Zeitgeist` points a new device at. */
+function globalShuffleOf(skeleton: ProjectSkeleton): GrooveShuffleBox {
+  const groove = skeleton.mandatoryBoxes.rootBox.groove.targetVertex.unwrap("the project has no global groove").box;
+  if (!(groove instanceof GrooveShuffleBox)) throw new Error(`the global groove is a ${groove.constructor.name}, not a GrooveShuffleBox`);
+  return groove;
+}
+
 export interface ZeitgeistGraph {
   readonly boxGraph: Graph;
   readonly unit: AudioUnitBox;
@@ -78,20 +85,15 @@ export interface ZeitgeistGraph {
 }
 
 /**
- * One instrument unit with a Zeitgeist on its MIDI chain, pointing at its own groove box
- * (duration 480 as the factory writes it, amount 0.6 as the schema defaults it). The groove is a mandatory-edge target,
- * so it is created first and the device's pointer refers to it before the transaction ends.
+ * One instrument unit with a Zeitgeist on its MIDI chain, pointing at the project's Global Shuffle as the factory
+ * does (duration 480 and amount 0.6, the schema's defaults).
  */
 export function graphWithZeitgeist(): ZeitgeistGraph {
   const skeleton = ProjectSkeleton.empty({ createOutputMaximizer: false, createDefaultUser: false });
   const { boxGraph } = skeleton;
   return transact(boxGraph, () => {
     const unit = AudioUnitFactory.create(skeleton, AudioUnitType.Instrument, Option.None);
-    const groove = GrooveShuffleBox.create(boxGraph, UUID.generate(), (box) => {
-      box.label.setValue("Shuffle");
-      box.duration.setValue(480);
-      box.amount.setValue(0.6);
-    });
+    const groove = globalShuffleOf(skeleton);
     const device = ZeitgeistDeviceBox.create(boxGraph, UUID.generate(), (box) => {
       box.label.setValue("Zeitgeist");
       box.index.setValue(0);
@@ -122,7 +124,7 @@ export interface MidiEffectFixture {
 
 /**
  * One instrument unit with one stock MIDI effect on its chain, created by hand the way the factories do
- * (a Zeitgeist gets its own groove box). The adapter context is the minimum the device adapters touch
+ * (a Zeitgeist points at the project's Global Shuffle). The adapter context is the minimum the device adapters touch
  * off the main thread: the parameter registry, plus a `BoxAdapters` for the Zeitgeist's groove adapter.
  */
 export function midiEffectFixture(id: DeviceId): MidiEffectFixture {
@@ -141,16 +143,11 @@ export function midiEffectFixture(id: DeviceId): MidiEffectFixture {
       case "pitch": return { unit, box: PitchDeviceBox.create(boxGraph, UUID.generate(), common("Pitch")) };
       case "velocity": return { unit, box: VelocityDeviceBox.create(boxGraph, UUID.generate(), common("Velocity")) };
       case "zeitgeist": {
-        const groove = GrooveShuffleBox.create(boxGraph, UUID.generate(), (box) => {
-          box.label.setValue("Shuffle");
-          box.duration.setValue(480);
-          box.amount.setValue(0.6);
-        });
         return {
           unit,
           box: ZeitgeistDeviceBox.create(boxGraph, UUID.generate(), (box) => {
             common("Zeitgeist")(box);
-            box.groove.refer(groove);
+            box.groove.refer(globalShuffleOf(skeleton));
           }),
         };
       }

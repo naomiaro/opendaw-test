@@ -14,7 +14,7 @@ const identityContext: RuleContext = { range: { from: 3840, to: 3840 + 7680 }, c
 describe("arpeggioRule", () => {
   const held = (pitches: number[], from = 3840, duration = 1750, velocity = 0.8): RuleNote[] =>
     pitches.map((pitch) => ({ position: from, duration, pitch, cent: 0, velocity }));
-  const base: ArpeggioSettings = { modeIndex: 0, numOctaves: 1, rateIndex: 9, gate: 0.5, repeat: 1, velocity: 1 };
+  const base: ArpeggioSettings = { modeIndex: 0, order: 0, numOctaves: 1, rateIndex: 9, gate: 0.5, repeat: 1, velocity: 1, offset: 0, seed: 0 };
   const range = { from: 3840, to: 3840 + 7680 };
   const pitches = (notes: RuleNote[], count: number) => notes.map((n) => n.pitch).slice(0, count);
 
@@ -24,26 +24,26 @@ describe("arpeggioRule", () => {
   });
   it("walks a triad up over two octaves from the absolute grid index (3840 / 240 = 16), steps 120 pulses long", () => {
     // crate: step_index = index / repeat with index absolute; 16 % 3 = 1, (16 % 6) / 3 = 1 -> 64 + 12; then 79, 60, 64, 67, 72, 76
-    const out = arpeggioRule(held([67, 60, 64]), { ...base, numOctaves: 2 }, new Set(), range);
+    const out = arpeggioRule(held([67, 60, 64]), { ...base, numOctaves: 2 }, range);
     expect(pitches(out, 7)).toEqual([76, 79, 60, 64, 67, 72, 76]);
     expect(out.map((n) => n.position).slice(0, 3)).toEqual([3840, 4080, 4320]);
     expect(out[0].duration).toBe(120);
   });
   it("starts the walk at the first stack note when the grid index is a multiple of notes × octaves (4320 / 240 = 18)", () => {
-    const out = arpeggioRule(held([67, 60, 64], 3840, 7680), { ...base, numOctaves: 2 }, new Set(), { from: 4320, to: 4320 + 1680 });
+    const out = arpeggioRule(held([67, 60, 64], 3840, 7680), { ...base, numOctaves: 2 }, { from: 4320, to: 4320 + 1680 });
     expect(pitches(out, 7)).toEqual([60, 64, 67, 72, 76, 79, 60]);
   });
   it("Down and UpDown walk as the crate's mode_run does", () => {
     // Down, indices 16..21: local 1,0,2,1,0,2 and octave 0,0,1,1,1,0
-    expect(pitches(arpeggioRule(held([60, 64, 67]), { ...base, modeIndex: 1, numOctaves: 2 }, new Set(), range), 6)).toEqual([64, 60, 79, 76, 72, 67]);
-    expect(pitches(arpeggioRule(held([60, 64, 67]), { ...base, modeIndex: 2 }, new Set(), range), 5)).toEqual([60, 64, 67, 64, 60]);
-    expect(pitches(arpeggioRule(held([60]), { ...base, modeIndex: 2 }, new Set(), range), 3)).toEqual([60, 60, 60]);
+    expect(pitches(arpeggioRule(held([60, 64, 67]), { ...base, modeIndex: 1, numOctaves: 2 }, range), 6)).toEqual([64, 60, 79, 76, 72, 67]);
+    expect(pitches(arpeggioRule(held([60, 64, 67]), { ...base, modeIndex: 2 }, range), 5)).toEqual([60, 64, 67, 64, 60]);
+    expect(pitches(arpeggioRule(held([60]), { ...base, modeIndex: 2 }, range), 3)).toEqual([60, 60, 60]);
   });
   it("UpDown over two octaves on a triad runs a sequence of 2 · 3 · 2 − 2 = 10 steps (mode_run, device-arpeggio/src/lib.rs:139-146)", () => {
     // process_length 3 · 2 = 6, sequence_length 6 · 2 − 2 = 10. From 4800 the global index is 4800 / 240 = 20, 20 % 10 = 0:
     // sequence indices 0..5 walk up (process_index = sequence_index), 6..9 back down (process_index = 10 − sequence_index:
     // 4, 3, 2, 1); local = process_index % 3, octave = process_index / 3. Index 30 starts the sequence again.
-    const out = arpeggioRule(held([60, 64, 67], 3840, 7680), { ...base, modeIndex: 2, numOctaves: 2 }, new Set(), { from: 4800, to: 4800 + 11 * 240 });
+    const out = arpeggioRule(held([60, 64, 67], 3840, 7680), { ...base, modeIndex: 2, numOctaves: 2 }, { from: 4800, to: 4800 + 11 * 240 });
     expect(pitches(out, 11)).toEqual([60, 64, 67, 72, 76, 79, 76, 72, 67, 64, 60]);
   });
   it("stacks the held notes by (start, pitch), not by pitch: a lower pitch that starts later comes after (device-arpeggio/src/lib.rs:288-303)", () => {
@@ -53,7 +53,7 @@ describe("arpeggioRule", () => {
       { position: 3840, duration: 1750, pitch: 67, cent: 0, velocity: 0.8 },
       { position: 4080, duration: 1510, pitch: 60, cent: 0, velocity: 0.8 },
     ];
-    expect(pitches(arpeggioRule(notes, base, new Set(), range), 4)).toEqual([67, 60, 67, 60]);
+    expect(pitches(arpeggioRule(notes, base, range), 4)).toEqual([67, 60, 67, 60]);
   });
   it("a note ending exactly on a grid line is not in the stack at that line: start <= position < end (device-arpeggio/src/lib.rs:280)", () => {
     // 60 ends at 4320 (3840 + 480), 64 holds on. Index 16 (3840): [60, 64] -> 60. Index 17 (4080): [60, 64], 17 % 2 = 1 -> 64.
@@ -62,19 +62,19 @@ describe("arpeggioRule", () => {
       { position: 3840, duration: 480, pitch: 60, cent: 0, velocity: 0.8 },
       { position: 3840, duration: 1750, pitch: 64, cent: 0, velocity: 0.8 },
     ];
-    expect(pitches(arpeggioRule(notes, base, new Set(), range), 3)).toEqual([60, 64, 64]);
+    expect(pitches(arpeggioRule(notes, base, range), 3)).toEqual([60, 64, 64]);
     // alone, it sounds on 3840 and 4080 and not on 4320
-    expect(arpeggioRule(held([60], 3840, 480), base, new Set(), range).map((n) => n.position)).toEqual([3840, 4080]);
+    expect(arpeggioRule(held([60], 3840, 480), base, range).map((n) => n.position)).toEqual([3840, 4080]);
   });
   it("a dotted rate starts on the absolute grid, not the note start (3/16 = 720: first step at 4320)", () => {
-    expect(arpeggioRule(held([60]), { ...base, rateIndex: 4 }, new Set(), range)[0].position).toBe(4320);
+    expect(arpeggioRule(held([60]), { ...base, rateIndex: 4 }, range)[0].position).toBe(4320);
   });
   it("repeat divides the absolute grid index", () => {
-    const out = arpeggioRule(held([60, 64]), { ...base, repeat: 2 }, new Set(), range);
+    const out = arpeggioRule(held([60, 64]), { ...base, repeat: 2 }, range);
     expect(pitches(out, 4)).toEqual([60, 60, 64, 64]);
   });
   it("a step lasts the gate's length even past the held note's end (the manual: note length is a percentage of the step)", () => {
-    const steps = arpeggioRule(held([60]), base, new Set(), range);
+    const steps = arpeggioRule(held([60]), base, range);
     const last = steps[steps.length - 1];
     expect(last.position).toBe(3840 + 1680);
     expect(last.duration).toBe(120);
@@ -90,21 +90,35 @@ describe("arpeggioRule", () => {
   });
   it("applies that velocity to the emitted notes, with no deviation to try", () => {
     const notes = held([60], 3840, 1750, 0.8);
-    expect(arpeggioRule(notes, { ...base, velocity: 0 }, new Set(), range)[0].velocity).toBe(1);
-    expect(arpeggioRule(notes, { ...base, velocity: -1 }, new Set(), range)[0].velocity).toBe(0);
-    expect(arpeggioRule(notes, { ...base, velocity: 0.5 }, new Set(), range)[0].velocity).toBeCloseTo(0.9, 6);
+    expect(arpeggioRule(notes, { ...base, velocity: 0 }, range)[0].velocity).toBe(1);
+    expect(arpeggioRule(notes, { ...base, velocity: -1 }, range)[0].velocity).toBe(0);
+    expect(arpeggioRule(notes, { ...base, velocity: 0.5 }, range)[0].velocity).toBeCloseTo(0.9, 6);
   });
-  it("keeps the source cent unless the deviation drops it", () => {
+  it("keeps the source cent (openDAW#526)", () => {
     const notes = [{ position: 3840, duration: 1750, pitch: 60, cent: 12.5, velocity: 1 }];
-    expect(arpeggioRule(notes, base, new Set(), range)[0].cent).toBe(12.5);
-    expect(arpeggioRule(notes, base, new Set(["arpeggio-drops-cent"]), range)[0].cent).toBe(0);
+    expect(arpeggioRule(notes, base, range)[0].cent).toBe(12.5);
+  });
+  it("Order: played walks by start then pitch, pitch by pitch then start; the offset starts the walk that many notes later", () => {
+    // 3840 / 240 = 16, 16 % 3 = 1: the second note of the order comes first; every note is held from 3840 on
+    const rolled = [{ position: 3840, duration: 1750, pitch: 67, cent: 0, velocity: 1 }, { position: 3840, duration: 1750, pitch: 60, cent: 0, velocity: 1 }, { position: 3780, duration: 1810, pitch: 64, cent: 0, velocity: 1 }];
+    expect(pitches(arpeggioRule(rolled, base, range), 3)).toEqual([60, 67, 64]);
+    expect(pitches(arpeggioRule(rolled, { ...base, order: 1 }, range), 3)).toEqual([64, 67, 60]);
+    expect(pitches(arpeggioRule(rolled, { ...base, order: 1, offset: 2 }, range), 3)).toEqual([60, 64, 67]);
+  });
+  it("a later walk reaches the rule through its mode and seed, over the octaves as one row", () => {
+    const triad = held([60, 64, 67]);
+    // Converge over one octave from index 16: at = 16 % 3 = 1 -> the last, then the middle, then the first
+    expect(pitches(arpeggioRule(triad, { ...base, modeIndex: 6 }, range), 3)).toEqual([67, 64, 60]);
+    // Random Once is one order of the whole pool, so a pass over two octaves plays each of the six once
+    const pass = pitches(arpeggioRule(triad, { ...base, modeIndex: 16, numOctaves: 2, seed: 4 }, range), 6);
+    expect([...pass].sort((a, b) => a - b)).toEqual([60, 64, 67, 72, 76, 79]);
   });
   it("emits nothing while no note is held and a stack of one at gate 2 lasts 480", () => {
-    expect(arpeggioRule([], base, new Set(), range)).toEqual([]);
-    expect(arpeggioRule(held([60], 3840, 7680), { ...base, gate: 2 }, new Set(), range)[0].duration).toBe(480);
+    expect(arpeggioRule([], base, range)).toEqual([]);
+    expect(arpeggioRule(held([60], 3840, 7680), { ...base, gate: 2 }, range)[0].duration).toBe(480);
   });
   it("a gate that rounds below one pulse lasts one pulse", () => {
-    expect(arpeggioRule(held([60], 3840, 7680), { ...base, gate: 0 }, new Set(), range)[0].duration).toBe(1);
+    expect(arpeggioRule(held([60], 3840, 7680), { ...base, gate: 0 }, range)[0].duration).toBe(1);
   });
 });
 
@@ -147,7 +161,7 @@ describe("noteFilterRule", () => {
 describe("questionsFor", () => {
   const note = (pitch: number): RuleNote => ({ position: 3840, duration: 1750, pitch, cent: 0, velocity: 1 });
   const pitch = (semiTones: number): DeviceSetting => ({ device: "pitch", settings: { semiTones, cents: 0, octaves: 0 } });
-  const arp = (velocity: number): DeviceSetting => ({ device: "arpeggio", settings: { modeIndex: 0, numOctaves: 1, rateIndex: 9, gate: 0.5, repeat: 1, velocity } });
+  const arp = (velocity: number): DeviceSetting => ({ device: "arpeggio", settings: { modeIndex: 0, order: 0, numOctaves: 1, rateIndex: 9, gate: 0.5, repeat: 1, velocity, offset: 0, seed: 0 } });
   it("names the pitch drop only when a note was dropped", () => {
     expect(questionsFor([pitch(12)], identityContext, [note(60), note(120)])).toEqual(["pitch-drops-out-of-range"]);
     expect(questionsFor([pitch(12)], identityContext, [note(60), note(100)])).toEqual([]);
@@ -162,10 +176,9 @@ describe("questionsFor", () => {
     expect(questionsFor([arp(0.5)], identityContext, [at(0.8)])).toEqual([]);
     expect(questionsFor([arp(-1)], identityContext, [at(1)])).toEqual([]);
   });
-  it("registers the one question and the one deviation with a source each", () => {
+  it("registers the one question with its sources and no deviation", () => {
     expect(QUESTIONS.map((q) => q.name)).toEqual(["pitch-drops-out-of-range"]);
-    expect(DEVIATIONS.map((d) => d.name)).toEqual(["arpeggio-drops-cent"]);
-    for (const d of DEVIATIONS) expect(d.source).toMatch(/lib\.rs:\d+/);
+    expect(DEVIATIONS).toEqual([]);
     expect(Object.keys(RULE_SENTENCES).sort()).toEqual(["arpeggio", "note-filter", "pitch", "velocity", "zeitgeist"]);
   });
 });
@@ -208,7 +221,7 @@ describe("zeitgeistRule", () => {
 
 describe("composeRules", () => {
   const source: RuleNote[] = [{ position: 3840, duration: 1750, pitch: 60, cent: 0, velocity: 0.8 }, { position: 3840, duration: 1750, pitch: 64, cent: 0, velocity: 0.8 }];
-  const arp: DeviceSetting = { device: "arpeggio", settings: { modeIndex: 0, numOctaves: 1, rateIndex: 9, gate: 0.5, repeat: 1, velocity: 1 } };
+  const arp: DeviceSetting = { device: "arpeggio", settings: { modeIndex: 0, order: 0, numOctaves: 1, rateIndex: 9, gate: 0.5, repeat: 1, velocity: 1, offset: 0, seed: 0 } };
   const pitch: DeviceSetting = { device: "pitch", settings: { semiTones: 3, cents: 12.5, octaves: 0 } };
   it("applies index 0 first: Pitch then Arpeggio walks the shifted stack; Arpeggio then Pitch shifts the walk", () => {
     const pitchFirst = composeRules([pitch, arp], identityContext, new Set(), source);
@@ -218,9 +231,6 @@ describe("composeRules", () => {
     expect(pitchFirst.map((n) => n.position)).toEqual(arpFirst.map((n) => n.position));
     expect(pitchFirst.every((n) => n.cent === 12.5)).toBe(true);
     expect(arpFirst.every((n) => n.cent === 12.5)).toBe(true);
-    const dropped = new Set(["arpeggio-drops-cent" as const]);
-    expect(composeRules([pitch, arp], identityContext, dropped, source).every((n) => n.cent === 0)).toBe(true);
-    expect(composeRules([arp, pitch], identityContext, dropped, source).every((n) => n.cent === 12.5)).toBe(true);
   });
   it("Pitch then Note Filter judges the shifted pitch; Note Filter then Pitch judges the written one", () => {
     const source: RuleNote[] = [{ position: 3840, duration: 240, pitch: 60, cent: 0, velocity: 0.8 }, { position: 3840, duration: 240, pitch: 67, cent: 0, velocity: 0.8 }];
