@@ -16,8 +16,8 @@ those. *Inferred* is a conclusion that nothing here observed directly.
 ## The harness
 
 **Page:** [`export-regression-audit-debug-demo.html`](../../export-regression-audit-debug-demo.html)
-`[?rate=48000|44100][&uuid=descending][&fill=1][&rows=<id,id>|&group=<group>][&failAt=<rowId>]`. A real click on Run, about 72 s for all
-rows (about 95 s with `&fill=1`), no audio plays. Logic: `src/lib/audit/exportRegression*.ts`. Table and accept: `node scripts/audit/export-regression/table.ts [runToken] [--accept] [--force] [--library <path>] [--diff <rowId>]`.
+`[?rate=48000|44100][&uuid=descending][&fill=1][&rows=<id,id>|&group=<group>][&failAt=<rowId>]`. A real click on Run, 73 to 74 s for all
+rows (95 to 98 s with `&fill=1`), no audio plays. Logic: `src/lib/audit/exportRegression*.ts`. Table and accept: `node scripts/audit/export-regression/table.ts [runToken] [--accept] [--force] [--library <path>] [--diff <rowId>]`.
 
 Each row renders a copy of one project through one SDK export path (`step` in one call and in chunks, `start`, `renderSection`, stems, the
 bounce's exported pieces, `setPosition`, a loop area) with one latency case (none, Autotune, Compressor on a track, a bus or an aux,
@@ -39,7 +39,9 @@ name. It means read and understood, not fine. A failed invariant with no such ma
 SDK 0.0.182, engine `9c44973549a7`, the device at 44100 (read in `system_profiler` and in each summary). Real clicks 30 s after load, the tab visible, no stall in any of them. Tables: `.verify-output/exportreg-table-<rate>.txt`
 (local; the run lines are the figures above).
 
-**Measured against the runs read before the accept.** Every hash of the 292-row runs (1794010354018, 1794010487551) and of the 14-row tail runs (1794012321608, 1794012363406) is unchanged in the accepted runs, so the 30 bed rows that `bedSeconds` moved onto a changed path are unchanged by a run too. Three rows changed standing, and only those: the gap rows above, `failing` to `known-finding`.
+**What is still on disk.** In `.verify-output/` (local, git-ignored), after the clean-up of 2026-11-06: the accepted runs 1794012843131 and 1794012980176, summary and 296 WAVs each; the re-runs 1794013197246 and 1794013308862, summary only; the descending run 1794013420891, summary and its one WAV; the device-proof runs 1794009335901, 1794010354018, 1794010135751 and 1794010487551, summary only. Any other token this note cites is gone, summary and WAVs: its figures here are the record.
+
+**Measured against the runs read before the accept.** Every hash of the 292-row runs (1794010354018, 1794010487551) and of the 14-row tail runs (1794012321608, 1794012363406) is unchanged in the accepted runs, so the 30 bed rows that `bedSeconds` moved onto a changed path are unchanged by a run too. Three rows changed standing, and only those: the gap rows above, `failing` to `known-finding`. The 292 can be compared again from the summaries kept. The 4 single-stem rows were only in the tail runs, whose summaries are gone, so their comparison can no longer be re-run.
 
 | group | 48000 clean / known / failing | 44100 clean / known / failing |
 |---|---|---|
@@ -97,7 +99,7 @@ SDK 0.0.182, engine `9c44973549a7`, full runs. The page reads the device rate on
 
 ## The controls
 
-**An older SDK fires (measured).** `?group=core` on 0.0.181, 48 kHz, token 1794001338597, engine `3da5083093`: 47 clean, 74
+**An older SDK fires (measured; summary and WAVs removed in the clean-up of 2026-11-06, the figures here are the record).** `?group=core` on 0.0.181, 48 kHz, token 1794001338597, engine `3da5083093`: 47 clean, 74
 failing, 0 errored. openDAW#530 reads as filed: `core-compressor-track-section-*` 16 frames early (4096 to 4080),
 `core-fold-muted-section-*` 113 early (4096 to 3983). openDAW#529 too: `script-150ms-parallel` reports 7200 frames, 4800 expected, on all 11 rows.
 Those WAVs re-judged in Node with the labels as they stood after the first fix round: 47 clean, 53 failing, 21 known, and every #530 and #529 row named here
@@ -325,9 +327,9 @@ What I did not get: an observed natural hang with the observer attached. Two run
 
 ## Reading recipe for an SDK bump
 
-1. `export-regression-audit-debug-demo.html?rate=48000`, a real click on Run about 30 s after load, the tab visible, about 72 s, then `?rate=44100`. The page reads `register/<rate>.json` and uploads a WAV only for a row that is not `identical`. A stall as above: reload, wait and run again.
+1. `export-regression-audit-debug-demo.html?rate=48000` on the dev server, a real click on Run about 30 s after load, the tab visible, 73 to 74 s, then `?rate=44100`. On the public host the page finds no register and has no sink, so every row reads `unregistered` and `table.ts` finds no summary. The page reads `register/<rate>.json` and uploads a WAV only for a row that is not `identical`. A stall as above: reload, wait and run again.
 2. `node scripts/audit/export-regression/table.ts <token> --library <clone>`, one per rate. Always pass the token: with none it reads the newest summary, a control run included. A clone at `../opendaw-export-wavs` is found by itself. Cloning fetches the WAVs through LFS, and every download counts against the LFS bandwidth. With no clone, a run still reads `identical` or `changed` from the hashes.
-3. Read `failing` first: a failed invariant no label matches. Then `changed` against the register: a render moved, and the line says by how much. `rounding-sized` is under −100 dB with no shift, and it is still `changed` and still needs a person. `--diff <rowId>` writes both WAVs for the audio-analyzer. Then any "no longer reproducing" line, which is a defect here being fixed.
+3. Read `failing` first: a failed invariant no label matches. It cannot be accepted, even forced, a shift under a label included: read it, then change the label's rule or draft a defect. Then `changed` against the register: a render moved, and the line says by how much. `rounding-sized` is under −100 dB with no shift, and it is still `changed` and still needs a person. `--diff <rowId>` writes both WAVs for the audio-analyzer. Then any "no longer reproducing" line, which is a defect here being fixed.
 4. A `known-finding` is a row whose signature still matches. It is not a pass: this note's reads are what it rests on.
 5. `--accept --library <clone>` only after a person has read that run's table, and never on a run with a row failing or errored, a descending run or, without `--force`, a partial one. It writes the register and copies the new WAVs. Then in the clone `git add wav`, commit and push, and commit the register here.
 
