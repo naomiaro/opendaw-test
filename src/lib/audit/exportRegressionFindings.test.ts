@@ -315,16 +315,65 @@ describe("the gap rows", () => {
     channel.fill(0.5, 16 * rate, Math.round(16.2 * rate));
     return [channel, channel.slice()];
   };
-  it("have no label yet: cut at the gap they read failing, on both paths and both rates", () => {
-    for (const rate of [48000, 44100]) {
-      for (const id of ["gap-none-start", "gap-none-section-entire", "gap-none-stem-start"]) {
+  const LABELLED = ["gap-none-start", "gap-none-section-entire", "gap-none-stem-start"];
+  // Measured on all three rows: where the render stopped, one quantum short of a quarter second past the first burst's quantum.
+  const MEASURED: readonly [number, number][] = [[48000, 21472], [44100, 19729]];
+  const kept = (channels: Channels, frames: number): Channels => channels.map((c) => c.slice(0, frames));
+
+  for (const [rate, frames] of MEASURED) {
+    describe(`long-silence-ends-render at ${rate}`, () => {
+      for (const id of LABELLED) {
         const row = rowOf(rate, id);
         const reference = span(rate);
-        const cut = reference.map((c) => c.slice(0, Math.round(0.45 * rate)));
-        expect(KNOWN_FINDINGS.filter((f) => f.applies(row, rate)).map((f) => f.name), id).toEqual([]);
-        expect(judge(row, cut, rate, { reference }), id).toEqual({ standing: "failing", findings: [null] });
+        const shape = kept(reference, frames);
+        const unlabelled = { standing: "failing", findings: [null] };
+
+        it(`${id} reads known on the measured length, the reference's bits up to there`, () => {
+          expect(judge(row, shape, rate, { reference })).toEqual({ standing: "known-finding", findings: ["long-silence-ends-render"] });
+        });
+        it(`${id} reads failing a quantum short, or at any other length`, () => {
+          expect(judge(row, kept(reference, frames - 128), rate, { reference })).toEqual(unlabelled);
+          expect(judge(row, kept(reference, frames - 1), rate, { reference })).toEqual(unlabelled);
+          expect(judge(row, kept(reference, frames + 1), rate, { reference })).toEqual(unlabelled);
+          expect(judge(row, kept(reference, Math.round(0.45 * rate)), rate, { reference })).toEqual(unlabelled);
+        });
+        it(`${id} reads failing on any sample that is not the reference's, a silent one included`, () => {
+          expect(judge(row, edit(shape, (out) => { out[0][3] += 1e-3; }), rate, { reference })).toEqual(unlabelled);
+          expect(judge(row, edit(shape, (out) => { out[1][frames - 1] = 1e-6; }), rate, { reference })).toEqual(unlabelled);
+          expect(judge(row, edit(shape, (out) => { out[0].fill(0, 100); }), rate, { reference })).toEqual(unlabelled);
+        });
+        it(`${id} reads failing with the second burst in the render and the frames still short`, () => {
+          expect(judge(row, kept(reference, Math.round(16.1 * rate)), rate, { reference })).toEqual(unlabelled);
+          expect(judge(row, kept(reference, Math.round(16.2 * rate) - 128), rate, { reference })).toEqual(unlabelled);
+          const moved = edit(shape, (out) => { for (const c of out) c.fill(0.5, frames - 100); });
+          expect(judge(row, moved, rate, { reference })).toEqual(unlabelled);
+        });
+        it(`${id} reads failing when the reference holds no second burst, or holds something in the gap`, () => {
+          const noSecond = edit(reference, (out) => { for (const c of out) c.fill(0, 16 * rate); });
+          expect(judge(row, shape, rate, { reference: noSecond })).toEqual(unlabelled);
+          const quietSecond = edit(reference, (out) => { for (const c of out) c.fill(0.1, 16 * rate, Math.round(16.2 * rate)); });
+          expect(judge(row, shape, rate, { reference: quietSecond })).toEqual(unlabelled);
+          const inTheGap = edit(reference, (out) => { out[0][8 * rate] = 1e-6; });
+          expect(judge(row, shape, rate, { reference: inTheGap })).toEqual(unlabelled);
+        });
+        it(`${id} reads failing when a reference as short as the render hides a longer render`, () => {
+          expect(judge(row, reference, rate, { reference: shape })).toEqual(unlabelled);
+        });
       }
-    }
+
+      it("stays off the mix that outlasts the stem: cut at the same frame, it reads failing", () => {
+        const row = rowOf(rate, "gap-none-stem-mix-start");
+        const reference = span(rate);
+        expect(KNOWN_FINDINGS.filter((f) => f.applies(row, rate)).map((f) => f.name)).toEqual([]);
+        expect(judge(row, kept(reference, frames), rate, { reference })).toEqual({ standing: "failing", findings: [null] });
+      });
+    });
+  }
+  it("says what it is, and that it is a defect with a draft", () => {
+    const [finding] = KNOWN_FINDINGS.filter((f) => f.name === "long-silence-ends-render");
+    expect(finding.note).toContain("defect");
+    expect(finding.note).toContain("TO-REVIEW-openDAW-entire-song-ends-at-silence.md");
+    expect(finding.invariant).toBe("section-is-slice");
   });
   it("read clean on a render that reaches the second region's end, however much silence it keeps after", () => {
     for (const rate of [48000, 44100]) {

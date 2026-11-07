@@ -35,6 +35,8 @@ export type FindingEvidence = {
   wrapResidue: (wrap: number, fade: number) => number;
   /** The reference's peak over the row's range. */
   referenceRangePeak: () => number;
+  /** The reference's peak over these of its frames. */
+  referencePeakOver: (from: number, to: number) => number;
   /** Whether the row's samples equal the warm pass it is held to, bit for bit, this frame aside (-1 for none). */
   warmHolds: (exceptFrame: number) => boolean;
 };
@@ -48,6 +50,7 @@ export const NO_EVIDENCE: FindingEvidence = {
   framePeak: () => Infinity,
   wrapResidue: () => Infinity,
   referenceRangePeak: () => Infinity,
+  referencePeakOver: () => Infinity,
   warmHolds: () => false
 };
 
@@ -131,6 +134,19 @@ const TRIMMED_FRAMES: Readonly<Record<number, number>> = { 48000: 80992, 44100: 
 // The doubled tone's largest step at each rate, rounded up from what was measured on every case.
 const WRAP_STEP_LIMIT: Readonly<Record<number, number>> = { 48000: 0.131, 44100: 0.142 };
 
+const GAP_ROWS: ReadonlySet<string> = new Set(["gap-none-start", "gap-none-section-entire", "gap-none-stem-start"]);
+const QUANTUM_FRAMES = 128;
+// Measured: the reference's second burst peaks at 0.5 at 48 kHz, 0.49997 at 44.1.
+const GAP_SECOND_BURST_LOW = 0.49;
+
+/**
+ * Where `render` stops after a row's first burst (core-wasm offline-worker.ts:424-426, :440). The burst's last frame is
+ * audible (measured: 9599, 8819). The quantum that ends the 10 s of silence is counted and not kept, then a quarter
+ * second stays. 21472 at 48 kHz, 19729 at 44.1.
+ */
+const framesKeptBeforeGap = ({ seconds }: ExportRow, pageRate: number): number =>
+  Math.ceil(Math.round(seconds * pageRate) / QUANTUM_FRAMES) * QUANTUM_FRAMES - QUANTUM_FRAMES + pageRate / 4;
+
 const passIsOneFrameShort = ({ seconds, bpm }: ExportRow, pageRate: number): boolean =>
   seconds === 4 && ((pageRate === 44100 && bpm === 120) || (pageRate === 48000 && bpm === 137));
 
@@ -212,6 +228,19 @@ export const KNOWN_FINDINGS: readonly KnownFinding[] = [
     applies: (row) => row.group === "tail" && row.seconds === 4 && (row.path === "section-entire" || row.path === "start"),
     signature: ({ firstDifferingFrame, comparedFrames }, _row, pageRate) =>
       firstDifferingFrame === null && comparedFrames !== null && comparedFrames === TRIMMED_FRAMES[pageRate]
+  },
+  {
+    name: "long-silence-ends-render",
+    invariant: "section-is-slice",
+    note: "a defect, drafted for upstream and not yet posted (draft `TO-REVIEW-openDAW-entire-song-ends-at-silence.md`): `render` stops after 10 s at or below -72 dB and keeps a quarter second (core-wasm offline-worker.ts:424-426, :440), whatever regions come later, and resolves normally. So a song with a 15.8 s gap comes out at 0.45 s with its second region missing. With a stem alone, the stem's own silence is what it reads. Bit-identical to the stepped render as far as it goes",
+    applies: (row) => GAP_ROWS.has(row.id),
+    signature: ({ firstDifferingFrame, comparedFrames, referencePeakOver }, row, pageRate) => {
+      const kept = framesKeptBeforeGap(row, pageRate);
+      const second = (row.secondRegionSeconds ?? Infinity) * pageRate;
+      return firstDifferingFrame === null && comparedFrames === kept
+        && referencePeakOver(kept, second) === 0
+        && referencePeakOver(second, rangeFrames(row, pageRate)) >= GAP_SECOND_BURST_LOW;
+    }
   },
   {
     name: "loop-wrap-keeps-old-read",

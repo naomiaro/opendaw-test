@@ -389,7 +389,8 @@ export function judgeInvariants(row: ExportRow, rendered: RenderedRow, refs: Ref
         if (refs.reference === null) return Infinity;
         const start = rangeStartFrame(row, pageRate);
         return peakOver(refs.reference.samples, start, start + rangeFramesOf(row, pageRate));
-      }
+      },
+      referencePeakOver: (from, to) => (refs.reference === null ? Infinity : peakOver(refs.reference.samples, from, to))
     };
     const finding = holds || !compared ? null : findingFor(row, invariant, pageRate, evidence)?.name ?? null;
     return { invariant, holds, detail, finding };

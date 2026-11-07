@@ -191,5 +191,18 @@ describe("staleFindings", () => {
   it("does not report a finding at a rate where no row applies", () => {
     expect(staleFindings(summary([], { sampleRate: 48000 }))).toEqual([]);
   });
+  it("names long-silence-ends-render once the gap rows reach their range, and not while one still stops short", () => {
+    const gapRows = buildRows(48000).filter((r) => ["gap-none-start", "gap-none-section-entire", "gap-none-stem-start"].includes(r.id));
+    expect(gapRows.length).toBe(3);
+    const heldGap = gapRows.map((row) => record({
+      id: row.id, invariants: row.invariants.map((invariant) => ({ invariant, holds: true, detail: "", finding: null }))
+    }));
+    expect(staleFindings(summary(heldGap, { sampleRate: 48000 })).find((s) => s.name === "long-silence-ends-render")?.rows.sort())
+      .toEqual(["gap-none-section-entire", "gap-none-start", "gap-none-stem-start"]);
+    const oneShort = heldGap.map((r, index) => index > 0 ? r : {
+      ...r, invariants: r.invariants.map((i) => i.invariant === "section-is-slice" ? { ...i, holds: false } : i)
+    });
+    expect(staleFindings(summary(oneShort, { sampleRate: 48000 })).map((s) => s.name)).not.toContain("long-silence-ends-render");
+  });
   it("is the schema constant", () => expect(EXPORT_REGRESSION_SCHEMA_VERSION).toBe(1));
 });
