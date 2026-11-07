@@ -2,11 +2,10 @@
 
 **Title:** Every SDK export path, 296 rows at two page rates: what holds, what each row that does not hold measured, and a full run's stall in the OPFS worker
 
-**Status: WAITING FOR THE USER'S READ.** No register is accepted: `--accept` waits for this read, and every row reads
-`unregistered`. Nothing is posted and nothing is in the WAV library. Three drafts wait (below). `trailing-silence-trimmed` is ruled by design and not raised upstream. The other findings are the
+**Status: REGISTER ACCEPTED ON 0.0.182, LIBRARY FILLED, DRAFTS WAITING.** The user read the findings and approved the labels and the first fill. Both page rates are accepted, a re-run of each reads every row `identical`, and a changed render is caught (below). Nothing is posted. Three drafts wait (below). `trailing-silence-trimmed` is ruled by design and not raised upstream. The other findings are the
 user's call, each with the read it got.
 
-**The catalogue holds 296 rows.** Three rows read `failing` with no label, because the user has not ruled on one: `gap-none-start`, `gap-none-section-entire` and `gap-none-stem-start` (Finding 2). `--accept` refuses a failing row, even forced, so they stand in the way of an accept until they are labelled or fixed. The last full runs are from when the catalogue held 292; the four single-stem rows were added since and read in `?group=tail` runs (below).
+**The catalogue holds 296 rows and none reads `failing`.** `gap-none-start`, `gap-none-section-entire` and `gap-none-stem-start` carry `long-silence-ends-render` (Finding 2), which is a defect with a draft: a label means read and understood, not fine.
 
 **Verified against:** `@opendaw/studio-sdk@0.0.182`, engine `9c44973549a7`, checkout at the tag (`766204efe`). Chrome
 156.0.8078.81 (Playwright's), macOS 15.6.1. The Mac's output device read 44100 Hz for every run below unless it says otherwise; each summary since the device rate was added records it (`deviceRateHz`). These renders are offline, and the page's own context takes the rate in the URL. Source citations are read at the tag.
@@ -17,8 +16,8 @@ those. *Inferred* is a conclusion that nothing here observed directly.
 ## The harness
 
 **Page:** [`export-regression-audit-debug-demo.html`](../../export-regression-audit-debug-demo.html)
-`[?rate=48000|44100][&uuid=descending][&fill=1][&rows=<id,id>|&group=<group>][&failAt=<rowId>]`. A real click on Run, about 95 s for all
-rows, no audio plays. Logic: `src/lib/audit/exportRegression*.ts`. Table and accept: `node scripts/audit/export-regression/table.ts [runToken] [--accept] [--force] [--library <path>] [--diff <rowId>]`.
+`[?rate=48000|44100][&uuid=descending][&fill=1][&rows=<id,id>|&group=<group>][&failAt=<rowId>]`. A real click on Run, about 72 s for all
+rows (about 95 s with `&fill=1`), no audio plays. Logic: `src/lib/audit/exportRegression*.ts`. Table and accept: `node scripts/audit/export-regression/table.ts [runToken] [--accept] [--force] [--library <path>] [--diff <rowId>]`.
 
 Each row renders a copy of one project through one SDK export path (`step` in one call and in chunks, `start`, `renderSection`, stems, the
 bounce's exported pieces, `setPosition`, a loop area) with one latency case (none, Autotune, Compressor on a track, a bus or an aux,
@@ -29,15 +28,18 @@ name. It means read and understood, not fine. A failed invariant with no such ma
 
 ## The runs
 
-| rate | token | rows | run line's counts |
-|---|---|---|---|
-| 48000 | 1794010354018 | 292, all | clean 234, known finding 56, failing 2, errored 0 |
-| 44100 | 1794010487551 | 292, all | clean 219, known finding 71, failing 2, errored 0 |
-| 48000 | 1794012321608 | 14, `?group=tail` | clean 8, known finding 3, failing 3, errored 0 |
-| 44100 | 1794012363406 | 14, `?group=tail` | clean 8, known finding 3, failing 3, errored 0 |
+| what | rate | token | rows | run line's counts | register |
+|---|---|---|---|---|---|
+| accepted, `?fill=1` | 48000 | 1794012843131 | 296, all | clean 237, known finding 59, failing 0, errored 0 | none yet, 296 uploaded |
+| accepted, `?fill=1` | 44100 | 1794012980176 | 296, all | clean 222, known finding 74, failing 0, errored 0 | none yet, 296 uploaded |
+| re-run | 48000 | 1794013197246 | 296, all | the same | 296 `identical`, 0 uploaded |
+| re-run | 44100 | 1794013308862 | 296, all | the same | 296 `identical`, 0 uploaded |
+| `?uuid=descending&group=control` | 48000 | 1794013420891 | 11 | clean 11 | 10 `identical`, 1 `changed` |
 
-Real clicks 30 s after load, every latency read `visible`. Tables: `.verify-output/exportreg-table-<rate>.txt`
-(local; the run lines are the figures above). The 10 rows the tail runs share with the full runs hold the same hashes, so the 296-row figures below are the full run plus the four new rows (computed: 48 kHz clean 237, known 56, failing 3; 44.1 kHz clean 222, known 71, failing 3). **Not measured since the change:** adding `bedSeconds` moved the 30 existing bed rows onto a changed path (`bedRow`). They are unchanged by reading and a unit test, not by a run, until the next full run.
+SDK 0.0.182, engine `9c44973549a7`, the device at 44100 (read in `system_profiler` and in each summary). Real clicks 30 s after load, the tab visible, no stall in any of them. Tables: `.verify-output/exportreg-table-<rate>.txt`
+(local; the run lines are the figures above).
+
+**Measured against the runs read before the accept.** Every hash of the 292-row runs (1794010354018, 1794010487551) and of the 14-row tail runs (1794012321608, 1794012363406) is unchanged in the accepted runs, so the 30 bed rows that `bedSeconds` moved onto a changed path are unchanged by a run too. Three rows changed standing, and only those: the gap rows above, `failing` to `known-finding`.
 
 | group | 48000 clean / known / failing | 44100 clean / known / failing |
 |---|---|---|
@@ -47,7 +49,7 @@ Real clicks 30 s after load, every latency read `visible`. Tables: `.verify-outp
 | bounce | 16 / 4 / 0 | 12 / 8 / 0 |
 | position | 0 / 12 / 0 | 0 / 12 / 0 |
 | one-frame | 46 / 2 / 0 | 46 / 2 / 0 |
-| tail | 8 / 3 / 3 | 8 / 3 / 3 |
+| tail | 8 / 6 / 0 | 8 / 6 / 0 |
 | sweep | 22 / 0 / 0 | 22 / 0 / 0 |
 | control | 9 / 0 / 0 | 9 / 0 / 0 |
 
@@ -62,11 +64,25 @@ Real clicks 30 s after load, every latency read `visible`. Tables: `.verify-outp
 | `range-missing-tail` | 1 | 1 | the user's call |
 | `loop-wrap-keeps-old-read` | 4 | 4 | the user's call |
 | `merge-seam-reseats-read` | 4 | 4 | the user's call |
-| no label: `gap-none-start`, `gap-none-section-entire`, `gap-none-stem-start` | 3 failing | 3 failing | [draft](./drafts/TO-REVIEW-openDAW-entire-song-ends-at-silence.md) |
+| `long-silence-ends-render` | 3 | 3 | a defect: [draft](./drafts/TO-REVIEW-openDAW-entire-song-ends-at-silence.md), not posted |
 
-**Size.** Uploaded WAVs, the 292-row run measured plus the four new rows' files: 456.5 MB at 48 kHz, 416.2 MB at 44.1 kHz. Most rows share a render: 73 distinct hashes, 112.3 MB at
-48 kHz; 75 distinct, 106.1 MB at 44.1 kHz. No hash is shared between the two rates, so the library will take about 218 MB
-(a private repository with LFS, `opendaw-export-wavs`, one commit so far: nothing accepted, no WAV in it).
+**The register and the library (measured).**
+
+| | 48000 | 44100 |
+|---|---|---|
+| `register/<rate>.json` | 296 rows, 114 KB | 296 rows, 114 KB |
+| uploaded by the `?fill=1` run | 296 WAVs, 456.5 MB | 296 WAVs, 416.2 MB |
+| distinct renders, each one WAV | 73, 112.3 MB | 75, 106.1 MB |
+
+No hash is shared between the two rates. The library holds **148 WAVs, 218.4 MB**, against the spec's estimate of about 150 renders and about 225 MB, and 2 % of GitHub Free's 10 GiB of LFS storage. It is the private repository `opendaw-export-wavs`, commit `dad053d`, pushed through LFS. A re-run uploads nothing, so a run leaves nothing behind unless a render moved.
+
+**The register catches a change (measured).** The descending run above has the same project with its units summed in the other order, and its invariants all hold, so only the register can see it. It reads `changed` on `control-mix-three-units`, where three units sum, and `identical` on the other 10:
+
+```
+control-mix-three-units: rounding-sized, first differing frame 2, largest -138.5 dB, shift 0 frames, frames 192000 -> 192000
+```
+
+`table.ts 1794013420891 --diff control-mix-three-units --library <clone>` prints that line and writes both WAVs: the accepted one's samples hash to the register's entry, the new one's to the run's row (checked). That is the same reading as the earlier temporary register's, now from the accepted baseline and the library.
 
 ## The device rate moves no render
 
@@ -160,7 +176,9 @@ holds 0 on both channels, and the stepped loop holds 0.07072490, which is the so
 
 ## Finding 2: an entire-song render stops at 10 s of silence even when regions follow, and they are missing from the file
 
-**Draft:** [`drafts/TO-REVIEW-openDAW-entire-song-ends-at-silence.md`](./drafts/TO-REVIEW-openDAW-entire-song-ends-at-silence.md). No label: the user has not ruled on one.
+**Draft:** [`drafts/TO-REVIEW-openDAW-entire-song-ends-at-silence.md`](./drafts/TO-REVIEW-openDAW-entire-song-ends-at-silence.md). Label: `long-silence-ends-render`, approved by the user (below).
+
+**The label holds the three rows to the render as measured.** The frames are the rule's, computed from the row and not copied: 21472 and 19729 (the rule below). Those frames are the reference's bit for bit, and the reference is exact zeros from there to 16 s and holds its second burst, peak at least 0.49. Failing, on real renders at both rates (the three rows each): 128 short, 1 short, 1 long, 1e-7 on a frame, 1e-6 on the last frame, a −0 in the silence, gain 0.999, a NaN, the second burst with the frames still short (16.1 s, and a quantum short of the range). Unit tests add a reference with no second burst, a quiet one, and something in the gap. A render that reaches the range reads `clean`, and `staleFindings` then names the label (tested); swapping the channels is no mutation here, since the two are identical on these rows (checked).
 
 **The user's read, 2026-11-06:** "The trim should end the song if it's just silence", and the draft is about what follows. So a render that ends on trailing silence with nothing after it is by design and not raised upstream: `trailing-silence-trimmed`, the `tail-none-section-entire-long` and `tail-none-start-long` rows, 80992 of 192000 frames at 48 kHz, 74001 of 176400 at 44.1 kHz, bit-identical to the 4 s reference as far as they go.
 
@@ -251,7 +269,7 @@ Then the row and those sharing its sample, 8 rows, time out at 60 s each. Later 
 |---|---|---|
 | about 2 s, full catalogue | 44.1 kHz | 3 of 4 (the three in a row earlier, then one pass, token 1794007165739, on this task's re-run) |
 | about 2 s, full catalogue | 48 kHz | 0 of 1 |
-| about 30 s, full catalogue | both | 2 in about 16 (one at 48 kHz; one at 44.1 kHz, run 1794009473058, device 48 kHz, its console holding the same two lines on the same file, and a re-run, 1794010135751, cleared the 8 rows) |
+| about 30 s, full catalogue | both | 2 in about 20 (one at 48 kHz; one at 44.1 kHz, run 1794009473058, device 48 kHz, its console holding the same two lines on the same file, and a re-run, 1794010135751, cleared the 8 rows). The last 4 of them are the accepted runs and their re-runs, 2 at each rate, none stalled |
 | about 2 s, `?group=one-frame`, the same sample | 44.1 kHz | 0 of 2 |
 
 **What the hang is not.**
@@ -282,7 +300,7 @@ No promise rejected in any arm. The fourth arm has the shape of `OpfsWorker.ts:1
 **Inferred, and not caught.** That the natural hang is this. The evidence: the same step and lines, a promise that never settles and never rejects, a file nothing holds, and only one of the three files lost, which fits a collection landing inside one open's flight.
 What I did not get: an observed natural hang with the observer attached. Two runs with a wrapper at the 2 s click (one watching every open, tokens 1794006553434; one only `audio.wav`, 1794007066683) and the plain re-run all passed, and a wrapper changes the worker's allocations. So the wrappers may have moved the collection, or the hang may have been rarer than its first three runs read.
 
-**The probes' own runs, all deleted after the hash compare.** None was an unforced full run, so "3 of 4" stands, and across every full run the count is 5 in about 21. All at 44.1 kHz with `?fill=1` unless named. Which is which comes from the click order and the gaps between the tokens.
+**The probes' own runs, all deleted after the hash compare.** None was an unforced full run, so "3 of 4" stands, and across every full run the count is 5 in about 25. All at 44.1 kHz with `?fill=1` unless named. Which is which comes from the click order and the gaps between the tokens.
 
 | token | what it was | files |
 |---|---|---|
@@ -307,11 +325,13 @@ What I did not get: an observed natural hang with the observer attached. Two run
 
 ## Reading recipe for an SDK bump
 
-1. `export-regression-audit-debug-demo.html?rate=48000`, a real click on Run about 30 s after load, the tab visible, about 95 s, then `?rate=44100`. A stall as above: reload, wait and run again.
-2. `node scripts/audit/export-regression/table.ts <token>`, one per rate. Always pass the token: with none it reads the newest summary, a control run included.
-3. Read `failing` first: a failed invariant no label matches. Then `changed` against the register: a render moved, and the line says by how much (`--diff <rowId>` with the library). Then any "no longer reproducing" line, which is a defect here being fixed.
+1. `export-regression-audit-debug-demo.html?rate=48000`, a real click on Run about 30 s after load, the tab visible, about 72 s, then `?rate=44100`. The page reads `register/<rate>.json` and uploads a WAV only for a row that is not `identical`. A stall as above: reload, wait and run again.
+2. `node scripts/audit/export-regression/table.ts <token> --library <clone>`, one per rate. Always pass the token: with none it reads the newest summary, a control run included. A clone at `../opendaw-export-wavs` is found by itself. Cloning fetches the WAVs through LFS, and every download counts against the LFS bandwidth. With no clone, a run still reads `identical` or `changed` from the hashes.
+3. Read `failing` first: a failed invariant no label matches. Then `changed` against the register: a render moved, and the line says by how much. `rounding-sized` is under −100 dB with no shift, and it is still `changed` and still needs a person. `--diff <rowId>` writes both WAVs for the audio-analyzer. Then any "no longer reproducing" line, which is a defect here being fixed.
 4. A `known-finding` is a row whose signature still matches. It is not a pass: this note's reads are what it rests on.
-5. `--accept` only after a person has read that run's table.
+5. `--accept --library <clone>` only after a person has read that run's table, and never on a run with a row failing or errored, a descending run or, without `--force`, a partial one. It writes the register and copies the new WAVs. Then in the clone `git add wav`, commit and push, and commit the register here.
+
+**Expected on 0.0.182:** 296 of 296 `identical`; 48 kHz clean 237, known 59; 44.1 kHz clean 222, known 74.
 
 Once a release ships a fix, the row's invariant holds, its hash moves so it reads `changed`, and the table prints `no longer reproducing: <finding>`. Retire the finding from `exportRegressionFindings.ts` then, and say so here.
 
@@ -319,7 +339,7 @@ Once a release ships a fix, the row's invariant holds, its hash moves so it read
 
 - One machine, one browser: Chrome on a Mac. Firefox and Safari have not run this page. The four single-stem rows have run with the device at 44.1 kHz only.
 - **The neutral chains prove latency only.** A Compressor at ratio 1 and a Maximizer that never engages show that their delay is compensated, not that they process. The two engaged controls above are the only exception. Device coverage, every device through one path, is the second phase by the user's decision.
-- `?uuid=descending` was not repeated for the 3 bounce tap rows or the gap rows.
+- `?uuid=descending` has run on `group=control` against the accepted register, the 3 bounce tap rows included, and not on the gap rows or the rest of the catalogue since those were added.
 - The gap is one length, 15.8 s, at one bpm. The mix during a stem render is measured on two sibling renders and read in the engine, not observed inside the render (Finding 2).
 - Parked items and known small gaps, from the build's ledger:
   - `position-*-loop-on-copy`: the second pass is judged only through its label, so once upstream changes the wrap it reads through the register alone. With the old read's tail gone *and* a second defect, nothing else sees it (ruled: a narrow blind spot).
