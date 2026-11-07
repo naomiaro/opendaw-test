@@ -38,12 +38,14 @@ name. It means read and understood, not fine. A failed invariant with no such ma
 | re-run | 44100 | 1794013308862 | 296, all | the same | 296 `identical`, 0 uploaded |
 | re-run after the final review (`section-loop-twice` holds `frames-as-expected`) | 48000 | 1794014622292 | 296, all | 237 / 59, failing 0, errored 0 | 296 `identical`, 0 uploaded |
 | the same | 44100 | 1794014737287 | 296, all | 222 / 74, failing 0, errored 0 | 296 `identical`, 0 uploaded |
+| re-run after the PR review (the page, `table.ts` and the accept gate; no render touched) | 48000 | 1794015800836 | 296, all | 237 / 59, failing 0, errored 0 | 296 `identical`, 0 uploaded |
+| the same | 44100 | 1794015919591 | 296, all | 222 / 74, failing 0, errored 0 | 296 `identical`, 0 uploaded |
 | `?uuid=descending&group=control` | 48000 | 1794013420891 | 11 | clean 11 | 10 `identical`, 1 `changed` |
 
 SDK 0.0.182, engine `9c44973549a7`, the device at 44100 (read in `system_profiler` and in each summary). Real clicks 30 s after load, the tab visible, no stall in any of them. Tables: `.verify-output/exportreg-table-<rate>.txt`
 (local; the run lines are the figures above).
 
-**What is still on disk.** In `.verify-output/` (local, git-ignored), after the clean-up of 2026-11-06: the accepted runs 1794012843131 and 1794012980176, summary and 296 WAVs each; the re-runs 1794013197246, 1794013308862, 1794014622292 and 1794014737287, summary only; the descending run 1794013420891, summary and its one WAV; the device-proof runs 1794009335901, 1794010354018, 1794010135751 and 1794010487551, summary only. Any other token this note cites is gone, summary and WAVs: its figures here are the record.
+**What is still on disk.** In `.verify-output/` (local, git-ignored), after the clean-up of 2026-11-06: the accepted runs 1794012843131 and 1794012980176, summary and 296 WAVs each; the re-runs 1794013197246, 1794013308862, 1794014622292, 1794014737287, 1794015800836 and 1794015919591, summary only; the descending run 1794013420891, summary and its one WAV; the device-proof runs 1794009335901, 1794010354018, 1794010135751 and 1794010487551, summary only. Any other token this note cites is gone, summary and WAVs: its figures here are the record.
 
 **Measured against the runs read before the accept.** Every hash of the 292-row runs (1794010354018, 1794010487551) and of the 14-row tail runs (1794012321608, 1794012363406) is unchanged in the accepted runs, so the 30 bed rows that `bedSeconds` moved onto a changed path are unchanged by a run too. Three rows changed standing, and only those: the gap rows above, `failing` to `known-finding`. The 292 can be compared again from the summaries kept. The 4 single-stem rows were only in the tail runs, whose summaries are gone, so their comparison can no longer be re-run.
 
