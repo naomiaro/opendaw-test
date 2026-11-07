@@ -1,12 +1,12 @@
 # Export regression: what the harness found on its first runs
 
-**Title:** Every SDK export path, 295 rows at two page rates: what holds, what each row that does not hold measured, and a full run's stall in the OPFS worker
+**Title:** Every SDK export path, 296 rows at two page rates: what holds, what each row that does not hold measured, and a full run's stall in the OPFS worker
 
 **Status: WAITING FOR THE USER'S READ.** No register is accepted: `--accept` waits for this read, and every row reads
 `unregistered`. Nothing is posted and nothing is in the WAV library. Three drafts wait (below). `trailing-silence-trimmed` is ruled by design and not raised upstream. The other findings are the
 user's call, each with the read it got.
 
-**The catalogue holds 295 rows.** Three rows read `failing` with no label, because the user has not ruled on one: `gap-none-start`, `gap-none-section-entire` and `gap-none-stem-start` (Finding 2). `--accept` refuses a failing row, even forced, so they stand in the way of an accept until they are labelled or fixed. The last full runs are from when the catalogue held 292; the three single-stem rows were added since and read in `?group=tail` runs (below).
+**The catalogue holds 296 rows.** Three rows read `failing` with no label, because the user has not ruled on one: `gap-none-start`, `gap-none-section-entire` and `gap-none-stem-start` (Finding 2). `--accept` refuses a failing row, even forced, so they stand in the way of an accept until they are labelled or fixed. The last full runs are from when the catalogue held 292; the four single-stem rows were added since and read in `?group=tail` runs (below).
 
 **Verified against:** `@opendaw/studio-sdk@0.0.182`, engine `9c44973549a7`, checkout at the tag (`766204efe`). Chrome
 156.0.8078.81 (Playwright's), macOS 15.6.1. The Mac's output device read 44100 Hz for every run below unless it says otherwise; each summary since the device rate was added records it (`deviceRateHz`). These renders are offline, and the page's own context takes the rate in the URL. Source citations are read at the tag.
@@ -33,11 +33,11 @@ name. It means read and understood, not fine. A failed invariant with no such ma
 |---|---|---|---|
 | 48000 | 1794010354018 | 292, all | clean 234, known finding 56, failing 2, errored 0 |
 | 44100 | 1794010487551 | 292, all | clean 219, known finding 71, failing 2, errored 0 |
-| 48000 | 1794011464378 | 13, `?group=tail` | clean 7, known finding 3, failing 3, errored 0 |
-| 44100 | 1794011505218 | 13, `?group=tail` | clean 7, known finding 3, failing 3, errored 0 |
+| 48000 | 1794012321608 | 14, `?group=tail` | clean 8, known finding 3, failing 3, errored 0 |
+| 44100 | 1794012363406 | 14, `?group=tail` | clean 8, known finding 3, failing 3, errored 0 |
 
 Real clicks 30 s after load, every latency read `visible`. Tables: `.verify-output/exportreg-table-<rate>.txt`
-(local; the run lines are the figures above). The 10 rows the tail runs share with the full runs hold the same hashes, so the 295-row figures below are the full run plus the three new rows (computed: 48 kHz clean 236, known 56, failing 3; 44.1 kHz clean 221, known 71, failing 3).
+(local; the run lines are the figures above). The 10 rows the tail runs share with the full runs hold the same hashes, so the 296-row figures below are the full run plus the four new rows (computed: 48 kHz clean 237, known 56, failing 3; 44.1 kHz clean 222, known 71, failing 3). **Not measured since the change:** adding `bedSeconds` moved the 30 existing bed rows onto a changed path (`bedRow`). They are unchanged by reading and a unit test, not by a run, until the next full run.
 
 | group | 48000 clean / known / failing | 44100 clean / known / failing |
 |---|---|---|
@@ -47,7 +47,7 @@ Real clicks 30 s after load, every latency read `visible`. Tables: `.verify-outp
 | bounce | 16 / 4 / 0 | 12 / 8 / 0 |
 | position | 0 / 12 / 0 | 0 / 12 / 0 |
 | one-frame | 46 / 2 / 0 | 46 / 2 / 0 |
-| tail | 7 / 3 / 3 | 7 / 3 / 3 |
+| tail | 8 / 3 / 3 | 8 / 3 / 3 |
 | sweep | 22 / 0 / 0 | 22 / 0 / 0 |
 | control | 9 / 0 / 0 | 9 / 0 / 0 |
 
@@ -64,8 +64,8 @@ Real clicks 30 s after load, every latency read `visible`. Tables: `.verify-outp
 | `merge-seam-reseats-read` | 4 | 4 | the user's call |
 | no label: `gap-none-start`, `gap-none-section-entire`, `gap-none-stem-start` | 3 failing | 3 failing | [draft](./drafts/TO-REVIEW-openDAW-entire-song-ends-at-silence.md) |
 
-**Size.** Uploaded WAVs, the 292-row run measured plus the three new rows' files: 449.5 MB at 48 kHz, 409.8 MB at 44.1 kHz. Most rows share a render: 72 distinct hashes, 105.3 MB at
-48 kHz; 74 distinct, 99.7 MB at 44.1 kHz. No hash is shared between the two rates, so the library will take about 205 MB
+**Size.** Uploaded WAVs, the 292-row run measured plus the four new rows' files: 456.5 MB at 48 kHz, 416.2 MB at 44.1 kHz. Most rows share a render: 73 distinct hashes, 112.3 MB at
+48 kHz; 75 distinct, 106.1 MB at 44.1 kHz. No hash is shared between the two rates, so the library will take about 218 MB
 (a private repository with LFS, `opendaw-export-wavs`, one commit so far: nothing accepted, no WAV in it).
 
 ## The device rate moves no render
@@ -77,7 +77,7 @@ Real clicks 30 s after load, every latency read `visible`. Tables: `.verify-outp
 | 48000 | 1794009335901 | 1794010354018 | `292 of 292 rows identical` |
 | 44100 | 1794010135751 | 1794010487551 | `292 of 292 rows identical` |
 
-SDK 0.0.182, engine `9c44973549a7`, full runs. The page reads the device rate once, before a run (`readDeviceRate`, a bare `new AudioContext().sampleRate`, closed again), and records it in the summary. So a run says its footing, but a device change during a run would not show. These pairs were compared when the catalogue held 292 rows. The same command now prints `292 of 295` and exits 1, which is right: those runs never rendered the three new rows, and a hash comparison of the 292 (re-done by hand) still reads identical. Only a run at each device rate on the 295 rows would cover them.
+SDK 0.0.182, engine `9c44973549a7`, full runs. The page reads the device rate once, before a run (`readDeviceRate`, a bare `new AudioContext().sampleRate`, closed again), and records it in the summary. So a run says its footing, but a device change during a run would not show. These pairs were compared when the catalogue held 292 rows. The same command now prints `292 of 296` and exits 1, which is right: those runs never rendered the four new rows, and a hash comparison of the 292 (re-done by hand) still reads identical. Only a run at each device rate on the 296 rows would cover them.
 
 ## The controls
 
@@ -177,7 +177,7 @@ holds 0 on both channels, and the stepped loop holds 0.07072490, which is the so
 
 `start` and `renderSection` have one hash per rate and are bit-identical to the step as far as they go (checked on the WAVs). `section-is-slice` holds them to the second region's end, 777600 and 714420 frames, and reads `only 21472 of the range's 777600 frames could be compared`.
 
-**A single stem (measured, tail runs 1794011464378 and 1794011505218).** The same source as the only stem, `stems-single-step` and `stems-single-start`.
+**A single stem (measured, tail runs 1794012321608 and 1794012363406; 1794011464378 and 1794011505218 read the same).** The same source as the only stem, `stems-single-step` and `stems-single-start`.
 
 | page rate | row | frames | bursts | hash against |
 |---|---|---|---|---|
@@ -190,11 +190,19 @@ holds 0 on both channels, and the stepped loop holds 0.07072490, which is the so
 
 - *Why the rows needed a change.* `withBed: true` alone would not have done it: the bed took the row's `seconds`, so these rows would have had a 200 ms bed and a silent mix, and the render would have read short for the wrong reason. `bedSeconds: 18` gives them an 18 s bed from 0, and its unit is not in the stems configuration.
 - *Measured, on a sibling render.* A stem render hands back only its stems, so the mix cannot be read from it. `gap-none-stem-mix` renders the same project as a mix over the 18 s: all 6750 quanta at 48 kHz and all 6202 at 44.1 kHz are over −72 dB, the quietest block's peak 0.295 and 0.291, and the peak is about 0.30 both across the 1..16 s gap and in the last 100 ms.
-- *Read, in the stem render itself.* A unit that is not a stem stays wired with default options (`crates/engine/src/lib.rs:2270-2277`), and `engine.render` fills the output before `copy_stem_outputs` (`:3125-3127`). Inferred from those: the bed is rendered in the stem render as it is in the mix's. Nothing here observed that buffer.
+- *Measured, the positive control.* `gap-none-stem-mix-start` puts that project, compared field by field with the stem rows in a test, through `start` as a mix: the path the stem stopped on.
+
+  | page rate | frames | seconds | `section-is-slice` against the stepped mix | peak 15.9..16.0 s | peak 16.0..16.2 s | peak 16.2..16.3 s |
+  |---|---|---|---|---|---|---|
+  | 48000 | 875872 | 18.247 | holds: 864000 frames bit-identical, 11872 past the reference | 0.300 | 0.759 | 0.300 |
+  | 44100 | 804753 | 18.248 | holds: 793800 frames bit-identical, 10953 past the reference | 0.300 | 0.758 | 0.299 |
+
+  So the bed keeps the render going past 16.2 s, with the second burst in it, and the render then ends on the silence after the bed: 875872 = 864000 − 128 + 12000, 804753 = 793856 − 128 + 11025 (computed, the rule below). `impulseHits` cannot show the burst here: the bed keeps channel 1 over its threshold, so the whole render is one cluster ([6080], [5586]). The peaks are read from the WAVs. One project, one path, and what differs is which channels the render returns, so the stem's own silence is what ended `gap-none-stem-start`.
+- *Read, in the stem render itself.* A unit that is not a stem stays wired with default options (`crates/engine/src/lib.rs:2270-2277`), and `engine.render` fills the output before `copy_stem_outputs` (`:3125-3127`). Inferred from those: the bed is rendered in the stem render as it is in the mix's. Nothing here observed that buffer, and the control does not change that: it shows what the check does on the mix's channels, not what the stem render's master holds.
 
 **What the worker's silence check reads (read, `packages/studio/core-wasm/src/offline-worker.ts`).** The stems configuration names one unit (`stemsConfiguration` in `exportRegressionPaths.ts`, tested), so `stemPairs` is 1 and `numberOfChannels` 2 (`:250`, `:361`). `renderQuantum` copies the stem staging into those two channels and returns before it reads the master output (`:112-119`). `render`'s `maxSample` runs over those channels only (`:416-423`). So with a stem alone its own silence ends the render. With several stems the check covers all of theirs (read, not measured).
 
-**The cause (read).** `render` breaks once audio has played and 10 s has stayed at or below −72 dB (`offline-worker.ts:424-426`, defaults `:398-399`: `start` and `renderSection` pass only `maxDurationSeconds`, `core/src/OfflineEngineRenderer.ts:279`, `:312`), and `:440` keeps at most a quarter of a second of it. Nothing in that loop looks at the song's end; `endPosition` reaches only the progress display (`OfflineEngineRenderer.ts:438-443`). Silence before the first audio does not count (`hasHadAudio`, `:404`, `:423-424`). The render resolves normally.
+**The cause (read).** `render` breaks once audio has played and 10 s has stayed at or below −72 dB (`offline-worker.ts:424-426`, defaults `:398-399`: `start` and `renderSection` pass only `maxDurationSeconds`, `core/src/OfflineEngineRenderer.ts:279`, `:312`), and `:440` keeps at most a quarter of a second of it. `maxDurationSeconds` is the span plus 30 s (`OfflineEngineRenderer.ts:276`, `:312`), a cap only (`offline-worker.ts:400`, `:409`): the silence break does not consult it. `render`'s own `endPosition` parameter reaches only the progress display (`OfflineEngineRenderer.ts:438-443`). Silence before the first audio does not count (`hasHadAudio`, `:404`, `:423-424`). The render resolves normally.
 `MixdownSection.ts:21` gives "Entire song" `tail: true`, `:39` the last marker section, and `Mixdowns.ts:28-29` sends the song to `start`.
 
 **Computed from the measured figures.** The first burst's last frame over −72 dB is 9599 at 48 kHz and 8819 at 44.1, in the quanta ending at 9600 and 8832. The kept length is that end less one quantum plus a quarter second: 21472 = 9600 − 128 + 12000, 19729 = 8832 − 128 + 11025. So on these rows the render stops at 10.2 s, and a region starting after that is lost.
@@ -208,7 +216,7 @@ holds 0 on both channels, and the stepped loop holds 0.07072490, which is the so
 | 16 s | 20 | 80992 | 0.562 s: not in the render |
 | 30 s | 34 | 80992 | 0.562 s: not in the render |
 
-Not run: the last marker section with a gap, a gap of any other length in the catalogue, an export of several stems, a stem through `renderSection`, and the studio's own Export dialog.
+Not run: the mix inside the stem render itself, the last marker section with a gap, a gap of any other length in the catalogue, an export of several stems, a stem through `renderSection`, and the studio's own Export dialog.
 
 ## The others: the user's call, no drafts
 
@@ -293,7 +301,7 @@ What I did not get: an observed natural hang with the observer attached. Two run
 
 **Reach (read).** Every `Workers.Opfs` read and write opens through `#resolveFile`. A lost open never answers and keeps that path's lock for the life of the worker, so later operations on the path wait behind it. A sample's load or a recording's save is built on those calls and would wait with them; I measured the load only. The SDK's 5 s and 10 s warnings are what names it.
 
-**Standing.** Not a harness fault. A Chromium behaviour reproduced without the SDK, with an SDK path exposed to it, so a draft, which is not ready to post (its head says what is missing): [`drafts/TO-REVIEW-chromium-sync-access-handle-does-not-settle.md`](./drafts/TO-REVIEW-chromium-sync-access-handle-does-not-settle.md). Not tried: Firefox, Safari, the user's own Chrome. The Chromium tracker has not been searched; a web search found no report, so search it before posting. No entry in `docs/known-vendor-issues.md` yet: it goes in with the user's read.
+**Standing.** Not a harness fault. A Chromium behaviour reproduced without the SDK, with an SDK path exposed to it, so a draft, which is not ready to post (its head says what is missing): [`drafts/TO-REVIEW-chromium-sync-access-handle-does-not-settle.md`](./drafts/TO-REVIEW-chromium-sync-access-handle-does-not-settle.md). Not tried: Firefox, Safari, the user's own Chrome. **The Chromium tracker was searched** by the controller in the user's Chrome on 2026-11-06, read-only: no matching issue. Queries, with result counts: `createSyncAccessHandle` (23); OPFS with hang, hangs, "never resolves", "never settles", pending or stuck (47); FileSystemFileHandle with "garbage collected", GC, "garbage collection", mojo or "never resolves" (28); SyncAccessHandle with hang, "never resolves", "does not resolve", pending or deadlock (1); promise never resolved plus garbage collection in FileSystem, OPFS or worker (65, first 50 read, mostly web-platform-test noise). Closest, none the same: 40279881 (locks out of order, a wrong-order error), 453704691 (a stale NoModificationAllowedError, Windows), 513127261 (an Atomics.waitAsync hang, fixed in 149). No entry in `docs/known-vendor-issues.md` yet: it goes in with the user's read.
 
 **For a person running the page.** A run stuck on a row with those two console lines is this. Its rows error at 60 s each. Reload and wait about 30 s before Run: both times that was done right after a hang, the run passed. Reloading and clicking at about 2 s hung again twice. This lowers the odds at best, on small counts. It is not a fix.
 
@@ -309,10 +317,10 @@ Once a release ships a fix, the row's invariant holds, its hash moves so it read
 
 ## Limits
 
-- One machine, one browser: Chrome on a Mac. Firefox and Safari have not run this page. The three single-stem rows have run with the device at 44.1 kHz only.
+- One machine, one browser: Chrome on a Mac. Firefox and Safari have not run this page. The four single-stem rows have run with the device at 44.1 kHz only.
 - **The neutral chains prove latency only.** A Compressor at ratio 1 and a Maximizer that never engages show that their delay is compensated, not that they process. The two engaged controls above are the only exception. Device coverage, every device through one path, is the second phase by the user's decision.
 - `?uuid=descending` was not repeated for the 3 bounce tap rows or the gap rows.
-- The gap is one length, 15.8 s, at one bpm. The mix playing through a stem render is measured on a sibling render and read in the engine, not observed inside the render (Finding 2).
+- The gap is one length, 15.8 s, at one bpm. The mix during a stem render is measured on two sibling renders and read in the engine, not observed inside the render (Finding 2).
 - Parked items and known small gaps, from the build's ledger:
   - `position-*-loop-on-copy`: the second pass is judged only through its label, so once upstream changes the wrap it reads through the register alone. With the old read's tail gone *and* a second defect, nothing else sees it (ruled: a narrow blind spot).
   - The read allowance on `setposition-off-quantum` at 44.1 kHz fits a click near a zero crossing (above); `merge-seam-reseats-read`'s allowance at 44.1 kHz is shaped the same, up to +6.4e-4 / −2.1e-4, and an impulse past the seam 0.3 % low reads known. A register catches each after the first accept.
