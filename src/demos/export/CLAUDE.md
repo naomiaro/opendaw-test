@@ -31,16 +31,17 @@ Key facts (verified SDK 0.0.160):
   loop runs until silence detection or `config.maxDurationSeconds`; `endPosition` only
   drives the progress observable. For exact ranges always use `step(numSamples)`.
 - **`render` stops at 10 s of silence, judged on the channels it returns.** A region after a gap
-  longer than that is lost from the file, and with stems one stem's own silence ends the render
-  while the mix keeps playing. `start` and `renderSection` with a tail go through `render`; `step`
+  longer than that is lost from the file, and in a single-stem export the stem's own silence ends
+  the render (with several, all must be silent: read, not measured). `start` and `renderSection` with a tail go through `render`; `step`
   does not. It is a defect drafted upstream
   (`debug/2026-11-06-export-regression/drafts/TO-REVIEW-openDAW-entire-song-ends-at-silence.md`,
   measured in the note, Finding 2): a demo that needs a long gap uses `step`. Trailing silence
   with nothing after it is trimmed by design.
 - **A section or `setPosition` start fades in over about 5 ms**, the engine treating the first
   block as a jump; the first frames of such a render differ from a continuous pass. A second
-  `play` on one renderer after a stop with reset is not trimmed of its plug-in compensation: the
-  render comes back delayed by the reported latency.
+  `play` on one renderer after a stop with reset is not trimmed of its plug-in compensation: on a chain with a reported latency the
+  render comes back delayed by it. No SDK export path replays on one renderer (inferred, not checked across every caller), so it
+  concerns a demo driving a renderer directly.
 - **`step(numSamples)` returns exactly numSamples frames** per channel
   (`numChannels = countStems × 2`). Validate `channels.length` and `channels[0].length`
   anyway — a wedged worker returns garbage.
@@ -137,7 +138,7 @@ note); a row is `identical`, `changed` or `failing` (an invariant broke), and a 
 `identical`. Read a run with `node scripts/audit/export-regression/table.ts <token> [--library <clone>] [--diff <rowId>]`; `--accept`
 writes the register and copies the WAVs into the library clone only after a person's read, never on a failing, errored or
 descending run. The WAV library is the private LFS repo `naomiaro/opendaw-export-wavs`, cloned at `~/Code/opendaw-export-wavs`
-(or `$EXPORT_WAV_LIBRARY`); every download counts against its bandwidth. Hash the audio, never the project bytes (above). The run, its
+(or `$EXPORT_WAV_LIBRARY`); `&fill=1` uploads every row's WAV; every download counts against its bandwidth. Hash the audio, never the project bytes (above). The run, its
 findings and the reading recipe: `debug/2026-11-06-export-regression/note.md`.
 
 ### Mutate-Copy-Restore Pattern for Offline Rendering
