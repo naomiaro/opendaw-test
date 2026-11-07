@@ -16,6 +16,7 @@ import {
   parseExportRegister, parseExportSummary, planAccept, staleFindings, SUMMARY_NAME, summaryFileName, wavFileName
 } from "../../../src/lib/audit/exportRegressionArtifacts.ts";
 import type { ExportRegister, ExportSummary, RowRecord } from "../../../src/lib/audit/exportRegressionArtifacts.ts";
+import { buildRows } from "../../../src/lib/audit/exportRegressionRows.ts";
 import { diffRenders } from "../../../src/lib/audit/exportRegressionDiff.ts";
 import { decodeFloatWav, encodeFloatWav } from "../../../src/lib/audit/exportRegressionWav.ts";
 
@@ -122,9 +123,20 @@ export function compareDeviceRates(a: ExportSummary, b: ExportSummary): { lines:
     throw new Error(`device rate unknown in run ${a.deviceRateHz === null ? a.runToken : b.runToken}: nothing to compare across`);
   }
   if (a.deviceRateHz === b.deviceRateHz) throw new Error(`device rates are equal (${a.deviceRateHz} Hz) in runs ${a.runToken} and ${b.runToken}`);
-  const hashes = (s: ExportSummary) => new Map(s.rows.map((r) => [r.id, r.read === null ? "-" : r.read.hash]));
+  if (a.uuidOrder !== b.uuidOrder) throw new Error(`uuid order ${a.uuidOrder} in run ${a.runToken}, ${b.uuidOrder} in run ${b.runToken}`);
+  for (const s of [a, b]) {
+    if (s.rowsParam !== "all") throw new Error(`run ${s.runToken} is partial (rows=${s.rowsParam}): only whole runs compare`);
+    if (s.uuidOrder !== "ascending") throw new Error(`run ${s.runToken} has uuids ${s.uuidOrder}, not ascending: only default-order runs compare`);
+  }
+  if (a.sdkVersion !== b.sdkVersion) throw new Error(`sdk ${a.sdkVersion} in run ${a.runToken}, ${b.sdkVersion} in run ${b.runToken}`);
+  if (a.engineWasmSha256 !== b.engineWasmSha256) {
+    throw new Error(`engine ${a.engineWasmSha256.slice(0, 12)} in run ${a.runToken}, ${b.engineWasmSha256.slice(0, 12)} in run ${b.runToken}`);
+  }
+  // An errored row has no usable figure, whatever read it kept
+  const hashes = (s: ExportSummary) => new Map(s.rows.map((r) => [r.id, r.error !== null || r.read === null ? "-" : r.read.hash]));
   const [hashA, hashB] = [hashes(a), hashes(b)];
-  const ids = [...new Set([...hashA.keys(), ...hashB.keys()])];
+  // The catalogue leads, so a row absent from both runs is noticed
+  const ids = [...new Set([...buildRows(a.sampleRate).map((r) => r.id), ...hashA.keys(), ...hashB.keys()])];
   const lines: string[] = [];
   let differing = 0;
   for (const id of ids) {
@@ -133,7 +145,7 @@ export function compareDeviceRates(a: ExportSummary, b: ExportSummary): { lines:
     differing++;
     lines.push(`${id} | ${x} | ${y}`);
   }
-  lines.push(`device rates ${a.deviceRateHz} and ${b.deviceRateHz}: ${ids.length - differing} of ${ids.length} rows identical`);
+  lines.push(`device rates ${a.deviceRateHz} and ${b.deviceRateHz}: ${ids.length - differing} of ${ids.length} rows identical | sdk ${a.sdkVersion} | engine ${a.engineWasmSha256.slice(0, 12)}`);
   return { lines, differing };
 }
 

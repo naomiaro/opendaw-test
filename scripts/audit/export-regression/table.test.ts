@@ -106,30 +106,50 @@ describe("the device rate on the run line", () => {
 });
 
 describe("compareDeviceRates", () => {
-  const at = (device: number | null, hashes: Record<string, string>, over: Partial<ExportSummary> = {}) =>
-    summary(Object.entries(hashes).map(([id, hash]) => record({ id, read: { ...record().read!, hash } })),
-      { deviceRateHz: device, ...over });
-  it("counts identical rows and succeeds when none differ", () => {
-    const result = compareDeviceRates(at(44100, { a: "h1", b: "h2" }, { runToken: 1 }), at(48000, { a: "h1", b: "h2" }, { runToken: 2 }));
+  const ids = buildRows(48000).map((r) => r.id);
+  const full = (device: number | null, over: Record<string, string> = {}, extra: Partial<ExportSummary> = {}) =>
+    summary(ids.map((id) => record({ id, read: { ...record().read!, hash: over[id] ?? `h-${id}` } })),
+      { deviceRateHz: device, ...extra });
+  const tail = (r: { lines: string[] }) => r.lines.at(-1)!;
+  it("counts identical rows against the catalogue and names the builds", () => {
+    const result = compareDeviceRates(full(44100, {}, { runToken: 1 }), full(48000, {}, { runToken: 2 }));
     expect(result.differing).toBe(0);
-    expect(result.lines).toEqual(["device rates 44100 and 48000: 2 of 2 rows identical"]);
+    expect(result.lines).toHaveLength(1);
+    expect(tail(result)).toBe(`device rates 44100 and 48000: ${ids.length} of ${ids.length} rows identical | sdk 0.0.182 | engine ${"e".repeat(12)}`);
   });
   it("names each differing row with both hashes", () => {
-    const result = compareDeviceRates(at(44100, { a: "h1", b: "h2" }), at(48000, { a: "h1", b: "h3" }));
+    const result = compareDeviceRates(full(44100, { [ids[1]]: "h2" }), full(48000, { [ids[1]]: "h3" }));
     expect(result.differing).toBe(1);
-    expect(result.lines).toEqual(["b | h2 | h3", "device rates 44100 and 48000: 1 of 2 rows identical"]);
+    expect(result.lines[0]).toBe(`${ids[1]} | h2 | h3`);
+    expect(tail(result)).toContain(`${ids.length - 1} of ${ids.length} rows identical`);
   });
-  it("counts a row missing from one run, or errored, as differing", () => {
-    const errored = record({ id: "b", read: null, error: "x", standing: "errored" });
-    const result = compareDeviceRates(at(44100, { a: "h1", b: "h2" }), summary([record({ id: "a", read: { ...record().read!, hash: "h1" } }), errored], { deviceRateHz: 48000 }));
-    expect(result.lines[0]).toBe("b | h2 | -");
-    const missing = compareDeviceRates(at(44100, { a: "h1", b: "h2" }), at(48000, { a: "h1" }));
-    expect(missing.lines[0]).toBe("b | h2 | -");
+  it("counts a row missing from one run, or from both, as differing", () => {
+    const one = compareDeviceRates(full(44100), summary(full(48000).rows.slice(1), { deviceRateHz: 48000 }));
+    expect(one.lines[0]).toBe(`${ids[0]} | h-${ids[0]} | -`);
+    const none = compareDeviceRates(summary([], { deviceRateHz: 44100 }), summary([], { deviceRateHz: 48000 }));
+    expect(none.differing).toBe(ids.length);
+    expect(none.lines[0]).toBe(`${ids[0]} | - | -`);
+  });
+  it("counts an errored row as differing even when it kept a read", () => {
+    const a = full(44100);
+    const b = full(48000);
+    b.rows[0] = { ...b.rows[0], error: "x", standing: "errored" };
+    expect(compareDeviceRates(a, b).lines[0]).toBe(`${ids[0]} | h-${ids[0]} | -`);
   });
   it("refuses a page-rate mismatch, equal device rates and an unknown device rate", () => {
-    expect(() => compareDeviceRates(at(44100, { a: "h" }), at(48000, { a: "h" }, { sampleRate: 44100 }))).toThrow(/page rate/);
-    expect(() => compareDeviceRates(at(44100, { a: "h" }), at(44100, { a: "h" }))).toThrow(/equal/);
-    expect(() => compareDeviceRates(at(44100, { a: "h" }), at(null, { a: "h" }))).toThrow(/unknown/);
+    expect(() => compareDeviceRates(full(44100), full(48000, {}, { sampleRate: 44100 }))).toThrow(/page rate/);
+    expect(() => compareDeviceRates(full(44100), full(44100))).toThrow(/equal/);
+    expect(() => compareDeviceRates(full(44100), full(null))).toThrow(/unknown/);
+  });
+  it("refuses a partial run, a uuid order mismatch and a descending order", () => {
+    expect(() => compareDeviceRates(full(44100), full(48000, {}, { rowsParam: "core" }))).toThrow(/partial/);
+    expect(() => compareDeviceRates(full(44100, {}, { rowsParam: "core" }), full(48000))).toThrow(/partial/);
+    expect(() => compareDeviceRates(full(44100), full(48000, {}, { uuidOrder: "descending" }))).toThrow(/uuid order/);
+    expect(() => compareDeviceRates(full(44100, {}, { uuidOrder: "descending" }), full(48000, {}, { uuidOrder: "descending" }))).toThrow(/ascending/);
+  });
+  it("refuses runs of different builds", () => {
+    expect(() => compareDeviceRates(full(44100), full(48000, {}, { sdkVersion: "0.0.183" }))).toThrow(/sdk/);
+    expect(() => compareDeviceRates(full(44100), full(48000, {}, { engineWasmSha256: "f".repeat(64) }))).toThrow(/engine/);
   });
 });
 
@@ -142,17 +162,19 @@ describe("the script", () => {
 
   it("--compare-device exits 0 on identical hashes and 1 on a differing row, writing nothing", () => {
     const withHash = (token: number, device: number, hash: string) =>
-      summary([record({ read: { ...record().read!, hash } })], { runToken: token, deviceRateHz: device });
+      summary(buildRows(48000).map((r) => record({ id: r.id, read: { ...record().read!, hash: r.id === "x" ? "" : hash } })),
+        { runToken: token, deviceRateHz: device });
     const { root } = scratch(withHash(1, 44100, "h1"));
     writeFileSync(join(root, ".verify-output", "exportreg-summary-2.json"), JSON.stringify(withHash(2, 48000, "h1")));
     writeFileSync(join(root, ".verify-output", "exportreg-summary-3.json"), JSON.stringify(withHash(3, 48000, "h9")));
     const same = run(root, ["--compare-device", "1", "2"]);
     expect(same.status).toBe(0);
-    expect(same.stdout).toContain("device rates 44100 and 48000: 1 of 1 rows identical");
+    expect(same.stdout).toContain("device rates 44100 and 48000:");
+    expect(same.stdout).toContain("rows identical");
     const differ = run(root, ["--compare-device", "1", "3"]);
     expect(differ.status).toBe(1);
-    expect(differ.stdout).toContain("a | h1 | h9");
-    expect(differ.stdout).toContain("0 of 1 rows identical");
+    expect(differ.stdout).toContain(`${buildRows(48000)[0].id} | h1 | h9`);
+    expect(differ.stdout).toContain("0 of ");
     expect(existsSync(join(root, "debug"))).toBe(false);
   });
 
