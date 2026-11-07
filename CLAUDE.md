@@ -829,7 +829,7 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   `naomiaro/opendaw-export-wavs` (GitHub Free: 10 GiB of storage and 10 GiB of bandwidth a month, every download counts). A run
   with errored rows on one source is the known OPFS stall: repeat that page rate. Offline-only, so the two page rates are the
   standing sweep (the device-rate pass was a one-time proof; `--compare-device <tokenA> <tokenB>` if it is repeated). Register
-  and reading recipe `debug/2026-11-06-export-regression/note.md`, rows and labels `src/demos/export/CLAUDE.md`.
+  and reading recipe `debug/2026-11-06-export-regression/note.md`, rows `src/lib/audit/exportRegressionRows.ts`, labels `src/lib/audit/exportRegressionFindings.ts` and the note's finding table. A fresh machine needs `git lfs install` before cloning the library.
 - After SDK upgrades, also run the Nano play-modes audit: `nano-play-modes-debug-demo.html` then
   `?rate=44100` — a real click on Run, deterministic, no hardware, about three seconds. Expect every row
   `as-expected` (the expectations are the crate's documented behaviour, no register to accept): Mono 40 dB

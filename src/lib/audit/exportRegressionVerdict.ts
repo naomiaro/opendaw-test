@@ -356,7 +356,7 @@ const judge = (
     }
     case "latency-as-expected": {
       const expected = expectedLatencyFrames(row.latencyCase, pageRate);
-      const detail = `reported ${rendered.reportedLatencyFrames} frames, expected ${expected}`;
+      const detail = `live engine reported ${rendered.reportedLatencyFrames} frames, expected ${expected}`;
       return rendered.reportedLatencyFrames === expected ? pass(detail) : fail(detail);
     }
   }

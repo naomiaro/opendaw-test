@@ -372,7 +372,7 @@ describe("the gap rows", () => {
   it("says what it is, and that it is a defect with a draft", () => {
     const [finding] = KNOWN_FINDINGS.filter((f) => f.name === "long-silence-ends-render");
     expect(finding.note).toContain("defect");
-    expect(finding.note).toContain("TO-REVIEW-openDAW-entire-song-ends-at-silence.md");
+    expect(finding.note).toContain("Finding 2");
     expect(finding.invariant).toBe("section-is-slice");
   });
   it("read clean on a render that reaches the second region's end, however much silence it keeps after", () => {

@@ -94,7 +94,7 @@ const ppqnToFrame = (ppqn: number, bpm: number, pageRate: number): number => (pp
  * 0.9 s and 137 bpm is 43204 frames at 48 kHz, not the 43200 of the row's seconds.
  */
 export const expectedFrames = ({ path, rangeSeconds, bpm }: ExportRow, pageRate: number): number =>
-  path === "step-loop-twice"
+  path === "step-loop-twice" || path === "section-loop-twice"
     ? Math.round(ppqnToFrame(Math.round(rangeSeconds * 16 * bpm), bpm, pageRate))
     : Math.round(rangeSeconds * pageRate);
 
@@ -188,6 +188,8 @@ const pathInvariants = (
     out.push("samples-equal-reference");
   } else if (path === "start" || path.startsWith("section-")) {
     out.push(path === "section-loop-twice" ? "samples-equal-warm-pass" : "section-is-slice");
+    // Where the pass is longer than the range, the comparison passes once the range is covered: only the count sees a short render.
+    if (path === "section-loop-twice") out.push("frames-as-expected");
     // The cold reference's hits, on a loop too: a stepped loop would carry the same shift and hide it.
     if (probe) out.push("impulse-on-reference", "no-jump");
   }

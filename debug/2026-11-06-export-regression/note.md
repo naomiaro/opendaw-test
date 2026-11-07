@@ -23,6 +23,8 @@ Each row renders a copy of one project through one SDK export path (`step` in on
 bounce's exported pieces, `setPosition`, a loop area) with one latency case (none, Autotune, Compressor on a track, a bus or an aux,
 Maximizer, Fold, scripts, several together). The row is held to its invariants and later compared with the accepted register by hash.
 
+`latency-as-expected` reads the LIVE engine's reported compensation latency with the same devices inserted, not the offline worker's: the render's own latency is proven by the other invariants (the impulse frames, the sample comparisons). The row's detail says "live engine". `frames-as-expected` also holds `section-loop-twice`, because a pass longer than the range (0.9 s at 137 bpm: 43204 frames, range 43200) would otherwise read clean 4 frames short.
+
 **A label is not a pass.** A failed invariant whose render matches a measured signature reads `known-finding`, with the finding's
 name. It means read and understood, not fine. A failed invariant with no such match reads `failing`, and `--accept` refuses it even forced.
 

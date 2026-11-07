@@ -1,4 +1,4 @@
-import { largestStep } from "./sectionRenderGap";
+import { largestStep } from "./sectionRenderGap.ts";
 
 export type RenderRead = {
   hash: string;

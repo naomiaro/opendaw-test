@@ -116,7 +116,7 @@ describe("exportRegressionRows", () => {
       const rows = buildRows(rate);
       const held = rows.filter((r) => r.invariants.includes("frames-as-expected"));
       for (const r of rows) {
-        const exact = r.path === "step-loop-twice" || r.group === "sweep"
+        const exact = r.path === "step-loop-twice" || r.path === "section-loop-twice" || r.group === "sweep"
           || (r.path.startsWith("bounce-") && r.path !== "bounce-tail")
           || ["stems-fx", "stems-dry", "stems-sends", "stems-metronome", "stems-single-step"].includes(r.path);
         expect(held.includes(r), r.id).toBe(exact);
@@ -132,6 +132,7 @@ describe("exportRegressionRows", () => {
     expect(of(48000, "one-frame-none-step-loop-twice-48000-0p9-137")).toBe(43204);
     expect(of(44100, "one-frame-none-step-loop-twice-48000-0p9-137")).toBe(39694);
     expect(of(48000, "one-frame-none-step-loop-twice-48000-0p9-120")).toBe(43200);
+    expect(of(48000, "one-frame-none-section-loop-twice-48000-0p9-137")).toBe(43204);
     expect(of(44100, "core-none-step-loop-twice")).toBe(176400);
     expect(of(48000, "bounce-none-bounce-loop")).toBe(192000);
     expect(of(48000, "tail-none-bounce-pre-fader")).toBe(9600);

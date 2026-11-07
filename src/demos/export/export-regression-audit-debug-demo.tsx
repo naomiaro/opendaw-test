@@ -151,7 +151,9 @@ const readCaseLatency = async (harness: HarnessProject, latencyCase: LatencyCase
   } catch (error) {
     console.error(`[export-regression] ${latencyCase}: no reading: ${String(error)}`);
     // Past the deadline the insert is still running: the devices it finishes with must not stay on the live project.
-    inserting.then((late) => late(), () => {});
+    inserting.then((late) => {
+      try { late(); } catch (lateError) { console.error(`[export-regression] ${latencyCase}: removing the late devices failed: ${String(lateError)}`); }
+    }, () => {});
     return NaN;
   }
   try {

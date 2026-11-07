@@ -366,6 +366,15 @@ describe("judgeInvariants", () => {
     expect(early.holds).toBe(false);
     expect(early.finding).toBe("loop-pass-one-frame-short");
   });
+  it("fails a section loop 4 frames short of its pass, which still covers the row's 43200-frame range", () => {
+    const r = buildRows(48000).find((x) => x.id === "one-frame-none-section-loop-twice-48000-0p9-137")!;
+    expect(r.invariants).toContain("frames-as-expected");
+    const of = (frames: number) => one("frames-as-expected", r, rendered([0.5], {}, { frames }));
+    expect(of(43204).holds).toBe(true);
+    const short = of(43200);
+    expect(short.holds).toBe(false);
+    expect(short.detail).toContain("43200 frames, expected 43204");
+  });
   it("fails frames-as-expected on a bounce 128 frames short, and on one too long", () => {
     const r = buildRows(48000).find((x) => x.id === "bounce-none-bounce-pre-fader")!;
     const of = (frames: number) => one("frames-as-expected", r, rendered([0.5], {}, { frames }));

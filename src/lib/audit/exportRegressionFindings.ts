@@ -232,7 +232,7 @@ export const KNOWN_FINDINGS: readonly KnownFinding[] = [
   {
     name: "long-silence-ends-render",
     invariant: "section-is-slice",
-    note: "a defect, drafted for upstream and not yet posted (draft `TO-REVIEW-openDAW-entire-song-ends-at-silence.md`): `render` stops after 10 s at or below -72 dB and keeps a quarter second (core-wasm offline-worker.ts:424-426, :440), whatever regions come later, and resolves normally. So a song with a 15.8 s gap comes out at 0.45 s with its second region missing. With a stem alone, the stem's own silence is what it reads. Bit-identical to the stepped render as far as it goes",
+    note: "a defect, drafted for upstream, see Finding 2 in the export regression note: `render` stops after 10 s at or below -72 dB and keeps a quarter second (core-wasm offline-worker.ts:424-426, :440), whatever regions come later, and resolves normally. So a song with a 15.8 s gap comes out at 0.45 s with its second region missing. With a stem alone, the stem's own silence is what it reads. Bit-identical to the stepped render as far as it goes",
     applies: (row) => GAP_ROWS.has(row.id),
     signature: ({ firstDifferingFrame, comparedFrames, referencePeakOver }, row, pageRate) => {
       const kept = framesKeptBeforeGap(row, pageRate);
