@@ -561,6 +561,28 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   browsers, which this repo does not make. The sentinel: no probe, out of scope; it needs the origin's
   quota exhausted or an incognito profile.
 
+### Chromium (no tracker match) — `createSyncAccessHandle()`'s promise does not settle when its handle is collected in flight
+
+- **Tracker:** none. Searched 2026-11-06 in the user's Chrome (`createSyncAccessHandle`, OPFS with hang and never-resolves terms,
+  `FileSystemFileHandle` with GC terms, a never-resolved promise with GC): no matching issue. Closest, none the same: 40279881,
+  453704691, 513127261. A draft waits for a read:
+  `debug/2026-11-06-export-regression/drafts/TO-REVIEW-chromium-sync-access-handle-does-not-settle.md`.
+- **Where it would bite here:** the SDK's OPFS worker opens every sample file with `return await fileHandle.createSyncAccessHandle()`
+  and holds nothing else on the handle. A full export regression run stalls at one row's sample: the worker reports
+  `[OPFS] write 'samples/v2/<uuid>/audio.wav' runs for 5.0s at 'create sync access handle'`, then `has no answer from the worker after 10.0s`,
+  the row and those sharing the sample time out at 60 s each, and `audio.wav` is 0 bytes. The renders are not affected.
+- **What is reproduced and what is inferred.** A mechanism reproduced, not the natural stall: in a dedicated worker with no SDK, a
+  heavy allocation right after the call and no other reference to the `FileSystemFileHandle` leaves the promise pending, neither
+  resolved nor rejected, and keeping the handle until the promise settles stops it. On the SDK's worker with the same forced allocation,
+  three handles were collected while their opens were pending and the page stalled at the same step. That the natural stall is this is
+  inferred: the same step and lines, a file nothing holds, an observer attached never saw it. The natural stall: 5 in about 21 full
+  runs (3 of 4 at a click about 2 s after load), then 2 in about 20 after waiting about 30 s before the click.
+- **Workaround:** the standing run clicks Run about 30 s after load; a stalled run is repeated at that page rate. The stall is not in the
+  SDK's render path, so no export result depends on it.
+- **Evidence:** `debug/2026-11-06-export-regression/note.md`, "The OPFS hang"; probe `debug/2026-11-06-export-regression/sync-handle-gc-probe.js`.
+- **Last checked:** Chrome 156.0.8078.81 (Playwright's), macOS 15.6.1, 2026-11-06. `WATCHED`: a candidate, to be moved up only on a
+  measurement that observes the natural stall.
+
 ### Chromium [327611574](https://issues.chromium.org/issues/327611574) — the macOS Web MIDI backend was rewritten onto CoreMIDI's UMP API, and the legacy path is gone
 
 - **Tracker:** [issues.chromium.org/issues/327611574](https://issues.chromium.org/issues/327611574), "Mac MIDI code

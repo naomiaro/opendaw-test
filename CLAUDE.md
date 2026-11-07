@@ -820,6 +820,16 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
 - After SDK upgrades, also run `render-section-latency-debug-demo.html` then `?rate=44100` — a real click on Run, offline, no
   hardware, about 25 seconds each. Expect `Done: no frames lost on any of 12 rows`; a row reading "defect present" is `renderSection` losing
   frames at a chunk boundary again (openDAW#530), and "differs from the formula" a loss nobody predicted. At 44.1 kHz the 4 s two-pass rows keep the no-latency baseline's 1 early. Register `debug/2026-11-05-render-section-latency-gap/note.md`.
+- After SDK upgrades, also run the export regression audit: `export-regression-audit-debug-demo.html` then `?rate=44100` — a
+  real click on Run audit about 30 seconds after load, deterministic, no hardware, about 2 minutes each. Expect every row
+  `identical`. A `changed` row is the finding: read `node scripts/audit/export-regression/table.ts <token>` (it needs the
+  library clone for sample figures) and decide file or accept; a `failing` row with no label is a defect; a `no longer reproduces`
+  line is a fix landing, so retire the label in the note. `--accept <token> --library ~/Code/opendaw-export-wavs` only after a
+  person's read, and it needs an explicit token; then commit the WAVs in the library, the private LFS repo
+  `naomiaro/opendaw-export-wavs` (GitHub Free: 10 GiB of storage and 10 GiB of bandwidth a month, every download counts). A run
+  with errored rows on one source is the known OPFS stall: repeat that page rate. Offline-only, so the two page rates are the
+  standing sweep (the device-rate pass was a one-time proof; `--compare-device <tokenA> <tokenB>` if it is repeated). Register
+  and reading recipe `debug/2026-11-06-export-regression/note.md`, rows and labels `src/demos/export/CLAUDE.md`.
 - After SDK upgrades, also run the Nano play-modes audit: `nano-play-modes-debug-demo.html` then
   `?rate=44100` — a real click on Run, deterministic, no hardware, about three seconds. Expect every row
   `as-expected` (the expectations are the crate's documented behaviour, no register to accept): Mono 40 dB

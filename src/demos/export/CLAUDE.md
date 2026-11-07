@@ -30,6 +30,17 @@ Key facts (verified SDK 0.0.160):
 - **`renderer.render(config, start, end, progress)` does NOT stop at `end`** — the worker
   loop runs until silence detection or `config.maxDurationSeconds`; `endPosition` only
   drives the progress observable. For exact ranges always use `step(numSamples)`.
+- **`render` stops at 10 s of silence, judged on the channels it returns.** A region after a gap
+  longer than that is lost from the file, and with stems one stem's own silence ends the render
+  while the mix keeps playing. `start` and `renderSection` with a tail go through `render`; `step`
+  does not. It is a defect drafted upstream
+  (`debug/2026-11-06-export-regression/drafts/TO-REVIEW-openDAW-entire-song-ends-at-silence.md`,
+  measured in the note, Finding 2): a demo that needs a long gap uses `step`. Trailing silence
+  with nothing after it is trimmed by design.
+- **A section or `setPosition` start fades in over about 5 ms**, the engine treating the first
+  block as a jump; the first frames of such a render differ from a continuous pass. A second
+  `play` on one renderer after a stop with reset is not trimmed of its plug-in compensation: the
+  render comes back delayed by the reported latency.
 - **`step(numSamples)` returns exactly numSamples frames** per channel
   (`numChannels = countStems × 2`). Validate `channels.length` and `channels[0].length`
   anyway — a wedged worker returns garbage.
@@ -115,6 +126,19 @@ that stops the replacement reaching them fails loudly.
 Hash the audio, never `project.toArrayBuffer()`: `ProjectSkeleton` stamps the creation time, so those
 bytes differ on every build. Not measured: other machines and browsers, buses and aux sends in the
 mix.
+
+### Export Regression Harness (Standing Sweep)
+`export-regression-audit-debug-demo.html` (`?rate=48000|44100`, `&fill=1`, `&rows=<id,id>` or `&group=<group>`,
+`&uuid=descending` for the positive control) renders 296 rows through every SDK export path (`step`, `start`,
+`renderSection`, stems, bounce, positions, latent and effect chains) from sources generated in memory, with ascending UUIDs so
+a mixdown's bits are reproducible. Each render is hashed against an accepted register (`register/<rate>.json` beside the
+note); a row is `identical`, `changed` or `failing` (an invariant broke), and a `failing` row whose signature matches a label in
+`exportRegressionFindings.ts` reads `known-finding`, which is not a pass. The page uploads a WAV only for a row that is not
+`identical`. Read a run with `node scripts/audit/export-regression/table.ts <token> [--library <clone>] [--diff <rowId>]`; `--accept`
+writes the register and copies the WAVs into the library clone only after a person's read, never on a failing, errored or
+descending run. The WAV library is the private LFS repo `naomiaro/opendaw-export-wavs`, cloned at `~/Code/opendaw-export-wavs`
+(or `$EXPORT_WAV_LIBRARY`); every download counts against its bandwidth. Hash the audio, never the project bytes (above). The run, its
+findings and the reading recipe: `debug/2026-11-06-export-regression/note.md`.
 
 ### Mutate-Copy-Restore Pattern for Offline Rendering
 `project.copy()` creates new box instances — you cannot modify the original project's
