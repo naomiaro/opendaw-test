@@ -330,7 +330,7 @@ describe("the gap rows", () => {
     for (const rate of [48000, 44100]) {
       const reference = span(rate);
       const kept = reference.map((c) => c.slice(0, Math.round(16.45 * rate)));
-      for (const id of ["gap-none-start", "gap-none-stem-start"]) {
+      for (const id of ["gap-none-start", "gap-none-stem-start", "gap-none-stem-mix-start"]) {
         expect(judge(rowOf(rate, id), kept, rate, { reference }).standing, `${id} at ${rate}`).toBe("clean");
       }
     }

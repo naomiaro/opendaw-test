@@ -399,6 +399,11 @@ const buildGap = (common: Pick<ExportRow, "group" | "latencyCase" | "signal">): 
     make({
       ...bedded, id: "gap-none-stem-mix", label: "silent gap, the stem rows' project as a mix", path: "step-one",
       rangeSeconds: GAP_SPAN_SECONDS, invariants: basics()
+    }),
+    // The positive control of the short stem: the same project and path, judged on the mix's channels, which never fall silent.
+    make({
+      ...bedded, id: "gap-none-stem-mix-start", label: "silent gap, the stem rows' project as a mix, start", path: "start",
+      rangeSeconds: end, referenceId: "gap-none-stem-mix", invariants: [...basics(), "section-is-slice"]
     })
   ];
 };

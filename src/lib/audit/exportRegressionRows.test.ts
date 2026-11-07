@@ -63,12 +63,12 @@ describe("exportRegressionRows", () => {
       expect(r.invariants.includes("repeat-identical"), r.id).toBe(repeated);
     }
   });
-  it("reads stems against a bed mix and only these rows and the control carry the bed", () => {
+  it("reads stems against a bed mix, and only these rows, the control and the gap's stem rows carry the bed", () => {
     const rows = buildRows(48000);
     const bed = rows.filter((r) => r.withBed).map((r) => r.group + ":" + r.path);
     expect(new Set(bed)).toEqual(new Set(["stems:step-one", "stems:stems-fx", "stems:stems-dry", "stems:stems-sends",
       "stems:stems-metronome", "stems:stems-start", "stems:stems-section-loop", "control:step-one",
-      "tail:stems-single-step", "tail:stems-single-start", "tail:step-one"]));
+      "tail:stems-single-step", "tail:stems-single-start", "tail:step-one", "tail:start"]));
     rows.filter((r) => ["stems-fx", "stems-dry", "stems-sends", "stems-metronome"].includes(r.path))
       .forEach((r) => expect(r.referenceId, r.id).toMatch(/^mix-/));
   });
@@ -186,9 +186,9 @@ describe("exportRegressionRows", () => {
       expect(rows.filter((r) => r.volumeDb !== 0).map((r) => r.id)).toEqual(taps.map(([id]) => id));
     }
   });
-  it("has 295 rows at each rate", () => {
-    expect(buildRows(48000)).toHaveLength(295);
-    expect(buildRows(44100)).toHaveLength(295);
+  it("has 296 rows at each rate", () => {
+    expect(buildRows(48000)).toHaveLength(296);
+    expect(buildRows(44100)).toHaveLength(296);
   });
   it("labels the one frame only where it was measured", async () => {
     const { findingFor, NO_EVIDENCE } = await import("./exportRegressionFindings.ts");
@@ -301,7 +301,8 @@ describe("the long tail rows", () => {
 
 describe("the gap rows", () => {
   const GAP_IDS = [
-    "gap-none-step-one", "gap-none-start", "gap-none-section-entire", "gap-none-stem-step", "gap-none-stem-start", "gap-none-stem-mix"
+    "gap-none-step-one", "gap-none-start", "gap-none-section-entire",
+    "gap-none-stem-step", "gap-none-stem-start", "gap-none-stem-mix", "gap-none-stem-mix-start"
   ];
 
   it("put a second 200 ms region of the same source at 16 s, and only these rows have one", () => {
@@ -341,6 +342,7 @@ describe("the gap rows", () => {
 
   describe("through a single stem", () => {
     const rowOf = (rate: number, id: string) => buildRows(rate).find((r) => r.id === id)!;
+    const STEM_PROJECT_IDS = ["gap-none-stem-step", "gap-none-stem-start", "gap-none-stem-mix", "gap-none-stem-mix-start"];
 
     it("step the source's stem over the 18 s span for the reference, and render it before the row that reads it", () => {
       for (const rate of [48000, 44100]) {
@@ -350,7 +352,8 @@ describe("the gap rows", () => {
         expect(reference.rangeSeconds).toBe(18);
         expect(reference.referenceId).toBeNull();
         expect(reference.invariants).toEqual(expect.arrayContaining(["proves-something", "latency-as-expected", "frames-as-expected"]));
-        expect(rows.findIndex((r) => r.id === "gap-none-stem-start")).toBeGreaterThan(rows.indexOf(reference));
+        // rowOf builds its own catalogue, so the order is read by id: indexOf would find nothing and always pass
+        expect(rows.findIndex((r) => r.id === "gap-none-stem-start")).toBeGreaterThan(rows.findIndex((r) => r.id === reference.id));
       }
     });
 
@@ -363,13 +366,13 @@ describe("the gap rows", () => {
     });
 
     it("carry a bed that outlasts the span, not one as short as the 200 ms source", () => {
-      for (const id of ["gap-none-stem-step", "gap-none-stem-start", "gap-none-stem-mix"]) {
+      for (const id of STEM_PROJECT_IDS) {
         const row = rowOf(48000, id);
         expect(row.withBed, id).toBe(true);
         expect(row.bedSeconds, id).toBe(18);
       }
       expect(buildRows(48000).filter((r) => r.bedSeconds !== null).map((r) => r.id).sort())
-        .toEqual(["gap-none-stem-mix", "gap-none-stem-start", "gap-none-stem-step"]);
+        .toEqual(["gap-none-stem-mix", "gap-none-stem-mix-start", "gap-none-stem-start", "gap-none-stem-step"]);
     });
 
     it("show that same project's mix over the same span: what the stem's render cannot show", () => {
@@ -377,6 +380,27 @@ describe("the gap rows", () => {
       expect(row.path).toBe("step-one");
       expect(row.rangeSeconds).toBe(18);
       expect(row.referenceId).toBeNull();
+    });
+
+    it("hold that mix through `start` to the same 16.2 s against the stepped mix, the positive control of the stem's short render", () => {
+      for (const rate of [48000, 44100]) {
+        const rows = buildRows(rate);
+        const row = rowOf(rate, "gap-none-stem-mix-start");
+        expect(row.path).toBe("start");
+        expect(row.rangeSeconds).toBe(rowOf(rate, "gap-none-stem-start").rangeSeconds);
+        expect(row.referenceId).toBe("gap-none-stem-mix");
+        expect(row.invariants).toEqual(expect.arrayContaining(["proves-something", "latency-as-expected", "section-is-slice"]));
+        expect(rows.findIndex((r) => r.id === row.id)).toBeGreaterThan(rows.findIndex((r) => r.id === "gap-none-stem-mix"));
+      }
+    });
+
+    it("are one project: only what a render does with it differs, or the control would prove nothing about the stem", () => {
+      const project = ({ signal, sourceRate, seconds, bpm, latencyCase, rangeStartSeconds, secondRegionSeconds, withBed, bedSeconds, withThird, masterMaximizer, disabledDevice, nudgeVolume, engagedCompressor, volumeDb }: ReturnType<typeof rowOf>) =>
+        ({ signal, sourceRate, seconds, bpm, latencyCase, rangeStartSeconds, secondRegionSeconds, withBed, bedSeconds, withThird, masterMaximizer, disabledDevice, nudgeVolume, engagedCompressor, volumeDb });
+      for (const rate of [48000, 44100]) {
+        const expected = project(rowOf(rate, "gap-none-stem-start"));
+        for (const id of STEM_PROJECT_IDS) expect(project(rowOf(rate, id)), `${id} at ${rate}`).toEqual(expected);
+      }
     });
   });
 });

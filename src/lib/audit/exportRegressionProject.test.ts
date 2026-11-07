@@ -109,6 +109,7 @@ describe("rowTakesReverb", () => {
     expect(of("gap-none-stem-step")).toBe(false);
     expect(of("gap-none-stem-start")).toBe(false);
     expect(of("gap-none-stem-mix")).toBe(false);
+    expect(of("gap-none-stem-mix-start")).toBe(false);
   });
 });
 
