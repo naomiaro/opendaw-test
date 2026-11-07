@@ -297,6 +297,11 @@ describe("trailing-silence-trimmed", () => {
     expect(judge(row, reference.map((c) => c.slice(0, 80000)), rate, { reference }).standing).toBe("failing");
     expect(judge(row, edit(reference.map((c) => c.slice(0, 80992)), (out) => { out[0][3] += 1e-3; }), rate, { reference }).standing).toBe("failing");
   });
+  it("says it is by design", () => {
+    const [finding] = KNOWN_FINDINGS.filter((f) => f.name === "trailing-silence-trimmed");
+    expect(finding.note).toContain("by design");
+  });
+
   it("stays off the rows that keep their span", () => {
     const [finding] = KNOWN_FINDINGS.filter((f) => f.name === "trailing-silence-trimmed");
     expect(finding.applies(rowOf(48000, "tail-none-section-entire"), 48000)).toBe(false);
@@ -312,7 +317,7 @@ describe("the gap rows", () => {
   };
   it("have no label yet: cut at the gap they read failing, on both paths and both rates", () => {
     for (const rate of [48000, 44100]) {
-      for (const id of ["gap-none-start", "gap-none-section-entire"]) {
+      for (const id of ["gap-none-start", "gap-none-section-entire", "gap-none-stem-start"]) {
         const row = rowOf(rate, id);
         const reference = span(rate);
         const cut = reference.map((c) => c.slice(0, Math.round(0.45 * rate)));
@@ -325,7 +330,9 @@ describe("the gap rows", () => {
     for (const rate of [48000, 44100]) {
       const reference = span(rate);
       const kept = reference.map((c) => c.slice(0, Math.round(16.45 * rate)));
-      expect(judge(rowOf(rate, "gap-none-start"), kept, rate, { reference }).standing, String(rate)).toBe("clean");
+      for (const id of ["gap-none-start", "gap-none-stem-start"]) {
+        expect(judge(rowOf(rate, id), kept, rate, { reference }).standing, `${id} at ${rate}`).toBe("clean");
+      }
     }
   });
 });

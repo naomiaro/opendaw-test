@@ -208,7 +208,7 @@ export const KNOWN_FINDINGS: readonly KnownFinding[] = [
   {
     name: "trailing-silence-trimmed",
     invariant: "section-is-slice",
-    note: "an entire-song or start render goes through `render`, which stops after silence and keeps 250 ms of it (core-wasm offline-worker.ts render, framesToKeep), so a region whose end is silent comes out short of the region. A bounce keeps its exact span (AudioBounce.ts audibleLength)",
+    note: "by design: an entire-song or start render goes through `render`, which stops after silence and keeps 250 ms of it (core-wasm offline-worker.ts render, framesToKeep), so a song whose end is silent comes out shorter than its last region, with nothing lost. A bounce keeps its exact span (AudioBounce.ts audibleLength)",
     applies: (row) => row.group === "tail" && row.seconds === 4 && (row.path === "section-entire" || row.path === "start"),
     signature: ({ firstDifferingFrame, comparedFrames }, _row, pageRate) =>
       firstDifferingFrame === null && comparedFrames !== null && comparedFrames === TRIMMED_FRAMES[pageRate]

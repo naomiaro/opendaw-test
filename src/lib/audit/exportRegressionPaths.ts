@@ -174,17 +174,23 @@ const renderStart = async (
 ): Promise<Float32Array[]> =>
   ownedChannels(await OfflineEngineRenderer.start(copy, config, new DefaultObservableValue(0), finished, pageRate));
 
-/** The source's stem comes first and object keys keep their insertion order, so channels 0 and 1 are the source. */
-const stemsConfiguration = ({ harness: { units } }: Render, path: StemsPathId): ExportConfiguration => {
+/**
+ * The source's stem comes first and object keys keep their insertion order, so channels 0 and 1 are the source. The
+ * single-stem paths leave the bed out: `render` judges silence on the channels it is given, the stems' and not the mix's.
+ */
+export const stemsConfiguration = (
+  units: Pick<HarnessProject["units"], "source" | "bed">, path: StemsPathId,
+): ExportConfiguration => {
   const options = {
     includeAudioEffects: path !== "stems-dry",
     includeSends: path === "stems-sends",
     useInstrumentOutput: false,
   };
+  const single = path === "stems-single-step" || path === "stems-single-start";
   return {
     stems: {
       [UUID.toString(units.source.address.uuid)]: { ...options, fileName: "Source" },
-      [UUID.toString(units.bed.address.uuid)]: { ...options, fileName: "Bed" },
+      ...(single ? {} : { [UUID.toString(units.bed.address.uuid)]: { ...options, fileName: "Bed" } }),
     },
     ...(path === "stems-metronome" ? { metronome: { stem: { fileName: "Metronome" } } } : {}),
   };
@@ -245,6 +251,7 @@ const renderRow = async (render: Render): Promise<Float32Array[]> => {
   await applyRow(copy, harness, row);
   const frames = Math.round(row.rangeSeconds * pageRate);
   const { path } = row;
+  const { units } = harness;
   switch (path) {
     case "step-one":
       return renderSteps(render, Option.None, 0, [frames]);
@@ -268,11 +275,13 @@ const renderRow = async (render: Render): Promise<Float32Array[]> => {
     case "stems-dry":
     case "stems-sends":
     case "stems-metronome":
-      return renderSteps(render, Option.wrap(stemsConfiguration(render, path)), 0, [frames]);
+    case "stems-single-step":
+      return renderSteps(render, Option.wrap(stemsConfiguration(units, path)), 0, [frames]);
     case "stems-start":
-      return renderStart(render, Option.wrap(stemsConfiguration(render, path)));
+    case "stems-single-start":
+      return renderStart(render, Option.wrap(stemsConfiguration(units, path)));
     case "stems-section-loop":
-      return renderSectionPath(render, path, Option.wrap(stemsConfiguration(render, path)));
+      return renderSectionPath(render, path, Option.wrap(stemsConfiguration(units, path)));
     case "bounce-pre-fx":
     case "bounce-pre-fader":
     case "bounce-post-fader":

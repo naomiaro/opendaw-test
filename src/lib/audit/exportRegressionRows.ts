@@ -8,6 +8,7 @@ export type PathId =
   | "step-one" | "step-chunked-whole" | "step-chunked-odd" | "step-reset" | "step-loop-twice" | "start"
   | "section-entire" | "section-loop-once" | "section-loop-twice" | "section-marker" | "section-marker-last"
   | "stems-fx" | "stems-dry" | "stems-sends" | "stems-metronome" | "stems-start" | "stems-section-loop"
+  | "stems-single-step" | "stems-single-start"
   | "bounce-pre-fx" | "bounce-pre-fader" | "bounce-post-fader" | "bounce-merge" | "bounce-loop" | "bounce-tail"
   | "setposition-on-quantum" | "setposition-off-quantum" | "loop-on-copy";
 
@@ -33,6 +34,8 @@ export type ExportRow = {
   disabledDevice: boolean;
   nudgeVolume: boolean;
   withBed: boolean;
+  /** How long the bed lasts where that is not `seconds`: a bed as short as a 200 ms source would leave the mix silent too. */
+  bedSeconds: number | null;
   /** A third audible unit: with two, float32 addition is commutative and the summing order cannot reach the bits. */
   withThird: boolean;
   /** The case's Compressor set to compress. Every other row keeps it neutral, so those prove its latency, not that it processes. */
@@ -150,6 +153,7 @@ const make = (spec: Spec): ExportRow => {
     disabledDevice: false,
     nudgeVolume: false,
     withBed: false,
+    bedSeconds: null,
     withThird: false,
     engagedCompressor: false,
     volumeDb: 0,
@@ -375,12 +379,27 @@ const buildGap = (common: Pick<ExportRow, "group" | "latencyCase" | "signal">): 
   const referenceId = "gap-none-step-one";
   const gap = { ...common, seconds: TAIL_BURST_SECONDS, secondRegionSeconds: GAP_SECOND_REGION_SECONDS };
   const end = GAP_SECOND_REGION_SECONDS + TAIL_BURST_SECONDS;
+  // The bed is in the project and not in the stems configuration, so the stem falls silent where the mix does not.
+  const bedded = { ...gap, withBed: true, bedSeconds: GAP_SPAN_SECONDS };
   return [
     make({ ...gap, id: referenceId, label: "silent gap, step-one", path: "step-one", rangeSeconds: GAP_SPAN_SECONDS, invariants: basics() }),
     ...(["start", "section-entire"] as const).map((path) => make({
       ...gap, id: `gap-none-${path}`, label: `silent gap, ${path}`, path, rangeSeconds: end, referenceId,
       invariants: [...basics(), "section-is-slice" as const]
-    }))
+    })),
+    make({
+      ...bedded, id: "gap-none-stem-step", label: "silent gap, the source's stem alone, step", path: "stems-single-step",
+      rangeSeconds: GAP_SPAN_SECONDS, invariants: [...basics(), "frames-as-expected"]
+    }),
+    make({
+      ...bedded, id: "gap-none-stem-start", label: "silent gap, the source's stem alone, start", path: "stems-single-start",
+      rangeSeconds: end, referenceId: "gap-none-stem-step", invariants: [...basics(), "section-is-slice"]
+    }),
+    // A stem render hands back only its stems, so nothing in it shows the mix: this is that project's mix over that span.
+    make({
+      ...bedded, id: "gap-none-stem-mix", label: "silent gap, the stem rows' project as a mix", path: "step-one",
+      rangeSeconds: GAP_SPAN_SECONDS, invariants: basics()
+    })
   ];
 };
 

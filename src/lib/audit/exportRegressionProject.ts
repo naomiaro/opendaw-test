@@ -88,9 +88,9 @@ export const sourceSamples = ({ signal, sourceRate, seconds }: SourceId): [Float
 export const distinctSources = (rows: readonly ExportRow[]): SourceId[] => {
   const sources = new Map<string, SourceId>();
   const add = (id: SourceId): void => void sources.set(sourceKey(id), id);
-  for (const { signal, sourceRate, seconds, withBed, withThird } of rows) {
+  for (const { signal, sourceRate, seconds, withBed, bedSeconds, withThird } of rows) {
     add({ signal, sourceRate, seconds });
-    if (withBed) add({ signal: "bed", sourceRate, seconds });
+    if (withBed) add({ signal: "bed", sourceRate, seconds: bedSeconds ?? seconds });
     if (withThird) add({ signal: "sweep", sourceRate, seconds });
   }
   return [...sources.values()];
@@ -289,6 +289,9 @@ const placeSource = (project: Project, track: TrackBox, uuid: UUID.Bytes, row: E
   placeSourceRegions(project.boxGraph, track, uuid, name === row.signal ? row : { ...row, secondRegionSeconds: null }, name);
 };
 
+/** What the bed's track is placed from: one region, for as long as the row's bed lasts. */
+export const bedRow = (row: ExportRow): ExportRow => ({ ...row, seconds: row.bedSeconds ?? row.seconds, secondRegionSeconds: null });
+
 /** A tail row's Reverb gives it something to ring. A gap row's silence must be exact, so it has none. */
 export const rowTakesReverb = ({ signal, secondRegionSeconds }: ExportRow): boolean => signal === "tail" && secondRegionSeconds === null;
 
@@ -320,7 +323,7 @@ const settleMasterMaximizer = (project: Project, keep: boolean): void => {
 export const applyRow = async (copy: Project, harness: HarnessProject, row: ExportRow): Promise<void> => {
   const { editing, timelineBox } = copy;
   const sourceId = { signal: row.signal, sourceRate: row.sourceRate, seconds: row.seconds };
-  const bedId = { signal: "bed" as const, sourceRate: row.sourceRate, seconds: row.seconds };
+  const bedId = { signal: "bed" as const, sourceRate: row.sourceRate, seconds: bedRow(row).seconds };
   const sampleOf = (id: SourceId): UUID.Bytes => {
     const uuid = harness.sources.get(sourceKey(id));
     if (uuid === undefined) throw new Error(`${row.id}: prepareSources did not prepare ${sourceKey(id)}`);
@@ -339,7 +342,7 @@ export const applyRow = async (copy: Project, harness: HarnessProject, row: Expo
   editing.modify(() => {
     timelineBox.bpm.setValue(row.bpm);
     placeSource(copy, sourceTrack, sourceSample, row, row.signal);
-    if (bedSample !== null) placeSource(copy, bedTrack, bedSample, row, "bed");
+    if (bedSample !== null) placeSourceRegions(copy.boxGraph, bedTrack, bedSample, bedRow(row), "bed");
     if (thirdSample !== null) placeSource(copy, holderTrack, thirdSample, row, "third");
     bed.mute.setValue(!row.withBed);
     holder.mute.setValue(!row.withThird);

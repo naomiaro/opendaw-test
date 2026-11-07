@@ -4,7 +4,7 @@ import { AudioFileBox, AudioRegionBox, TrackBox } from "@opendaw/studio-boxes";
 import { AudioUnitFactory, ProjectSkeleton } from "@opendaw/studio-adapters";
 import { AudioUnitType } from "@opendaw/studio-enums";
 import { transact, type Graph } from "@/lib/testing/boxGraphFixtures";
-import { distinctSources, latencyDevices, placeSourceRegions, rowTakesReverb, sourceKey, sourceSamples, sourceUuid } from "./exportRegressionProject";
+import { bedRow, distinctSources, latencyDevices, placeSourceRegions, rowTakesReverb, sourceKey, sourceSamples, sourceUuid } from "./exportRegressionProject";
 import { LATENCY_CASES, buildRows, type ExportRow } from "./exportRegressionRows";
 import { probeSource } from "./exportRegressionSignals";
 
@@ -82,6 +82,18 @@ describe("placeSourceRegions", () => {
       expect(region.file.targetVertex.unwrap().box).toBe(files[0]);
     }
   });
+
+  it("places a bed once, for as long as the row's bed lasts, under a source with two short regions", () => {
+    const { regions, files } = place(bedRow(rowOf("gap-none-stem-step")));
+    expect(files.map((file) => file.endInSeconds.getValue())).toEqual([18]);
+    expect(regions.map((region) => [region.position.getValue(), region.duration.getValue(), region.loopDuration.getValue()]))
+      .toEqual([[0, 34560, 34560]]);
+  });
+
+  it("keeps a bed as long as its source on a row that names no length of its own", () => {
+    const { regions } = place(bedRow(rowOf("mix-none-step-one")));
+    expect(regions.map((region) => region.duration.getValue())).toEqual([7680]);
+  });
 });
 
 describe("rowTakesReverb", () => {
@@ -94,6 +106,9 @@ describe("rowTakesReverb", () => {
     expect(of("gap-none-step-one")).toBe(false);
     expect(of("gap-none-start")).toBe(false);
     expect(of("gap-none-section-entire")).toBe(false);
+    expect(of("gap-none-stem-step")).toBe(false);
+    expect(of("gap-none-stem-start")).toBe(false);
+    expect(of("gap-none-stem-mix")).toBe(false);
   });
 });
 
@@ -154,14 +169,21 @@ describe("distinctSources", () => {
       sourceKey({ signal: "sweep", sourceRate: 44100, seconds: 2 })]);
   });
 
-  it("covers the catalogue: six probes, two tails, a sweep, a hot signal, a bed", () => {
+  it("adds a bed at the row's own bed length when it names one", () => {
+    expect(distinctSources([row({ seconds: 0.2, withBed: true, bedSeconds: 18 })]).map(sourceKey)).toEqual([
+      sourceKey({ signal: "probe", sourceRate: 48000, seconds: 0.2 }),
+      sourceKey({ signal: "bed", sourceRate: 48000, seconds: 18 })]);
+  });
+
+  it("covers the catalogue: six probes, two tails, a sweep, a hot signal, a bed and the gap rows' longer one", () => {
     const sources = distinctSources(buildRows(48000));
     expect(new Set(sources.map(sourceKey)).size).toBe(sources.length);
     expect(sources.filter(({ signal }) => signal === "probe")).toHaveLength(6);
     expect(sources.filter(({ signal }) => signal === "tail").map(({ seconds }) => seconds).sort()).toEqual([0.2, 4]);
-    for (const signal of ["sweep", "hot", "bed"] as const) {
+    for (const signal of ["sweep", "hot"] as const) {
       expect(sources.filter((source) => source.signal === signal))
         .toEqual([{ signal, sourceRate: 48000, seconds: 4 }]);
     }
+    expect(sources.filter(({ signal }) => signal === "bed").map(({ seconds }) => seconds).sort((a, b) => a - b)).toEqual([4, 18]);
   });
 });

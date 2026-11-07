@@ -1,8 +1,32 @@
 import { describe, expect, it, vi } from "vitest";
-import { chunkSizes, secondPass } from "./exportRegressionPaths";
+import { UUID } from "@opendaw/lib-std";
+import type { AudioUnitBox } from "@opendaw/studio-boxes";
+import { chunkSizes, secondPass, stemsConfiguration } from "./exportRegressionPaths";
 
 // The package index needs AudioWorkletNode, which Node has not. Nothing tested here renders.
 vi.mock("@opendaw/studio-core", () => ({ EffectFactories: { AudioNamed: {} } }));
+
+describe("stemsConfiguration", () => {
+  const unit = (): AudioUnitBox => ({ address: { uuid: UUID.generate() } }) as unknown as AudioUnitBox;
+  const units = { source: unit(), bed: unit() };
+  const sourceKey = UUID.toString(units.source.address.uuid);
+  const bedKey = UUID.toString(units.bed.address.uuid);
+
+  it("names the source's stem alone on the single-stem paths: the worker's silence check reads only the stems it is given", () => {
+    for (const path of ["stems-single-step", "stems-single-start"] as const) {
+      const { stems, metronome } = stemsConfiguration(units, path);
+      expect(Object.keys(stems!), path).toEqual([sourceKey]);
+      expect(metronome, path).toBeUndefined();
+      expect(stems![sourceKey], path).toMatchObject({ includeAudioEffects: true, includeSends: false, useInstrumentOutput: false });
+    }
+  });
+
+  it("names both units, the source's first, on the other stem paths", () => {
+    for (const path of ["stems-fx", "stems-dry", "stems-sends", "stems-metronome", "stems-start", "stems-section-loop"] as const) {
+      expect(Object.keys(stemsConfiguration(units, path).stems!), path).toEqual([sourceKey, bedKey]);
+    }
+  });
+});
 
 describe("secondPass", () => {
   it("keeps what follows the first pass, on every channel", () => {

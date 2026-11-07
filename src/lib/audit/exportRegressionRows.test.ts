@@ -67,7 +67,8 @@ describe("exportRegressionRows", () => {
     const rows = buildRows(48000);
     const bed = rows.filter((r) => r.withBed).map((r) => r.group + ":" + r.path);
     expect(new Set(bed)).toEqual(new Set(["stems:step-one", "stems:stems-fx", "stems:stems-dry", "stems:stems-sends",
-      "stems:stems-metronome", "stems:stems-start", "stems:stems-section-loop", "control:step-one"]));
+      "stems:stems-metronome", "stems:stems-start", "stems:stems-section-loop", "control:step-one",
+      "tail:stems-single-step", "tail:stems-single-start", "tail:step-one"]));
     rows.filter((r) => ["stems-fx", "stems-dry", "stems-sends", "stems-metronome"].includes(r.path))
       .forEach((r) => expect(r.referenceId, r.id).toMatch(/^mix-/));
   });
@@ -117,7 +118,7 @@ describe("exportRegressionRows", () => {
       for (const r of rows) {
         const exact = r.path === "step-loop-twice" || r.group === "sweep"
           || (r.path.startsWith("bounce-") && r.path !== "bounce-tail")
-          || ["stems-fx", "stems-dry", "stems-sends", "stems-metronome"].includes(r.path);
+          || ["stems-fx", "stems-dry", "stems-sends", "stems-metronome", "stems-single-step"].includes(r.path);
         expect(held.includes(r), r.id).toBe(exact);
       }
       expect(held.filter((r) => r.group === "bounce")).toHaveLength(20);
@@ -185,9 +186,9 @@ describe("exportRegressionRows", () => {
       expect(rows.filter((r) => r.volumeDb !== 0).map((r) => r.id)).toEqual(taps.map(([id]) => id));
     }
   });
-  it("has 292 rows at each rate", () => {
-    expect(buildRows(48000)).toHaveLength(292);
-    expect(buildRows(44100)).toHaveLength(292);
+  it("has 295 rows at each rate", () => {
+    expect(buildRows(48000)).toHaveLength(295);
+    expect(buildRows(44100)).toHaveLength(295);
   });
   it("labels the one frame only where it was measured", async () => {
     const { findingFor, NO_EVIDENCE } = await import("./exportRegressionFindings.ts");
@@ -299,7 +300,9 @@ describe("the long tail rows", () => {
 });
 
 describe("the gap rows", () => {
-  const GAP_IDS = ["gap-none-step-one", "gap-none-start", "gap-none-section-entire"];
+  const GAP_IDS = [
+    "gap-none-step-one", "gap-none-start", "gap-none-section-entire", "gap-none-stem-step", "gap-none-stem-start", "gap-none-stem-mix"
+  ];
 
   it("put a second 200 ms region of the same source at 16 s, and only these rows have one", () => {
     for (const rate of [48000, 44100]) {
@@ -334,6 +337,47 @@ describe("the gap rows", () => {
     for (const id of ["gap-none-start", "gap-none-section-entire"]) {
       expect(rows.find((r) => r.id === id)!.rangeSeconds, id).toBeCloseTo(16.2, 9);
     }
+  });
+
+  describe("through a single stem", () => {
+    const rowOf = (rate: number, id: string) => buildRows(rate).find((r) => r.id === id)!;
+
+    it("step the source's stem over the 18 s span for the reference, and render it before the row that reads it", () => {
+      for (const rate of [48000, 44100]) {
+        const rows = buildRows(rate);
+        const reference = rowOf(rate, "gap-none-stem-step");
+        expect(reference.path).toBe("stems-single-step");
+        expect(reference.rangeSeconds).toBe(18);
+        expect(reference.referenceId).toBeNull();
+        expect(reference.invariants).toEqual(expect.arrayContaining(["proves-something", "latency-as-expected", "frames-as-expected"]));
+        expect(rows.findIndex((r) => r.id === "gap-none-stem-start")).toBeGreaterThan(rows.indexOf(reference));
+      }
+    });
+
+    it("hold `start` to the second region's end, as the mix's gap rows are", () => {
+      const row = rowOf(48000, "gap-none-stem-start");
+      expect(row.path).toBe("stems-single-start");
+      expect(row.rangeSeconds).toBeCloseTo(16.2, 9);
+      expect(row.referenceId).toBe("gap-none-stem-step");
+      expect(row.invariants).toEqual(expect.arrayContaining(["proves-something", "latency-as-expected", "section-is-slice"]));
+    });
+
+    it("carry a bed that outlasts the span, not one as short as the 200 ms source", () => {
+      for (const id of ["gap-none-stem-step", "gap-none-stem-start", "gap-none-stem-mix"]) {
+        const row = rowOf(48000, id);
+        expect(row.withBed, id).toBe(true);
+        expect(row.bedSeconds, id).toBe(18);
+      }
+      expect(buildRows(48000).filter((r) => r.bedSeconds !== null).map((r) => r.id).sort())
+        .toEqual(["gap-none-stem-mix", "gap-none-stem-start", "gap-none-stem-step"]);
+    });
+
+    it("show that same project's mix over the same span: what the stem's render cannot show", () => {
+      const row = rowOf(48000, "gap-none-stem-mix");
+      expect(row.path).toBe("step-one");
+      expect(row.rangeSeconds).toBe(18);
+      expect(row.referenceId).toBeNull();
+    });
   });
 });
 
