@@ -72,6 +72,10 @@ const requireString = (value: unknown, where: string): void => {
 const requireFinite = (value: unknown, where: string): void => {
   if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(`${where} is ${kindOf(value)}, not a finite number`);
 };
+const requireFiniteList = (value: unknown, where: string): void => {
+  if (!Array.isArray(value)) throw new Error(`${where} is not an array`);
+  value.forEach((item: unknown, i: number) => requireFinite(item, `${where}[${i}]`));
+};
 
 export function parseExportSummary(json: unknown, runToken: number): ExportSummary {
   const where = `summary ${runToken}`;
@@ -93,11 +97,21 @@ export function parseExportSummary(json: unknown, runToken: number): ExportSumma
     requireString(row.id, `${where}: row ${i} id`);
     const at = `${where}: row ${String(row.id)}`;
     if (!Array.isArray(row.invariants)) throw new Error(`${at} invariants is not an array`);
+    row.invariants.forEach((result: unknown, j: number) => {
+      const of = `${at} invariant ${j}`;
+      if (!isObject(result)) throw new Error(`${of} is not an object`);
+      requireString(result.invariant, `${of} invariant`);
+      if (typeof result.holds !== "boolean") throw new Error(`${of} holds is ${kindOf(result.holds)}, not a boolean`);
+      if (result.finding !== null && typeof result.finding !== "string") throw new Error(`${of} finding is ${kindOf(result.finding)}, not a string or null`);
+    });
     if (typeof row.standing !== "string") throw new Error(`${at} standing is ${kindOf(row.standing)}, not a string`);
     if (row.error === null || row.error === undefined) {
       if (!isObject(row.read)) throw new Error(`${at} has no error and no read`);
       requireString(row.read.hash, `${at} read.hash`);
       requireFinite(row.read.frames, `${at} read.frames`);
+      requireFinite(row.read.channels, `${at} read.channels`);
+      requireFinite(row.read.peak, `${at} read.peak`);
+      requireFiniteList(row.read.impulseHits, `${at} read.impulseHits`);
     }
   });
   // A summary written before the field existed reads null
@@ -118,10 +132,30 @@ export function parseExportRegister(json: unknown): ExportRegister {
     requireString(entry.hash, `register: row ${id} hash`);
     requireString(entry.wav, `register: row ${id} wav`);
     requireFinite(entry.frames, `register: row ${id} frames`);
-    if (!Array.isArray(entry.impulseHits)) throw new Error(`register: row ${id} impulseHits is not an array`);
+    requireFinite(entry.channels, `register: row ${id} channels`);
+    requireFinite(entry.peak, `register: row ${id} peak`);
+    requireFiniteList(entry.impulseHits, `register: row ${id} impulseHits`);
   }
   return json as unknown as ExportRegister;
 }
+
+/** What the rows read against the register, apart from their standing: an invariant holds with no register at all. */
+export const registerCounts = (rows: readonly Pick<RowRecord, "register">[]): Record<RegisterVerdict, number> => {
+  const count = (verdict: RegisterVerdict): number => rows.filter((row) => row.register === verdict).length;
+  return { identical: count("identical"), changed: count("changed"), unregistered: count("unregistered") };
+};
+
+/** A fill is the run that makes the register, so it has nothing to say about one. */
+export const noRegisterNotice = (hasRegister: boolean, fill: boolean): string | null =>
+  hasRegister || fill ? null
+    : "This page found no accepted register, so a run here proves the invariants only, not that a render has the same bits as accepted.";
+
+/** `uploadSummary`'s rejection when the host has no verify sink, as the public host has not. */
+export const isMissingSink = (message: string): boolean => /HTTP 40[45]\b/.test(message);
+
+/** Not plain `done`: `table.ts` with no token would read an older run as if it were this one. */
+export const auditStateAfterRun = (summaryUploaded: boolean): "done" | "done:no-summary" =>
+  summaryUploaded ? "done" : "done:no-summary";
 
 export const libraryWavPath = (hash: string): string => `wav/${hash}.wav`;
 
@@ -136,9 +170,7 @@ function refusedRows(rows: readonly RowRecord[]): { errored: string[]; unreadabl
       continue;
     }
     const standing = rowStanding(row.invariants, row.error);
-    const named = row.invariants.every((r) => r.holds || KNOWN_FINDINGS.some(
-      (finding) => finding.name === r.finding && finding.invariant === r.invariant));
-    if (standing === "failing" || !named) failing.push(row.id);
+    if (standing === "failing") failing.push(row.id);
     else if (standing !== row.standing) unreadable.push(row.id);
   }
   return { errored, unreadable, failing };
@@ -148,9 +180,10 @@ function refusedRows(rows: readonly RowRecord[]): { errored: string[]; unreadabl
  * The register a run makes, or the refusal. Refused outright, even forced: an errored row (it read nothing), a row
  * whose own invariants fail with no known finding of that invariant (accepting it would bless a defect: the stored
  * `standing` is not trusted, it is recomputed and must agree), a control run (descending UUIDs), a rate other than the
- * register's, a schema this code cannot read. Refused unless forced: a partial run, which then merges into the register
- * on disk, and a full run whose rows are not the catalogue's. Every row whose hash differs from its register entry
- * needs its WAV uploaded; `wavsToCopy` is each hash the register does not hold yet, once.
+ * register's, a schema this code cannot read, a row the catalogue does not hold or holds with other invariants (a summary
+ * from before the catalogue changed was not judged by this catalogue). Refused unless forced: a partial run, which then
+ * merges into the register on disk, and a full run missing catalogue rows. Every row whose hash differs from its register
+ * entry needs its WAV uploaded; `wavsToCopy` is each hash the register does not hold yet, once.
  */
 export function planAccept(
   summary: ExportSummary, onDisk: ExportRegister | null, uploaded: ReadonlySet<string>,
@@ -179,6 +212,15 @@ export function planAccept(
       throw new Error(`${where} renders at ${summary.sampleRate} Hz, the register is at ${onDisk.sampleRate} Hz`);
     }
   }
+  const catalogue = new Map(buildRows(summary.sampleRate).map((row) => [row.id, row]));
+  const stray = summary.rows.filter((row) => !catalogue.has(row.id)).map((row) => row.id);
+  if (stray.length > 0) throw new Error(`${where} has rows not in the catalogue, never accepted, not even forced: ${stray.join(", ")}`);
+  const offCatalogue = summary.rows
+    .filter((row) => row.invariants.map((r) => r.invariant).join() !== catalogue.get(row.id)!.invariants.join())
+    .map((row) => row.id);
+  if (offCatalogue.length > 0) {
+    throw new Error(`${where} has rows whose invariants are not the catalogue's, never accepted, not even forced: ${offCatalogue.join(", ")}`);
+  }
   const partial = summary.rowsParam !== "all";
   if (partial && !options.force) {
     throw new Error(`${where} is partial (rows=${summary.rowsParam}), not accepted without force: forced, it merges into the register on disk`);
@@ -188,12 +230,9 @@ export function planAccept(
     throw new Error(`${where} is partial and cannot merge into a register of another build: sdk ${onDisk.sdkVersion} / engine ${onDisk.engineWasmSha256.slice(0, 12)} in the register, sdk ${summary.sdkVersion} / engine ${summary.engineWasmSha256.slice(0, 12)} in the run`);
   }
   if (!partial && !options.force) {
-    const catalogue = new Set(buildRows(summary.sampleRate).map((r) => r.id));
     const present = new Set(summary.rows.map((r) => r.id));
-    const missing = [...catalogue].filter((id) => !present.has(id));
-    const stray = [...present].filter((id) => !catalogue.has(id));
+    const missing = [...catalogue.keys()].filter((id) => !present.has(id));
     if (missing.length > 0) throw new Error(`${where} is a full run missing catalogue rows, not accepted without force: ${missing.join(", ")}`);
-    if (stray.length > 0) throw new Error(`${where} is a full run with rows not in the catalogue, not accepted without force: ${stray.join(", ")}`);
   }
 
   const rows: Record<string, RegisterEntry> = partial && onDisk !== null ? { ...onDisk.rows } : {};

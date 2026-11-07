@@ -1,6 +1,6 @@
 // Plain Node must load this file: the table script judges runs with it, so no SDK value imports.
 import { expectedFrames, expectedLatencyFrames, LOOP_ON_COPY_SECONDS, type ExportRow, type InvariantId } from "./exportRegressionRows.ts";
-import { findingFor, NO_EVIDENCE, type FindingEvidence, type GainBand } from "./exportRegressionFindings.ts";
+import { findingFor, KNOWN_FINDINGS, NO_EVIDENCE, type FindingEvidence, type GainBand } from "./exportRegressionFindings.ts";
 import { computedFrame, IMPULSE_SOURCE_FRAMES, PROBE_TONE_HZ, PROBE_TONE_LEVEL } from "./exportRegressionSignals.ts";
 import { toneStep, uniformEarly } from "./sectionRenderGap.ts";
 import type { RenderRead } from "./exportRegressionReader.ts";
@@ -407,6 +407,10 @@ export function compareRegister(
   return { verdict: "changed", shiftFrames: uniformEarly(read.impulseHits, entry.impulseHits), framesChanged };
 }
 
+/** Whether a failed result's label is one this build still knows, of that invariant: a stored summary can hold a retired one. */
+export const namesKnownFinding = ({ invariant, finding }: Pick<InvariantResult, "invariant" | "finding">): boolean =>
+  KNOWN_FINDINGS.some((known) => known.name === finding && known.invariant === invariant);
+
 export function rowStanding(
   results: readonly InvariantResult[], error: string | null
 ): "clean" | "known-finding" | "failing" | "errored" {
@@ -414,7 +418,7 @@ export function rowStanding(
   if (results.length === 0) return "failing";
   const failed = results.filter((r) => !r.holds);
   if (failed.length === 0) return "clean";
-  return failed.every((r) => r.finding !== null) ? "known-finding" : "failing";
+  return failed.every(namesKnownFinding) ? "known-finding" : "failing";
 }
 
 /** Null for an answer that is not a register: the SPA fallback is HTML with status 200. Bad JSON throws. */

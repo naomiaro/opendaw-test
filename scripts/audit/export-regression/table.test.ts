@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { acceptPath, compareDeviceRates, formatRows, hashSamples, parseArgs, runLine } from "./table.ts";
+import { acceptPath, compareDeviceRates, formatRows, hashSamples, newestRunLine, parseArgs, runLine } from "./table.ts";
 import { sha256OfSamples } from "../../../src/lib/audit/exportRegressionReader.ts";
 import { encodeFloatWav } from "../../../src/lib/audit/exportRegressionWav.ts";
 import { buildRows } from "../../../src/lib/audit/exportRegressionRows.ts";
@@ -22,6 +22,13 @@ const record = (over: Partial<RowRecord> = {}): RowRecord => ({
 const summary = (rows: RowRecord[], over: Partial<ExportSummary> = {}): ExportSummary => ({
   schemaVersion: 1, runToken: 7, userAgent: "ua", sdkVersion: "0.0.182", engineWasmSha256: "e".repeat(64), sampleRate: 48000,
   uuidOrder: "ascending", rowsParam: "all", fill: false, registerSdkVersion: null, latencyReads: [], deviceRateHz: null, rows, ...over
+});
+
+/** A row the catalogue holds, its invariants its own: what the accept gate takes. */
+const CATALOGUE_ROW = buildRows(48000)[0];
+const ID = CATALOGUE_ROW.id;
+const acceptable = (over: Partial<RowRecord> = {}): RowRecord => record({
+  id: ID, invariants: CATALOGUE_ROW.invariants.map((invariant) => ({ invariant, holds: true, detail: "", finding: null })), ...over
 });
 
 /** A scratch tree with the summary, and the WAV of each row id in `wavs`; returns the root and a library path. */
@@ -78,23 +85,42 @@ describe("acceptPath", () => {
   });
 });
 
+const KNOWN_FAILURE = { invariant: "impulse-on-reference", holds: false, detail: "", finding: "loop-pass-one-frame-short" } as const;
+const BARE_FAILURE = { invariant: "no-jump", holds: false, detail: "", finding: null } as const;
+
+describe("newestRunLine", () => {
+  it("names the run a tokenless read took, and how old it is", () => {
+    const token = 1_000_000_000;
+    expect(newestRunLine(token, token + 90_000)).toBe(`no token given: reading the newest summary, run ${token}, 2 min old`);
+    expect(newestRunLine(token, token + 5 * 3_600_000)).toBe(`no token given: reading the newest summary, run ${token}, 5.0 h old`);
+  });
+});
+
 describe("formatRows and runLine", () => {
   it("prints id, standing, register, hash prefix, frames, latency and the failing invariants", () => {
     const failing = record({
       id: "b", standing: "known-finding", register: "changed", shiftFrames: -1, reportedLatencyFrames: 64,
-      invariants: [{ invariant: "section-is-slice", holds: false, detail: "", finding: "loop-pass-one-frame-short" }]
+      invariants: [KNOWN_FAILURE]
     });
     expect(formatRows(summary([record(), failing]))).toEqual([
       "a | clean | unregistered | 0123456789 | 4 | 0 | -",
-      "b | known-finding | changed shift -1 | 0123456789 | 4 | 64 | section-is-slice (loop-pass-one-frame-short)"
+      "b | known-finding | changed shift -1 | 0123456789 | 4 | 64 | impulse-on-reference (loop-pass-one-frame-short)"
     ]);
   });
   it("counts the three standings and the errored on the run line", () => {
-    const line = runLine(summary([record(), record({ standing: "known-finding" }), record({ standing: "failing" }),
-      record({ standing: "errored", error: "x", read: null })]));
+    const line = runLine(summary([record(), record({ invariants: [KNOWN_FAILURE] }), record({ invariants: [BARE_FAILURE] }),
+      record({ error: "x", read: null })]));
     expect(line).toContain("clean 1, known finding 1, failing 1, errored 1");
     expect(line).toContain("sdk 0.0.182");
     expect(line).toContain("engine eeeeeeeeeeee");
+  });
+  it("reads a stored summary's standing off its invariants, so a retired label is not shown as known", () => {
+    const retired = record({
+      standing: "known-finding",
+      invariants: [{ invariant: "impulse-on-reference", holds: false, detail: "", finding: "a-label-since-retired" }]
+    });
+    expect(formatRows(summary([retired]))).toEqual(["a | failing | unregistered | 0123456789 | 4 | 0 | impulse-on-reference"]);
+    expect(runLine(summary([retired]))).toContain("clean 0, known finding 0, failing 1, errored 0");
   });
 });
 
@@ -156,9 +182,23 @@ describe("compareDeviceRates", () => {
 describe("the script", () => {
   const good = () => {
     const hash = hashSamples(samples);
-    const s = summary([record({ read: { ...record().read!, hash } })]);
-    return { s, hash, ...scratch(s, { a: samples }) };
+    const s = summary([acceptable({ read: { ...record().read!, hash } })]);
+    return { s, hash, ...scratch(s, { [ID]: samples }) };
   };
+
+  it("fails on a token whose summary is not there, and never reads another run instead", () => {
+    const { root } = good();
+    const result = run(root, ["8"]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("no exportreg summary 8");
+    expect(result.stdout).toBe("");
+  });
+
+  it("says which run it reads when no token is given, and not when one is", () => {
+    const { root } = good();
+    expect(run(root, []).stdout).toMatch(/^no token given: reading the newest summary, run 7, /);
+    expect(run(root, ["7"]).stdout).not.toContain("no token given");
+  });
 
   it("--compare-device exits 0 on identical hashes and 1 on a differing row, writing nothing", () => {
     const withHash = (token: number, device: number, hash: string) =>
@@ -184,7 +224,7 @@ describe("the script", () => {
     expect(result.status).toBe(0);
     expect(existsSync(join(library, "wav", `${hash}.wav`))).toBe(true);
     const register = JSON.parse(readFileSync(acceptPath(s.sampleRate, root), "utf8"));
-    expect(register.rows.a).toMatchObject({ hash, wav: `wav/${hash}.wav` });
+    expect(register.rows[ID]).toMatchObject({ hash, wav: `wav/${hash}.wav` });
     expect(result.stdout).toContain("git -C");
   });
 
@@ -198,8 +238,8 @@ describe("the script", () => {
   });
 
   it("verifies a WAV's samples hash before copying it, and writes nothing", () => {
-    const s = summary([record({ read: { ...record().read!, hash: "f".repeat(64) } })]);
-    const { root, library } = scratch(s, { a: samples });
+    const s = summary([acceptable({ read: { ...record().read!, hash: "f".repeat(64) } })]);
+    const { root, library } = scratch(s, { [ID]: samples });
     const result = run(root, ["7", "--accept", "--force", "--library", library]);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("nothing written");
@@ -217,7 +257,7 @@ describe("the script", () => {
   });
 
   it("refuses a failing row, even forced, and writes nothing", () => {
-    const s = summary([record({ standing: "failing", invariants: [{ invariant: "no-jump", holds: false, detail: "", finding: null }] })]);
+    const s = summary([record({ standing: "failing", invariants: [BARE_FAILURE] })]);
     const { root, library } = scratch(s, { a: samples });
     const result = run(root, ["7", "--accept", "--force", "--library", library]);
     expect(result.status).toBe(1);
@@ -229,15 +269,15 @@ describe("the script", () => {
     const { s, hash, root, library } = good();
     run(root, ["7", "--accept", "--force", "--library", library]);
     const moved = [Float32Array.from([0, 0, 0.5, -0.25]), samples[1]];
-    const next = summary([record({ read: { ...record().read!, hash: "d".repeat(64) }, register: "changed" })], { runToken: 8 });
+    const next = summary([acceptable({ read: { ...record().read!, hash: "d".repeat(64) }, register: "changed" })], { runToken: 8 });
     writeFileSync(join(root, ".verify-output", "exportreg-summary-8.json"), JSON.stringify(next));
-    writeFileSync(join(root, ".verify-output", wavFileName(8, "a")), new Uint8Array(encodeFloatWav(moved, 48000)));
-    const withLibrary = run(root, ["8", "--diff", "a", "--library", library]);
+    writeFileSync(join(root, ".verify-output", wavFileName(8, ID)), new Uint8Array(encodeFloatWav(moved, 48000)));
+    const withLibrary = run(root, ["8", "--diff", ID, "--library", library]);
     expect(withLibrary.status).toBe(0);
-    expect(withLibrary.stdout).toMatch(/a: different, first differing frame 1, largest/);
-    expect(existsSync(join(root, ".verify-output", "exportreg-diff-a-accepted.wav"))).toBe(true);
-    expect(existsSync(join(root, ".verify-output", "exportreg-diff-a-new.wav"))).toBe(true);
-    const without = run(root, ["8", "--diff", "a"]);
+    expect(withLibrary.stdout).toContain(`${ID}: different, first differing frame 1, largest`);
+    expect(existsSync(join(root, ".verify-output", `exportreg-diff-${ID}-accepted.wav`))).toBe(true);
+    expect(existsSync(join(root, ".verify-output", `exportreg-diff-${ID}-new.wav`))).toBe(true);
+    const without = run(root, ["8", "--diff", ID]);
     expect(without.status).toBe(0);
     expect(without.stdout).toContain("no library");
     expect(hash).toBe(s.rows[0].read!.hash);
@@ -268,7 +308,7 @@ describe("the script", () => {
     const before = readFileSync(acceptPath(s.sampleRate, root), "utf8");
     const result = run(root, ["7", "--accept", "--force", "--library", library]);
     expect(result.status).toBe(1);
-    expect(result.stderr.trim()).toMatch(/library lacks.*: a$/);
+    expect(result.stderr.trim()).toMatch(new RegExp(`library lacks.*: ${ID}$`));
     expect(readFileSync(acceptPath(s.sampleRate, root), "utf8")).toBe(before);
   });
 
@@ -289,7 +329,7 @@ describe("the script", () => {
     const path = acceptPath(s.sampleRate, root);
     run(root, ["7", "--accept", "--force", "--library", library]);
     const register = JSON.parse(readFileSync(path, "utf8"));
-    register.rows.z = { ...register.rows.a };
+    register.rows.z = { ...register.rows[ID] };
     writeFileSync(path, JSON.stringify(register));
     const result = run(root, ["7", "--accept", "--force", "--library", library]);
     expect(result.stdout).toContain("removed: z");
@@ -300,14 +340,14 @@ describe("the script", () => {
     const hash = hashSamples(samples);
     const base = record().read!;
     const cases: [string, RowRecord, number][] = [
-      ["frames", record({ read: { ...base, hash, frames: 99 } }), 48000],
-      ["channels", record({ read: { ...base, hash, channels: 1 } }), 48000],
-      ["rate", record({ read: { ...base, hash } }), 44100]
+      ["frames", acceptable({ read: { ...base, hash, frames: 99 } }), 48000],
+      ["channels", acceptable({ read: { ...base, hash, channels: 1 } }), 48000],
+      ["rate", acceptable({ read: { ...base, hash } }), 44100]
     ];
     for (const [what, row, wavRate] of cases) {
       const s = summary([row]);
       const { root, library } = scratch(s);
-      writeFileSync(join(root, ".verify-output", wavFileName(7, "a")), new Uint8Array(encodeFloatWav(samples, wavRate)));
+      writeFileSync(join(root, ".verify-output", wavFileName(7, ID)), new Uint8Array(encodeFloatWav(samples, wavRate)));
       const result = run(root, ["7", "--accept", "--force", "--library", library]);
       expect(result.status, what).toBe(1);
       expect(result.stderr, what).toContain(what);

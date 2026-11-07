@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRows, expectedFrames, expectedLatencyFrames, lastReaders, LOOP_ON_COPY_SECONDS, selectRows, setPositionStart, SET_POSITION_SECONDS } from "./exportRegressionRows.ts";
+import { buildRows, expectedFrames, expectedLatencyFrames, lastReaders, LOOP_ON_COPY_SECONDS, selectRows, setPositionStart, SET_POSITION_SECONDS, type ExportRow, type InvariantId } from "./exportRegressionRows.ts";
 
 describe("exportRegressionRows", () => {
   it("gives the latency figures the crates and the #530 note read", () => {
@@ -28,6 +28,28 @@ describe("exportRegressionRows", () => {
         if (r.noLatencyReferenceId !== null) expect(seen.has(r.noLatencyReferenceId), r.id).toBe(true);
         if (r.warmReferenceId !== null) expect(seen.has(r.warmReferenceId), r.id).toBe(true);
         seen.add(r.id);
+      }
+    }
+  });
+  it("gives every invariant that reads a reference the reference it reads, at both rates", () => {
+    const needs: Partial<Record<InvariantId, keyof Pick<ExportRow, "referenceId" | "noLatencyReferenceId" | "warmReferenceId">>> = {
+      "samples-equal-warm-pass": "warmReferenceId",
+      "impulse-unmoved-by-latency": "noLatencyReferenceId",
+      "muted-latent-unchanged": "noLatencyReferenceId",
+      "samples-equal-reference": "referenceId",
+      "section-is-slice": "referenceId",
+      "impulse-on-reference": "referenceId",
+      "impulse-follows-loop": "referenceId",
+      "disabled-equals-absent": "referenceId",
+      "differs-from-reference": "referenceId",
+      "stems-sum-to-mix": "referenceId",
+    };
+    for (const rate of [48000, 44100]) {
+      for (const row of buildRows(rate)) {
+        for (const invariant of row.invariants) {
+          const field = needs[invariant];
+          if (field !== undefined) expect(row[field], `${rate} ${row.id} ${invariant}`).not.toBeNull();
+        }
       }
     }
   });

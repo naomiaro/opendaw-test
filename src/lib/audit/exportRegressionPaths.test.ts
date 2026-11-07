@@ -1,10 +1,55 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import { UUID } from "@opendaw/lib-std";
 import type { AudioUnitBox } from "@opendaw/studio-boxes";
-import { chunkSizes, secondPass, stemsConfiguration } from "./exportRegressionPaths";
+import { attempt, chunkSizes, renderThenRelease, secondPass, stemsConfiguration } from "./exportRegressionPaths";
 
 // The package index needs AudioWorkletNode, which Node has not. Nothing tested here renders.
 vi.mock("@opendaw/studio-core", () => ({ EffectFactories: { AudioNamed: {} } }));
+
+describe("renderThenRelease", () => {
+  const throwing = (message: string) => (): void => {
+    throw new Error(message);
+  };
+  const quietly = (): MockInstance => vi.spyOn(console, "error").mockImplementation(() => {});
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("hands the render on when everything closes", async () => {
+    const release = vi.fn();
+    await expect(renderThenRelease([], "row", async () => 7, release)).resolves.toBe(7);
+    expect(release).toHaveBeenCalledOnce();
+  });
+  it("fails a good render whose cleanup failed, naming the row and what failed: a live worker can contaminate the next row", async () => {
+    const error = quietly();
+    const failures: string[] = [];
+    await expect(renderThenRelease(failures, "row-1", async () => 7, () => attempt(failures, "copy.terminate()", throwing("still live"))))
+      .rejects.toThrow("row-1: cleanup: copy.terminate() failed: Error: still live");
+    expect(error).toHaveBeenCalledOnce();
+  });
+  it("keeps the render's own error, the same one, when the cleanup is clean", async () => {
+    const own = new Error("deadline");
+    const release = vi.fn();
+    await expect(renderThenRelease([], "row", async () => { throw own; }, release)).rejects.toBe(own);
+    expect(release).toHaveBeenCalledOnce();
+  });
+  it("reads both when both failed, the render's first", async () => {
+    quietly();
+    const failures: string[] = [];
+    const render = async (): Promise<number> => { throw new Error("deadline"); };
+    await expect(renderThenRelease(failures, "row", render, () => attempt(failures, "renderer.stop()", throwing("gone"))))
+      .rejects.toThrow("deadline; cleanup: renderer.stop() failed: Error: gone");
+  });
+  it("runs the cleanup after a failed one", () => {
+    quietly();
+    const failures: string[] = [];
+    const after = vi.fn();
+    attempt(failures, "first", throwing("x"));
+    attempt(failures, "second", after);
+    expect(after).toHaveBeenCalledOnce();
+    expect(failures).toEqual(["first failed: Error: x"]);
+  });
+});
 
 describe("stemsConfiguration", () => {
   const unit = (): AudioUnitBox => ({ address: { uuid: UUID.generate() } }) as unknown as AudioUnitBox;

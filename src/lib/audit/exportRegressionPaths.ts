@@ -1,9 +1,9 @@
 /**
  * One render of a row through its SDK export path, on a copy of its own. What differs between the paths is what the
  * harness tests, so each goes through the SDK's own calls, never a helper of this repo that stands in for them. Most stem
- * paths step the renderer for an exact range, since `stems-sum-to-mix` needs the mix's frames; `stems-start` and
- * `stems-section-loop` take the `start` and `renderSection` the studio's stem dialog calls. The bounce runs
- * `AudioBounce.bounce`'s exported pieces.
+ * paths step the renderer for an exact range, since `stems-sum-to-mix` needs the mix's frames; `stems-start`,
+ * `stems-single-start` and `stems-section-loop` take the `start` and `renderSection` the studio's stem dialog calls. The
+ * bounce runs `AudioBounce.bounce`'s exported pieces.
  *
  * The step paths use the order `src/demos/export/CLAUDE.md` documents (setPosition, play, waitForLoading, step).
  * `renderSection` and the bounce wait for loading once more before the setPosition. The worker renders nothing before
@@ -31,6 +31,8 @@ type Render = {
   pageRate: number;
   /** Aborts when the row is over, however it ended: this is what releases the renderers. */
   finished: AbortSignal;
+  /** What releasing them could not do, for the row to report. */
+  cleanupFailures: string[];
 };
 
 type SectionPathId = Extract<PathId, `section-${string}`> | "stems-section-loop";
@@ -47,23 +49,45 @@ export const chunkSizes = (totalFrames: number, chunk: number): number[] => {
 
 const ppqnAt = (seconds: number, bpm: number): number => Math.round(PPQN.secondsToPulses(seconds, bpm));
 
-/** Cleanup must not mask the row's own error or skip the cleanup after it. */
-const attempt = (label: string, action: () => void): void => {
+/** Cleanup must not mask the row's own error or skip the cleanup after it. What failed goes to `failures`, for the row. */
+export const attempt = (failures: string[], label: string, action: () => void): void => {
   try {
     action();
   } catch (cause) {
-    console.error(`${label} failed: ${String(cause)}`);
+    const failure = `${label} failed: ${String(cause)}`;
+    console.error(failure);
+    failures.push(failure);
   }
+};
+
+/**
+ * A cleanup that failed makes the row errored even when its render came back: a live worker or copy can contaminate the
+ * next row. `release` runs whatever became of the render, and adds to `failures` what it could not do.
+ */
+export const renderThenRelease = async <T>(
+  failures: string[], rowId: string, render: () => Promise<T>, release: () => void,
+): Promise<T> => {
+  let rendered: T;
+  try {
+    rendered = await render();
+  } catch (cause) {
+    release();
+    if (failures.length === 0) throw cause;
+    throw new Error(`${cause instanceof Error ? cause.message : String(cause)}; cleanup: ${failures.join("; ")}`, { cause });
+  }
+  release();
+  if (failures.length > 0) throw new Error(`${rowId}: cleanup: ${failures.join("; ")}`);
+  return rendered;
 };
 
 /** `create` is given the signal, so a deadline during it takes the worker down; one that lands just after it does here. */
 const openRenderer = async (
-  { copy, pageRate, finished }: Render, config: Option<ExportConfiguration>,
+  { copy, pageRate, finished, cleanupFailures }: Render, config: Option<ExportConfiguration>,
 ): Promise<OfflineEngineRenderer> => {
   const renderer = await OfflineEngineRenderer.create(copy, config, pageRate, finished);
   const close = (): void => {
-    attempt("renderer.stop()", () => renderer.stop());
-    attempt("renderer.terminate()", () => renderer.terminate());
+    attempt(cleanupFailures, "renderer.stop()", () => renderer.stop());
+    attempt(cleanupFailures, "renderer.terminate()", () => renderer.terminate());
   };
   if (finished.aborted) close();
   else finished.addEventListener("abort", close, { once: true });
@@ -309,16 +333,22 @@ const assertRendered = (row: ExportRow, channels: readonly Float32Array[]): void
 export const renderPath = async (harness: HarnessProject, row: ExportRow, pageRate: number): Promise<Float32Array[]> => {
   const copy = harness.project.copy();
   const finished = new AbortController();
-  try {
-    const channels = await withDeadline(
-      renderRow({ copy, harness, row, pageRate, finished: finished.signal }),
-      RENDER_DEADLINE_MS,
-      `${row.id}: ${row.path}`,
-    );
-    assertRendered(row, channels);
-    return channels;
-  } finally {
-    finished.abort();
-    attempt("copy.terminate()", () => copy.terminate());
-  }
+  const cleanupFailures: string[] = [];
+  return renderThenRelease(
+    cleanupFailures,
+    row.id,
+    async () => {
+      const channels = await withDeadline(
+        renderRow({ copy, harness, row, pageRate, finished: finished.signal, cleanupFailures }),
+        RENDER_DEADLINE_MS,
+        `${row.id}: ${row.path}`,
+      );
+      assertRendered(row, channels);
+      return channels;
+    },
+    () => {
+      finished.abort();
+      attempt(cleanupFailures, "copy.terminate()", () => copy.terminate());
+    },
+  );
 };

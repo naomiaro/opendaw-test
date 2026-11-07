@@ -1,10 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Option, UUID } from "@opendaw/lib-std";
 import { AudioFileBox, AudioRegionBox, TrackBox } from "@opendaw/studio-boxes";
 import { AudioUnitFactory, ProjectSkeleton } from "@opendaw/studio-adapters";
 import { AudioUnitType } from "@opendaw/studio-enums";
 import { transact, type Graph } from "@/lib/testing/boxGraphFixtures";
-import { bedRow, distinctSources, latencyDevices, placeSourceRegions, rowTakesReverb, sourceKey, sourceSamples, sourceUuid } from "./exportRegressionProject";
+import { bedRow, distinctSources, lateRemoval, latencyDevices, placeSourceRegions, rowTakesReverb, settleLateRemovals, sourceKey, sourceSamples, sourceUuid } from "./exportRegressionProject";
 import { LATENCY_CASES, buildRows, type ExportRow } from "./exportRegressionRows";
 import { probeSource } from "./exportRegressionSignals";
 
@@ -12,6 +12,45 @@ import { probeSource } from "./exportRegressionSignals";
 vi.mock("@opendaw/studio-core", () => ({ EffectFactories: { AudioNamed: {} } }));
 
 const hex = (uuid: UUID.Bytes): string => UUID.toString(uuid);
+
+describe("a late insert's removal", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it("takes off what the insert finishes with, and waits for the insert to do so", async () => {
+    let finish: (remove: () => void) => void = () => {};
+    const remove = vi.fn();
+    const pending = [lateRemoval(new Promise<() => void>((resolve) => { finish = resolve; }), "several")];
+    let settled = false;
+    const settling = settleLateRemovals(pending, 1000).then(() => { settled = true; });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    finish(remove);
+    await settling;
+    expect(remove).toHaveBeenCalledOnce();
+  });
+  it("has nothing to take off an insert that failed: it rolled itself back", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    await settleLateRemovals([lateRemoval(Promise.reject(new Error("no compile")), "several")], 1000);
+    expect(String(error.mock.calls[0][0])).toContain("several: the late insert failed: Error: no compile");
+  });
+  it("ends the run when a removal failed: every copy starts from the live project", async () => {
+    const stuck = lateRemoval(Promise.resolve(() => { throw new Error("no box"); }), "several");
+    await expect(settleLateRemovals([stuck], 1000)).rejects.toThrow("several: removing the late devices failed: Error: no box");
+  });
+  it("ends the run when an insert never finishes: its devices could still land on a copy", async () => {
+    vi.useFakeTimers();
+    const hung = lateRemoval(new Promise<() => void>(() => {}), "several");
+    const settling = expect(settleLateRemovals([hung], 1000)).rejects.toThrow(/timed out/);
+    await vi.advanceTimersByTimeAsync(1000);
+    await settling;
+  });
+  it("settles at once with none pending", async () => {
+    await expect(settleLateRemovals([], 1000)).resolves.toBeUndefined();
+  });
+});
 
 describe("latencyDevices", () => {
   it("places each case's devices", () => {

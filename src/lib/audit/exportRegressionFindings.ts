@@ -154,7 +154,7 @@ export const KNOWN_FINDINGS: readonly KnownFinding[] = [
   {
     name: "loop-pass-one-frame-short",
     invariant: "impulse-on-reference",
-    note: "a loop's whole-frame pass runs one frame short where the accumulated position lands just under the frame count and the split truncates it: 127.999999997 to 127 at 48 kHz, 137 bpm (crates/transport/src/transport.rs emit_until, and audio_region_player.rs sample_of for a region's loop). Every other rate, length and bpm of the catalogue lands exact, as the same arithmetic predicts",
+    note: "a loop's whole-frame pass runs one frame short where the accumulated position lands just under the frame count and the split truncates it: 127.999999997 to 127 at 48 kHz, 137 bpm, and 15.9999999955 to 15 at 44.1 kHz, 120 bpm (crates/transport/src/transport.rs emit_until, and audio_region_player.rs sample_of for a region's loop). Every other rate, length and bpm of the catalogue lands exact, as the same arithmetic predicts",
     applies: (row, pageRate) => (row.path === "section-loop-twice" || row.path === "bounce-loop") && passIsOneFrameShort(row, pageRate),
     // A shift says nothing about the samples: they must still be the stepped loop's, or this is another defect.
     signature: ({ earlyFrames, warmHolds }, row, pageRate) =>

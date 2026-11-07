@@ -5,8 +5,10 @@
 // Each row renders a copy of one project through one SDK export path, is held to its invariants, and is compared
 // with the accepted register. The page converts and uploads; the rows, the reader, the verdict and the artifacts are
 // in `src/lib/audit/exportRegression*.ts`. DOM contract: #audit-state carries data-audit-state walking
-// setup → ready → running:<row> → done | error:<message>, and data-standing-counts with clean,known,failing,errored.
-// A row that fails on its own is an errored row under `done`; only a broken harness ends in `error:`.
+// setup → ready → running:<row> → done | done:no-summary | error:<message>, data-standing-counts with clean,known,failing,errored,
+// data-register-counts with identical,changed,unregistered, and data-run-token. A row that fails on its own is an errored row
+// under `done`; only a broken harness ends in `error:`. `done:no-summary` is a host with no verify sink: the verdicts are on this
+// page and nowhere else. Standing is about the invariants alone, so a run with no register can read clean: read both counts.
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
@@ -20,10 +22,11 @@ import { installUuidOrder, type UuidNamespace } from "@/lib/audit/ascendingUuids
 import { uploadSummary } from "@/lib/audit/midiEffectBootstrap";
 import { resolveRate } from "@/lib/audit/midiEffectScenarios";
 import {
-  EXPORT_REGRESSION_SCHEMA_VERSION, parseExportRegister, summaryFileName, wavFileName, type ExportRegister, type ExportSummary, type LatencyRead, type RowRecord,
+  auditStateAfterRun, EXPORT_REGRESSION_SCHEMA_VERSION, isMissingSink, noRegisterNotice, parseExportRegister, registerCounts, summaryFileName, wavFileName,
+  type ExportRegister, type ExportSummary, type LatencyRead, type RowRecord,
 } from "@/lib/audit/exportRegressionArtifacts";
 import { renderPath } from "@/lib/audit/exportRegressionPaths";
-import { buildHarnessProject, insertLatencyDevices, prepareSources, type HarnessProject } from "@/lib/audit/exportRegressionProject";
+import { buildHarnessProject, insertLatencyDevices, lateRemoval, prepareSources, settleLateRemovals, type HarnessProject } from "@/lib/audit/exportRegressionProject";
 import { readRender, sha256OfSamples, type RenderRead } from "@/lib/audit/exportRegressionReader";
 import { buildRows, expectedLatencyFrames, lastReaders, selectRows, type ExportRow, type LatencyCaseId } from "@/lib/audit/exportRegressionRows";
 import {
@@ -138,7 +141,7 @@ const waitForFrames = async (harness: HarnessProject, expected: number): Promise
  * `latency-as-expected` reads on the case's rows, and neither ends the run. The engine must first read 0: two cases
  * can expect the same figure, and the case before this one's would otherwise pass for this one's.
  */
-const readCaseLatency = async (harness: HarnessProject, latencyCase: LatencyCaseId): Promise<number> => {
+const readCaseLatency = async (harness: HarnessProject, latencyCase: LatencyCaseId, lateRemovals: Promise<void>[]): Promise<number> => {
   const unsettled = await waitForFrames(harness, 0);
   if (unsettled !== 0) {
     console.error(`[export-regression] ${latencyCase}: no reading, the engine still reports ${unsettled} frames with no latent device`);
@@ -151,9 +154,7 @@ const readCaseLatency = async (harness: HarnessProject, latencyCase: LatencyCase
   } catch (error) {
     console.error(`[export-regression] ${latencyCase}: no reading: ${String(error)}`);
     // Past the deadline the insert is still running: the devices it finishes with must not stay on the live project.
-    inserting.then((late) => {
-      try { late(); } catch (lateError) { console.error(`[export-regression] ${latencyCase}: removing the late devices failed: ${String(lateError)}`); }
-    }, () => {});
+    lateRemovals.push(lateRemoval(inserting, latencyCase));
     return NaN;
   }
   try {
@@ -202,6 +203,7 @@ const App: React.FC = () => {
   const [boot, setBoot] = useState<Boot | null>(null);
   const [running, setRunning] = useState(false);
   const [records, setRecords] = useState<RowRecord[]>([]);
+  const [runToken, setRunToken] = useState<number | null>(null);
   const buffersRef = useRef<Map<string, AudioBuffer>>(new Map());
 
   useEffect(() => {
@@ -236,8 +238,10 @@ const App: React.FC = () => {
     };
   }, []);
 
-  const runAudit = useCallback(async ({ harness, audioContext, register, engineWasmSha256 }: Boot): Promise<void> => {
+  /** Whether the summary reached the sink. */
+  const runAudit = useCallback(async ({ harness, audioContext, register, engineWasmSha256 }: Boot): Promise<boolean> => {
     const runToken = Date.now();
+    setRunToken(runToken);
     const out: RowRecord[] = [];
     const deviceRateHz = await readDeviceRate();
     // The live engine reports latency only while its context runs. Nothing plays.
@@ -248,14 +252,16 @@ const App: React.FC = () => {
     // that changes the routing a case's figure comes from. A disabled row is not read: its hash is what it proves.
     const latencies = new Map<LatencyCaseId, number>();
     const latencyReads: LatencyRead[] = [];
+    const lateRemovals: Promise<void>[] = [];
     for (const { latencyCase } of ROWS.filter((row) => row.invariants.includes("latency-as-expected"))) {
       if (latencies.has(latencyCase)) continue;
       setAuditState(`running:latency-${latencyCase}`);
       setStatus(`Reading the latency of ${latencyCase}`);
-      const frames = await readCaseLatency(harness, latencyCase);
+      const frames = await readCaseLatency(harness, latencyCase, lateRemovals);
       latencies.set(latencyCase, frames);
       latencyReads.push({ latencyCase, frames: Number.isFinite(frames) ? frames : null, visibility: document.visibilityState });
     }
+    await settleLateRemovals(lateRemovals, FETCH_DEADLINE_MS);
     // The devices came off the live project, which every copy starts from: a figure that stays up says they did not.
     const lastRead = latencyReads.at(-1);
     if (lastRead !== undefined) {
@@ -327,10 +333,12 @@ const App: React.FC = () => {
     // The sink exists on the dev server only: on the public host the verdicts stay on the page, a warning and no error.
     try {
       await uploadSummary(summaryFileName(runToken), summary);
+      return true;
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
-      if (!/HTTP 40[45]\b/.test(message)) throw cause;
+      if (!isMissingSink(message)) throw cause;
       console.warn(`[export-regression] summary not uploaded: no /__verify sink on this host (${message})`);
+      return false;
     }
   }, []);
 
@@ -348,9 +356,9 @@ const App: React.FC = () => {
     // At once, so a poller cannot read the last run's `done` as this run's.
     setAuditState("running:setup");
     runAudit(boot)
-      .then(() => {
-        setAuditState("done");
-        setStatus("Done");
+      .then((summaryUploaded) => {
+        setAuditState(auditStateAfterRun(summaryUploaded));
+        setStatus(summaryUploaded ? "Done" : "Done, no summary uploaded: this host has no /__verify sink, so table.ts cannot read this run");
       })
       .catch((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
@@ -362,6 +370,8 @@ const App: React.FC = () => {
   }, [boot, running, runAudit]);
 
   const [clean, known, failing, errored] = standingCounts(records);
+  const register = registerCounts(records);
+  const notice = boot === null ? null : noRegisterNotice(boot.register !== null, FILL);
 
   return (
     <Theme appearance="dark" accentColor="orange" radius="medium">
@@ -389,19 +399,29 @@ const App: React.FC = () => {
                 id="audit-state"
                 data-audit-state={auditState}
                 data-standing-counts={[clean, known, failing, errored].join(",")}
+                data-register-counts={[register.identical, register.changed, register.unregistered].join(",")}
+                data-run-token={runToken ?? ""}
                 color={auditState.startsWith("error") ? "red" : auditState === "done" ? "green" : "amber"}
               >
                 {auditState}
               </Badge>
             </Callout.Text>
           </Callout.Root>
+          {notice !== null && (
+            <Callout.Root color="amber" id="no-register-notice">
+              <Callout.Icon><InfoCircledIcon /></Callout.Icon>
+              <Callout.Text>{notice}</Callout.Text>
+            </Callout.Root>
+          )}
           <Flex align="center" gap="3" wrap="wrap">
             <Button onClick={handleRun} disabled={boot === null || running} data-testid="run">
               <PlayIcon /> {running ? "Rendering…" : "Run audit"}
             </Button>
             <Text size="2" color="gray">
               {records.length} of {ROWS.length} rows: {clean} clean, {known} known finding, {failing} failing, {errored} errored.
-              UUIDs {UUID_ORDER}, register {boot === null ? "—" : boot.register === null ? "none" : boot.register.sdkVersion}.
+              Against the register: {register.identical} identical, {register.changed} changed, {register.unregistered} unregistered.
+              UUIDs {UUID_ORDER}, register {boot === null ? "—" : boot.register === null ? "none" : boot.register.sdkVersion}
+              {runToken === null ? "" : `, run ${runToken}`}.
             </Text>
           </Flex>
           {records.length > 0 && (

@@ -16,6 +16,7 @@ import {
 } from "@opendaw/studio-boxes";
 import { AudioUnitType, Colors, IconSymbol } from "@opendaw/studio-enums";
 import { audioEffectsFieldOf } from "@/lib/adapterUtils";
+import { withDeadline } from "@/lib/deadline";
 import { assertUuidOrder } from "./ascendingUuids";
 import { removeMasterMaximizer } from "./midiEffectChain";
 import type { ExportRow, LatencyCaseId } from "./exportRegressionRows";
@@ -105,7 +106,7 @@ export const sourceUuid = (sourceRate: number, [left, right]: readonly [Float32A
   return UUID.sha256(bytes.buffer);
 };
 
-/** Content-addressed: a fixed uuid could find a stale sample in OPFS when another page has stopped the sweep. */
+/** Content-addressed: a fixed uuid could find a stale sample in OPFS when another page being open has skipped the sweep. */
 export const prepareSources = async (
   harness: HarnessProject, rows: readonly ExportRow[], audioContext: BaseAudioContext, buffers: Map<string, AudioBuffer>,
 ): Promise<void> => {
@@ -166,7 +167,7 @@ const FACTORIES = {
   Werkstatt: EffectFactories.AudioNamed.Werkstatt,
 };
 
-/** Well into the probe's 0.5 tone, for the one row that shows the Compressor still processes. */
+/** Well into the probe's 0.5 tone, for the control rows that show the Compressor still processes. */
 const engage = (box: CompressorDeviceBox): void => {
   neutralise(box);
   box.threshold.setValue(-24);
@@ -255,6 +256,29 @@ export const insertLatencyDevices = async (
     throw cause;
   }
   return remove;
+};
+
+/**
+ * What a read past its deadline still owes the live project: the insert goes on running, and the devices it finishes
+ * with must come off. A failed insert has rolled itself back, so there is nothing to take off.
+ */
+export const lateRemoval = (inserting: Promise<() => void>, latencyCase: LatencyCaseId): Promise<void> =>
+  inserting.then(
+    (remove) => {
+      try {
+        remove();
+      } catch (cause) {
+        throw new Error(`${latencyCase}: removing the late devices failed: ${String(cause)}`, { cause });
+      }
+    },
+    (cause) => console.error(`[export-regression] ${latencyCase}: the late insert failed: ${String(cause)}`),
+  );
+
+/** Every copy starts from the live project, so devices that stay on it, or may still land, end the run. */
+export const settleLateRemovals = async (pending: readonly Promise<void>[], deadlineMs: number): Promise<void> => {
+  const settled = await withDeadline(Promise.allSettled(pending), deadlineMs, "the late latency inserts");
+  const failed = settled.flatMap((outcome) => (outcome.status === "rejected" ? [outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason)] : []));
+  if (failed.length > 0) throw new Error(failed.join("; "));
 };
 
 const placeRegion = (boxGraph: BoxGraph, track: TrackBox, file: AudioFileBox, position: number, row: ExportRow, name: string): void => {

@@ -17,6 +17,7 @@ import {
 } from "../../../src/lib/audit/exportRegressionArtifacts.ts";
 import type { ExportRegister, ExportSummary, RowRecord } from "../../../src/lib/audit/exportRegressionArtifacts.ts";
 import { buildRows } from "../../../src/lib/audit/exportRegressionRows.ts";
+import { namesKnownFinding, rowStanding } from "../../../src/lib/audit/exportRegressionVerdict.ts";
 import { diffRenders } from "../../../src/lib/audit/exportRegressionDiff.ts";
 import { decodeFloatWav, encodeFloatWav } from "../../../src/lib/audit/exportRegressionWav.ts";
 
@@ -86,14 +87,17 @@ export function hashSamples(channels: readonly Float32Array[]): string {
   return hash.digest("hex");
 }
 
+/** The standing by this build's findings, not the stored one: a summary can hold a label retired since it ran. */
+const standingOf = (row: RowRecord): RowRecord["standing"] => rowStanding(row.invariants, row.error);
+
 export function formatRows(summary: ExportSummary): string[] {
   return summary.rows.map((row) => {
     const failed = row.invariants.filter((i) => !i.holds)
-      .map((i) => i.finding === null ? i.invariant : `${i.invariant} (${i.finding})`);
+      .map((i) => namesKnownFinding(i) ? `${i.invariant} (${i.finding})` : i.invariant);
     const shift = row.shiftFrames === null ? "" : ` shift ${row.shiftFrames}`;
     return [
       row.id,
-      row.standing,
+      standingOf(row),
       `${row.register ?? "-"}${shift}`,
       row.read === null ? "-" : row.read.hash.slice(0, 10),
       row.read === null ? "-" : String(row.read.frames),
@@ -104,12 +108,18 @@ export function formatRows(summary: ExportSummary): string[] {
 }
 
 export function runLine(summary: ExportSummary): string {
-  const count = (standing: RowRecord["standing"]): number => summary.rows.filter((r) => r.standing === standing).length;
+  const count = (standing: RowRecord["standing"]): number => summary.rows.filter((r) => standingOf(r) === standing).length;
   return `run ${summary.runToken} (${new Date(summary.runToken).toISOString()}) | sdk ${summary.sdkVersion} | `
     + `engine ${summary.engineWasmSha256.slice(0, 12)} | ${summary.sampleRate} Hz | `
     + `${summary.deviceRateHz === null ? "device unknown" : `device ${summary.deviceRateHz} Hz`} | uuids ${summary.uuidOrder} | `
     + `register ${summary.registerSdkVersion ?? "none"} | rows ${summary.rows.length} (${summary.rowsParam}) | `
     + `clean ${count("clean")}, known finding ${count("known-finding")}, failing ${count("failing")}, errored ${count("errored")}`;
+}
+
+/** A summary that did not upload leaves an older one the newest: a read with no token says which run it took. */
+export function newestRunLine(token: number, now: number): string {
+  const minutes = Math.round((now - token) / 60_000);
+  return `no token given: reading the newest summary, run ${token}, ${minutes < 120 ? `${minutes} min` : `${(minutes / 60).toFixed(1)} h`} old`;
 }
 
 /**
@@ -321,6 +331,7 @@ function main(): void {
       return;
     }
     const summary = loadSummary(parsed.token, REPO_ROOT);
+    if (parsed.token === undefined) console.log(newestRunLine(summary.runToken, Date.now()));
     if (parsed.diff !== undefined) {
       for (const line of diffRow(summary, parsed.diff, parsed.library, REPO_ROOT)) console.log(line);
       return;

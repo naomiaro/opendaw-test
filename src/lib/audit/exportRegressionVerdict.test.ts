@@ -435,12 +435,17 @@ describe("parseRegisterResponse", () => {
 
 describe("rowStanding", () => {
   const holds = (): InvariantResult => ({ invariant: "proves-something", holds: true, detail: "", finding: null });
-  const fails = (finding: string | null): InvariantResult => ({ invariant: "no-jump", holds: false, detail: "", finding });
+  const fails = (finding: string | null, invariant: InvariantResult["invariant"] = "no-jump"): InvariantResult => ({ invariant, holds: false, detail: "", finding });
+  const LABEL = "loop-pass-one-frame-short";
   it("ranks a row's standing", () => {
     expect(rowStanding([holds()], null)).toBe("clean");
-    expect(rowStanding([fails("loop-pass-one-frame-short")], null)).toBe("known-finding");
-    expect(rowStanding([fails(null), fails("x")], null)).toBe("failing");
+    expect(rowStanding([fails(LABEL, "impulse-on-reference")], null)).toBe("known-finding");
+    expect(rowStanding([fails(null), fails(LABEL, "impulse-on-reference")], null)).toBe("failing");
     expect(rowStanding([holds()], "worker hung")).toBe("errored");
     expect(rowStanding([], null)).toBe("failing");
+  });
+  it("reads a label no known finding holds as failing: retired, or of another invariant", () => {
+    expect(rowStanding([fails("a-label-since-retired", "impulse-on-reference")], null)).toBe("failing");
+    expect(rowStanding([fails(LABEL, "no-jump")], null)).toBe("failing");
   });
 });
