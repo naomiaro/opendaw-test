@@ -154,7 +154,7 @@ export const KNOWN_FINDINGS: readonly KnownFinding[] = [
   {
     name: "loop-pass-one-frame-short",
     invariant: "impulse-on-reference",
-    note: "a loop's whole-frame pass runs one frame short where the accumulated position lands just under the frame count and the split truncates it: 127.999999997 to 127 at 48 kHz, 137 bpm, and 15.9999999955 to 15 at 44.1 kHz, 120 bpm (crates/transport/src/transport.rs emit_until, and audio_region_player.rs sample_of for a region's loop). Every other rate, length and bpm of the catalogue lands exact, as the same arithmetic predicts",
+    note: "filed as openDAW#533: a loop's whole-frame pass runs one frame short where the accumulated position lands just under the frame count and the split truncates it: 127.999999997 to 127 at 48 kHz, 137 bpm, and 15.9999999955 to 15 at 44.1 kHz, 120 bpm (crates/transport/src/transport.rs emit_until, and audio_region_player.rs sample_of for a region's loop). Every other rate, length and bpm of the catalogue lands exact, as the same arithmetic predicts",
     applies: (row, pageRate) => (row.path === "section-loop-twice" || row.path === "bounce-loop") && passIsOneFrameShort(row, pageRate),
     // A shift says nothing about the samples: they must still be the stepped loop's, or this is another defect.
     signature: ({ earlyFrames, warmHolds }, row, pageRate) =>
@@ -163,7 +163,7 @@ export const KNOWN_FINDINGS: readonly KnownFinding[] = [
   {
     name: "loop-bounce-last-frame-silent",
     invariant: "samples-equal-warm-pass",
-    note: "the same accumulated position, seen at a bounce's end. A bounce has no loop area: its second cycle starts through sample_of, truncated, a frame early (audio_region_player.rs:868-869, :974-976), while the region still ends on the span's end. So the read reaches the source's end one frame early and the span's last frame reads past it, exactly 0 on both channels (:903-905, base >= source_frames), where the stepped loop is already in its next pass. The source is exactly one loop long here; a longer one would go on reading (read, not measured). Every other frame is bit-identical",
+    note: "filed as openDAW#533: the same accumulated position, seen at a bounce's end. A bounce has no loop area: its second cycle starts through sample_of, truncated, a frame early (audio_region_player.rs:868-869, :974-976), while the region still ends on the span's end. So the read reaches the source's end one frame early and the span's last frame reads past it, exactly 0 on both channels (:903-905, base >= source_frames), where the stepped loop is already in its next pass. The source is exactly one loop long here; a longer one would go on reading (read, not measured). Every other frame is bit-identical",
     applies: (row, pageRate) => row.path === "bounce-loop" && passIsOneFrameShort(row, pageRate),
     signature: ({ firstDifferingFrame, lastDifferingFrame, comparedFrames, framePeak, largestDifference }, row, pageRate) => {
       const last = rangeFrames(row, pageRate) - 1;
@@ -232,7 +232,7 @@ export const KNOWN_FINDINGS: readonly KnownFinding[] = [
   {
     name: "long-silence-ends-render",
     invariant: "section-is-slice",
-    note: "a defect, drafted for upstream, see Finding 2 in the export regression note: `render` stops after 10 s at or below -72 dB and keeps a quarter second (core-wasm offline-worker.ts:424-426, :440), whatever regions come later, and resolves normally. So a song with a 15.8 s gap comes out at 0.45 s with its second region missing. With a stem alone, the stem's own silence is what it reads. Bit-identical to the stepped render as far as it goes",
+    note: "a defect, filed as openDAW#534, see Finding 2 in the export regression note: `render` stops after 10 s at or below -72 dB and keeps a quarter second (core-wasm offline-worker.ts:424-426, :440), whatever regions come later, and resolves normally. So a song with a 15.8 s gap comes out at 0.45 s with its second region missing. With a stem alone, the stem's own silence is what it reads. Bit-identical to the stepped render as far as it goes",
     applies: (row) => GAP_ROWS.has(row.id),
     signature: ({ firstDifferingFrame, comparedFrames, referencePeakOver }, row, pageRate) => {
       const kept = framesKeptBeforeGap(row, pageRate);

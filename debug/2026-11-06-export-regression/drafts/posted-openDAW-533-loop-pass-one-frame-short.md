@@ -1,4 +1,4 @@
-<!-- FOR NAOMI, REMOVE BEFORE POSTING: the repro URL and the note link below work only once feat/export-regression-harness is merged. Merge first, or hold this. -->
+<!-- Posted as https://github.com/andremichelle/openDAW/issues/533 on 2026-11-08. Body as filed. -->
 
 # A looped pass runs one frame short at some combinations of rate, length and bpm
 

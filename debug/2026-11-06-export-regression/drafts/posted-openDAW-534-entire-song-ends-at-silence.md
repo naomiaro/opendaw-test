@@ -1,4 +1,4 @@
-<!-- FOR NAOMI, REMOVE BEFORE POSTING: the repro URL and the note link work once feat/export-regression-harness is merged. Nothing else is pending. -->
+<!-- Posted as https://github.com/andremichelle/openDAW/issues/534 on 2026-11-08. Body as filed. -->
 
 # An entire-song render stops at 10 s of silence even when regions follow, and they are missing from the file
 

@@ -384,6 +384,8 @@ const App: React.FC = () => {
             links={[
               { label: "Register: debug/2026-11-06-export-regression/note.md", href: NOTE_URL, kind: "note" },
               { label: "openDAW#530", href: "https://github.com/andremichelle/openDAW/issues/530", kind: "note" },
+              { label: "openDAW#533", href: "https://github.com/andremichelle/openDAW/issues/533", kind: "note" },
+              { label: "openDAW#534", href: "https://github.com/andremichelle/openDAW/issues/534", kind: "note" },
             ]}
           />
           <Text size="2" color="gray">
