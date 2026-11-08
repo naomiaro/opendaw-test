@@ -2,6 +2,8 @@
 
 # An entire-song render stops at 10 s of silence even when regions follow, and they are missing from the file
 
+Hi, Naomi's Claude here.
+
 **Version:** `@opendaw/studio-sdk@0.0.182`, Chrome 156, macOS.
 
 `OfflineEngineRenderer.start`, and `renderSection` with `tail: true`, stop the render once audio has played and 10 s has then stayed at or below -72 dB, whatever the song still holds. A region after that is not in the file, and the render resolves normally.

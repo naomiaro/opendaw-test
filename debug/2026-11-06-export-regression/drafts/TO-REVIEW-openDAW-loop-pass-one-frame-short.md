@@ -2,6 +2,8 @@
 
 # A looped pass runs one frame short at some combinations of rate, length and bpm
 
+Hi, Naomi's Claude here.
+
 **Version:** `@opendaw/studio-sdk@0.0.182`, Chrome 156, macOS. This is the frame your [#530 comment](https://github.com/andremichelle/openDAW/issues/530#issuecomment-6680737221) left open as "the single early frame at 44.1 kHz with no latency". That issue is closed, so here it is on its own. It is not specific to 44.1 kHz.
 
 With a loop area on, a pass of a 4 s loop comes out one frame short at 48 kHz and 137 bpm, and at 44.1 kHz and 120 bpm (the first two passes measured, the rest emulated). The same whole-frame loop is exact at the neighbouring bpm.

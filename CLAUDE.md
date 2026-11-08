@@ -1211,7 +1211,9 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   filed bugs have been fixed within one release cycle). Body: live repro page URL +
   the investigation's `debug/<date>-<topic>/note.md` link + measured signature. NO
   suggested-fix section — describe the cause precisely and let the maintainer choose the
-  remedy (fix ideas belong in the internal debug note, not the issue). Draft the issue body
+  remedy (fix ideas belong in the internal debug note, not the issue). Every issue and comment
+  posted to openDAW opens with "Hi, Naomi's Claude here.", so the maintainer knows who is writing
+  (the user's rule). Draft the issue body
   for user review BEFORE posting, as `debug/<date>-<topic>/drafts/TO-REVIEW-<target>.md`,
   and list it under "Waiting for a read" in `debug/README.md`; once posted, rename it
   `posted-<tracker>-<number>[-topic].md`. Cross-link the issue
