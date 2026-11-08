@@ -846,6 +846,28 @@ upstream tracker, or are by design.
 
 ## Chromium
 
+### Chrome — `createSyncAccessHandle()`'s promise does not settle when its handle is collected in flight
+
+- **Tracker:** none; measured behaviour, not reported. Searched 2026-11-06 in the user's Chrome (`createSyncAccessHandle`, OPFS with hang
+  and never-resolves terms, `FileSystemFileHandle` with GC terms, a never-resolved promise with GC): no matching issue. Closest, none the
+  same: 40279881, 453704691, 513127261. A draft waits for a read:
+  `debug/2026-11-06-export-regression/drafts/TO-REVIEW-chromium-sync-access-handle-does-not-settle.md`.
+- **Where it bites here:** the SDK's OPFS worker opens every sample file with `return await fileHandle.createSyncAccessHandle()` and holds
+  nothing else on the handle. A full export regression run stalls at one row's sample: `one-frame-none-step-one-44100-2-120`, then its seven
+  siblings of that source, which error in turn at 60 s each. The worker reports
+  `[OPFS] write 'samples/v2/<uuid>/audio.wav' runs for 5.0s at 'create sync access handle'`, then `has no answer from the worker after 10.0s`,
+  and `audio.wav` is 0 bytes. The renders are not affected. A lost open never answers and keeps that path's lock for the life of the
+  worker, so later operations on the path wait behind it (read; the load was measured, a recording's save was not).
+- **Measured and inferred.** The mechanism is reproduced under forced allocation: in a dedicated worker with no SDK, a heavy allocation
+  right after the call and no other reference to the `FileSystemFileHandle` leaves the promise pending, neither resolved nor rejected, and
+  keeping the handle until the promise settles stops it. On the SDK's worker with the same forced allocation, three handles were collected
+  while their opens were pending and the page stalled at the same step. The natural stall is measured here: 5 in about 25 full runs (3 of 4
+  at a click about 2 s after load at 44.1 kHz, 0 of 1 at 48 kHz), then 2 in about 20 after waiting about 30 s. That the natural stall is
+  this mechanism is inferred: the same step and lines, a file nothing holds; an observer attached never saw it.
+- **Workaround:** the standing run clicks Run about 30 s after load; a stalled run is repeated at that page rate.
+- **Evidence:** `debug/2026-11-06-export-regression/note.md`, "The OPFS hang"; probe `debug/2026-11-06-export-regression/sync-handle-gc-probe.js`.
+- **Last checked:** Chrome 156.0.8078.81 (Playwright's), macOS 15.6.1, 2026-11-06.
+
 ### Chrome — animation frames stop for a hidden document and a fully covered window
 
 - **Tracker:** by design; documented behaviour (page visibility, and occlusion on macOS), not a bug.
