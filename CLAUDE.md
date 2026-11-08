@@ -1165,7 +1165,10 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
 - PRs are squash-merged (`gh pr merge <n> --squash`) — main carries one commit per PR.
 - The merge itself is the user's: in auto mode the permission layer refuses `gh pr merge` as a merge
   without review. Open the PR, hand the user the one-line merge command, and continue with what
-  does not depend on it.
+  does not depend on it. Exception, the user's rule: a bookkeeping PR is merged by Claude once its
+  checks are green. That means a PR that only records what was already done or decided, such as a
+  posted issue's rename and links, a debug note's status, an index row, or a cross-link. A PR with a
+  code change, a new demo or a new finding still goes to the user.
 - Once a PR is open and its work complete, run the comprehensive PR review
   (`/pr-review-toolkit:review-pr`, applicable aspects) and FIX Critical + Important
   findings before merge; push fixes to the PR branch and note them in a PR comment.
