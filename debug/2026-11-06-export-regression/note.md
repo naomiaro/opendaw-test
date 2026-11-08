@@ -2,7 +2,7 @@
 
 **Title:** Every SDK export path, 296 rows at two page rates: what holds, what each row that does not hold measured, and a full run's stall in the OPFS worker
 
-**Status: REGISTER ACCEPTED ON 0.0.182, LIBRARY FILLED, DRAFTS WAITING.** The user read the findings and approved the labels and the first fill. Both page rates are accepted, a re-run of each reads every row `identical`, and a changed render is caught (below). Nothing is posted. Three drafts wait (below). `trailing-silence-trimmed` is ruled by design and not raised upstream. The other findings are the
+**Status: REGISTER ACCEPTED ON 0.0.182, LIBRARY FILLED; FINDINGS 1 AND 2 FILED as [openDAW#533](https://github.com/andremichelle/openDAW/issues/533) and [openDAW#534](https://github.com/andremichelle/openDAW/issues/534) on 2026-11-08.** The user read the findings and approved the labels and the first fill. Both page rates are accepted, a re-run of each reads every row `identical`, and a changed render is caught (below). Nothing is posted. Three drafts wait (below). `trailing-silence-trimmed` is ruled by design and not raised upstream. The other findings are the
 user's call, each with the read it got.
 
 **The catalogue holds 296 rows and none reads `failing`.** `gap-none-start`, `gap-none-section-entire` and `gap-none-stem-start` carry `long-silence-ends-render` (Finding 2), which is a defect with a draft: a label means read and understood, not fine.
@@ -63,7 +63,7 @@ SDK 0.0.182, engine `9c44973549a7`, the device at 44100 (read in `system_profile
 
 | finding | rows at 48000 | rows at 44100 | where it stands |
 |---|---|---|---|
-| `loop-pass-one-frame-short` | 2 | 17 | [draft](./drafts/TO-REVIEW-openDAW-loop-pass-one-frame-short.md) |
+| `loop-pass-one-frame-short` | 2 | 17 | [openDAW#533](https://github.com/andremichelle/openDAW/issues/533): [body](./drafts/posted-openDAW-533-loop-pass-one-frame-short.md) |
 | `loop-bounce-last-frame-silent` | 0 | 4 (the same rows as 4 of the 17) | in the same draft |
 | `trailing-silence-trimmed` | 2 | 2 | by design, the user's read; not raised upstream |
 | `jump-fade-at-start` | 30 | 30 | the user's call |
@@ -72,7 +72,7 @@ SDK 0.0.182, engine `9c44973549a7`, the device at 44100 (read in `system_profile
 | `range-missing-tail` | 1 | 1 | the user's call |
 | `loop-wrap-keeps-old-read` | 4 | 4 | the user's call |
 | `merge-seam-reseats-read` | 4 | 4 | the user's call |
-| `long-silence-ends-render` | 3 | 3 | a defect: [draft](./drafts/TO-REVIEW-openDAW-entire-song-ends-at-silence.md), not posted |
+| `long-silence-ends-render` | 3 | 3 | a defect, [openDAW#534](https://github.com/andremichelle/openDAW/issues/534): [body](./drafts/posted-openDAW-534-entire-song-ends-at-silence.md), not posted |
 
 **The register and the library (measured).**
 
@@ -128,7 +128,7 @@ stays failing, so the labels do not hide those two defects.
 
 ## Finding 1: a looped pass runs one frame short at some rate, length and bpm
 
-**Draft:** [`drafts/TO-REVIEW-openDAW-loop-pass-one-frame-short.md`](./drafts/TO-REVIEW-openDAW-loop-pass-one-frame-short.md). This answers the unexplained
+**Filed:** [openDAW#533](https://github.com/andremichelle/openDAW/issues/533), body as filed in [`drafts/posted-openDAW-533-loop-pass-one-frame-short.md`](./drafts/posted-openDAW-533-loop-pass-one-frame-short.md). This answers the unexplained
 frame in [the #530 note](../2026-11-05-render-section-latency-gap/note.md) and the
 [#530 comment](https://github.com/andremichelle/openDAW/issues/530#issuecomment-6680737221), which left it open as "the single early frame at 44.1 kHz".
 
@@ -184,7 +184,7 @@ holds 0 on both channels, and the stepped loop holds 0.07072490, which is the so
 
 ## Finding 2: an entire-song render stops at 10 s of silence even when regions follow, and they are missing from the file
 
-**Draft:** [`drafts/TO-REVIEW-openDAW-entire-song-ends-at-silence.md`](./drafts/TO-REVIEW-openDAW-entire-song-ends-at-silence.md). Label: `long-silence-ends-render`, approved by the user (below).
+**Filed:** [openDAW#534](https://github.com/andremichelle/openDAW/issues/534), body as filed in [`drafts/posted-openDAW-534-entire-song-ends-at-silence.md`](./drafts/posted-openDAW-534-entire-song-ends-at-silence.md). Label: `long-silence-ends-render`, approved by the user (below).
 
 **The label holds the three rows to the render as measured.** The frames are the rule's, computed from the row and not copied: 21472 and 19729 (the rule below). Those frames are the reference's bit for bit, and the reference is exact zeros from there to 16 s and holds its second burst, peak at least 0.49. Failing, on real renders at both rates (the three rows each): 128 short, 1 short, 1 long, 1e-7 on a frame, 1e-6 on the last frame, a −0 in the silence, gain 0.999, a NaN, the second burst with the frames still short (16.1 s, and a quantum short of the range). Unit tests add a reference with no second burst, a quiet one, and something in the gap. A render that reaches the range reads `clean`, and `staleFindings` then names the label (tested); swapping the channels is no mutation here, since the two are identical on these rows (checked).
 

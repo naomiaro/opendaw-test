@@ -33,8 +33,8 @@ Key facts (verified SDK 0.0.160):
 - **`render` stops at 10 s of silence, judged on the channels it returns.** A region after a gap
   longer than that is lost from the file, and in a single-stem export the stem's own silence ends
   the render (with several, all must be silent: read, not measured). `start` and `renderSection` with a tail go through `render`; `step`
-  does not. It is a defect drafted upstream
-  (`debug/2026-11-06-export-regression/drafts/TO-REVIEW-openDAW-entire-song-ends-at-silence.md`,
+  does not. It is a defect filed upstream as openDAW#534
+  (`debug/2026-11-06-export-regression/drafts/posted-openDAW-534-entire-song-ends-at-silence.md`,
   measured in the note, Finding 2): a demo that needs a long gap uses `step`. Trailing silence
   with nothing after it is trimmed by design.
 - **A section or `setPosition` start fades in over about 5 ms**, the engine treating the first
