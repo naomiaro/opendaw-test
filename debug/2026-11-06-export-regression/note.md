@@ -1,6 +1,6 @@
 # Export regression: what the harness found on its first runs
 
-**Title:** Every SDK export path, 296 rows at two page rates: what holds, what each row that does not hold measured, and a full run's stall in the OPFS worker
+**Title:** Every SDK export path, 308 rows at two page rates (296 until 2026-11-09): what holds, what each row that does not hold measured, and a full run's stall in the OPFS worker
 
 **Status: FINDINGS 1 AND 2 FIXED IN `@opendaw/studio-sdk@0.0.183`** (re-measured 2026-11-09, [below](#sdk-0183-both-findings-fixed); their labels are retired). **REGISTER ACCEPTED ON 0.0.183 on the user's word (2026-11-09), library filled; a re-run of each rate reads 296 of 296 `identical`.** Before: register accepted on 0.0.182, library filled; findings 1 and 2 filed as [openDAW#533](https://github.com/andremichelle/openDAW/issues/533) and [openDAW#534](https://github.com/andremichelle/openDAW/issues/534) on 2026-11-08. The user read the findings and approved the labels and the first fill. Both page rates are accepted, a re-run of each reads every row `identical`, and a changed render is caught (below). Nothing is posted. Three drafts wait (below). `trailing-silence-trimmed` is ruled by design and not raised upstream. The other findings are the
 user's call, each with the read it got.
@@ -16,8 +16,8 @@ those. *Inferred* is a conclusion that nothing here observed directly.
 ## The harness
 
 **Page:** [`export-regression-audit-debug-demo.html`](../../export-regression-audit-debug-demo.html)
-`[?rate=48000|44100][&uuid=descending][&fill=1][&rows=<id,id>|&group=<group>][&failAt=<rowId>]`. A real click on Run, 73 to 74 s for all
-rows (95 to 98 s with `&fill=1`), no audio plays. Logic: `src/lib/audit/exportRegression*.ts`. Table and accept: `node scripts/audit/export-regression/table.ts [runToken] [--accept] [--force] [--library <path>] [--diff <rowId>]`.
+`[?rate=48000|44100][&uuid=descending][&fill=1][&rows=<id,id>|&group=<group>][&failAt=<rowId>]`. A real click on Run, about 90 s for all 308
+rows (about 2 min with `&fill=1`), no audio plays. Logic: `src/lib/audit/exportRegression*.ts`. Table and accept: `node scripts/audit/export-regression/table.ts [runToken] [--accept] [--force] [--library <path>] [--diff <rowId>]`.
 
 Each row renders a copy of one project through one SDK export path (`step` in one call and in chunks, `start`, `renderSection`, stems, the
 bounce's exported pieces, `setPosition`, a loop area) with one latency case (none, Autotune, Compressor on a track, a bus or an aux,
@@ -379,7 +379,7 @@ reading recipe stay here.
 
 ## Reading recipe for an SDK bump
 
-1. `export-regression-audit-debug-demo.html?rate=48000` on the dev server, a real click on Run about 30 s after load, the tab visible, 73 to 74 s, then `?rate=44100`. Standing is about the invariants alone, so read it with `data-register-counts` (identical, changed, unregistered) beside `data-standing-counts`: expect `296,0,0`. On the public host the page finds no register and has no sink, so every row reads `unregistered`, a callout says the run proves the invariants only, the state ends in `done:no-summary`, and `table.ts` finds no summary. The page reads `register/<rate>.json` and uploads a WAV only for a row that is not `identical`. A stall as above: reload, wait and run again.
+1. `export-regression-audit-debug-demo.html?rate=48000` on the dev server, a real click on Run about 30 s after load, the tab visible, about 90 s, then `?rate=44100`. Standing is about the invariants alone, so read it with `data-register-counts` (identical, changed, unregistered) beside `data-standing-counts`: expect `308,0,0`. On the public host the page finds no register and has no sink, so every row reads `unregistered`, a callout says the run proves the invariants only, the state ends in `done:no-summary`, and `table.ts` finds no summary. The page reads `register/<rate>.json` and uploads a WAV only for a row that is not `identical`. A stall as above: reload, wait and run again.
 2. `node scripts/audit/export-regression/table.ts <token> --library <clone>`, one per rate. Always pass the token: with none it reads the newest summary, a control run included, and prints that run's token and age first. A token whose summary is missing fails. The standings it prints are recomputed from the invariants by this build's findings, so a label retired since the run reads `failing`. A clone at `../opendaw-export-wavs` is found by itself. Cloning fetches the WAVs through LFS, and every download counts against the LFS bandwidth. With no clone, a run still reads `identical` or `changed` from the hashes.
 3. Read `failing` first: a failed invariant no label matches. It cannot be accepted, even forced, a shift under a label included: read it, then change the label's rule or draft a defect. Then `changed` against the register: a render moved, and the line says by how much. `rounding-sized` is under −100 dB with no shift, and it is still `changed` and still needs a person. `--diff <rowId>` writes both WAVs for the audio-analyzer. Then any "no longer reproducing" line, which is a defect here being fixed.
 4. A `known-finding` is a row whose signature still matches. It is not a pass: this note's reads are what it rests on.

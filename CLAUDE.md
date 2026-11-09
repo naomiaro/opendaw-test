@@ -826,10 +826,11 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   hardware, about 25 seconds each. Expect `Done: no frames lost on any of 12 rows`; a row reading "defect present" is `renderSection` losing
   frames at a chunk boundary again (openDAW#530), and "differs from the formula" a loss nobody predicted. The two-pass rows read 0 early at both rates. Register `debug/2026-11-05-render-section-latency-gap/note.md`.
 - After SDK upgrades, also run the export regression audit: `export-regression-audit-debug-demo.html` then `?rate=44100` — a
-  real click on Run audit about 30 seconds after load, deterministic, no hardware, about 74 s after the 30 s wait. Expect every row
+  real click on Run audit about 30 seconds after load, deterministic, no hardware, about 90 s after the 30 s wait (308 rows). Expect every row
   `identical` (the note's "Expected" line gives the clean / known split; a `known-finding` row is not a pass). A `changed` row is the finding: read `node scripts/audit/export-regression/table.ts <token>` (it needs the
   library clone for sample figures) and decide file or accept; a `failing` row with no label is a defect; a `no longer reproducing`
-  line is a fix landing, so retire the label in the note. `--accept <token> --library ~/Code/opendaw-export-wavs` only after a
+  line is a fix landing, so retire the label in the note (openDAW#536 landing moves `in-block-none-region-start-predicted-early` and
+  the four `stems-*-stems-metronome` rows: retire `in-block-pulse-rounds-early`, re-accept). `--accept <token> --library ~/Code/opendaw-export-wavs` only after a
   person's read, and it needs an explicit token; then in the library clone `git add wav`, commit and push (LFS), and commit the register here; the library is the private LFS repo
   `naomiaro/opendaw-export-wavs` (GitHub Free: 10 GiB of storage and 10 GiB of bandwidth a month, every download counts). A run
   with errored rows on one source is the known OPFS stall: repeat that page rate. Offline-only, so the two page rates are the
@@ -1226,6 +1227,11 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   and list it under "Waiting for a read" in `debug/README.md`; once posted, rename it
   `posted-<tracker>-<number>[-topic].md`. Cross-link the issue
   number back into the repro page's DebugLinkBar and the debug note's header.
+- Before drafting an upstream issue or question, search upstream for an answer already written down:
+  `xerj code webdaw "<plain words>"` reaches openDAW's `plans/` as well as its code (a range question was
+  withdrawn on 2026-11-09 because `plans/issues/434-mixdown-sections.md` already said a range "never ends
+  sample-exact"). A public claim that something never happens ("the studio never passes a range") needs a
+  full search with every hit read, and the issue names the callers it checked.
 - Upstream PRs describe their CURRENT state in the PR body: after every push to a PR
   branch (review responses, extra fixes, scope additions), edit the body with
   `gh pr edit --body-file` so it reads as one coherent description — never post
@@ -1333,7 +1339,9 @@ unasked (every `xerj` command prints a banner inviting it).
 - SDK investigations & open questions: `debug/`, one folder per investigation named
   `YYYY-MM-DD-topic/` with its `note.md` and its `drafts/` (`debug/README.md` has the
   layout and a newest-first index). The loose `.md` files at `debug/`'s top level are
-  stubs for links in filed issues: leave them, and add no notes there.
+  stubs for links in filed issues: leave them, and add no notes there. New findings get a new dated folder,
+  even when an older investigation's harness found them (the user's rule): the older note keeps its register
+  and run log and points at the new one.
 - `docs/superpowers/{specs,plans}` hold in-flight work only — delete a spec/plan in the
   PR that completes its work (git history preserves them). Durable decisions graduate to
   `docs/design/`, CLAUDE.md, or `documentation/` before deletion.

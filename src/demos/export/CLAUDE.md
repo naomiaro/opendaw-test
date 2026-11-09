@@ -38,6 +38,11 @@ Key facts:
   single-stem export the stem's own silence is what counts (with several, all must be silent:
   read, not measured). `step` does not go through `render`. The trailing silence after the last
   sound is trimmed to its first quarter second (`sampleRate / 4` frames).
+- **`ExportConfiguration.range` on `start` sets a minimum, not an end.** The timeline plays on past
+  `end` until 10 s of silence (at most 30 s): a range of 0..2 s on a 4 s region returns all 4 s and a
+  quarter second (harness row `range-none-start-ends-in-sound`). Upstream records it in
+  `plans/issues/434-mixdown-sections.md` and answers with `renderSection` (sample-exact except Entire song
+  and the last marker). No studio caller passes a range; the demos step exact ranges.
 - **A section or `setPosition` start fades in over about 5 ms**, the engine treating the first
   block as a jump; the first frames of such a render differ from a continuous pass. A second
   `play` on one renderer after a stop with reset is not trimmed of its plug-in compensation: on a chain with a reported latency the
