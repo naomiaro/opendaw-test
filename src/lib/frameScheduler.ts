@@ -101,9 +101,12 @@ export function createFrameScheduler(deps: FrameSchedulerDeps): FrameScheduler {
 
 /**
  * Every Nth real frame, for a sweep that wants a slower engine sync than the display gives: the
- * SDK's loop already drops frames under 16 ms apart (while `AnimationFrame.clampTo60fps` stays at
- * its default, true, which nothing here changes), so a faster display changes nothing, and the
- * question worth asking is what a slower one does. `?frameDriver=throttled&frameEvery=N`.
+ * SDK's loop drops a frame under 16 ms after the last one it ran (while `AnimationFrame.clampTo60fps`
+ * stays at its default, true, which nothing here changes), so no display ticks faster than 62.5 Hz
+ * (60 on a 60 or 120 Hz panel), and many tick slower: 75 Hz gives 37.5, 90 gives 45, 144 gives 48,
+ * a 24/25/30 Hz TV its own rate. What a frame-driven reader feels is the interval, which this
+ * throttle sets while N display frames span 16 ms or more (below that the clamp still applies):
+ * `?frameDriver=throttled&frameEvery=N` (debug/2026-11-09-display-refresh-rate-recording/note.md).
  */
 export function createThrottledFrames(
   every: number,
