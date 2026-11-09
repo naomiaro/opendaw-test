@@ -111,8 +111,8 @@ by an amount that changes with the display's update rate.
 Not run: the 48 kHz device pass, the multitrack scenarios, a real display at 24/50/75/144 Hz (the
 throttle sets the interval; a real display's frame timing jitter is not reproduced by it).
 
-## Open
+## Status
 
-- Draft for upstream: `drafts/TO-REVIEW-openDAW-automation-recording-frame-rate.md`. Upstream already
-  records the cause (above), so the draft's only new content is the frame-rate dependence and its
-  figures; posting is the user's call.
+- Draft for upstream WITHDRAWN 2026-11-09 (`drafts/withdrawn-openDAW-automation-recording-frame-rate.md`):
+  upstream's capture plan already records the cause and keeps `RecordAutomation` on the frame read; the
+  figures stay here.

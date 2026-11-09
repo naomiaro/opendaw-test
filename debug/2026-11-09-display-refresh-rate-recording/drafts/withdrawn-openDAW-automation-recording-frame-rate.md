@@ -1,6 +1,6 @@
-<!-- TO REVIEW. Not posted. Decide first: upstream's plans/capture.md already says RecordAutomation stays on
-the frame-read position (7.1 item 8, section 8 "Not done" item 1), so this draft adds only the display-rate dependence and its
-figures. The note links resolve only after this folder is on main. -->
+<!-- WITHDRAWN 2026-11-09, not posted (the user's call). Upstream's plans/capture.md already says RecordAutomation stays on
+the frame-read position (7.1 item 8; section 8 "Not done" item 1), so an issue would only have added the display-rate figures,
+which the note keeps. -->
 
 # Recorded automation lands one to two display frames early, so the offset depends on the screen's refresh rate
 
