@@ -116,3 +116,5 @@ throttle sets the interval; a real display's frame timing jitter is not reproduc
 - Draft for upstream WITHDRAWN 2026-11-09 (`drafts/withdrawn-openDAW-automation-recording-frame-rate.md`):
   upstream's capture plan already records the cause and keeps `RecordAutomation` on the frame read; the
   figures stay here.
+- Follow-up 2026-11-09: what else reads the frame-read engine state, and a measured defect it found (a write just
+  after Stop leaves the lane suspended on the next play): [frame-clock-consumers](../2026-11-09-frame-clock-consumers/note.md).
