@@ -18,7 +18,7 @@ already says `RecordAutomation` was not moved onto the audio clock (below).
   `SyncStream` holds one state; the worklet writes the next one in the first quantum after a read
   (`lib/std/src/sync-stream.ts`), so the state a tick reads was written just after the previous tick.
 - The tick is the window's animation frame with a clamp: `lib/dom/src/frames.ts` skips a frame that
-  comes less than 16 ms after the last one it ran (`clampTo60fps`, default true). So the SDK runs at
+  comes less than 16 ms after the last one it ran (`clampTo60fps`, default true). So the SDK runs
   at most one tick per 16 ms (62.5 Hz; 60 on a 60 or 120 Hz panel), and several fast displays come out slower:
 
   | Display | SDK updates | Interval |
