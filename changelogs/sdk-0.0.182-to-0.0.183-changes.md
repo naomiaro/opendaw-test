@@ -149,10 +149,13 @@ reports made anonymous and logged for engine traps, the WebRTC offer collision, 
   items 1–2 above; re-run with the labels retired (1794246918474, 1794247036602) clean 242 / known 54 / failing 0 / errored 0 at both rates,
   the same register counts; **accepted as the registers on the user's word** (library commit `26b06b7`; re-runs 1794248944040, 1794249053719:
   296 of 296 `identical`); loudness **28 of 28** at both rates, every judged metric the 0.0.182 value to the hundredth (runs 1794246874519, 1794247814976; the unjudged after-the-end range moves by its usual 0.1 LU steps). Chromium probe, hardware-free rows: first-read `STALE FIRST READ` 14 of 15 (none 4, large 5, slow 5; 15 of 15 on 0.0.182, the verdict the same), suspend-resume `HALF RATE` on the first run (ratio about 0.50 from cycle 1), capture-gaps loopback `CLEAN` at 48 000 / `START GAPS` (one 441-frame start run) at 44 100, opfs-flush median 0.64 ms per 1 MiB / 1.58 ms per 16 MiB, opfs-usage in-session `COUNTED`, across a restart of Playwright's Chrome `NEGATIVE USAGE` (saved figure −1 758 784 181; drift −436 499 918 bytes since the 2026-11-06 restart, the probe's plain delete plus deletes between the two restarts not attributed here) — every one the register's reading. Bugzilla: the watched WebKit 328462 (Enhanced Security and `SharedArrayBuffer`) resolved fixed in WebKit main on 2026-11-09, 328618 gained a pull request; register entries updated.
-- **Not run (hardware or a hand):** the IAC MIDI input sweep and its loop-wrap / effect arms, the MIDI output timing audit, the combined MIDI +
-  audio sweep, the hidden-page `cover` and `modal` rows, the Chromium bfcache / freeze / microphone / Bluetooth rows, the 48 kHz device pass.
-  This release changes the transport's position arithmetic, so the MIDI input sweep's `loop-wrap` arm and the MIDI output timing audit
-  are the two worth asking for first.
+- **IAC rows (2026-11-09, the IAC Driver online):** MIDI input sweep **36 of 36** `aligned`, every median 0.00 ms, max deviation 0.005 ms,
+  0 missing / extra / stuck, count-in 2 of 6 pickups per cell (#493 open) (run 1794249280926); loop-wrap five repeats 48 / 48 each, `aligned`
+  (1794249670312); effect arms `arpeggio` and `pitch` `aligned`, 48 / 48 (1794249729332, 1794249750215). MIDI output timing in the user's
+  Chrome: Runs A, B (jank) and C every PAGE cell `bus-true`, every engine cell `on-time`, live medians 9.94–10.14 ms, janked inside-block
+  medians 9.97 / 13.37 ms (1794249788138, 1794249865711, 1794249944019).
+- **Not run (hardware or a hand):** the combined MIDI + audio sweep (microphone and speakers), the hidden-page `cover` and `modal` rows,
+  the Chromium bfcache / freeze / microphone / Bluetooth rows, the 48 kHz device pass.
 - **Docs:** `documentation/` chapters 02 (key and chord tracks), 10 and 13 (the export stop rule), 11 (Reverb / Revamp defaults, Scale
   Matrix in the lists), 16 (Scale Matrix, Arpeggio `followChords` and its stop release), 17 (`keyAt` / `chordAt`), 18 (the warp-marker
   guard), 19 (`recordSampleLoad`), internals 01 (the transport anchor), 03 (`notice`), 05 (sidechain loops), 06 (`SilenceTail`); root and

@@ -374,6 +374,47 @@ the MIDI output rows are read in the user's Chrome from here on (root CLAUDE.md)
 as a failure, not as a known defect); `MIDI_OUT_KNOWN_DEFECTS` is empty, and the test file pins the
 2026-10-23 figures as `investigate` and run B's fixed figures as `on-time`.
 
+### SDK 0.0.183 (2026-11-09): Runs A, B and C again
+
+The release does not touch the MIDI Output device or its clock; it counts the transport's position in frames from an anchor
+(openDAW#533), which moves the pulse a note sits on at sub-frame level. Same recipes, **the user's Chrome** (Chrome 156, through
+claude-in-chrome, real clicks), a 44.1 kHz context, the Mac's output device at 44.1 kHz, the IAC bus, `frameDriver=hidden-safe`, the
+window uncovered.
+
+**Run A** (`1794249788138`, `?bpm=140&density=32nd&transport=both&repeats=2&frameDriver=hidden-safe`):
+
+| arm | bpm | density | transport | status | median ms (r1 / r2) | max dev | late tail | inside blocks | live median (r1 / r2) | live max dev | pair drift ms | miss/extra/stuck/vel | transport msgs |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| page | 140 | 32nd | on | `bus-true` | 0.00 / -0.00 | 0.00 | 0.00 | — | 0.03 / 0.02 | 0.02 | -0.00..0.05 | 0/0/0/0 | 3 |
+| engine | 140 | 32nd | on | `on-time` | 9.98 / 10.41 | 1.71 | 0.77 | — | 10.00 / 10.00 | 1.51 | -2.11..0.05 | 0/0/0/0 | 485 |
+| page | 140 | 32nd | off | `bus-true` | 0.00 / 0.00 | 0.00 | 0.00 | — | -3.31 / -0.08 | 3.63 | -4.53..0.75 | 0/0/0/0 | 3 |
+| engine | 140 | 32nd | off | `on-time` | 9.62 / 10.36 | 1.01 | 0.43 | — | 10.05 / 10.01 | 1.89 | -1.37..1.28 | 0/0/0/0 | 0 |
+
+**Run B** (`1794249865711`, `…&jank=mid`):
+
+| arm | bpm | density | transport | status | median ms (r1 / r2) | max dev | late tail | inside blocks | live median (r1 / r2) | live max dev | pair drift ms | miss/extra/stuck/vel | transport msgs |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| page | 140 | 32nd | on | `bus-true` | -0.00 / -0.00 | 0.00 | 0.00 | -0.00 | 0.02 / 0.02 | 0.02 | -0.00..0.05 | 0/0/0/0 | 2 |
+| engine | 140 | 32nd | on | `on-time` | 9.98 / 8.28 | 1.71 | 1.70 | 9.97 | 10.00 / 10.00 | 2.04 | -1.04..2.86 | 0/0/0/0 | 485 |
+| page | 140 | 32nd | off | `bus-true` | -0.00 / -0.00 | 0.00 | 0.00 | -0.00 | -5.55 / -2.86 | 5.96 | -6.36..3.34 | 0/0/0/0 | 3 |
+| engine | 140 | 32nd | off | `on-time` | 13.26 / 12.84 | 3.69 | 0.46 | 13.37 | 10.00 / 10.00 | 1.14 | -6.64..0.90 | 0/0/0/0 | 0 |
+
+**Run C** (`1794249944019`, `?bpm=all&density=both&repeats=2&frameDriver=hidden-safe`):
+
+| arm | bpm | density | transport | status | median ms (r1 / r2) | max dev | late tail | inside blocks | live median (r1 / r2) | live max dev | pair drift ms | miss/extra/stuck/vel | transport msgs |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| page | 90 | both | on | `bus-true` | -0.00 / -0.00 | 0.00 | 0.00 | — | 0.05 / -0.87 | 2.81 | -4.17..2.79 | 0/0/0/0 | 1 |
+| engine | 90 | both | on | `on-time` | 9.96 / 10.10 | 0.94 | 0.27 | — | 10.00 / 10.14 | 1.16 | -0.50..0.86 | 0/0/0/0 | 485 |
+| page | 120 | both | on | `bus-true` | -0.00 / -0.00 | 0.00 | 0.00 | — | -0.03 / 0.23 | 0.89 | -0.90..1.13 | 0/0/0/0 | 5 |
+| engine | 120 | both | on | `on-time` | 9.61 / 9.64 | 0.82 | 0.41 | — | 9.94 / 10.05 | 1.13 | -3.00..1.22 | 0/0/0/0 | 486 |
+| page | 140 | both | on | `bus-true` | -0.00 / -0.00 | 0.00 | 0.00 | — | -2.42 / 0.12 | 0.80 | -3.48..1.20 | 0/0/0/0 | 3 |
+| engine | 140 | both | on | `on-time` | 12.61 / 15.36 | 3.46 | 0.42 | — | 10.03 / 10.04 | 1.26 | -5.87..1.35 | 0/0/0/0 | 487 |
+
+**Reading on 0.0.183:** every PAGE cell `bus-true`, every engine cell `on-time` on the live pair (live medians 9.94–10.14 ms on the
+10 ms delay), the janked cells too, with inside-block medians 9.97 and 13.37 ms (0.0.181: 9.8–12.8); 0
+missing / extra / stuck / velocity on every row. The engine's own-clock medians that read 12.6–15.4 ms (Run B transport off, Run C at
+140) sit on pair drift down to −5.9 / −6.6 ms, the clock relation the live pair removes, as on 0.0.181.
+
 ## Findings
 
 1. **Confirmed, SDK: a note rendered during a main-thread block is requested late by the rest of the
