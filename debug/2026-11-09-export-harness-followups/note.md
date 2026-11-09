@@ -2,8 +2,8 @@
 
 **Title:** A region that starts on a whole frame inside a block plays one frame early, an export range's end is a minimum, and what markers, loop wraps and a gap inside a range do on 0.0.183
 
-**Status: MEASURED.** The region start is drafted as a new openDAW issue:
-[`drafts/TO-REVIEW-openDAW-region-start-inside-a-block-one-frame-early.md`](./drafts/TO-REVIEW-openDAW-region-start-inside-a-block-one-frame-early.md).
+**Status: MEASURED. The region start is FILED as [openDAW#536](https://github.com/andremichelle/openDAW/issues/536) (2026-11-09)**, body as filed in
+[`drafts/posted-openDAW-536-region-start-inside-a-block-one-frame-early.md`](./drafts/posted-openDAW-536-region-start-inside-a-block-one-frame-early.md).
 The range question is withdrawn, because upstream's own plan answers it (5, below):
 [`drafts/withdrawn-openDAW-export-range-end-is-a-minimum.md`](./drafts/withdrawn-openDAW-export-range-end-is-a-minimum.md). The 12 rows are accepted into the register (2026-11-09, the user's word): runs 1794253004161 (48 kHz) and 1794253155843 (44.1 kHz), 9 WAVs per rate, library commit `e5dcaa1`.
 The user's decision stands for #533 and #534: no follow-up comments there.
@@ -25,7 +25,7 @@ decision: no follow-up upstream**, not on either issue and not as a new one. The
 Runs 1794251449772 (48 kHz) and 1794251607099 (44.1 kHz), both `&fill=1`, 2026-11-09, `@opendaw/studio-sdk@0.0.183`, engine `447481d683c6`, the device at 44.1 kHz,
 307 rows each: **clean 246, known 61, failing 0, errored 0** at both rates. The 296 accepted rows read `identical`, so nothing in them moved.
 
-**1. A pulse inside a block rounds early (measured; label `in-block-pulse-rounds-early`, not filed).** Upstream: "Converting a pulse
+**1. A pulse inside a block rounds early (measured; label `in-block-pulse-rounds-early`; filed as [openDAW#536](https://github.com/andremichelle/openDAW/issues/536), the region start and the click together).** Upstream: "Converting a pulse
 to a sample inside a block still rounds once from the block's start … none of your cases hit it." Since 0.0.183 a block's start is
 exact (a whole frame count from the anchor, one division), and a pulse inside the block is converted from that start's pulse.
 `exportRegressionInBlock.ts` writes out the engine's two conversions. *Read:* a click at

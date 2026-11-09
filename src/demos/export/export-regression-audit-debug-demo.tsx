@@ -386,6 +386,7 @@ const App: React.FC = () => {
               { label: "openDAW#530", href: "https://github.com/andremichelle/openDAW/issues/530", kind: "note" },
               { label: "openDAW#533", href: "https://github.com/andremichelle/openDAW/issues/533", kind: "note" },
               { label: "openDAW#534", href: "https://github.com/andremichelle/openDAW/issues/534", kind: "note" },
+              { label: "openDAW#536", href: "https://github.com/andremichelle/openDAW/issues/536", kind: "note" },
             ]}
           />
           <Text size="2" color="gray">

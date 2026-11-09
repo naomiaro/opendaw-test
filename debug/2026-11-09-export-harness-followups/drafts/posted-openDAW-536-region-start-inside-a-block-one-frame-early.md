@@ -1,5 +1,4 @@
-<!-- TO REVIEW: not posted. Target: a new issue on andremichelle/openDAW (not a comment on #533, the user's decision to leave
-#533/#534 without follow-ups). The repro link works only once PR #221 is merged and deployed: check it on the public host first. -->
+<!-- Posted as https://github.com/andremichelle/openDAW/issues/536 on 2026-11-09. Body as filed (the title is the heading below). -->
 
 # A region that starts on a whole frame inside a block plays one frame early
 
