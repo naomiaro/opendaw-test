@@ -3,10 +3,10 @@
 **Title:** MIDI Effect Semantics Audit — does each stock MIDI effect emit what its documented rule
 says, across the whole range of every parameter, and has anything changed since the last accepted run
 
-**SDK Pin:** `@opendaw/studio-sdk@0.0.182` (installed npm package; WASM engine only; first accepted on
+**SDK Pin:** `@opendaw/studio-sdk@0.0.183` (installed npm package; WASM engine only; first accepted on
 0.0.180). The crate and manual citations below are read in the openDAW checkout pinned to the installed release:
-the Arpeggio crate and manual were rewritten on 0.0.182 and the Zeitgeist's shortened, so their citations moved;
-Pitch, Velocity, Note Filter and the wiring fold are untouched. **Both registers carry 0.0.182 since the 2026-11-06 accept, on the user's word: 380 rows each.** Citations in the retired deviations and the withdrawn question are the release they were read on, marked "(0.0.181)".
+the Arpeggio crate and manual were rewritten on 0.0.182 and the Zeitgeist's shortened, so their citations moved, and the Arpeggio's lines
+moved again on 0.0.183; Pitch, Velocity, Note Filter and the wiring fold are untouched. **Both registers carry 0.0.183 since the 2026-11-09 accept, on the user's word: 380 rows each.** Citations in the retired deviations and the withdrawn question are the release they were read on, marked "(0.0.181)".
 
 **Filed (2026-11-03) and closed (2026-11-04), the manuals corrected:**
 [openDAW#524](https://github.com/andremichelle/openDAW/issues/524) the Arpeggio's Velocity control is
@@ -532,7 +532,9 @@ table above). Scale Matrix is new and has no rows.
   a velocity 0.770 for 0.735 at 48 kHz, 0.715 for 0.750 at 44.1), and at 44.1 kHz `zg-amount1-dur960-sixteenths` (17 / 1 / 31:
   velocity 0.955 for 1.000) and `zg-amount1-dur3840-sixteenths` (17 / 5 / 27: 17 notes read for 16). These are reads of overlapping
   notes, which move when a note-on moves by a frame; the rule verdicts are the 0.0.182 ones row for row.
-- **Not accepted:** the registers stay at 0.0.182 until a person reads these rows (`table.ts 1794245971298`, `table.ts 1794246058210`).
+- **Accepted 2026-11-09 on the user's word** (`register/48000.json` from 1794245971298, `register/44100.json` from 1794246058210, nothing
+  forced). Re-run against the new registers: 1794249134609 (48 kHz) and 1794249208718 (44.1 kHz) each read 380 `as-registered`, 0 changed,
+  357 holds / 0 deviations / 23 no rule.
 
 ## Reading
 

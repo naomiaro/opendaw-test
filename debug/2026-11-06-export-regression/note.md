@@ -2,7 +2,7 @@
 
 **Title:** Every SDK export path, 296 rows at two page rates: what holds, what each row that does not hold measured, and a full run's stall in the OPFS worker
 
-**Status: FINDINGS 1 AND 2 FIXED IN `@opendaw/studio-sdk@0.0.183`** (re-measured 2026-11-09, [below](#sdk-0183-both-findings-fixed); their labels are retired). **The 0.0.183 runs are NOT accepted: they wait for a person's read.** Before: register accepted on 0.0.182, library filled; findings 1 and 2 filed as [openDAW#533](https://github.com/andremichelle/openDAW/issues/533) and [openDAW#534](https://github.com/andremichelle/openDAW/issues/534) on 2026-11-08. The user read the findings and approved the labels and the first fill. Both page rates are accepted, a re-run of each reads every row `identical`, and a changed render is caught (below). Nothing is posted. Three drafts wait (below). `trailing-silence-trimmed` is ruled by design and not raised upstream. The other findings are the
+**Status: FINDINGS 1 AND 2 FIXED IN `@opendaw/studio-sdk@0.0.183`** (re-measured 2026-11-09, [below](#sdk-0183-both-findings-fixed); their labels are retired). **REGISTER ACCEPTED ON 0.0.183 on the user's word (2026-11-09), library filled; a re-run of each rate reads 296 of 296 `identical`.** Before: register accepted on 0.0.182, library filled; findings 1 and 2 filed as [openDAW#533](https://github.com/andremichelle/openDAW/issues/533) and [openDAW#534](https://github.com/andremichelle/openDAW/issues/534) on 2026-11-08. The user read the findings and approved the labels and the first fill. Both page rates are accepted, a re-run of each reads every row `identical`, and a changed render is caught (below). Nothing is posted. Three drafts wait (below). `trailing-silence-trimmed` is ruled by design and not raised upstream. The other findings are the
 user's call, each with the read it got.
 
 **The catalogue holds 296 rows and none reads `failing`.** `gap-none-start`, `gap-none-section-entire` and `gap-none-stem-start` carry `long-silence-ends-render` (Finding 2), which is a defect with a draft: a label means read and understood, not fine.
@@ -357,8 +357,10 @@ failing rows the trimmed-tail rows, whose label pinned the old frame count (`TRI
 errored 0** at both rates, against the register 240 / 56 and 210 / 86 as before (the renders are deterministic). The expected line below
 moves to these counts once a person accepts the runs.
 
-**Not accepted.** `--accept` writes the register and copies the WAVs of the changed rows into the library; it waits for a person's read
-of the runs' tables.
+**Accepted 2026-11-09 on the user's word** ("accept the new baselines since it's on top of the new export fixes"): `register/48000.json`
+from 1794246918474, `register/44100.json` from 1794247036602, nothing forced; 22 and 26 WAVs copied, library commit `26b06b7` pushed (48 LFS
+objects, 88 MB). Re-run against the new registers: 1794248944040 (48 kHz) and 1794249053719 (44.1 kHz) each read 296 `identical`, clean 242,
+known 54, failing 0, errored 0.
 
 ## Reading recipe for an SDK bump
 
@@ -368,7 +370,7 @@ of the runs' tables.
 4. A `known-finding` is a row whose signature still matches. It is not a pass: this note's reads are what it rests on.
 5. `--accept --library <clone>` only after a person has read that run's table, and never on a run with a row failing or errored, a descending run, a row the catalogue does not hold or holds with other invariants (a summary from before the catalogue changed) or, without `--force`, a partial one. It writes the register and copies the new WAVs. Then in the clone `git add wav`, commit and push, and commit the register here.
 
-**Expected on 0.0.182:** 296 of 296 `identical`; 48 kHz clean 237, known 59; 44.1 kHz clean 222, known 74.
+**Expected on 0.0.183:** 296 of 296 `identical`; clean 242, known 54 at both rates (0.0.182: 48 kHz clean 237, known 59; 44.1 kHz clean 222, known 74).
 
 Once a release ships a fix, the row's invariant holds, its hash moves so it reads `changed`, and the table prints `no longer reproducing: <finding>`. Retire the finding from `exportRegressionFindings.ts` then, and say so here.
 
