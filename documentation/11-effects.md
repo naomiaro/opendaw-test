@@ -119,11 +119,13 @@ OpenDAW provides a comprehensive audio effects system with both **MIDI Effects**
 
 #### MIDI Effects (Process and transform MIDI note data)
 
-1. **Arpeggio** - Rhythmic note sequence generation
-2. **Pitch** - MIDI note pitch shifting
-3. **Velocity** - MIDI velocity manipulation
-4. **Zeitgeist** - Time/groove distortion
-5. **Spielwerk** - Scriptable MIDI effect
+1. **Arpeggio** - Rhythmic note sequence generation (optionally following the project's chord track)
+2. **Note Filter** - Key-range filter, transpose or single key
+3. **Pitch** - MIDI note pitch shifting
+4. **Scale Matrix** - Moves every note onto the nearest key of a scale (its own or the project key)
+5. **Velocity** - MIDI velocity manipulation
+6. **Zeitgeist** - Time/groove distortion
+7. **Spielwerk** - Scriptable MIDI effect
    - User-written JavaScript MIDI processing
    - Uses `// @param` comment declarations for parameters
 
@@ -412,7 +414,7 @@ The LFO is a triangle wave that modulates the delay line read position, creating
 | Parameter | Type | Range | Default | Unit | Automatable | Description |
 |-----------|------|-------|---------|------|-------------|-------------|
 | decay | float32 | 0.0 to 1.0 | 0.5 | % | yes | Room size / reverb decay time |
-| preDelay | float32 | 0.001 to 0.5 | 0.0 | s | yes | Time before first reflection |
+| preDelay | float32 | 0.001 to 0.5 | 0.001 | s | yes | Time before first reflection |
 | damp | float32 | 0.0 to 1.0 | 0.5 | % | yes | Damping of high frequencies |
 | filter | float32 | -1.0 to 1.0 | 0.0 | % | yes | Additional filtering |
 | dry | float32 | -72.0 to 0.0 | 0.0 | dB | yes | Dry signal level (DefaultDecibel mapping) |
@@ -429,6 +431,8 @@ The LFO is a triangle wave that modulates the delay line read position, creating
 **Factory Reference:** `EffectFactories.AudioNamed.Revamp`
 
 **Filter Sections:**
+
+Schema defaults: `order` 1 and `q` √½ (0.707) on both passes, `gain` +6 dB on the shelves and bells, `q` √½ on the bells. `EffectFactories.Revamp` also sets the band frequencies (high-pass 40 Hz, low shelf 80 Hz, low bell 120 Hz, mid bell 640 Hz, high bell 3600 Hz, high shelf 10 kHz, low-pass 15 kHz) and enables the high-pass; each parameter's `resetValue` (what `reset()` writes) matches these. The engine's low- and high-pass biquads raise a `q` below 1e-6 (a `setValue(0)`, which the box does not clamp) to 1e-6, so the output stays finite.
 
 #### High-Pass Filter
 - **enabled** (boolean)
@@ -2382,7 +2386,7 @@ const spielwerkBox = effectBox as SpielwerkDeviceBox;
 - `external`: false
 - `type`: "midi"
 
-Listed in `EffectFactories.MidiNamed` alongside Arpeggio, Note Filter, Pitch, Velocity, Zeitgeist, and WclapMidi.
+Listed in `EffectFactories.MidiNamed` alongside Arpeggio, Note Filter, Pitch, Scale Matrix, Velocity, Zeitgeist, and WclapMidi.
 
 #### Box Fields
 

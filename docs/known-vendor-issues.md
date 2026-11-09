@@ -794,16 +794,17 @@ by modified time): nothing new that reaches here.
   stalls — the "[OPFS] … runs for <n>s" warnings could fire for the browser's reason; tell the two apart
   (a blocked main thread on Safari, a slow write anywhere) before attributing. A sample library
   with more than about 250 handles open at once cannot exist on Safari. None measured here.
-- **Last checked:** 2026-11-04 (descriptions read; 328618 gained a Radar link on 2026-10-30, the others unchanged).
+- **Last checked:** 2026-11-09 (status read in bulk; 328618 gained pull request [79929](https://github.com/WebKit/WebKit/pull/79929) on 2026-11-06, the others unchanged since 2026-11-04).
 
 ### WebKit [328462](https://bugs.webkit.org/show_bug.cgi?id=328462) — "Enhanced Security" disables `SharedArrayBuffer`
 
-- **Tracker:** [bugs.webkit.org 328462](https://bugs.webkit.org/show_bug.cgi?id=328462), new, 2026-10-22, pull request [77899](https://github.com/WebKit/WebKit/pull/77899) open: Safari's Enhanced
+- **Tracker:** [bugs.webkit.org 328462](https://bugs.webkit.org/show_bug.cgi?id=328462), **resolved fixed 2026-11-09** (326128@main, pull request [77899](https://github.com/WebKit/WebKit/pull/77899)), filed 2026-10-22; not yet in a Safari release measured here: Safari's Enhanced
   Security setting switches `SharedArrayBuffer` off. The SDK needs it for the engine's sync stream, the recording ring
   buffer and the engine state (the pages are cross-origin isolated for that reason). With it [327924](https://bugs.webkit.org/show_bug.cgi?id=327924) "[iPadOS]
   cross-origin isolation parity with macOS" (COEP credentialless, reporting why isolation failed).
-- **Where it bites here:** every demo on a Safari with the setting on would fail at `Workers.install`; not measured.
-- **Last checked:** 2026-10-22 (tracker read).
+- **Where it bites here:** every demo on a Safari with the setting on would fail at `Workers.install`; not measured. Stays watched until a
+  Safari release that carries 326128@main is measured with the setting on.
+- **Last checked:** 2026-11-09 (tracker read: fix landed in WebKit main).
 
 ### WebKit [107250](https://bugs.webkit.org/show_bug.cgi?id=107250) — no Web MIDI API
 

@@ -440,7 +440,7 @@ The offline worker also feeds a `LiveStreamBroadcaster` + `AudioAnalyser` every 
 
 ### Silence detection
 
-`render()` keeps going until either `maxDurationSeconds` is hit *or* the output has been quieter than `silenceThresholdDb` (default −72 dB) for `silenceDurationSeconds` (default 10s). This is how export "knows when to stop" — it follows the natural decay of the mix instead of cutting at the last region's end position.
+`render()` keeps going until either `maxDurationSeconds` is hit *or*, once `minDurationSeconds` of output is rendered, the output has been quieter than `silenceThresholdDb` (default −72 dB) for `silenceDurationSeconds` (default 10s). This is how export "knows when to stop" — it follows the natural decay of the mix instead of cutting at the last region's end position. `OfflineEngineRenderer.start` and `renderSection` with a tail pass the range's length as `minDurationSeconds` (and that plus 30 s as the maximum), so a long gap inside the song cannot end the render before its last region. The bookkeeping lives in `SilenceTail` (`packages/studio/core-wasm/src/silence-tail.ts`): `accept(channels)` per quantum, and `framesToKeep` trims the trailing silence to its first quarter second (`sampleRate / 4` frames).
 
 ### Used by
 

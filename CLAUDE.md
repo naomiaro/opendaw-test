@@ -224,6 +224,8 @@ API: `.isEmpty()`, `.nonEmpty()`, `.unwrap()`, `.unwrapOrNull()`, `.unwrapOrUnde
 - Disconnect pointer: `pointerField.defer()` — NOT `unrefer()` (doesn't exist)
 - Copy region: `adapter.copyTo({ target: field })` — parameter is `target`, NOT `track`
 - CompressorDeviceBox makeup gain: field is `makeup`, NOT `gain`
+- Warp markers: a transaction that ENDS with two `WarpMarkerBox`es of one play-mode box at the same
+  `position` panics on commit (`WarpMarkerGuard`); coinciding positions mid-transaction are fine
 
 ### Sample Manager Setup
 - Class: `GlobalSampleLoaderManager` (NOT `DefaultSampleLoaderManager`)
@@ -254,7 +256,10 @@ Use raw `sampleLoader.subscribe()` only when you need state change callbacks wit
 - `.clips` — clip pool
 - `.grooves` — `IndexedBoxAdapterCollection<GrooveAdapter>` (the project's groove list)
 - `.groove` — `GrooveAdapter` of the Global Shuffle
-- `.timeline` — `TimelineBoxAdapter` (signature, tempo, markers)
+- `.timeline` — `TimelineBoxAdapter` (signature, tempo, markers, and the harmony: `.keyTrack.keyAt(ppqn)`
+  → `Harmony.Key`, `.chordTrack.chordAt(ppqn)` → `Option<Harmony.Chord>`; the project key is
+  `timelineBox.keyTrack.root` / `.scale`, followed by Scale Matrix, Autotune `follow`, Arpeggio
+  `followChords` and scripts' `this.keyAt` / `this.chordAt` — `documentation/02-timing-and-tempo.md`)
 - `.pianoMode` — piano mode state
 - `.midiOutputDevices` — external MIDI output devices
 - `.labeledAudioOutputs()` — named audio outputs
@@ -819,7 +824,7 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   `src/demos/midi/CLAUDE.md`.
 - After SDK upgrades, also run `render-section-latency-debug-demo.html` then `?rate=44100` — a real click on Run, offline, no
   hardware, about 25 seconds each. Expect `Done: no frames lost on any of 12 rows`; a row reading "defect present" is `renderSection` losing
-  frames at a chunk boundary again (openDAW#530), and "differs from the formula" a loss nobody predicted. At 44.1 kHz the 4 s two-pass rows keep the no-latency baseline's 1 early. Register `debug/2026-11-05-render-section-latency-gap/note.md`.
+  frames at a chunk boundary again (openDAW#530), and "differs from the formula" a loss nobody predicted. The two-pass rows read 0 early at both rates (the 44.1 kHz 4 s baseline's 1 early was the short loop pass, openDAW#533). Register `debug/2026-11-05-render-section-latency-gap/note.md`.
 - After SDK upgrades, also run the export regression audit: `export-regression-audit-debug-demo.html` then `?rate=44100` — a
   real click on Run audit about 30 seconds after load, deterministic, no hardware, about 74 s after the 30 s wait. Expect every row
   `identical` (the note's "Expected" line gives the clean / known split; a `known-finding` row is not a pass). A `changed` row is the finding: read `node scripts/audit/export-regression/table.ts <token>` (it needs the

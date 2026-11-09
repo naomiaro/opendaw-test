@@ -156,6 +156,7 @@ parameter.getControlledUnitValue()
 parameter.getPrintValue()           // StringResult — formatted for display
 parameter.getControlledPrintValue()
 parameter.setPrintValue(text)       // parse + write display string
+parameter.resetValue                // T — what reset() writes: the adapter's reset value, else the field's initValue
 parameter.reset()                   // restore to resetValue (or the field's initValue)
 parameter.valueAt(position)         // T — automation value at a PPQN
 

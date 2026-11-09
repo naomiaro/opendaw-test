@@ -78,7 +78,7 @@ describe("parse", () => {
     expect(() => parseExportSummary(withInvariant({ holds: "true" }), 7)).toThrow(/row a invariant 0 holds is string/);
     expect(() => parseExportSummary(withInvariant({ finding: 3 }), 7)).toThrow(/row a invariant 0 finding is number/);
     expect(() => parseExportSummary(withInvariant({ invariant: null }), 7)).toThrow(/row a invariant 0 invariant is null/);
-    expect(parseExportSummary(withInvariant({ finding: "loop-pass-one-frame-short" }), 7).rows).toHaveLength(1);
+    expect(parseExportSummary(withInvariant({ finding: "loop-wrap-keeps-old-read" }), 7).rows).toHaveLength(1);
   });
   it("refuses a register entry with the same gaps", () => {
     const withEntry = (over: Record<string, unknown>) => registerAt(48000, { a: { ...entry("h"), ...over } as ExportRegister["rows"][string] });
@@ -135,11 +135,12 @@ describe("planAccept", () => {
     expect(() => planAccept(summary([failing]), null, new Set(["a"]), force)).toThrow(/no known finding.*: a$/);
   });
   it("takes a known-finding row whose failed invariant names a finding of that invariant", () => {
-    const row = buildRows(48000).find((r) => r.invariants.includes("impulse-on-reference"))!;
+    const row = buildRows(48000).find((r) => r.id === "tail-none-start-long")!;
+    expect(row.invariants).toContain("section-is-slice");
     const labelled = holding(row.id, {
       standing: "known-finding", read: read({ hash: "h" }),
-      invariants: row.invariants.map((invariant) => invariant === "impulse-on-reference"
-        ? { invariant, holds: false, detail: "", finding: "loop-pass-one-frame-short" }
+      invariants: row.invariants.map((invariant) => invariant === "section-is-slice"
+        ? { invariant, holds: false, detail: "", finding: "trailing-silence-trimmed" }
         : { invariant, holds: true, detail: "", finding: null })
     });
     expect(planAccept(summary([labelled]), null, new Set([row.id]), force).register.rows[row.id].hash).toBe("h");
@@ -153,7 +154,7 @@ describe("planAccept", () => {
       ["clean over no invariants", record({ standing: "clean", invariants: [] })],
       ["a finding of another invariant", record({
         standing: "known-finding",
-        invariants: [{ invariant: "no-jump", holds: false, detail: "", finding: "loop-pass-one-frame-short" }]
+        invariants: [{ invariant: "no-jump", holds: false, detail: "", finding: "trailing-silence-trimmed" }]
       })],
       ["a finding no entry names", record({
         standing: "known-finding",
@@ -248,42 +249,35 @@ describe("planAccept", () => {
 });
 
 describe("staleFindings", () => {
-  const rows = buildRows(44100).filter((r) => r.path === "section-loop-twice" && r.seconds === 4);
+  const LABEL = "trailing-silence-trimmed";
+  const TRIMMED = ["tail-none-section-entire-long", "tail-none-start-long"];
+  const rows = buildRows(44100).filter((r) => TRIMMED.includes(r.id));
   const held = (id: string): RowRecord => {
     const row = rows.find((r) => r.id === id)!;
     return record({
       id, invariants: row.invariants.map((invariant) => ({ invariant, holds: true, detail: "", finding: null }))
     });
   };
+  const failingOn = (held: RowRecord): RowRecord =>
+    ({ ...held, invariants: held.invariants.map((i) => i.invariant === "section-is-slice" ? { ...i, holds: false, finding: LABEL } : i) });
   it("reports a finding whose rows now hold as no longer reproducing", () => {
+    expect(rows.length).toBe(2);
     const stale = staleFindings(summary(rows.map((r) => held(r.id)), { sampleRate: 44100 }));
-    expect(stale.map((s) => s.name)).toContain("loop-pass-one-frame-short");
-    expect(stale.find((s) => s.name === "loop-pass-one-frame-short")!.rows.length).toBeGreaterThan(0);
+    expect(stale.map((s) => s.name)).toContain(LABEL);
+    expect(stale.find((s) => s.name === LABEL)!.rows.sort()).toEqual(TRIMMED);
   });
   it("does not report one whose invariant still fails, or a row that errored", () => {
-    const failing = rows.map((r) => {
-      const h = held(r.id);
-      return { ...h, invariants: h.invariants.map((i) => i.invariant === "impulse-on-reference" ? { ...i, holds: false } : i) };
-    });
-    expect(staleFindings(summary(failing, { sampleRate: 44100 })).map((s) => s.name)).not.toContain("loop-pass-one-frame-short");
+    const failing = rows.map((r) => failingOn(held(r.id)));
+    expect(staleFindings(summary(failing, { sampleRate: 44100 })).map((s) => s.name)).not.toContain(LABEL);
     const errored = rows.map((r) => record({ id: r.id, error: "x", read: null, standing: "errored" }));
     expect(staleFindings(summary(errored, { sampleRate: 44100 }))).toEqual([]);
   });
   it("does not report a finding at a rate where no row applies", () => {
     expect(staleFindings(summary([], { sampleRate: 48000 }))).toEqual([]);
   });
-  it("names long-silence-ends-render once the gap rows reach their range, and not while one still stops short", () => {
-    const gapRows = buildRows(48000).filter((r) => ["gap-none-start", "gap-none-section-entire", "gap-none-stem-start"].includes(r.id));
-    expect(gapRows.length).toBe(3);
-    const heldGap = gapRows.map((row) => record({
-      id: row.id, invariants: row.invariants.map((invariant) => ({ invariant, holds: true, detail: "", finding: null }))
-    }));
-    expect(staleFindings(summary(heldGap, { sampleRate: 48000 })).find((s) => s.name === "long-silence-ends-render")?.rows.sort())
-      .toEqual(["gap-none-section-entire", "gap-none-start", "gap-none-stem-start"]);
-    const oneShort = heldGap.map((r, index) => index > 0 ? r : {
-      ...r, invariants: r.invariants.map((i) => i.invariant === "section-is-slice" ? { ...i, holds: false } : i)
-    });
-    expect(staleFindings(summary(oneShort, { sampleRate: 48000 })).map((s) => s.name)).not.toContain("long-silence-ends-render");
+  it("does not report a finding while one of its rows still fails", () => {
+    const oneFailing = rows.map((r, index) => (index > 0 ? held(r.id) : failingOn(held(r.id))));
+    expect(staleFindings(summary(oneFailing, { sampleRate: 44100 })).map((s) => s.name)).not.toContain(LABEL);
   });
   it("is the schema constant", () => expect(EXPORT_REGRESSION_SCHEMA_VERSION).toBe(1));
 });

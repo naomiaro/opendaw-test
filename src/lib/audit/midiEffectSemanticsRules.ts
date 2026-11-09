@@ -9,7 +9,7 @@
  * Positions are absolute pulses.
  * The only SDK import is `PPQN`, for the one place pulses become milliseconds. The Arpeggio's rule covers its walk, Order,
  * Octaves, Rate, Gate, Repeat, Velocity, Offset and Seed; Hold, Retrigger and the step lanes stay at the box defaults here,
- * where the crate's `step` (`device-arpeggio/src/lib.rs:589-643`) reduces to that walk (its `tests/golden.rs` pins modes 0-2
+ * where the crate's `step` (`device-arpeggio/src/lib.rs:638-692`) reduces to that walk (its `tests/golden.rs` pins modes 0-2
  * against the legacy device; the audit's render pins the rest).
  */
 import { PPQN } from "@opendaw/lib-dsp";
@@ -75,12 +75,12 @@ export const RULE_SENTENCES: Record<SemanticsDevice, string> = {
   zeitgeist: "Every note starts where the groove warps its position to and ends where it warps its note-off to, so its duration changes with its place in the cell."
 };
 
-/** `ArpeggioDeviceBoxAdapter.RateFractions`: `floor(3840 / d) × n` (`device-arpeggio/src/lib.rs:42-51`). */
+/** `ArpeggioDeviceBoxAdapter.RateFractions`: `floor(3840 / d) × n` (`device-arpeggio/src/lib.rs:43-52`). */
 export const ARPEGGIO_RATE_PPQN: readonly number[] = [3840, 1920, 1280, 960, 720, 640, 480, 360, 320, 240, 180, 160, 120, 80, 60, 40, 30];
 
 /**
  * The manual's rule (`manual/.../arpeggio.md:122-132`) and the crate's matrix
- * (`device-arpeggio/src/lib.rs:193-205`): below 0 one fixed velocity `1 + v`, ignoring the input; above it a blend
+ * (`device-arpeggio/src/lib.rs:199-211`): below 0 one fixed velocity `1 + v`, ignoring the input; above it a blend
  * from full toward the note's own.
  */
 export function arpeggioVelocity(v: number, vel: number): number {
@@ -88,7 +88,7 @@ export function arpeggioVelocity(v: number, vel: number): number {
 }
 
 /**
- * Arpeggio per `step` and the grid loop in `process_in` (`device-arpeggio/src/lib.rs:589-643,679-687`): a note-on at every absolute grid line in range with at least
+ * Arpeggio per `step` and the grid loop in `process_in` (`device-arpeggio/src/lib.rs:638-692,731-739`): a note-on at every absolute grid line in range with at least
  * one held note, each `gate × rate` long (the manual, "3. Note": note length as a percentage of the step rate; the held
  * note's end does not cut it, `arpeggio.md`, "5. Technical Notes"), keeping the cents of the note it comes from (openDAW#526).
  */
@@ -100,7 +100,7 @@ export function arpeggioRule(notes: readonly RuleNote[], settings: ArpeggioSetti
   const length = stepLength < 1 ? 1 : Math.floor(stepLength);
   const byPitch = settings.order === 1;
   const out: RuleNote[] = [];
-  // first_index: the smallest grid index whose line is at or after `from` (device-arpeggio/src/lib.rs:414-417)
+  // first_index: the smallest grid index whose line is at or after `from` (device-arpeggio/src/lib.rs:420-423)
   for (let index = Math.ceil(range.from / rate); index * rate < range.to; index++) {
     const position = index * rate;
     const stack = notes

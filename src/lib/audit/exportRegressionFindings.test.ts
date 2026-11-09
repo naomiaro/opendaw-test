@@ -1,7 +1,7 @@
 // Each label is held to a render of the shape it was measured on, and to renders of other defects, which must read failing.
 import { describe, expect, it } from "vitest";
 import { buildRows, expectedLatencyFrames, type ExportRow } from "./exportRegressionRows.ts";
-import { KNOWN_FINDINGS, NO_EVIDENCE, findingFor } from "./exportRegressionFindings.ts";
+import { KNOWN_FINDINGS } from "./exportRegressionFindings.ts";
 import { judgeInvariants, rowStanding, type RenderedRow, type Refs } from "./exportRegressionVerdict.ts";
 import { probeSource } from "./exportRegressionSignals.ts";
 import { largestStep } from "./sectionRenderGap.ts";
@@ -66,47 +66,6 @@ const edit = (channels: Channels, change: (out: Channels) => void): Channels => 
 };
 const short = (channels: Channels, frames: number): Channels => channels.map((channel) => channel.slice(0, channel.length - frames));
 const gained = (channels: Channels, gain: number): Channels => channels.map((channel) => channel.map((v) => v * gain));
-
-describe("loop-pass-one-frame-short", () => {
-  it("applies where the position arithmetic lands one short: 44.1 kHz at 120 bpm and 48 kHz at 137 bpm, 4 s", () => {
-    const [finding] = KNOWN_FINDINGS.filter((f) => f.name === "loop-pass-one-frame-short");
-    const applies = (rate: number, id: string) => finding.applies(rowOf(rate, id), rate);
-    expect(applies(44100, "core-none-section-loop-twice")).toBe(true);
-    expect(applies(44100, "one-frame-none-section-loop-twice-48000-4-120")).toBe(true);
-    expect(applies(44100, "bounce-none-bounce-loop")).toBe(true);
-    expect(applies(48000, "one-frame-none-section-loop-twice-44100-4-137")).toBe(true);
-    expect(applies(48000, "core-none-section-loop-twice")).toBe(false);
-    expect(applies(48000, "bounce-none-bounce-loop")).toBe(false);
-    expect(applies(44100, "one-frame-none-section-loop-twice-48000-4-137")).toBe(false);
-    expect(applies(44100, "one-frame-none-section-loop-twice-48000-2-120")).toBe(false);
-    expect(applies(44100, "core-none-section-loop-once")).toBe(false);
-  });
-  it("reads known on one frame early, failing on anything else about the row", () => {
-    const rate = 44100;
-    const row = rowOf(rate, "core-none-section-loop-twice");
-    const reference = freeRunning(rate);
-    const early = (frames: number): Channels => reference.map((channel) => {
-      const out = new Float32Array(channel.length);
-      out.set(channel.subarray(frames));
-      return out;
-    });
-    const shape = early(1);
-    expect(judge(row, shape, rate, { reference, warm: shape })).toEqual({ standing: "known-finding", findings: ["loop-pass-one-frame-short"] });
-    expect(judge(row, early(2), rate, { reference, warm: early(2) }).standing).toBe("failing");
-    const moved = edit(shape, (out) => { out[0][5000] += 0.01; });
-    expect(judge(row, moved, rate, { reference, warm: shape }).standing).toBe("failing");
-    const lost = edit(shape, (out) => { out[1].fill(0, 60000); });
-    expect(judge(row, lost, rate, { reference, warm: lost }).standing).toBe("failing");
-  });
-  it("does not name the warm pass or the slice, and needs the warm pass to hold", () => {
-    const row = rowOf(44100, "core-none-section-loop-twice");
-    const one = { ...NO_EVIDENCE, earlyFrames: 1, warmHolds: () => true };
-    expect(findingFor(row, "impulse-on-reference", 44100, one)?.name).toBe("loop-pass-one-frame-short");
-    expect(findingFor(row, "impulse-on-reference", 44100, { ...one, warmHolds: () => false })).toBeNull();
-    expect(findingFor(row, "samples-equal-warm-pass", 44100, one)).toBeNull();
-    expect(findingFor(row, "section-is-slice", 44100, one)).toBeNull();
-  });
-});
 
 describe("jump-fade-at-start", () => {
   const known = { standing: "known-finding", findings: ["jump-fade-at-start"] };
@@ -282,7 +241,7 @@ describe("trailing-silence-trimmed", () => {
     return [channel, channel.slice()];
   };
   it("reads known on the frame count each rate keeps, bit-identical up to there", () => {
-    for (const [rate, kept] of [[48000, 80992], [44100, 74001]]) {
+    for (const [rate, kept] of [[48000, 81120], [44100, 74129]]) {
       for (const id of ["tail-none-section-entire-long", "tail-none-start-long"]) {
         const reference = whole(rate);
         expect(judge(rowOf(rate, id), reference.map((c) => c.slice(0, kept)), rate, { reference }))
@@ -295,7 +254,9 @@ describe("trailing-silence-trimmed", () => {
     const row = rowOf(rate, "tail-none-start-long");
     const reference = whole(rate);
     expect(judge(row, reference.map((c) => c.slice(0, 80000)), rate, { reference }).standing).toBe("failing");
-    expect(judge(row, edit(reference.map((c) => c.slice(0, 80992)), (out) => { out[0][3] += 1e-3; }), rate, { reference }).standing).toBe("failing");
+    // a quarter second less one render quantum: the kept silence must be the whole quarter second
+    expect(judge(row, reference.map((c) => c.slice(0, 81120 - 128)), rate, { reference }).standing).toBe("failing");
+    expect(judge(row, edit(reference.map((c) => c.slice(0, 81120)), (out) => { out[0][3] += 1e-3; }), rate, { reference }).standing).toBe("failing");
   });
   it("says it is by design", () => {
     const [finding] = KNOWN_FINDINGS.filter((f) => f.name === "trailing-silence-trimmed");
@@ -315,65 +276,18 @@ describe("the gap rows", () => {
     channel.fill(0.5, 16 * rate, Math.round(16.2 * rate));
     return [channel, channel.slice()];
   };
-  const LABELLED = ["gap-none-start", "gap-none-section-entire", "gap-none-stem-start"];
-  // Measured on all three rows: where the render stopped, one quantum short of a quarter second past the first burst's quantum.
-  const MEASURED: readonly [number, number][] = [[48000, 21472], [44100, 19729]];
-  const kept = (channels: Channels, frames: number): Channels => channels.map((c) => c.slice(0, frames));
+  const GAP_PATHS = ["gap-none-start", "gap-none-section-entire", "gap-none-stem-start", "gap-none-stem-mix-start"];
 
-  for (const [rate, frames] of MEASURED) {
-    describe(`long-silence-ends-render at ${rate}`, () => {
-      for (const id of LABELLED) {
+  it("carry no label: a render that stops in the gap reads failing, with no name", () => {
+    for (const rate of [48000, 44100]) {
+      const reference = span(rate);
+      const stopped = reference.map((c) => c.slice(0, Math.round(0.45 * rate)));
+      for (const id of GAP_PATHS) {
         const row = rowOf(rate, id);
-        const reference = span(rate);
-        const shape = kept(reference, frames);
-        const unlabelled = { standing: "failing", findings: [null] };
-
-        it(`${id} reads known on the measured length, the reference's bits up to there`, () => {
-          expect(judge(row, shape, rate, { reference })).toEqual({ standing: "known-finding", findings: ["long-silence-ends-render"] });
-        });
-        it(`${id} reads failing a quantum short, or at any other length`, () => {
-          expect(judge(row, kept(reference, frames - 128), rate, { reference })).toEqual(unlabelled);
-          expect(judge(row, kept(reference, frames - 1), rate, { reference })).toEqual(unlabelled);
-          expect(judge(row, kept(reference, frames + 1), rate, { reference })).toEqual(unlabelled);
-          expect(judge(row, kept(reference, Math.round(0.45 * rate)), rate, { reference })).toEqual(unlabelled);
-        });
-        it(`${id} reads failing on any sample that is not the reference's, a silent one included`, () => {
-          expect(judge(row, edit(shape, (out) => { out[0][3] += 1e-3; }), rate, { reference })).toEqual(unlabelled);
-          expect(judge(row, edit(shape, (out) => { out[1][frames - 1] = 1e-6; }), rate, { reference })).toEqual(unlabelled);
-          expect(judge(row, edit(shape, (out) => { out[0].fill(0, 100); }), rate, { reference })).toEqual(unlabelled);
-        });
-        it(`${id} reads failing with the second burst in the render and the frames still short`, () => {
-          expect(judge(row, kept(reference, Math.round(16.1 * rate)), rate, { reference })).toEqual(unlabelled);
-          expect(judge(row, kept(reference, Math.round(16.2 * rate) - 128), rate, { reference })).toEqual(unlabelled);
-          const moved = edit(shape, (out) => { for (const c of out) c.fill(0.5, frames - 100); });
-          expect(judge(row, moved, rate, { reference })).toEqual(unlabelled);
-        });
-        it(`${id} reads failing when the reference holds no second burst, or holds something in the gap`, () => {
-          const noSecond = edit(reference, (out) => { for (const c of out) c.fill(0, 16 * rate); });
-          expect(judge(row, shape, rate, { reference: noSecond })).toEqual(unlabelled);
-          const quietSecond = edit(reference, (out) => { for (const c of out) c.fill(0.1, 16 * rate, Math.round(16.2 * rate)); });
-          expect(judge(row, shape, rate, { reference: quietSecond })).toEqual(unlabelled);
-          const inTheGap = edit(reference, (out) => { out[0][8 * rate] = 1e-6; });
-          expect(judge(row, shape, rate, { reference: inTheGap })).toEqual(unlabelled);
-        });
-        it(`${id} reads failing when a reference as short as the render hides a longer render`, () => {
-          expect(judge(row, reference, rate, { reference: shape })).toEqual(unlabelled);
-        });
+        expect(KNOWN_FINDINGS.filter((f) => f.applies(row, rate)).map((f) => f.name), `${id} at ${rate}`).toEqual([]);
+        expect(judge(row, stopped, rate, { reference }), `${id} at ${rate}`).toEqual({ standing: "failing", findings: [null] });
       }
-
-      it("stays off the mix that outlasts the stem: cut at the same frame, it reads failing", () => {
-        const row = rowOf(rate, "gap-none-stem-mix-start");
-        const reference = span(rate);
-        expect(KNOWN_FINDINGS.filter((f) => f.applies(row, rate)).map((f) => f.name)).toEqual([]);
-        expect(judge(row, kept(reference, frames), rate, { reference })).toEqual({ standing: "failing", findings: [null] });
-      });
-    });
-  }
-  it("says what it is, and that it is a defect with a draft", () => {
-    const [finding] = KNOWN_FINDINGS.filter((f) => f.name === "long-silence-ends-render");
-    expect(finding.note).toContain("defect");
-    expect(finding.note).toContain("Finding 2");
-    expect(finding.invariant).toBe("section-is-slice");
+    }
   });
   it("read clean on a render that reaches the second region's end, however much silence it keeps after", () => {
     for (const rate of [48000, 44100]) {
@@ -491,45 +405,22 @@ describe("a loop bounce is held to the stepped loop's second pass", () => {
     return out;
   });
 
-  it("names the short pass only while the warm pass holds", () => {
-    expect(judge(row, early, rate, { reference, warm: early })).toEqual({ standing: "known-finding", findings: ["loop-pass-one-frame-short"] });
-  });
-  it("reads failing, with no name on the shift, when the samples moved too", () => {
-    for (const mutated of [gained(early, 0.97), gained(early, 0.5), edit(early, (out) => { out[0][100] += 0.45; }), edit(early, (out) => { out[0][50000] += 1e-6; })]) {
-      expect(judge(row, mutated, rate, { reference, warm: early })).toEqual({ standing: "failing", findings: [null, null] });
-    }
-  });
-  it("takes the one frame past the short pass, silent in the bounce, on both invariants, and no other frame", () => {
-    const last = early[0].length - 1;
-    const silentEnd = edit(early, (out) => { out[0][last] = 0; out[1][last] = 0; });
-    const warm = edit(early, (out) => { out[0][last] = 0.0707; });
-    const names = ["loop-bounce-last-frame-silent", "loop-pass-one-frame-short"];
-    expect(judge(row, silentEnd, rate, { reference, warm })).toEqual({ standing: "known-finding", findings: names });
-    expect(judge(row, silentEnd, rate, { reference, warm: edit(early, (out) => { out[0][last] = 0.2; }) }).standing).toBe("failing");
-    expect(judge(row, edit(silentEnd, (out) => { out[0][last - 1] += 1e-3; }), rate, { reference, warm }).standing).toBe("failing");
-    expect(judge(row, gained(silentEnd, 0.97), rate, { reference, warm }).standing).toBe("failing");
-  });
-  it("reads failing unless that frame is silent on both channels", () => {
-    const last = early[0].length - 1;
-    const silentEnd = edit(early, (out) => { out[0][last] = 0; out[1][last] = 0; });
-    const warm = edit(early, (out) => { out[0][last] = 0.0707; out[1][last] = 0; });
-    expect(judge(row, silentEnd, rate, { reference, warm }).standing).toBe("known-finding");
-    for (const value of [0.05, 0.14, -0.05, 1e-6]) {
-      expect(judge(row, edit(silentEnd, (out) => { out[0][last] = value; }), rate, { reference, warm }).standing, String(value)).toBe("failing");
-    }
-    expect(judge(row, edit(silentEnd, (out) => { out[1][last] = 0.049; }), rate, { reference, warm }).standing).toBe("failing");
-  });
-  it("gives a row with its own warm pass no such frame", () => {
-    const loop = rowOf(rate, "core-none-section-loop-twice");
+  it("reads failing, with no name, on a pass one frame short, even while the warm pass holds", () => {
+    expect(judge(row, early, rate, { reference, warm: early })).toEqual({ standing: "failing", findings: [null] });
+    // the bounce's last frame silent where the stepped loop is already in its next pass: both invariants, no name
     const last = early[0].length - 1;
     const warm = edit(early, (out) => { out[0][last] = 0.0707; });
-    expect(judge(loop, early, rate, { reference, warm }).standing).toBe("failing");
+    expect(judge(row, early, rate, { reference, warm })).toEqual({ standing: "failing", findings: [null, null] });
   });
-  it("reads clean at 48 kHz on a pass that lands exact, failing on any other samples", () => {
-    const at48 = rowOf(48000, "bounce-none-bounce-loop");
-    const same = freeRunning(48000);
-    expect(judge(at48, same, 48000, { reference: same, warm: same }).standing).toBe("clean");
-    expect(judge(at48, gained(same, 0.97), 48000, { reference: same, warm: same }).standing).toBe("failing");
+  it("reads clean at both rates on a pass that lands exact, failing on any other samples", () => {
+    for (const r of [48000, 44100]) {
+      const loop = rowOf(r, "bounce-none-bounce-loop");
+      const same = freeRunning(r);
+      expect(judge(loop, same, r, { reference: same, warm: same }).standing, String(r)).toBe("clean");
+      for (const mutated of [gained(same, 0.97), gained(same, 0.5), edit(same, (out) => { out[0][100] += 0.45; }), edit(same, (out) => { out[0][50000] += 1e-6; })]) {
+        expect(judge(loop, mutated, r, { reference: same, warm: same }).standing, String(r)).toBe("failing");
+      }
+    }
   });
   it("reads the same case's stepped loop", () => {
     for (const r of [48000, 44100]) {

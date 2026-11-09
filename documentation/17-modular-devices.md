@@ -105,6 +105,17 @@ Status in current SDK:
 - **Werkstatt** — `@sample` fully wired, like Apparat: `this.samples.<name>` returns the loaded audio data (`null` until it loads).
 - **Spielwerk** — `@sample` not applicable; MIDI effects don't consume audio.
 
+### Key and chord
+
+All three read the song's harmony from the [key and chord tracks](./02-timing-and-tempo.md#advanced-key-and-chord-tracks) at a position in PPQN — inside `process`, not in the constructor:
+
+| Call | Returns |
+|---|---|
+| `this.keyAt(position)` | `{root, steps}` — `root` the pitch class 0–11 (0 = C), `steps` the scale's notes in semitones above the root (`[0, 2, 4, 5, 7, 9, 11]` for major) |
+| `this.chordAt(position)` | `null` where no chord sits, else `{root, notes}` — `notes` the semitones above the root as voiced, inversion included (`[0, 4, 7]` for a major triad) |
+
+A chord note plays as `60 + root + note`. Both return frozen objects shared between calls, so asking every block allocates nothing. The position is the block's start: `block.from` in Spielwerk, `block.p0` in Werkstatt and Apparat.
+
 ## Apparat — scriptable instrument
 
 Covered in detail at [Ch. 20 — Apparat](./20-apparat.md). Summary of where Apparat differs from the other two:

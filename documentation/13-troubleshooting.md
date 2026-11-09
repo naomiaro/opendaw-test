@@ -208,12 +208,13 @@ A stalled OPFS operation reports itself: the worker warns `[OPFS] <operation> '<
 ### Silent export
 
 - **No track is unmuted** — `OfflineEngineRenderer` honours mute/solo. If a solo is active when you start export, only the solo'd track is in the result.
-- **Silence detector cut early** — the default is "stop after 10 seconds below −72 dB". A very quiet outro can hit this prematurely. Adjust:
+- **Silence detector cut early** — the default is "stop after 10 seconds below −72 dB", checked only once the render has passed `minDurationSeconds`. `OfflineEngineRenderer.start` and `renderSection` with a tail set that to the range's length, so a gap inside the song does not end them; what can still be cut is a very quiet ring-out after the range end, or a direct `render` call without `minDurationSeconds`. Adjust:
 
   ```typescript
   await renderer.render({
     silenceThresholdDb: -90,
     silenceDurationSeconds: 30,
+    minDurationSeconds: 240, // the range's length: silence cannot end the render before it
     maxDurationSeconds: 600,
   });
   ```

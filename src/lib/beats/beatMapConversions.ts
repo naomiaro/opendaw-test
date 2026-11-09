@@ -96,10 +96,12 @@ export function buildWarpAnchors(
   if (remaining > 1e-6) {
     const lastSegSecondsPerBeat =
       markers[markers.length - 1].second - markers[markers.length - 2].second;
-    anchors.push({
-      tick: last.tick + Math.round((remaining / lastSegSecondsPerBeat) * quarterPpqn),
-      second: fileDurationSeconds,
-    });
+    const outroTicks = Math.round((remaining / lastSegSecondsPerBeat) * quarterPpqn);
+    // An outro under half a pulse would share the last beat's tick: two warp markers at one
+    // position make the project's WarpMarkerGuard panic at the end of the transaction.
+    if (outroTicks > 0) {
+      anchors.push({ tick: last.tick + outroTicks, second: fileDurationSeconds });
+    }
   }
   return anchors;
 }

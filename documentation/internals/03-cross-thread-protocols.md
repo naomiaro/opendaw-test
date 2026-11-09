@@ -209,6 +209,7 @@ On the worklet side every one of these is a thin marshalling step into the WASM 
 export interface EngineToClient {
     log(message: string): void
     error(reason: unknown): void
+    notice(notice: EngineNotice): void
     deviceMessage(uuid: string, message: string): void
     fetchAudio(uuid: UUID.Bytes): Promise<AudioData>
     fetchSoundfont(uuid: UUID.Bytes): Promise<SoundFont2>
@@ -231,6 +232,8 @@ export interface EngineToClient {
     ready(): void
 }
 ```
+
+`notice` carries a non-fatal `EngineNotice` for the user — `{type: "sidechain-loop", device, source}` when a sidechain closes a feedback loop, `{type: "non-finite", device}` when a device on such a loop overflowed and was silenced and reset (device and source are UUID strings). The live `EngineWorklet` turns it into a `RuntimeNotifier.notify` message naming the devices; the offline renderer only `console.warn`s it. A device outside any loop that writes a non-finite sample still reports through the engine's `report_error` path.
 
 `transportAnchors` carries `TransportAnchor`s — `{kind: "start" | "jump" | "stop", contextTime, position, recording}` — stamped in audio-context time: a jump and a `pauseOnLoopDisabled` pause at the sample the engine rendered them, a start at the end of its quantum, a stop at the start of the first quantum not played (a stop command between renders at the end of the last rendered quantum). A jump is every discontinuous block of the quantum (loop wrap, seek, marker jump), read after each quantum through `transport_jump_count` / `transport_jump_sample(i)` / `transport_jump_position(i)` in `crates/engine/src/lib.rs`; `transport_pause_sample` reports where `pauseOnLoopDisabled` paused. The processor derives the start and stop edges from the transport flags (`packages/studio/core-wasm/src/transport-anchor-edges.ts`). The main thread re-publishes them as `engine.subscribeTransportAnchors(observer)`, which the recorders and `RecordingSession` read alongside the per-frame position (still the source of a take's live length, a MIDI note's growth and the session's `isRecording` / `isCountingIn` flags): a loop take ends at the wrap anchor and a recording finishes on the stop anchor whether or not an animation frame runs. `RecordMidi` keeps them in a `TransportLog` (`packages/studio/core/src/capture/TransportLog.ts`) and places a key at the position the log extrapolates for its heard context time.
 

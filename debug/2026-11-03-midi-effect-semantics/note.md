@@ -136,7 +136,7 @@ mappings. Positions are absolute pulses.
 
 | device | rule | crate | adapter |
 |---|---|---|---|
-| Arpeggio | On the absolute rate grid, one note per step from the notes held at that step, in Played (by start, then pitch) or Pitch order (`arpeggio.md:55-58`), walked by its mode over the octaves as one row of `notes × octaves` (`arpeggio.md:28-51`, `:62`), the walk starting `offset` notes later (`:108`), the random modes following the seed only (`:51`, `:173`), each as long as the gate says, past the held note's end too (`:116`, "Note length as a percentage of the step rate"; `:175`: "lasts its full gate length, even when the held key is released"). A played note keeps the cents of the held note it comes from (`:174`, openDAW#526). The walk indexes the ABSOLUTE grid (`effective / repeat + offset`, the manual: "syncs to transport position", `:172`), so a hold from bar 1 at 1/16 starts at grid index 16, not 0: an Up walk over a C major triad starts on E. Velocity (`arpeggio.md:122-132`): below 0 % one fixed velocity `1 + v` ignoring the input (silent at −100 %, full at 0 %), above it a blend from full toward the note's own (`velocity × v + (1 − v)`). Hold, Retrigger and the step lanes are not in the rule: the rows leave them at their defaults, where the crate's step reduces to this walk (`tests/golden.rs` pins modes 0–2 against the legacy device; the render pins the rest). | `device-arpeggio/src/lib.rs:589-643` (`step`), `:679-687` (the grid loop), `:300-339` (`walk_index`), `:214-224` (`hash`), `:414-417` (`first_index`), `:193-205` (the velocity matrix) | `ArpeggioDeviceBoxAdapter.ts:13-19` (`RateFractions`, `floor(3840 / d) × n`), `:23-25` (`Modes`) |
+| Arpeggio | On the absolute rate grid, one note per step from the notes held at that step, in Played (by start, then pitch) or Pitch order (`arpeggio.md:55-58`), walked by its mode over the octaves as one row of `notes × octaves` (`arpeggio.md:28-51`, `:62`), the walk starting `offset` notes later (`:108`), the random modes following the seed only (`:51`, `:176`), each as long as the gate says, past the held note's end too (`:116`, "Note length as a percentage of the step rate"; `:178`: "lasts its full gate length, even when the held key is released"). A played note keeps the cents of the held note it comes from (`:177`, openDAW#526). The walk indexes the ABSOLUTE grid (`effective / repeat + offset`, the manual: "syncs to transport position", `:175`), so a hold from bar 1 at 1/16 starts at grid index 16, not 0: an Up walk over a C major triad starts on E. Velocity (`arpeggio.md:122-132`): below 0 % one fixed velocity `1 + v` ignoring the input (silent at −100 %, full at 0 %), above it a blend from full toward the note's own (`velocity × v + (1 − v)`). Hold, Retrigger and the step lanes are not in the rule: the rows leave them at their defaults, where the crate's step reduces to this walk (`tests/golden.rs` pins modes 0–2 against the legacy device; the render pins the rest). | `device-arpeggio/src/lib.rs:638-692` (`step`), `:731-739` (the grid loop), `:306-345` (`walk_index`), `:220-230` (`hash`), `:420-423` (`first_index`), `:199-211` (the velocity matrix) | `ArpeggioDeviceBoxAdapter.ts:13-19` (`RateFractions`, `floor(3840 / d) × n`), `:24-26` (`Modes`) |
 | Pitch | Every note moves by `octaves × 12 + semitones`, its cent by the cents setting; a note shifted outside 0..127 is dropped. | `device-pitch/src/lib.rs:101-133` (`transform`), `:8-11` (the drop) | `PitchDeviceBoxAdapter.ts:50-58` (octaves ±7, semitones ±36, cents ±50) |
 | Velocity | Every note's velocity is the adapter's `computeVelocity` at the note's absolute position (magnet, random from the seeded generator, offset, clamped, mixed). | `device-velocity/src/lib.rs:70-77` (`compute_velocity`, the adapter's formula ported) | `VelocityDeviceBoxAdapter.ts:31-39` |
 | Zeitgeist | Every note starts where the groove warps its position to and ends where it warps its note-off to, so its duration changes with its place in the cell (`zeitgeist.md:53`, as corrected for openDAW#525). The warp is the cell's Möbius ease at the squashed amount (`0.01 + 0.98 × amount`), read through the device adapter's `groove()` and kept as a float pulse. | `device-zeitgeist/src/lib.rs:35-49` (`process`: warp each record, clamp into the block's range; the groove reached through the engine's registry) | `GrooveShuffleBoxAdapter.ts:23-26`, `CellGrooveBoxAdapter` (the cell) |
@@ -514,6 +514,25 @@ Zeitgeist plays every pass as if it started at the loop start; a note moved acro
 
 The loop-on column subtracts the wrap's own frame, which catches the next pass's first note in the first four rows (raw 33, 33, 33, 32). Up to 1 bar nothing is lost to the loop: the off-by-one at 25 % reads in both columns, so it is the frame sampling (probably a note under a frame long, not checked). A 2-bar cell loses notes although it is as long as the loop, because cells count from position 0 and the loop starts at bar 1, so it straddles a
 cell; a 3-bar cell at 75 % loses none, its warp staying inside this loop. Frame-sampled, so it counts notes and says nothing about their placement; no ear has been on it. The page's Zeitgeist note says this.
+
+### 2026-11-09, SDK 0.0.183 (Chrome, macOS, the Mac's output device at 44.1 kHz)
+
+The release counts the transport's position in frames from an anchor instead of adding pulses per quantum (openDAW#533), so
+every rendered note can move at sub-frame level; the Arpeggio gains `followChords` (off in every row) and ends its sounding notes
+when the transport starts or stops (no row stops mid-note); the crate's lines moved, and the citations with them (rule-source
+table above). Scale Matrix is new and has no rows.
+
+| rate | run | rule holds | deviation | broken | no rule | as-registered | changed | unregistered | error |
+|---|---|---|---|---|---|---|---|---|---|
+| 48 kHz | 1794245971298 | 357 | 0 | 0 | 23 | 378 | 2 | 0 | 0 |
+| 44.1 kHz | 1794246058210 | 357 | 0 | 0 | 23 | 376 | 4 | 0 | 0 |
+
+- **Every changed row reads `changed, rule holds`, and each is a note the reader does not judge**: `vel-random1-melody` (read 3,
+  readable 0, unreadable 13: `register note 2 cents −7.8 expected −4.8`, −7.7 at 44.1), `zg-amount0-dur320-sixteenths` (24 / 0 / 32:
+  a velocity 0.770 for 0.735 at 48 kHz, 0.715 for 0.750 at 44.1), and at 44.1 kHz `zg-amount1-dur960-sixteenths` (17 / 1 / 31:
+  velocity 0.955 for 1.000) and `zg-amount1-dur3840-sixteenths` (17 / 5 / 27: 17 notes read for 16). These are reads of overlapping
+  notes, which move when a note-on moves by a frame; the rule verdicts are the 0.0.182 ones row for row.
+- **Not accepted:** the registers stay at 0.0.182 until a person reads these rows (`table.ts 1794245971298`, `table.ts 1794246058210`).
 
 ## Reading
 

@@ -6043,6 +6043,60 @@ arming starts it, `prepareRecording` awaits it): with the entry the run ends `er
 +1.15 on all three repeats. The control envelopes are in `.verify-output/round-trip-guard-controls/`,
 out of the one-quantum tally.
 
+## Standing sweep on 0.0.183 (2026-11-09)
+
+`@opendaw/studio-sdk@0.0.183` (build probe `upstream`, `buildFeatures: ["recordingStart"]` →
+`release` profile; PRs #378 / #380 still open). The release leaves the capture and recording paths alone, but **the transport now
+counts its position in frames from an anchor** (set on a seek, a loop wrap, a marker jump, a bpm change) instead of adding a quantum's
+pulses each quantum (openDAW#533), so every pulse position moves at sub-frame level. The loop-wrap and count-in rows ride that path. No
+stored round trip existed (the page refuses otherwise). Details in `changelogs/sdk-0.0.182-to-0.0.183-changes.md`. Chrome, the
+Playwright browser, the tab visible throughout, a fresh `node_modules` and dev server, **the Mac's output device at 44.1 kHz**.
+
+### Single tape
+
+| file | rate | rows | error rows | cells `aligned` | finalized | netted medians |
+|---|---|---|---|---|---|---|
+| `recaudit-summary-1794244698017.json` | 48000 | 60 | 0 | 10 of 10 | 60 of 60 | +1.10…+1.17 ms |
+| `recaudit-summary-1794245129710.json` | 44100 | 60 | 0 | 10 of 10 | 60 of 60 | +1.09…+1.18 ms |
+
+**Every scenario keeps its placement; the tally moved by a hundredth.** 48 kHz 1.15 ×27, 1.16 ×24, 1.10 ×6, 1.17 ×3 (0.0.182: 1.15 ×27,
+1.17 ×15, 1.16 ×12, 1.10 ×6: twelve rows from 1.17 to 1.16); 44.1 kHz 1.17 ×30, 1.16 ×21, 1.09 ×6, 1.18 ×3 (0.0.182: 1.17 ×24, 1.16 ×21,
+1.18 ×6, 1.09 ×6, 1.19 ×3). A shift of under 0.01 ms, the sub-frame size the anchored position predicts.
+
+**Tail deficit: 0 of 60 rows at 48 kHz; 1 row at 44.1 kHz, 0.09 ms** (`nominal-start/120` r3), the frame rounding of the earlier
+sweeps; every cell `aligned`.
+
+**Head deficit: none**, on a fresh `node_modules` and dev server.
+
+### Multi-mic (`multitrack-all`, 120 BPM, 48000 Hz), 8 repeats per cell
+
+| file | rows | error rows | finalized | node delays read | netted, every row | cells | largest raw inter-tape skew |
+|---|---|---|---|---|---|---|---|
+| `recaudit-mt-summary-1794245546520.json` | 32 | 0 | 32 of 32 | 32 of 32 | +1.146 | both `aligned` | 0.00 (0.00 left over) |
+
+Netted skew 0.00, first-frame check 0.00 on every row, no tail deficit; no clock discontinuity over the run.
+
+### Forced: the SDK's stamps under graph work (three runs)
+
+`scenario=multitrack-start&graphChurn=on` (`…1794245683361`, `…1794245752698`, `…1794245818230`), 48 rows, 0 error rows, a node
+delay on every one, 232 / 232 / 232 clock discontinuities per run (126 / 126 / 127 stalls).
+
+| netted / first-frame check, in quanta off the usual | rows |
+|---|---|
+| 0 / 0 | 48 |
+
+As on 0.0.174 through 0.0.182. Netted +1.146 on every row. No tail deficit.
+
+### The one-quantum event, counted
+
+`one-quantum-events.ts` after these runs: 0.0.183 **0 in 76** repeats (30 single-tape at 48 kHz, 30 at 44.1 kHz, 16 multi-mic), as on
+every release since 0.0.175 (forced runs left out).
+
+### Reading
+
+Placement, finalization, the stamp repair, the netted stop and the netted inter-tape skew read as on 0.0.182. The anchored transport
+moved rows at both rates across a hundredth-of-a-millisecond rounding line (twelve at 48 kHz), and nothing else.
+
 ## Standing sweep on 0.0.182 (2026-11-06)
 
 `@opendaw/studio-sdk@0.0.182` (build probe `upstream`, `buildFeatures: ["recordingStart"]` →
