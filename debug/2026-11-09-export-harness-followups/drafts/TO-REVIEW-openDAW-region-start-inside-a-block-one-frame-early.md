@@ -43,4 +43,4 @@ The same arithmetic picks exactly those.
 
 One frame is about 21 µs, so this is about sample accuracy, not something heard on its own. A region placed on a frame plays a frame from where the timeline puts it, depending on where it falls in a block. Two regions at different block positions, meant to be the same number of frames apart, are one frame off in about half the cases.
 
-Investigation note: https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-11-06-export-regression/note.md#after-533-and-534-four-groups-of-rows-from-upstreams-replies
+Investigation note: https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-11-09-export-harness-followups/note.md

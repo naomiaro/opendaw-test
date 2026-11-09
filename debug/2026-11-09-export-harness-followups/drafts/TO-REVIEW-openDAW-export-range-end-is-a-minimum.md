@@ -36,4 +36,4 @@ When `OfflineEngineRenderer.start` gets a `range` whose end falls inside sound, 
 
 Which is intended?
 
-Investigation note: https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-11-06-export-regression/note.md#after-533-and-534-four-groups-of-rows-from-upstreams-replies
+Investigation note: https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-11-09-export-harness-followups/note.md
