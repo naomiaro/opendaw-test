@@ -197,7 +197,8 @@ auto-started per Project; engine-side `engine.suspendAutomation(uuid)`; cleared 
 Runtime-only — no box graph writes. Measured defect: after Stop, `isPlaying` reads true until a frame tick reads
 a state the engine wrote after stopping (20–38 ms unthrottled, 64–83 ms at 24 ticks/s). A write in that gap
 suspends the lane on the stopped engine, and `play` does not clear it, so the NEXT playback ignores the curve (openDAW#537). Repro `automation-suspended-after-stop-debug-demo.html`, note
-`debug/2026-11-09-frame-clock-consumers/note.md`.
+`debug/2026-11-09-frame-clock-consumers/note.md`. The suspension has no opt-out and survives turning the lane
+off and on again; a host with its own override writes `parameter.field` directly (`docs/known-sdk-limitations.md`).
 
 ### ParameterAdapterSet (Device Parameters)
 Access all automatable parameters on a device:
