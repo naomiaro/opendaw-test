@@ -522,7 +522,13 @@ const buildTail = (): ExportRow[] => {
     tailRow("bounce-pre-fader", ["frames-as-expected", "tail-absent"], ringing),
     // the 200 ms of content has ended before 1 s: what the reference holds in the range is the ringing reverb
     tailRow("section-marker", ["section-is-slice"], { ...withWindow("section-marker", 4) }),
-    ...buildGap(common)
+    ...buildGap(common),
+    // A range that ends while the probe still sounds, held to the range's own frames: what comes after its end?
+    make({
+      id: "range-none-start-ends-in-sound", label: "an export range 0..2 s of a 4 s probe that sounds throughout, start",
+      group: "tail", latencyCase: "none", path: "start", exportRange: true, rangeSeconds: 2,
+      referenceId: coreId("none", "step-one"), invariants: [...basics(), "section-is-slice", "frames-as-expected"]
+    })
   ];
 };
 

@@ -143,7 +143,9 @@ describe("exportRegressionRows", () => {
       for (const r of rows) {
         const exact = r.path === "step-loop-twice" || r.path === "section-loop-twice" || r.group === "sweep"
           || (r.path.startsWith("bounce-") && r.path !== "bounce-tail")
-          || ["stems-fx", "stems-dry", "stems-sends", "stems-metronome", "stems-single-step"].includes(r.path);
+          || ["stems-fx", "stems-dry", "stems-sends", "stems-metronome", "stems-single-step"].includes(r.path)
+          // held to its range's frames on purpose: a range ending inside sound asks whether the render ends there
+          || r.id === "range-none-start-ends-in-sound";
         expect(held.includes(r), r.id).toBe(exact);
       }
       expect(held.filter((r) => r.group === "bounce")).toHaveLength(20);
@@ -212,9 +214,9 @@ describe("exportRegressionRows", () => {
       expect(rows.filter((r) => r.volumeDb !== 0).map((r) => r.id)).toEqual(taps.map(([id]) => id));
     }
   });
-  it("has 307 rows at each rate", () => {
-    expect(buildRows(48000)).toHaveLength(307);
-    expect(buildRows(44100)).toHaveLength(307);
+  it("has 308 rows at each rate", () => {
+    expect(buildRows(48000)).toHaveLength(308);
+    expect(buildRows(44100)).toHaveLength(308);
   });
   it("holds the metronome's stems to each beat's frame, and only those rows", () => {
     for (const rate of [48000, 44100]) {

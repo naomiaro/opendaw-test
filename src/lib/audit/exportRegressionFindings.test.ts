@@ -499,3 +499,25 @@ describe("jump-fade-at-start on an exported range", () => {
     expect([overlong.holds, overlong.finding]).toEqual([false, null]);
   });
 });
+
+describe("range-end-is-a-minimum", () => {
+  const judgedFrames = (rate: number, frames: number) => {
+    const row = rowOf(rate, "range-none-start-ends-in-sound");
+    const channel = new Float32Array(frames).fill(0.25);
+    return judgeInvariants({ ...row, invariants: ["frames-as-expected"] }, renderedOf(row, [channel, channel.slice()], rate),
+      { reference: null, noLatency: null, warm: null }, rate)[0];
+  };
+
+  it("names a range render that ran on to the song's last quantum and a quarter second, as measured at both rates", () => {
+    // runs 1794252850097 (48 kHz) and 1794252902633 (44.1 kHz)
+    expect(judgedFrames(48000, 204000).finding).toBe("range-end-is-a-minimum");
+    expect(judgedFrames(44100, 187537).finding).toBe("range-end-is-a-minimum");
+  });
+  it("holds a render of the range's own frames, and names nothing on any other length", () => {
+    expect(judgedFrames(48000, 96000).holds).toBe(true);
+    for (const frames of [204000 - 128, 204001, 96000 + 12000]) {
+      const result = judgedFrames(48000, frames);
+      expect([result.holds, result.finding], String(frames)).toEqual([false, null]);
+    }
+  });
+});

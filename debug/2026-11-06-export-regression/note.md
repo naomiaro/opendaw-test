@@ -5,7 +5,7 @@
 **Status: FINDINGS 1 AND 2 FIXED IN `@opendaw/studio-sdk@0.0.183`** (re-measured 2026-11-09, [below](#sdk-0183-both-findings-fixed); their labels are retired). **REGISTER ACCEPTED ON 0.0.183 on the user's word (2026-11-09), library filled; a re-run of each rate reads 296 of 296 `identical`.** Before: register accepted on 0.0.182, library filled; findings 1 and 2 filed as [openDAW#533](https://github.com/andremichelle/openDAW/issues/533) and [openDAW#534](https://github.com/andremichelle/openDAW/issues/534) on 2026-11-08. The user read the findings and approved the labels and the first fill. Both page rates are accepted, a re-run of each reads every row `identical`, and a changed render is caught (below). Nothing is posted. Three drafts wait (below). `trailing-silence-trimmed` is ruled by design and not raised upstream. The other findings are the
 user's call, each with the read it got.
 
-**The catalogue holds 307 rows and none reads `failing`.** The 11 added on 2026-11-09 ([below](#after-533-and-534-four-groups-of-rows-from-upstreams-replies)) read `unregistered` until accepted; one of them, a region starting inside a block, measures a region playing one frame early, labelled and not filed. A label means read and understood, not fine.
+**The catalogue holds 308 rows and none reads `failing`.** The 12 added on 2026-11-09 ([below](#after-533-and-534-four-groups-of-rows-from-upstreams-replies)) read `unregistered` until accepted; one of them measures a region starting inside a block playing one frame early (a new-issue draft waits), and one an export range that runs on past its end (labelled, the user's call). A label means read and understood, not fine.
 
 **Verified against:** `@opendaw/studio-sdk@0.0.182`, engine `9c44973549a7`, checkout at the tag (`766204efe`). Chrome
 156.0.8078.81 (Playwright's), macOS 15.6.1. The Mac's output device read 44100 Hz for every run below unless it says otherwise; each summary since the device rate was added records it (`deviceRateHz`). These renders are offline, and the page's own context takes the rate in the URL. Source citations are read at the tag.
@@ -43,6 +43,8 @@ name. It means read and understood, not fine. A failed invariant with no such ma
 | `?uuid=descending&group=control` | 48000 | 1794013420891 | 11 | clean 11 | 10 `identical`, 1 `changed` |
 | 0.0.183, 307 rows (the 11 rows [after #533 and #534](#after-533-and-534-four-groups-of-rows-from-upstreams-replies)), `?fill=1` | 48000 | 1794251449772 | 307, all | clean 246, known finding 61, failing 0, errored 0 | 296 `identical`, 11 `unregistered` |
 | the same | 44100 | 1794251607099 | 307, all | clean 246, known finding 61, failing 0, errored 0 | 296 `identical`, 11 `unregistered` |
+| 0.0.183, 308 rows (the range row added), `?fill=1`, device at 48 kHz | 48000 | 1794253004161 | 308, all | clean 246, known finding 62, failing 0, errored 0 | 296 `identical`, 12 `unregistered` |
+| the same | 44100 | 1794253155843 | 308, all | clean 246, known finding 62, failing 0, errored 0 | 296 `identical`, 12 `unregistered` |
 
 SDK 0.0.182, engine `9c44973549a7`, the device at 44100 (read in `system_profiler` and in each summary). Real clicks 30 s after load, the tab visible, no stall in any of them. Tables: `.verify-output/exportreg-table-<rate>.txt`
 (local; the run lines are the figures above).
@@ -68,7 +70,8 @@ SDK 0.0.182, engine `9c44973549a7`, the device at 44100 (read in `system_profile
 | `loop-pass-one-frame-short` | 2 | 17 | [openDAW#533](https://github.com/andremichelle/openDAW/issues/533): [body](./drafts/posted-openDAW-533-loop-pass-one-frame-short.md); **fixed in 0.0.183, label retired** |
 | `loop-bounce-last-frame-silent` | 0 | 4 (the same rows as 4 of the 17) | in the same draft; **fixed in 0.0.183, label retired** |
 | `trailing-silence-trimmed` | 2 | 2 | by design, the user's read; not raised upstream |
-| `in-block-pulse-rounds-early` | 5 | 5 | measured on 0.0.183 (4 metronome stems, 1 region start); not filed, [below](#after-533-and-534-four-groups-of-rows-from-upstreams-replies) |
+| `range-end-is-a-minimum` | 1 | 1 | measured 2026-11-09, the user's call; not asked upstream |
+| `in-block-pulse-rounds-early` | 5 | 5 | measured on 0.0.183 (4 metronome stems, 1 region start); a new-issue draft waits for the user's read, [below](#after-533-and-534-four-groups-of-rows-from-upstreams-replies) |
 | `jump-fade-at-start` | 32 | 32 | the user's call (30, and the 2 export-range gap rows added on 2026-11-09) |
 | `jump-fade-cold-maximizer` | 2 | 2 | the user's call |
 | `reset-keeps-compensation-delay` | 11 | 11 | the user's call |
@@ -368,7 +371,8 @@ known 54, failing 0, errored 0.
 ## After #533 and #534: four groups of rows from upstream's replies
 
 Upstream's replies to [#533](https://github.com/andremichelle/openDAW/issues/533) and [#534](https://github.com/andremichelle/openDAW/issues/534)
-named four behaviours no row reached. 11 rows cover them, and the stems' metronome rows carry one new invariant. **The user's
+named four behaviours no row reached. 11 rows cover them, and the stems' metronome rows carry one new invariant; a twelfth row (5, below)
+asks what an export range does at its end. **The user's
 decision: no follow-up upstream**, not on either issue and not as a new one. The new rows read `unregistered` until a person accepts them.
 Runs 1794251449772 (48 kHz) and 1794251607099 (44.1 kHz), both `&fill=1`, 2026-11-09, `@opendaw/studio-sdk@0.0.183`, engine `447481d683c6`, the device at 44.1 kHz,
 307 rows each: **clean 246, known 61, failing 0, errored 0** at both rates. The 296 accepted rows read `identical`, so nothing in them moved.
@@ -435,8 +439,22 @@ Before 0.0.183 these would have stopped at about 10.2 s (computed from Finding 2
 1794252329469 (44.1 kHz page), each clean 246 / known 61, and `table.ts --compare-device` against the runs above reads `307 of 307 rows
 identical` at both page rates. That covers the 11 rows and the four single-stem rows the first device proof never rendered.
 
-**Still open from these rows.** The render of a range runs on past the range's end until silence, here the quarter second after the burst. Whether a
-range whose end cuts into sound stops at that end was not tried.
+**5. A range whose end is inside sound does not stop there (measured; label `range-end-is-a-minimum`, the user's call).**
+`range-none-start-ends-in-sound` passes a range of 0 to 2 s of the 4 s probe, which sounds throughout, to `start`. It comes back as **204000
+frames at 48 kHz and 187537 at 44.1** (runs 1794252850097 and 1794252902633). Those are the quantum holding the song's last sample (192000,
+176512) plus exactly a quarter second. That is the whole song, bit for bit the stepped reference over its 4 s, so 2 s of music past the range's
+end. *Read:* `start` makes the range's length `minDurationSeconds` and adds 30 s for `maxDurationSeconds`
+(`OfflineEngineRenderer.ts:271-282`), and `render` stops only on 10 s of silence past the minimum. Nothing upstream documents the end
+as a minimum: `ExportRange` carries no comment, and the commit that added it (`33b4e72ba`, "export config") has no description. The
+studio passes no range (its dialog renders sections). Our export chapter said the render runs on "until the tail has decayed", which
+understates it. The timeline plays on, so it now says that. `frames-as-expected` holds the row to the range's 2 s. The label
+matches only a render that ran to the song's last quantum and a quarter second, and anything else reads `failing`.
+No demo here passes a `range`. The demos' range exports step an exact frame count (`src/lib/rangeExport.ts`, whose header already
+says `render` "would render past the range while content continues", and `renderOfflineSlice`), and `start` serves only the full song.
+So this costs the demos nothing; it is for other callers of the SDK. Whether a range's end is meant as a minimum is a question for
+upstream, not yet asked.
+
+
 
 ## Reading recipe for an SDK bump
 
@@ -446,7 +464,7 @@ range whose end cuts into sound stops at that end was not tried.
 4. A `known-finding` is a row whose signature still matches. It is not a pass: this note's reads are what it rests on.
 5. `--accept --library <clone>` only after a person has read that run's table, and never on a run with a row failing or errored, a descending run, a row the catalogue does not hold or holds with other invariants (a summary from before the catalogue changed) or, without `--force`, a partial one. It writes the register and copies the new WAVs. Then in the clone `git add wav`, commit and push, and commit the register here.
 
-**Expected on 0.0.183:** 307 rows, clean 246, known 61 at both rates; 296 `identical` and 11 `unregistered` until the 11 rows added on 2026-11-09 are accepted, then 307 of 307 `identical` (296 rows: clean 242, known 54; 0.0.182: 48 kHz clean 237, known 59; 44.1 kHz clean 222, known 74).
+**Expected on 0.0.183:** 308 rows, clean 246, known 62 at both rates; 296 `identical` and 12 `unregistered` until the 12 rows added on 2026-11-09 are accepted (runs 1794253004161 and 1794253155843), then 308 of 308 `identical` (296 rows: clean 242, known 54; 0.0.182: 48 kHz clean 237, known 59; 44.1 kHz clean 222, known 74).
 
 Once a release ships a fix, the row's invariant holds, its hash moves so it reads `changed`, and the table prints `no longer reproducing: <finding>`. Retire the finding from `exportRegressionFindings.ts` then, and say so here.
 

@@ -144,6 +144,11 @@ const inBlockRoundsEarly = (invariant: InvariantId, applies: KnownFinding["appli
     && frameOffsets.got.some((offset) => offset !== 0)
 });
 
+// Measured: `render` keeps every quantum up to the one holding the last sound, then exactly a quarter second (0.0.183)
+const QUANTUM_FRAMES = 128;
+const renderedToSongEnd = (row: ExportRow, pageRate: number): number =>
+  Math.ceil(Math.round(row.seconds * pageRate) / QUANTUM_FRAMES) * QUANTUM_FRAMES + Math.round(0.25 * pageRate);
+
 export const KNOWN_FINDINGS: readonly KnownFinding[] = [
   {
     name: "merge-seam-reseats-read",
@@ -213,6 +218,13 @@ export const KNOWN_FINDINGS: readonly KnownFinding[] = [
         && largestStep.step <= (WRAP_STEP_LIMIT[pageRate] ?? -1)
         && wrapResidue(wrap, fadeLength(pageRate)) <= ROUNDING;
     }
+  },
+  {
+    name: "range-end-is-a-minimum",
+    invariant: "frames-as-expected",
+    note: "an `ExportConfiguration.range` passed to `start` sets the render's minimum length, not its end: `minDurationSeconds` is the range's length and `maxDurationSeconds` 30 s more (OfflineEngineRenderer.ts:271-282), and `render` stops only on 10 s of silence past the minimum (offline-worker.ts). A range ending inside sound comes back running on to the song's end, here 2 s of music past the range, then a quarter second, bit for bit the song. Read as the API stands; whether a range's end is meant as a minimum is the user's call. The studio's own export dialog passes no range (its sections go through `renderSection`)",
+    applies: (row) => row.exportRange && row.path === "start",
+    signature: ({ comparedFrames }, row, pageRate) => comparedFrames === renderedToSongEnd(row, pageRate)
   },
   inBlockRoundsEarly("clicks-on-beat-frame", (row) => row.path === "stems-metronome"),
   inBlockRoundsEarly("impulse-on-computed-frame", (row) => row.group === "in-block"),

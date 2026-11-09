@@ -131,9 +131,9 @@ mix.
 
 ### Export Regression Harness (Standing Sweep)
 `export-regression-audit-debug-demo.html` (`?rate=48000|44100`, `&fill=1`, `&rows=<id,id>` or `&group=<group>`,
-`&uuid=descending` for the positive control) renders 307 rows through every SDK export path (`step`, `start`,
+`&uuid=descending` for the positive control) renders 308 rows through every SDK export path (`step`, `start`,
 `renderSection`, stems, bounce, positions, latent and effect chains, markers played twice, loop wraps on and beside a block's end,
-regions starting inside a block, a gap inside an export range) from sources generated in memory, with ascending UUIDs so
+regions starting inside a block, a gap inside an export range and a range that ends inside sound) from sources generated in memory, with ascending UUIDs so
 a mixdown's bits are reproducible. Each render is hashed against an accepted register (`register/<rate>.json` beside the
 note); a row is `identical`, `changed` or `failing` (an invariant broke), and a `failing` row whose signature matches a label in
 `exportRegressionFindings.ts` reads `known-finding`, which is not a pass. The page uploads a WAV only for a row that is not

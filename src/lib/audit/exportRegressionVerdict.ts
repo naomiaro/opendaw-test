@@ -464,7 +464,7 @@ const judge = (
     case "frames-as-expected": {
       const expected = expectedFrames(row, pageRate);
       const detail = `${read.frames} frames, expected ${expected}`;
-      return read.frames === expected ? pass(detail) : fail(detail);
+      return read.frames === expected ? pass(detail) : fail(detail, { ...NO_EVIDENCE, comparedFrames: read.frames });
     }
     case "latency-as-expected": {
       const expected = expectedLatencyFrames(row.latencyCase, pageRate);
