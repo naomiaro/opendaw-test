@@ -64,3 +64,45 @@ checked.
   release moves anything of the recorder's back onto frames, or if a demo needs its view live
   while hidden.
 - **Last checked:** 2026-11-04, SDK 0.0.181, Chrome 156.
+
+## Parameter writes and automation lanes
+
+### Any adapter write while the transport plays suspends the lane until Pause or Stop, with no way to opt out
+
+- **Behaviour (SDK 0.0.183):** `AutomationSuspension` (`studio-core` `project/AutomationSuspension.ts`) is
+  started by every `Project` (`Project.ts:260`) and reads no preference. It listens to
+  `parameterFieldAdapters.subscribeWrites`. The one source of that event is
+  `AutomatableParameterFieldAdapter.setValue`, which `setUnitValue` and `setPrintValue` go through. On the
+  first such write to a parameter that has a lane, while `engine.isPlaying` reads true, it sends
+  `engine.suspendAutomation(lane)`. From then on the engine bypasses the lane's curve and plays the
+  parameter's own field (`crates/engine/src/param_automation.rs`, `resolve_base` checks the suspension
+  first). The engine clears the set only in `pause`, `halt` (`stop`, `stop_faded`) and `stop_recording`
+  (`crates/engine/src/lib.rs`). The set is keyed by the lane's uuid and kept outside the curve's state so
+  that it survives a rebind (upstream's `docs/automation.md`, "Manual control (#347)"): turning the lane's
+  `TrackBox.enabled` off and on again does not lift it.
+- **Not a defect:** this is the #347 design. A hand or a MIDI controller on an automated parameter takes over
+  from the curve for as long as the transport runs. In openDAW's own studio there is no second override
+  layer to disagree with it.
+- **Where it bites:** a host that runs its own override for a touched parameter, for example one that turns
+  the lane off for the gesture, writes through the adapter, and turns the lane back on at release. If the
+  release comes before the transport stops, the lane stays suspended. Until Pause or Stop the restored field
+  plays, not the curve. The `recording.automationEnabled` preference turns off `RecordAutomation` only, not
+  this.
+- **Workaround:** a host that owns the override writes the parameter's FIELD instead of going through the
+  adapter: `parameter.field.setValue(parameter.valueMapping.y(unitValue))`. That is `setUnitValue` without
+  `notifyWrite`, so nothing is suspended. The field still syncs to the engine as any box write does, and a
+  host that turns the lane off for the gesture loses nothing. Writes that should take over from the curve,
+  as #347 intends, keep using the adapter.
+- **Evidence:** this repo measured the suspension itself:
+  `automation-suspended-after-stop-debug-demo.html`'s positive control (a field write through the adapter
+  during playback: −19.8 dB → silent for the rest of the pass). That a lane toggle does not lift it is read
+  from the source above.
+  - Note: `debug/2026-11-09-frame-clock-consumers/note.md`.
+  - The one part that is a defect, a write in the gap after Stop leaving the lane suspended into the next
+    playback, is filed as openDAW#537.
+- **Decision not to file (2026-11-09):** suspension is the documented #347 behaviour, and the field write is
+  ordinary SDK use, not a hack. A preference to turn it off would be a feature request whose only motivation
+  is a host with an override layer of its own. Upstream had no discussion of an opt-out (its plans, docs and
+  tracker searched 2026-11-09). Reopen if the field-write workaround stops being available (a field that only
+  the adapter may write), or if upstream adds per-lane manual-control state.
+- **Last checked:** 2026-11-09, SDK 0.0.183, source read at the `@opendaw/studio-sdk@0.0.183` tag.

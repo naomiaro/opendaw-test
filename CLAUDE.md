@@ -713,6 +713,8 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   defects, worked around rather than filed, each with the decision not to file and its reason (the engine's
   main-thread view standing still on a hidden page, with the opt-in frame driver as the workaround). Read
   it before drafting anything upstream about a behaviour that is not a defect; an entry there is a decision.
+  A second entry: any parameter-adapter write while playing suspends that lane's automation until Pause or Stop
+  (`AutomationSuspension`, no preference); a host with its own override writes the field directly.
 - **Known vendor issues live in `docs/known-vendor-issues.md`** — browser, platform and hosting
   behaviours outside the SDK that this repo has measured and works around, grouped by vendor
   (Chromium, Firefox, WebKit, hosting and tooling: the Chromium worklet clock that stands still
