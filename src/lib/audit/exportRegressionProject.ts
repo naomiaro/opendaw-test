@@ -296,39 +296,43 @@ const placeRegion = (boxGraph: BoxGraph, track: TrackBox, file: AudioFileBox, po
   });
 };
 
-/** One file, and a region at 0, and a second region of that file where the row asks for one. */
+/** One file, and a region at the row's start, and a second region of that file where the row asks for one. */
 export const placeSourceRegions = (boxGraph: BoxGraph, track: TrackBox, uuid: UUID.Bytes, row: ExportRow, name: string): void => {
   const file = AudioFileBox.create(boxGraph, uuid, (box) => {
     box.fileName.setValue(name);
     box.endInSeconds.setValue(row.seconds);
   });
-  placeRegion(boxGraph, track, file, 0, row, name);
+  placeRegion(boxGraph, track, file, row.regionStartPpqn, row, name);
   if (row.secondRegionSeconds !== null) {
     placeRegion(boxGraph, track, file, Math.round(PPQN.secondsToPulses(row.secondRegionSeconds, row.bpm)), row, name);
   }
 };
 
-/** Other units' tracks hold one region whatever the row: a second region is the source's. */
+/** Other units' tracks hold one region at 0 whatever the row: a second region, and a later start, are the source's. */
 const placeSource = (project: Project, track: TrackBox, uuid: UUID.Bytes, row: ExportRow, name: string): void => {
-  placeSourceRegions(project.boxGraph, track, uuid, name === row.signal ? row : { ...row, secondRegionSeconds: null }, name);
+  placeSourceRegions(project.boxGraph, track, uuid, name === row.signal ? row : { ...row, secondRegionSeconds: null, regionStartPpqn: 0 }, name);
 };
 
-/** What the bed's track is placed from: one region, for as long as the row's bed lasts. */
-export const bedRow = (row: ExportRow): ExportRow => ({ ...row, seconds: row.bedSeconds ?? row.seconds, secondRegionSeconds: null });
+/** What the bed's track is placed from: one region at 0, for as long as the row's bed lasts. */
+export const bedRow = (row: ExportRow): ExportRow =>
+  ({ ...row, seconds: row.bedSeconds ?? row.seconds, secondRegionSeconds: null, regionStartPpqn: 0 });
 
 /** A tail row's Reverb gives it something to ring. A gap row's silence must be exact, so it has none. */
 export const rowTakesReverb = ({ signal, secondRegionSeconds }: ExportRow): boolean => signal === "tail" && secondRegionSeconds === null;
 
 const MARKER_SECONDS: readonly number[] = [1, 3];
 
-const placeMarkers = (project: Project, bpm: number): void => {
+/** The section paths' markers at 1 s and 3 s, or the row's own; the first plays `markerPlays` times (schema default 1). */
+const placeMarkers = (project: Project, row: ExportRow): void => {
   const { boxGraph, timelineBox: { markerTrack } } = project;
+  const positions = row.markerPpqns ?? MARKER_SECONDS.map((seconds) => Math.round(PPQN.secondsToPulses(seconds, row.bpm)));
   markerTrack.enabled.setValue(true);
-  MARKER_SECONDS.forEach((seconds, index) => {
+  positions.forEach((position, index) => {
     MarkerBox.create(boxGraph, UUID.generate(), (box) => {
       box.track.refer(markerTrack.markers);
-      box.position.setValue(Math.round(PPQN.secondsToPulses(seconds, bpm)));
+      box.position.setValue(position);
       box.label.setValue(`Marker ${index + 1}`);
+      if (index === 0 && row.markerPpqns !== null) box.plays.setValue(row.markerPlays);
     });
   });
 };
@@ -372,7 +376,7 @@ export const applyRow = async (copy: Project, harness: HarnessProject, row: Expo
     holder.mute.setValue(!row.withThird);
     if (row.nudgeVolume) source.volume.setValue(0.0001);
     if (row.volumeDb !== 0) source.volume.setValue(row.volumeDb);
-    if (row.path.startsWith("section-marker")) placeMarkers(copy, row.bpm);
+    if (row.path.startsWith("section-marker") || row.markerPpqns !== null) placeMarkers(copy, row);
   });
   settleMasterMaximizer(copy, row.masterMaximizer);
   if (rowTakesReverb(row)) {

@@ -5,7 +5,7 @@
 **Status: FINDINGS 1 AND 2 FIXED IN `@opendaw/studio-sdk@0.0.183`** (re-measured 2026-11-09, [below](#sdk-0183-both-findings-fixed); their labels are retired). **REGISTER ACCEPTED ON 0.0.183 on the user's word (2026-11-09), library filled; a re-run of each rate reads 296 of 296 `identical`.** Before: register accepted on 0.0.182, library filled; findings 1 and 2 filed as [openDAW#533](https://github.com/andremichelle/openDAW/issues/533) and [openDAW#534](https://github.com/andremichelle/openDAW/issues/534) on 2026-11-08. The user read the findings and approved the labels and the first fill. Both page rates are accepted, a re-run of each reads every row `identical`, and a changed render is caught (below). Nothing is posted. Three drafts wait (below). `trailing-silence-trimmed` is ruled by design and not raised upstream. The other findings are the
 user's call, each with the read it got.
 
-**The catalogue holds 296 rows and none reads `failing`.** `gap-none-start`, `gap-none-section-entire` and `gap-none-stem-start` carry `long-silence-ends-render` (Finding 2), which is a defect with a draft: a label means read and understood, not fine.
+**The catalogue holds 307 rows and none reads `failing`.** The 11 added on 2026-11-09 ([below](#after-533-and-534-four-groups-of-rows-from-upstreams-replies)) read `unregistered` until accepted; one of them, a region starting inside a block, measures a region playing one frame early, labelled and not filed. A label means read and understood, not fine.
 
 **Verified against:** `@opendaw/studio-sdk@0.0.182`, engine `9c44973549a7`, checkout at the tag (`766204efe`). Chrome
 156.0.8078.81 (Playwright's), macOS 15.6.1. The Mac's output device read 44100 Hz for every run below unless it says otherwise; each summary since the device rate was added records it (`deviceRateHz`). These renders are offline, and the page's own context takes the rate in the URL. Source citations are read at the tag.
@@ -41,6 +41,8 @@ name. It means read and understood, not fine. A failed invariant with no such ma
 | re-run after the PR review (the page, `table.ts` and the accept gate; no render touched) | 48000 | 1794015800836 | 296, all | 237 / 59, failing 0, errored 0 | 296 `identical`, 0 uploaded |
 | the same | 44100 | 1794015919591 | 296, all | 222 / 74, failing 0, errored 0 | 296 `identical`, 0 uploaded |
 | `?uuid=descending&group=control` | 48000 | 1794013420891 | 11 | clean 11 | 10 `identical`, 1 `changed` |
+| 0.0.183, 307 rows (the 11 rows [after #533 and #534](#after-533-and-534-four-groups-of-rows-from-upstreams-replies)), `?fill=1` | 48000 | 1794251449772 | 307, all | clean 246, known finding 61, failing 0, errored 0 | 296 `identical`, 11 `unregistered` |
+| the same | 44100 | 1794251607099 | 307, all | clean 246, known finding 61, failing 0, errored 0 | 296 `identical`, 11 `unregistered` |
 
 SDK 0.0.182, engine `9c44973549a7`, the device at 44100 (read in `system_profiler` and in each summary). Real clicks 30 s after load, the tab visible, no stall in any of them. Tables: `.verify-output/exportreg-table-<rate>.txt`
 (local; the run lines are the figures above).
@@ -66,7 +68,8 @@ SDK 0.0.182, engine `9c44973549a7`, the device at 44100 (read in `system_profile
 | `loop-pass-one-frame-short` | 2 | 17 | [openDAW#533](https://github.com/andremichelle/openDAW/issues/533): [body](./drafts/posted-openDAW-533-loop-pass-one-frame-short.md); **fixed in 0.0.183, label retired** |
 | `loop-bounce-last-frame-silent` | 0 | 4 (the same rows as 4 of the 17) | in the same draft; **fixed in 0.0.183, label retired** |
 | `trailing-silence-trimmed` | 2 | 2 | by design, the user's read; not raised upstream |
-| `jump-fade-at-start` | 30 | 30 | the user's call |
+| `in-block-pulse-rounds-early` | 5 | 5 | measured on 0.0.183 (4 metronome stems, 1 region start); not filed, [below](#after-533-and-534-four-groups-of-rows-from-upstreams-replies) |
+| `jump-fade-at-start` | 32 | 32 | the user's call (30, and the 2 export-range gap rows added on 2026-11-09) |
 | `jump-fade-cold-maximizer` | 2 | 2 | the user's call |
 | `reset-keeps-compensation-delay` | 11 | 11 | the user's call |
 | `range-missing-tail` | 1 | 1 | the user's call |
@@ -362,6 +365,69 @@ from 1794246918474, `register/44100.json` from 1794247036602, nothing forced; 22
 objects, 88 MB). Re-run against the new registers: 1794248944040 (48 kHz) and 1794249053719 (44.1 kHz) each read 296 `identical`, clean 242,
 known 54, failing 0, errored 0.
 
+## After #533 and #534: four groups of rows from upstream's replies
+
+Upstream's replies to [#533](https://github.com/andremichelle/openDAW/issues/533) and [#534](https://github.com/andremichelle/openDAW/issues/534)
+named four behaviours no row reached. 11 rows cover them, and the stems' metronome rows carry one new invariant. **The user's
+decision: no follow-up upstream**, not on either issue and not as a new one. The new rows read `unregistered` until a person accepts them.
+Runs 1794251449772 (48 kHz) and 1794251607099 (44.1 kHz), both `&fill=1`, 2026-11-09, `@opendaw/studio-sdk@0.0.183`, engine `447481d683c6`, the device at 44.1 kHz,
+307 rows each: **clean 246, known 61, failing 0, errored 0** at both rates. The 296 accepted rows read `identical`, so nothing in them moved.
+
+**1. A pulse inside a block rounds early (measured; label `in-block-pulse-rounds-early`, not filed).** Upstream: "Converting a pulse
+to a sample inside a block still rounds once from the block's start … none of your cases hit it." Since 0.0.183 a block's start is
+exact (a whole frame count from the anchor, one division), and a pulse inside the block is converted from that start's pulse.
+`exportRegressionInBlock.ts` writes out the engine's two conversions. *Read:* a click at
+`floor(pulses_to_samples(beat − p0))` (`crates/engine/src/metronome.rs:212`) and a region's start at `sample_of`, the block's share of the
+pulse, truncated (`audio_region_player.rs:974-976`). Its tests hold it to the clicks measured on 0.0.183.
+
+- *Clicks.* `clicks-on-beat-frame` on the 4 `stems-*-stems-metronome` rows holds each click to its beat's frame (120 bpm: every beat
+  a whole frame), read as the first non-zero frame on the metronome stem, less one. Measured: 48 kHz, the clicks at 24000 and 72000
+  start a frame early. 44.1 kHz: 110250, 132300 and 154350. The other clicks are on their frames, and the arithmetic marks exactly these, at both rates.
+- *A region's start (new).* The `in-block` rows start the probe's region on a whole frame inside a block, at the page's own rate. One start is the first
+  after 1 s that the arithmetic places a frame early, the other the first it places on its frame: 48 kHz ppqn 1930 (frame 48250) and 1921
+  (48025); 44.1 kHz ppqn 1920 (44100) and 1952 (44835). **Measured: the predicted-early region plays a frame early at both
+  rates, all five impulses one frame before their computed frames** (48 kHz: 52345 … 216313 against 52346 … 216314). The on-time
+  control holds `impulse-on-computed-frame`. Computed over 1 to 4 s at 120 bpm: of the whole-frame starts inside a block, 3776 of 7620
+  land early at 48 kHz and 123 of 238 at 44.1. So about half of them do, by one frame, and the region's whole read moves with its start.
+- The signature holds every event to the arithmetic's frame and needs at least one off its exact frame. A click or a region early
+  where the arithmetic says on time, a late one, or a missing one stays `failing` (tested).
+- *Not covered:* a note-on inside a block (the harness has Tapes only), and other bpm. Upstream said none of the filed cases hit the rounding. The region rows
+  are the first case here that does, on audio. Whether that changes "label, not file" is the user's call.
+
+**2. A marker's section played twice, then falling through (measured, clean).** `MarkerBox.plays` (schema default 1, 0 is forever).
+`crates/transport/src/transport.rs:317-328` repeats while `count + 1 < plays` and otherwise falls through with no jump. Upstream fixed a
+marker exactly on a block's end being missed. The `marker` rows put Marker 1 at 1 s (ppqn 1920) and Marker 2 at the first whole frame from 2 s
+on a block's end (48 kHz ppqn 3840, frame 96000; 44.1 kHz ppqn 4096, frame 94080) or 64 frames into a block (3904 / 97600; 6144 / 141120),
+at the page's own rate. They are stepped with the marker track on, which `renderSection` turns off.
+
+- `marker-none-plays1-block-end`: played once, the render is the reference's bit for bit (the same hash at 48 kHz).
+- `marker-none-plays2-*`: `impulse-follows-playback` (the reference's hits carried through 0..M2, M1..M2 again, then M2 on) and
+  `jumps-crossfade` (below) hold on a block's end and inside one, at both rates.
+- `marker-none-plays2-block-end-start`: `start` leaves the markers on, and its render is the stepped one over the stepped one's range,
+  bit for bit. It runs past that range by the quarter second of silence it keeps.
+
+**3. The jump flag on a wrap at a block's end (measured, clean).** Upstream fixed a wrap on a block's last frame that lost the
+discontinuous flag for the next block. *Read:* the flag is what seeds the old read's 5 ms fade-out (`audio_region_player.rs:321`) and, past a
+region's start, the new read's fade-in (`:862`). So a lost flag shows in the samples. The `wrap` rows loop on the copy from 0 to the
+first whole frame from 1.5 s that is on a block's end, on its last frame, or a frame past it. At 48 kHz that is ppqn 2944 / 2903 / 2985, frames 73600 / 72575 /
+74625. At 44.1 kHz it is 4096 / 3104 / 5088, frames 94080 / 71295 / 116865 (from 2 s, the last-frame end would be 3.75 s). Page rate as source rate.
+`jumps-crossfade` holds the whole render to a model of what plays. Each segment is the reference from its source frame. At a jump, the
+read it left goes on from where it was, fading linearly to 0 over 5 ms, and, past the region's start, the new read fades in over
+the same window. Holds within 2e-7 on all six rows, every wrap included. A wrap with no old read under it fails (tested). The 48 kHz
+2 s loop the `position` rows already had is on a block's end too. It did not move on 0.0.183: computed, the old accumulated position put
+that wrap a hair after the block's end, at the next block's start, where the flag was raised in the block itself.
+
+**4. The gap inside an `ExportConfiguration.range` (measured, clean but for the start's fade).** 0.0.183 sets `minDurationSeconds` to the range's
+length (`OfflineEngineRenderer.ts:271-282`). `gap-none-range-start` (mix) and `gap-none-range-stem-start` (the source's stem alone)
+pass a range from 0.1 s to 16.2 s through `start`. It starts inside the first burst, so the range holds sound before the gap, since silence
+before the first sound never counts. **Both render the whole range, the second burst included**: 784864 frames at 48 kHz, 721041 at 44.1.
+They are bit-identical to the stepped gap from frame 240 at 48 kHz, and within the 48 kHz source's read drift at 44.1. Their one difference is the start's 5 ms fade, a jump into a region, so
+they carry `jump-fade-at-start`. On an exported range that label now accepts a render longer than the range, since `start` keeps its quarter second of silence.
+Before 0.0.183 these would have stopped at about 10.2 s (computed from Finding 2's rule).
+
+**Still open from these rows.** The render of a range runs on past the range's end until silence, here the quarter second after the burst. Whether a
+range whose end cuts into sound stops at that end was not tried.
+
 ## Reading recipe for an SDK bump
 
 1. `export-regression-audit-debug-demo.html?rate=48000` on the dev server, a real click on Run about 30 s after load, the tab visible, 73 to 74 s, then `?rate=44100`. Standing is about the invariants alone, so read it with `data-register-counts` (identical, changed, unregistered) beside `data-standing-counts`: expect `296,0,0`. On the public host the page finds no register and has no sink, so every row reads `unregistered`, a callout says the run proves the invariants only, the state ends in `done:no-summary`, and `table.ts` finds no summary. The page reads `register/<rate>.json` and uploads a WAV only for a row that is not `identical`. A stall as above: reload, wait and run again.
@@ -370,7 +436,7 @@ known 54, failing 0, errored 0.
 4. A `known-finding` is a row whose signature still matches. It is not a pass: this note's reads are what it rests on.
 5. `--accept --library <clone>` only after a person has read that run's table, and never on a run with a row failing or errored, a descending run, a row the catalogue does not hold or holds with other invariants (a summary from before the catalogue changed) or, without `--force`, a partial one. It writes the register and copies the new WAVs. Then in the clone `git add wav`, commit and push, and commit the register here.
 
-**Expected on 0.0.183:** 296 of 296 `identical`; clean 242, known 54 at both rates (0.0.182: 48 kHz clean 237, known 59; 44.1 kHz clean 222, known 74).
+**Expected on 0.0.183:** 307 rows, clean 246, known 61 at both rates; 296 `identical` and 11 `unregistered` until the 11 rows added on 2026-11-09 are accepted, then 307 of 307 `identical` (296 rows: clean 242, known 54; 0.0.182: 48 kHz clean 237, known 59; 44.1 kHz clean 222, known 74).
 
 Once a release ships a fix, the row's invariant holds, its hash moves so it reads `changed`, and the table prints `no longer reproducing: <finding>`. Retire the finding from `exportRegressionFindings.ts` then, and say so here.
 

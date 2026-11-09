@@ -467,3 +467,33 @@ describe("a loop on the copy is held to the reference over its first pass", () =
 it("lists each finding with a note", () => {
   KNOWN_FINDINGS.forEach((f) => expect(f.note.length).toBeGreaterThan(0));
 });
+
+describe("jump-fade-at-start on an exported range", () => {
+  // the stepped gap's span, a 440 Hz burst at 0 and 16 s, and a render from 0.1 s that fades in over 5 ms and runs past the range
+  const burst = (frames: number, rate: number): Float32Array => {
+    const out = new Float32Array(frames);
+    for (const start of [0, 16 * rate]) for (let i = 0; i < 0.2 * rate; i++) out[start + i] = 0.5 * Math.sin((2 * Math.PI * 440 * i) / rate);
+    return out;
+  };
+  const judged = (id: string, extra: number, fade: boolean) => {
+    const rate = 48000;
+    const row = rowOf(rate, id);
+    const reference = burst(18 * rate, rate);
+    const start = Math.round(row.rangeStartSeconds * rate);
+    const frames = Math.round(row.rangeSeconds * rate) + extra;
+    const channel = new Float32Array(frames);
+    for (let i = 0; i < frames; i++) channel[i] = Math.fround(reference[start + i] * (fade ? Math.min(1, i / 240) : 1));
+    const refs: Refs = { reference: renderedOf(row, [reference, reference.slice()], rate), noLatency: null, warm: null };
+    return judgeInvariants({ ...row, invariants: ["section-is-slice"] }, renderedOf(row, [channel, channel.slice()], rate), refs, rate)[0];
+  };
+
+  it("names the fade on a range render that keeps its quarter second past the range", () => {
+    const result = judged("gap-none-range-start", 12000, true);
+    expect([result.holds, result.finding]).toEqual([false, "jump-fade-at-start"]);
+  });
+  it("names nothing on a range render with no fade, or one short of its range", () => {
+    expect(judged("gap-none-range-start", 12000, false).holds).toBe(true);
+    const short = judged("gap-none-range-start", -128, true);
+    expect([short.holds, short.finding]).toEqual([false, null]);
+  });
+});
