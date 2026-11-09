@@ -17,7 +17,7 @@ import { RegionEditing, type ExportConfiguration } from "@opendaw/studio-adapter
 import { getAllAudioRegions } from "@/lib/adapterUtils";
 import { withDeadline } from "@/lib/deadline";
 import { applyRow, type HarnessProject } from "./exportRegressionProject";
-import { LOOP_ON_COPY_SECONDS, SET_POSITION_SECONDS, setPositionStart, type ExportRow, type PathId } from "./exportRegressionRows";
+import { loopOnCopyPpqn, SET_POSITION_SECONDS, setPositionStart, type ExportRow, type PathId } from "./exportRegressionRows";
 import { CHUNK_FRAMES } from "./sectionRenderGap";
 
 export const RENDER_DEADLINE_MS = 60_000;
@@ -192,11 +192,17 @@ const renderSectionPath = async (
   return ownedChannels(audio);
 };
 
-/** The signal, not `undefined`: without it nothing could take this path's worker down on a deadline. */
+/**
+ * The signal, not `undefined`: without it nothing could take this path's worker down on a deadline. A row with
+ * `exportRange` passes its range as the configuration's, merged into any stems the path already configures.
+ */
 const renderStart = async (
-  { copy, pageRate, finished }: Render, config: Option<ExportConfiguration>,
-): Promise<Float32Array[]> =>
-  ownedChannels(await OfflineEngineRenderer.start(copy, config, new DefaultObservableValue(0), finished, pageRate));
+  { copy, row, pageRate, finished }: Render, config: Option<ExportConfiguration>,
+): Promise<Float32Array[]> => {
+  const range = { start: ppqnAt(row.rangeStartSeconds, row.bpm), end: ppqnAt(row.rangeStartSeconds + row.rangeSeconds, row.bpm) };
+  const configured = row.exportRange ? Option.wrap({ ...config.unwrapOrUndefined(), range }) : config;
+  return ownedChannels(await OfflineEngineRenderer.start(copy, configured, new DefaultObservableValue(0), finished, pageRate));
+};
 
 /**
  * The source's stem comes first and object keys keep their insertion order, so channels 0 and 1 are the source. The
@@ -317,7 +323,7 @@ const renderRow = async (render: Render): Promise<Float32Array[]> => {
     case "setposition-off-quantum":
       return renderSteps(render, Option.None, setPositionPpqn(render, path === "setposition-on-quantum"), [frames]);
     case "loop-on-copy":
-      writeLoopArea(render, 0, ppqnAt(LOOP_ON_COPY_SECONDS, row.bpm));
+      writeLoopArea(render, 0, loopOnCopyPpqn(row));
       return renderSteps(render, Option.None, 0, [frames]);
   }
 };

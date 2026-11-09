@@ -131,15 +131,20 @@ mix.
 
 ### Export Regression Harness (Standing Sweep)
 `export-regression-audit-debug-demo.html` (`?rate=48000|44100`, `&fill=1`, `&rows=<id,id>` or `&group=<group>`,
-`&uuid=descending` for the positive control) renders 296 rows through every SDK export path (`step`, `start`,
-`renderSection`, stems, bounce, positions, latent and effect chains) from sources generated in memory, with ascending UUIDs so
+`&uuid=descending` for the positive control) renders 308 rows through every SDK export path (`step`, `start`,
+`renderSection`, stems, bounce, positions, latent and effect chains, markers played twice, loop wraps on and beside a block's end,
+regions starting inside a block, a gap inside an export range and a range that ends inside sound) from sources generated in memory, with ascending UUIDs so
 a mixdown's bits are reproducible. Each render is hashed against an accepted register (`register/<rate>.json` beside the
 note); a row is `identical`, `changed` or `failing` (an invariant broke), and a `failing` row whose signature matches a label in
 `exportRegressionFindings.ts` reads `known-finding`, which is not a pass. The page uploads a WAV only for a row that is not
 `identical`. Read a run with `node scripts/audit/export-regression/table.ts <token> [--library <clone>] [--diff <rowId>]`; `--accept`
 writes the register and copies the WAVs into the library clone only after a person's read, never on a failing, errored or
 descending run. The WAV library is the private LFS repo `naomiaro/opendaw-export-wavs`, cloned at `~/Code/opendaw-export-wavs`
-(or `$EXPORT_WAV_LIBRARY`); `&fill=1` uploads every row's WAV; every download counts against its bandwidth. Hash the audio, never the project bytes (above). The run, its
+(or `$EXPORT_WAV_LIBRARY`); `&fill=1` uploads every row's WAV; every download counts against its bandwidth. Hash the audio, never the project bytes (above).
+A pulse inside a 128-frame block still rounds from the block's start pulse: a metronome click, and a region starting on a whole
+frame inside a block, can land one frame early (about half such region starts at 120 bpm). The harness labels it
+`in-block-pulse-rounds-early` from the engine's own arithmetic (`src/lib/audit/exportRegressionInBlock.ts`): measured, not filed;
+filing it is the user's call. A row that needs an exact region start puts it on a block's first frame. The run, its
 findings and the reading recipe: `debug/2026-11-06-export-regression/note.md`.
 
 ### Mutate-Copy-Restore Pattern for Offline Rendering

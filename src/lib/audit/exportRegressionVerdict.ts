@@ -1,6 +1,10 @@
 // Plain Node must load this file: the table script judges runs with it, so no SDK value imports.
-import { expectedFrames, expectedLatencyFrames, LOOP_ON_COPY_SECONDS, type ExportRow, type InvariantId } from "./exportRegressionRows.ts";
-import { findingFor, KNOWN_FINDINGS, NO_EVIDENCE, type FindingEvidence, type GainBand } from "./exportRegressionFindings.ts";
+import {
+  expectedFrames, expectedLatencyFrames, loopOnCopyFrames, playbackSegments, regionStartFrameOf,
+  type ExportRow, type InvariantId, type PlaybackSegment
+} from "./exportRegressionRows.ts";
+import { fadeLength, findingFor, KNOWN_FINDINGS, NO_EVIDENCE, type FindingEvidence, type GainBand } from "./exportRegressionFindings.ts";
+import { exactFrame, metronomeClickFrame, regionStartFrame } from "./exportRegressionInBlock.ts";
 import { computedFrame, IMPULSE_SOURCE_FRAMES, PROBE_TONE_HZ, PROBE_TONE_LEVEL } from "./exportRegressionSignals.ts";
 import { toneStep, uniformEarly } from "./sectionRenderGap.ts";
 import type { RenderRead } from "./exportRegressionReader.ts";
@@ -32,6 +36,10 @@ export type RegisterEntry = {
 export type RegisterVerdict = "identical" | "changed" | "unregistered";
 
 const NO_JUMP_RATIO = 1.05;
+// The rounding of a read scaled by a fade, as the findings' ROUNDING: nothing above it is a fade's arithmetic
+const CROSSFADE_TOLERANCE = 2e-7;
+// A click is a few ms of sound on exact zeros: the next one starts after at least this many zero frames
+const CLICK_MIN_GAP_FRAMES = 1000;
 const TAIL_PRESENT_RMS = 1e-4;
 // 2^-21, the rounding of summing float32 stems; nothing above it is rounding
 const STEM_SUM_TOLERANCE = 4.8e-7;
@@ -179,7 +187,10 @@ const compareToSlice = (rendered: RenderedRow, reference: RenderedRow, offset: n
   return pass(`${shared} frames bit-identical from reference frame ${offset}${tail}`);
 };
 
-const compareHits = (got: readonly number[], expected: readonly number[], against: string): Outcome => {
+/** `predicted` gives the engine's own frames for the same events, for a finding that reads the two side by side. */
+const compareHits = (
+  got: readonly number[], expected: readonly number[], against: string, predicted: readonly number[] | null = null
+): Outcome => {
   if (expected.length === 0) return failUncompared(`${against} has no impulse in the range, so nothing is proven`);
   const missing = expected.filter((frame) => !got.includes(frame));
   const extra = got.filter((frame) => !expected.includes(frame));
@@ -187,8 +198,77 @@ const compareHits = (got: readonly number[], expected: readonly number[], agains
   const parts: string[] = [];
   if (missing.length > 0) parts.push(`missing frames ${missing.join(", ")}`);
   if (extra.length > 0) parts.push(`extra frames ${extra.join(", ")}`);
-  return fail(`${parts.join("; ")}; got [${got.join(", ")}], ${against} [${expected.join(", ")}]`);
+  const frameOffsets = predicted !== null && got.length === expected.length
+    ? { got: got.map((frame, i) => frame - expected[i]), predicted: predicted.map((frame, i) => frame - expected[i]) }
+    : null;
+  return fail(`${parts.join("; ")}; got [${got.join(", ")}], ${against} [${expected.join(", ")}]`, { ...NO_EVIDENCE, frameOffsets });
 };
+
+/** The first frame of each sound on exact silence: a frame that is not 0 after `minGap` frames that are, or at the start. */
+export const findOnsets = (channel: Float32Array, minGap: number): number[] => {
+  const onsets: number[] = [];
+  let zeros = minGap;
+  for (let frame = 0; frame < channel.length; frame++) {
+    if (channel[frame] === 0) {
+      zeros++;
+      continue;
+    }
+    if (zeros >= minGap) onsets.push(frame);
+    zeros = 0;
+  }
+  return onsets;
+};
+
+/** A reference's hits carried through what the render plays: each segment's own, moved to where it is written. */
+const hitsThrough = (hits: readonly number[], segments: readonly PlaybackSegment[]): number[] =>
+  segments.flatMap(({ out, src, length }) => hits.filter((hit) => hit >= src && hit < src + length).map((hit) => out + hit - src));
+
+/**
+ * The render against the reference played through its segments: at a jump the new read fades in over the jump window
+ * where the segment says so, and the read it left goes on from where it was, fading out over that window.
+ */
+const segmentResidue = (
+  rendered: RenderedRow, reference: RenderedRow, segments: readonly PlaybackSegment[], fade: number
+): { largest: number; frame: number } => {
+  let largest = 0;
+  let worst = -1;
+  scan: for (let c = 0; c < rendered.samples.length; c++) {
+    const x = rendered.samples[c];
+    const y = reference.samples[c];
+    for (const [index, { out, src, length, jump, fadeIn }] of segments.entries()) {
+      const before = index > 0 ? segments[index - 1] : null;
+      const left = before === null ? 0 : before.src + before.length;
+      for (let i = 0; i < length; i++) {
+        const frame = out + i;
+        let expected = y[src + i] * (jump && fadeIn ? Math.min(1, i / fade) : 1);
+        // past the window the old read is gone: its source is not read, and may lie past the reference's end
+        if (jump && before !== null && i < fade) expected += y[left + i] * (1 - i / fade);
+        const delta = Math.abs(x[frame] - expected);
+        if (!(delta <= largest)) {
+          largest = Number.isNaN(delta) ? Infinity : delta;
+          worst = frame;
+          if (largest === Infinity) break scan;
+        }
+      }
+    }
+  }
+  return { largest, frame: worst };
+};
+
+/** Whether the render is silence up to `seat`, then the reference from its first frame, bit for bit, for all the reference holds. */
+const isSeatedAt = (rendered: RenderedRow, reference: RenderedRow, seat: number): boolean => {
+  if (seat < 0 || rendered.samples[0].length < seat + reference.samples[0].length) return false;
+  for (let c = 0; c < rendered.samples.length; c++) {
+    const a = bitsOf(rendered.samples[c]);
+    const b = bitsOf(reference.samples[c]);
+    for (let frame = 0; frame < seat; frame++) if (a[frame] !== 0) return false;
+    for (let i = 0; i < b.length; i++) if (a[seat + i] !== b[i]) return false;
+  }
+  return true;
+};
+
+/** Where the engine starts the row's first region, as its own arithmetic does it. */
+const regionStartFrameFromEngine = (row: ExportRow, pageRate: number): number => regionStartFrame(row.regionStartPpqn, row.bpm, pageRate);
 
 const needs = (what: string, ref: RenderedRow | null): Outcome | null =>
   ref === null ? failUncompared(`no ${what} read, so nothing can be compared`) : null;
@@ -215,7 +295,7 @@ const judge = (
       if (missing !== null) return missing;
       if (row.path !== "loop-on-copy") return compareToSlice(rendered, refs.reference!, start, rangeFrames);
       // Past the wrap it is a second pass, which the reference does not hold: only the first pass is the reference's.
-      const firstPass = Math.round(LOOP_ON_COPY_SECONDS * pageRate);
+      const firstPass = loopOnCopyFrames(row, pageRate);
       return compareToSlice({ ...rendered, samples: rendered.samples.map((channel) => channel.subarray(0, firstPass)) }, refs.reference!, 0, firstPass);
     }
     case "samples-equal-warm-pass":
@@ -227,20 +307,67 @@ const judge = (
         .filter((hit) => hit >= start && hit < start + rangeFrames).map((hit) => hit - start);
       return compareHits(read.impulseHits, expected, "the reference");
     }
-    case "impulse-follows-loop": {
+    case "impulse-follows-loop":
+    case "impulse-follows-playback": {
       const missing = needs("reference", refs.reference);
       if (missing !== null) return missing;
-      const loopFrames = Math.round(LOOP_ON_COPY_SECONDS * pageRate);
-      const inLoop = refs.reference!.read.impulseHits.filter((hit) => hit < loopFrames);
-      const expected = [...inLoop, ...inLoop.map((hit) => hit + loopFrames)].filter((hit) => hit < rangeFrames);
-      return compareHits(read.impulseHits, expected, "the reference's hits through the loop");
+      const expected = hitsThrough(refs.reference!.read.impulseHits, playbackSegments(row, pageRate));
+      return compareHits(read.impulseHits, expected, `the reference's hits through the ${invariant === "impulse-follows-loop" ? "loop" : "playback"}`);
     }
     case "impulse-on-computed-frame": {
       const sourceFrames = Math.round(row.sourceRate * row.seconds);
-      const expected = IMPULSE_SOURCE_FRAMES.filter((frame) => frame < sourceFrames)
+      // A region that starts inside a block: the engine's own start for it, for a finding to read beside the exact one.
+      const regionStart = regionStartFrameOf(row, pageRate);
+      const engineStart = regionStart === 0 ? 0 : regionStartFrameFromEngine(row, pageRate);
+      const inRange = IMPULSE_SOURCE_FRAMES.filter((frame) => frame < sourceFrames)
         .map((frame) => computedFrame(frame, row.sourceRate, pageRate))
-        .filter((frame) => frame >= start && frame < start + rangeFrames).map((frame) => frame - start);
-      return compareHits(read.impulseHits, expected, "the computed frames");
+        .filter((frame) => frame + regionStart >= start && frame + regionStart < start + rangeFrames);
+      return compareHits(
+        read.impulseHits, inRange.map((frame) => frame + regionStart - start), "the computed frames",
+        inRange.map((frame) => frame + engineStart - start)
+      );
+    }
+    case "clicks-on-beat-frame": {
+      // the source's stem, the bed's, then the metronome's: read by position, so a missing stem must not move it
+      if (hasNoFrames(rendered) || rendered.samples.length !== 6) return failUncompared(`${rendered.samples.length} channels, 6 expected: the source's, the bed's and the metronome's stems`);
+      // The metronome's stem is appended after the unit stems; a click's first sample is 0, so it sounds a frame later.
+      const onsets = findOnsets(rendered.samples[rendered.samples.length - 2], CLICK_MIN_GAP_FRAMES).map((frame) => frame - 1);
+      const beats: number[] = [];
+      for (let beat = 0; exactFrame(beat, row.bpm, pageRate) < rangeFrames; beat += 960) beats.push(beat);
+      const exact = beats.map((beat) => exactFrame(beat, row.bpm, pageRate));
+      if (exact.some((frame) => !Number.isInteger(frame))) return failUncompared("a beat between two frames has no frame to be held to");
+      return compareHits(onsets, exact, "the beats' frames", beats.map((beat) => metronomeClickFrame(beat, row.bpm, pageRate)));
+    }
+    case "region-seated-on-start": {
+      const missing = needs("reference", refs.reference);
+      if (missing !== null) return missing;
+      const reference = refs.reference!;
+      if (hasNoFrames(rendered) || hasNoFrames(reference)) return failUncompared("a render holds no frames");
+      if (rendered.samples.length !== reference.samples.length) return failUncompared("channel counts differ");
+      const exact = regionStartFrameOf(row, pageRate);
+      if (isSeatedAt(rendered, reference, exact)) return pass(`the reference seated on frame ${exact}, bit for bit, ${reference.samples[0].length} frames`);
+      // A whole region a frame off is a seat; anything else is no seat at all, and no finding reads it.
+      const off = [-1, 1].find((offset) => isSeatedAt(rendered, reference, exact + offset));
+      if (off === undefined) return fail(`not the reference seated on frame ${exact}, nor a frame either side of it`);
+      return fail(`the reference seated on frame ${exact + off}, bit for bit, not on ${exact}`,
+        { ...NO_EVIDENCE, frameOffsets: { got: [off], predicted: [regionStartFrameFromEngine(row, pageRate) - exact] } });
+    }
+    case "jumps-crossfade": {
+      const missing = needs("reference", refs.reference);
+      if (missing !== null) return missing;
+      const reference = refs.reference!;
+      if (hasNoFrames(rendered) || hasNoFrames(reference)) return failUncompared("a render holds no frames");
+      if (rendered.samples.length !== reference.samples.length) return failUncompared("channel counts differ");
+      const segments = playbackSegments(row, pageRate);
+      const last = segments[segments.length - 1];
+      if (rendered.samples[0].length < last.out + last.length) return failUncompared(`${rendered.samples[0].length} frames, the playback is ${last.out + last.length}`);
+      const reach = Math.max(...segments.map(({ src, length }) => src + length), ...segments.map((s, i) => (i > 0 && s.jump ? segments[i - 1].src + segments[i - 1].length + fadeLength(pageRate) : 0)));
+      if (reference.samples[0].length < reach) return failUncompared(`the reference holds ${reference.samples[0].length} frames, the model reads to ${Math.ceil(reach)}`);
+      const jumps = segments.filter(({ jump }) => jump).map(({ out }) => out);
+      if (jumps.length === 0) return failUncompared("no jump in the range, so nothing is proven");
+      const { largest, frame } = segmentResidue(rendered, reference, segments, fadeLength(pageRate));
+      const detail = `jumps at [${jumps.join(", ")}], largest residue ${largest} at frame ${frame}, limit ${CROSSFADE_TOLERANCE}`;
+      return largest <= CROSSFADE_TOLERANCE ? pass(detail) : fail(detail);
     }
     case "impulse-unmoved-by-latency": {
       const missing = needs("no-latency", refs.noLatency);
@@ -337,7 +464,7 @@ const judge = (
     case "frames-as-expected": {
       const expected = expectedFrames(row, pageRate);
       const detail = `${read.frames} frames, expected ${expected}`;
-      return read.frames === expected ? pass(detail) : fail(detail);
+      return read.frames === expected ? pass(detail) : fail(detail, { ...NO_EVIDENCE, comparedFrames: read.frames });
     }
     case "latency-as-expected": {
       const expected = expectedLatencyFrames(row.latencyCase, pageRate);

@@ -238,6 +238,215 @@ describe("judgeInvariants", () => {
       expect(result.detail).toContain("no impulse in the range");
     });
   });
+  describe("clicks-on-beat-frame", () => {
+    const metronomeRow = (rate: number): ExportRow => buildRows(rate).find((x) => x.id === "stems-none-stems-metronome")!;
+    // six channels, the metronome's stem last; a click is 0 on its first frame and sounds from the next
+    const stems = (rate: number, clickFrames: number[]): RenderedRow => {
+      const frames = 4 * rate;
+      const channels = Array.from({ length: 6 }, () => new Float32Array(frames));
+      for (const start of clickFrames) for (let i = 1; i < 50; i++) channels[4][start + i] = 0.3;
+      return { read: read({ frames, channels: 6 }), samples: channels, reportedLatencyFrames: 0, repeatHash: null };
+    };
+    const beats = (rate: number): number[] => Array.from({ length: 8 }, (_, k) => (k * rate) / 2);
+    const judged = (rate: number, clicks: number[]) => one("clicks-on-beat-frame", metronomeRow(rate), stems(rate, clicks), {}, rate);
+
+    it("holds every click on its beat's frame at both rates", () => {
+      for (const rate of [48000, 44100]) expect(judged(rate, beats(rate)).holds, String(rate)).toBe(true);
+    });
+    it("refuses a render without the metronome's stem rather than reading the bed's as clicks", () => {
+      const four = stems(48000, beats(48000));
+      const result = one("clicks-on-beat-frame", metronomeRow(48000), { ...four, samples: four.samples.slice(2) }, {}, 48000);
+      expect([result.holds, result.finding]).toEqual([false, null]);
+      expect(result.detail).toContain("6 expected");
+    });
+    it("names the in-block rounding on exactly the clicks the engine's arithmetic places early, and only there", () => {
+      const early = beats(48000).map((frame) => (frame === 24000 || frame === 72000 ? frame - 1 : frame));
+      const result = judged(48000, early);
+      expect(result.holds).toBe(false);
+      expect(result.finding).toBe("in-block-pulse-rounds-early");
+      const at44 = beats(44100).map((frame) => (frame >= 110250 ? frame - 1 : frame));
+      expect(judged(44100, at44).finding).toBe("in-block-pulse-rounds-early");
+    });
+    it("names nothing on a click early where the arithmetic puts it on its frame, or late, or missing", () => {
+      const wrongClick = judged(48000, beats(48000).map((frame) => (frame === 24000 ? frame - 1 : frame)));
+      expect([wrongClick.holds, wrongClick.finding]).toEqual([false, null]);
+      const late = judged(48000, beats(48000).map((frame) => (frame === 24000 ? frame + 1 : frame)));
+      expect([late.holds, late.finding]).toEqual([false, null]);
+      const missing = judged(48000, beats(48000).slice(1));
+      expect([missing.holds, missing.finding]).toEqual([false, null]);
+    });
+  });
+
+  describe("a region that starts inside a block", () => {
+    const regionRow = (rate: number, tag: string): ExportRow => buildRows(rate).find((x) => x.id === `in-block-none-region-start-${tag}`)!;
+    const hitsAt = (start: number, offset = 0): number[] => IMPULSE_SOURCE_FRAMES.map((f) => f + start + offset);
+
+    it("holds the impulses to the region's exact start plus their source frames", () => {
+      const r = regionRow(48000, "predicted-early");
+      const start = r.regionStartPpqn * 25;
+      expect(one("impulse-on-computed-frame", r, rendered([0], {}, { impulseHits: hitsAt(start) })).holds).toBe(true);
+    });
+    it("names the in-block rounding on a region the arithmetic starts a frame early, and not on one it starts on time", () => {
+      const early = regionRow(48000, "predicted-early");
+      const result = one("impulse-on-computed-frame", early, rendered([0], {}, { impulseHits: hitsAt(early.regionStartPpqn * 25, -1) }));
+      expect([result.holds, result.finding]).toEqual([false, "in-block-pulse-rounds-early"]);
+      const onTime = regionRow(48000, "predicted-on-time");
+      const off = one("impulse-on-computed-frame", onTime, rendered([0], {}, { impulseHits: hitsAt(onTime.regionStartPpqn * 25, -1) }));
+      expect([off.holds, off.finding]).toEqual([false, null]);
+    });
+  });
+
+  describe("region-seated-on-start", () => {
+    const rowAt = (tag: string): ExportRow => buildRows(48000).find((x) => x.id === `in-block-none-region-start-${tag}`)!;
+    const reference = (() => {
+      const left = new Float32Array(4800);
+      const right = new Float32Array(4800);
+      for (let i = 0; i < left.length; i++) left[i] = 0.5 * Math.sin(i / 7);
+      right[1000] = 0.9;
+      return [left, right];
+    })();
+    const seated = (seat: number, frames: number): RenderedRow => {
+      const channels = reference.map((channel) => {
+        const out = new Float32Array(frames);
+        out.set(channel.subarray(0, Math.max(0, frames - seat)), seat);
+        return out;
+      });
+      return { read: read({ frames, channels: 2 }), samples: channels, reportedLatencyFrames: 0, repeatHash: null };
+    };
+    const refRow: RenderedRow = { read: read({ frames: 4800, channels: 2 }), samples: reference, reportedLatencyFrames: 0, repeatHash: null };
+    const judged = (tag: string, seat: number, frames = 60000) => one("region-seated-on-start", rowAt(tag), seated(seat, frames), { reference: refRow });
+
+    it("holds a render that is silence, then the reference from the region's exact start, bit for bit", () => {
+      expect(judged("predicted-early", 48250).holds).toBe(true);
+      expect(judged("predicted-on-time", 48025).holds).toBe(true);
+    });
+    it("names the in-block rounding on the whole region a frame early where the arithmetic puts it, and nothing elsewhere", () => {
+      const early = judged("predicted-early", 48249);
+      expect([early.holds, early.finding]).toEqual([false, "in-block-pulse-rounds-early"]);
+      expect(early.detail).toContain("seated on frame 48249");
+      const onTime = judged("predicted-on-time", 48024);
+      expect([onTime.holds, onTime.finding]).toEqual([false, null]);
+      const late = judged("predicted-early", 48251);
+      expect([late.holds, late.finding]).toEqual([false, null]);
+    });
+    it("names nothing on a region two frames off, a sound in the head, or a render too short for the reference", () => {
+      expect(judged("predicted-early", 48248).finding).toBeNull();
+      const noisy = seated(48249, 60000);
+      noisy.samples[0][100] = 1e-6;
+      const result = one("region-seated-on-start", rowAt("predicted-early"), noisy, { reference: refRow });
+      expect([result.holds, result.finding]).toEqual([false, null]);
+      expect(judged("predicted-early", 48249, 48249 + 4799).finding).toBeNull();
+    });
+  });
+
+  describe("a region that starts inside a block, at 44.1 kHz", () => {
+    const regionRow = (tag: string): ExportRow => buildRows(44100).find((x) => x.id === `in-block-none-region-start-${tag}`)!;
+    const startOf = (r: ExportRow): number => Math.round((r.regionStartPpqn * 44100) / 1920);
+    const judged = (r: ExportRow, offset: number) =>
+      one("impulse-on-computed-frame", r, rendered([0], {}, { impulseHits: IMPULSE_SOURCE_FRAMES.map((f) => f + startOf(r) + offset) }), {}, 44100);
+
+    it("holds the exact start, names a start a frame early where the arithmetic puts it, and nothing where it does not", () => {
+      expect(judged(regionRow("predicted-early"), 0).holds).toBe(true);
+      const early = judged(regionRow("predicted-early"), -1);
+      expect([early.holds, early.finding]).toEqual([false, "in-block-pulse-rounds-early"]);
+      const onTime = judged(regionRow("predicted-on-time"), -1);
+      expect([onTime.holds, onTime.finding]).toEqual([false, null]);
+    });
+  });
+
+  describe("playback through markers and wraps", () => {
+    const tone = (frames: number): Float32Array => {
+      const out = new Float32Array(frames);
+      for (let i = 0; i < frames; i++) out[i] = 0.5 * Math.sin((2 * Math.PI * 997 * i) / 48000) + (i % 5000 === 0 ? 0.4 : 0);
+      return out;
+    };
+    const reference = tone(4 * 48000);
+    const asRendered = (channel: Float32Array): RenderedRow =>
+      ({ read: read({ frames: channel.length }), samples: [channel], reportedLatencyFrames: 0, repeatHash: null });
+    const rowOf = (id: string): ExportRow => buildRows(48000).find((x) => x.id === id)!;
+    // the model written out by hand, apart from the verdict's: before, the read it left fading out; after, the new read
+    const crossfaded = (frames: number, jump: number, from: number, left: number, fadeIn: boolean, until: number, after: number): Float32Array => {
+      const out = new Float32Array(frames);
+      for (let f = 0; f < frames; f++) {
+        if (f < jump) out[f] = reference[f];
+        else if (f < until) {
+          const i = f - jump;
+          out[f] = Math.fround(reference[from + i] * (fadeIn ? Math.min(1, i / 240) : 1) + reference[left + i] * Math.max(0, 1 - i / 240));
+        } else out[f] = reference[after + f - until];
+      }
+      return out;
+    };
+
+    // every pass starts on the region's start, the read it left fading out over the first 240 frames
+    const looped = (loop: number): Float32Array => {
+      const out = new Float32Array(192000);
+      for (let f = 0; f < out.length; f++) {
+        const i = f % loop;
+        out[f] = f < loop ? reference[f] : Math.fround(reference[i] + reference[loop + i] * Math.max(0, 1 - i / 240));
+      }
+      return out;
+    };
+    it("holds a wrap to the region's start that fades only the read it left, at every wrap", () => {
+      const r = rowOf("wrap-none-loop-on-copy-block-end-minus-1");
+      const loop = r.loopEndPpqn! * 25;
+      const result = one("jumps-crossfade", r, asRendered(looped(loop)), { reference: asRendered(reference) });
+      expect(result.holds, result.detail).toBe(true);
+      expect(result.detail).toContain(`jumps at [${loop}, ${2 * loop}]`);
+    });
+    it("fails a wrap whose jump was lost: no old read fading under the new pass", () => {
+      const r = rowOf("wrap-none-loop-on-copy-block-end-minus-1");
+      const loop = r.loopEndPpqn! * 25;
+      const render = looped(loop);
+      for (let i = 0; i < 240; i++) render[2 * loop + i] = reference[i];
+      const result = one("jumps-crossfade", r, asRendered(render), { reference: asRendered(reference) });
+      expect(result.holds).toBe(false);
+      const frame = Number(/at frame (\d+)/.exec(result.detail)![1]);
+      expect(frame).toBeGreaterThanOrEqual(2 * loop);
+      expect(frame).toBeLessThan(2 * loop + 240);
+    });
+    it("fails a render holding a NaN, inside a fade window and outside one, as an infinite residue", () => {
+      const r = rowOf("wrap-none-loop-on-copy-block-end-minus-1");
+      const loop = r.loopEndPpqn! * 25;
+      for (const frame of [2 * loop + 10, Math.round(loop / 2)]) {
+        const render = looped(loop);
+        render[frame] = Number.NaN;
+        const result = one("jumps-crossfade", r, asRendered(render), { reference: asRendered(reference) });
+        expect(result.holds, String(frame)).toBe(false);
+        expect(result.detail).toContain("Infinity");
+      }
+    });
+    it("holds a section played twice that falls through, its repeat fading in, and fails one that never falls through", () => {
+      const r = rowOf("marker-none-plays2-block-end");
+      const twice = crossfaded(240000, 96000, 48000, 96000, true, 144000, 96000);
+      expect(one("jumps-crossfade", r, asRendered(twice), { reference: asRendered(reference) }).holds).toBe(true);
+      const thrice = crossfaded(240000, 96000, 48000, 96000, true, 240000, 0);
+      expect(one("jumps-crossfade", r, asRendered(thrice), { reference: asRendered(reference) }).holds).toBe(false);
+    });
+    it("reads no old read past its window, where the section is longer than what follows it in the reference", () => {
+      // 44.1 kHz, the section's end inside a block at 3.2 s: the repeat lasts 97020 frames, the reference past 3.2 s 35280
+      const r = buildRows(44100).find((x) => x.id === "marker-none-plays2-mid-block")!;
+      const ref = new Float32Array(176400);
+      for (let i = 0; i < ref.length; i++) ref[i] = 0.5 * Math.sin((2 * Math.PI * 997 * i) / 44100);
+      const out = new Float32Array(273420);
+      for (let f = 0; f < out.length; f++) {
+        if (f < 141120) out[f] = ref[f];
+        else if (f < 238140) {
+          const i = f - 141120;
+          out[f] = Math.fround(ref[44100 + i] * Math.min(1, i / 220.5) + (i < 220.5 ? ref[141120 + i] * (1 - i / 220.5) : 0));
+        } else out[f] = ref[141120 + f - 238140];
+      }
+      const result = one("jumps-crossfade", r, asRendered(out), { reference: asRendered(ref) }, 44100);
+      expect(result.holds, result.detail).toBe(true);
+    });
+    it("carries the reference's hits through the section's two passes and on", () => {
+      const r = rowOf("marker-none-plays2-block-end");
+      const judged = (hits: number[]) => one("impulse-follows-playback", r, rendered([0], {}, { impulseHits: hits }),
+        { reference: rendered([0], {}, { impulseHits: [4096, 24037, 72064, 120037, 168064] }) });
+      expect(judged([4096, 24037, 72064, 120064, 168037, 216064]).holds).toBe(true);
+      expect(judged([4096, 24037, 72064, 120037, 168064]).holds).toBe(false);
+    });
+  });
+
   it("holds repeat-identical on equal hashes and fails without a repeat", () => {
     expect(one("repeat-identical", row(), rendered([1], { repeatHash: "h" })).holds).toBe(true);
     expect(one("repeat-identical", row(), rendered([1], { repeatHash: "g" })).holds).toBe(false);

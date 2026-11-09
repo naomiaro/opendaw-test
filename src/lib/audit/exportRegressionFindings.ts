@@ -1,5 +1,5 @@
 // Plain Node must load this file: the table script reads it, so no SDK value imports.
-import { expectedLatencyFrames, LOOP_ON_COPY_SECONDS, type ExportRow, type InvariantId } from "./exportRegressionRows.ts";
+import { expectedLatencyFrames, loopOnCopyFrames, type ExportRow, type InvariantId } from "./exportRegressionRows.ts";
 
 /** How far a row may sit from the reference: between `low` and `high` times it, per frame, on a read offset by `readOffset` frames. */
 export type GainBand = {
@@ -30,6 +30,8 @@ export type FindingEvidence = {
   wrapResidue: (wrap: number, fade: number) => number;
   /** The reference's peak over the row's range. */
   referenceRangePeak: () => number;
+  /** Per event, frames off its exact frame as rendered and as the engine's own arithmetic places it; null where the counts differ. */
+  frameOffsets: { got: readonly number[]; predicted: readonly number[] } | null;
 };
 
 export const NO_EVIDENCE: FindingEvidence = {
@@ -39,7 +41,8 @@ export const NO_EVIDENCE: FindingEvidence = {
   sameDelayedBy: () => false,
   headPeak: () => Infinity,
   wrapResidue: () => Infinity,
-  referenceRangePeak: () => Infinity
+  referenceRangePeak: () => Infinity,
+  frameOffsets: null
 };
 
 /** A claim that a behaviour has been read and is understood, not that it is right: the note says what was read. */
@@ -54,7 +57,7 @@ export type KnownFinding = {
 const rangeFrames = (row: ExportRow, pageRate: number): number => Math.round(row.rangeSeconds * pageRate);
 
 // crates/engine/src/audio_region_player.rs JUMP_FADE_DURATION, in frames of the page; 220.5 at 44.1 kHz counts down over 221
-const fadeLength = (pageRate: number): number => 0.005 * pageRate;
+export const fadeLength = (pageRate: number): number => 0.005 * pageRate;
 const fadeFrames = (pageRate: number): number => Math.ceil(fadeLength(pageRate));
 const rampOf = (pageRate: number) => (frame: number): number => Math.min(1, frame / fadeLength(pageRate));
 const unity = (): number => 1;
@@ -91,7 +94,13 @@ const fadedStart = (invariant: InvariantId, applies: KnownFinding["applies"]): K
     const offset = readOffset(row, pageRate);
     const ramp = rampOf(pageRate);
     const settled = fadeFrames(pageRate) + chainFrames(row);
-    return firstDifferingFrame === 0 && comparedFrames === rangeFrames(row, pageRate)
+    // `start` keeps a quarter second past a range it was given, so it compares more than the range, never less
+    const covered = comparedFrames !== null
+      && (row.exportRange
+        // the quarter second `render` keeps after the last sound, and the quantum it keeps that sound in
+        ? comparedFrames >= rangeFrames(row, pageRate) && comparedFrames <= rangeFrames(row, pageRate) + Math.ceil(0.25 * pageRate) + 128
+        : comparedFrames === rangeFrames(row, pageRate));
+    return firstDifferingFrame === 0 && covered
       && bandExcursion({ from: 0, to: settled, low: ramp, high: ramp, readOffset: offset }) <= windowTolerance(row)
       && bandExcursion({ from: settled, to: Infinity, low: unity, high: unity, readOffset: offset }) <= ROUNDING;
   }
@@ -124,6 +133,22 @@ const TRIMMED_FRAMES: Readonly<Record<number, number>> = { 48000: 81120, 44100: 
 // The doubled tone's largest step at each rate, rounded up from what was measured on every case.
 const WRAP_STEP_LIMIT: Readonly<Record<number, number>> = { 48000: 0.131, 44100: 0.142 };
 
+const inBlockRoundsEarly = (invariant: InvariantId, applies: KnownFinding["applies"]): KnownFinding => ({
+  name: "in-block-pulse-rounds-early",
+  invariant,
+  note: "a pulse inside a 128-frame block is converted from the block's start pulse and truncated, so an event on a whole frame can land one frame early: a metronome click at `floor(pulses_to_samples(beat - p0))` (crates/engine/src/metronome.rs:212), a region's start at `sample_of` (audio_region_player.rs:974-976), the whole region then the reference seated a frame early, bit for bit. Since 0.0.183 the block's start is exact and the error no longer builds up; this one rounding is what is left (upstream's #533 reply). Measured, not filed: the signature holds every event to the frame that arithmetic, written out in exportRegressionInBlock.ts, gives it",
+  applies,
+  signature: ({ frameOffsets }) =>
+    frameOffsets !== null && frameOffsets.got.length === frameOffsets.predicted.length
+    && frameOffsets.got.every((offset, i) => offset === frameOffsets.predicted[i])
+    && frameOffsets.got.some((offset) => offset !== 0)
+});
+
+// Measured: `render` keeps every quantum up to the one holding the last sound, then exactly a quarter second (0.0.183)
+const QUANTUM_FRAMES = 128;
+const renderedToSongEnd = (row: ExportRow, pageRate: number): number =>
+  Math.ceil(Math.round(row.seconds * pageRate) / QUANTUM_FRAMES) * QUANTUM_FRAMES + Math.round(0.25 * pageRate);
+
 export const KNOWN_FINDINGS: readonly KnownFinding[] = [
   {
     name: "merge-seam-reseats-read",
@@ -136,7 +161,7 @@ export const KNOWN_FINDINGS: readonly KnownFinding[] = [
         && bandExcursion({ from: 0, to: Infinity, low: unity, high: unity, readOffset: readOffset(row, pageRate, seam) }) <= ROUNDING;
     }
   },
-  fadedStart("section-is-slice", (row) => row.group === "core" && row.path.startsWith("section-marker")),
+  fadedStart("section-is-slice", (row) => (row.group === "core" && row.path.startsWith("section-marker")) || row.exportRange),
   fadedStart("samples-equal-reference", (row) => row.path.startsWith("setposition-")),
   {
     name: "jump-fade-cold-maximizer",
@@ -187,13 +212,23 @@ export const KNOWN_FINDINGS: readonly KnownFinding[] = [
     invariant: "no-jump",
     note: "at a loop wrap to a region's start the new read starts at full level and only the old one fades, over 5 ms (audio_region_player.rs:322 seeds the tail, :862 fades in only past the region start; upstream test transport_jump_to_the_region_start_keeps_the_onset): in phase the two sum, here a 0.5 sine reaching 0.975 for 240 frames at 48 kHz. The signature holds the whole render to that: the reference up to the wrap, the fresh pass and the fading old read over 5 ms, the fresh pass after, so no other jump passes under the wrap's step",
     applies: (row) => row.path === "loop-on-copy",
-    signature: ({ largestStep, wrapResidue }, _row, pageRate) => {
-      const wrap = LOOP_ON_COPY_SECONDS * pageRate;
+    signature: ({ largestStep, wrapResidue }, row, pageRate) => {
+      const wrap = loopOnCopyFrames(row, pageRate);
       return largestStep !== null && largestStep.frame === wrap + 1
         && largestStep.step <= (WRAP_STEP_LIMIT[pageRate] ?? -1)
         && wrapResidue(wrap, fadeLength(pageRate)) <= ROUNDING;
     }
-  }
+  },
+  {
+    name: "range-end-is-a-minimum",
+    invariant: "frames-as-expected",
+    note: "an `ExportConfiguration.range` passed to `start` sets the render's minimum length, not its end: `minDurationSeconds` is the range's length and `maxDurationSeconds` 30 s more (OfflineEngineRenderer.ts:271-282), and `render` stops only on 10 s of silence past the minimum (offline-worker.ts). A range ending inside sound comes back running on to the song's end, here 2 s of music past the range, then a quarter second, bit for bit the song. Upstream's plan records it (openDAW plans/issues/434-mixdown-sections.md:21-24: a range \"still renders a tail, never ends sample-exact\") and answered with `renderSection`; no studio caller passes a range",
+    applies: (row) => row.exportRange && row.path === "start",
+    signature: ({ comparedFrames }, row, pageRate) => comparedFrames === renderedToSongEnd(row, pageRate)
+  },
+  inBlockRoundsEarly("clicks-on-beat-frame", (row) => row.path === "stems-metronome"),
+  inBlockRoundsEarly("impulse-on-computed-frame", (row) => row.group === "in-block"),
+  inBlockRoundsEarly("region-seated-on-start", (row) => row.group === "in-block")
 ];
 
 export const findingFor = (

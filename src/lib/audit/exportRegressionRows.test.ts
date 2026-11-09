@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRows, expectedFrames, expectedLatencyFrames, lastReaders, LOOP_ON_COPY_SECONDS, selectRows, setPositionStart, SET_POSITION_SECONDS, type ExportRow, type InvariantId } from "./exportRegressionRows.ts";
+import { buildRows, expectedFrames, playbackSegments, expectedLatencyFrames, lastReaders, LOOP_ON_COPY_SECONDS, selectRows, setPositionStart, SET_POSITION_SECONDS, type ExportRow, type InvariantId } from "./exportRegressionRows.ts";
 
 describe("exportRegressionRows", () => {
   it("gives the latency figures the crates and the #530 note read", () => {
@@ -40,6 +40,9 @@ describe("exportRegressionRows", () => {
       "section-is-slice": "referenceId",
       "impulse-on-reference": "referenceId",
       "impulse-follows-loop": "referenceId",
+      "impulse-follows-playback": "referenceId",
+      "jumps-crossfade": "referenceId",
+      "region-seated-on-start": "referenceId",
       "disabled-equals-absent": "referenceId",
       "differs-from-reference": "referenceId",
       "stems-sum-to-mix": "referenceId",
@@ -121,7 +124,7 @@ describe("exportRegressionRows", () => {
   });
   it("reads a loop on the copy against the loop's pattern, never the unlooped reference's hits", () => {
     for (const rate of [48000, 44100]) {
-      const rows = buildRows(rate).filter((r) => r.path === "loop-on-copy");
+      const rows = buildRows(rate).filter((r) => r.path === "loop-on-copy" && r.group === "position");
       expect(rows.length).toBe(4);
       rows.forEach((r) => {
         expect(r.invariants, r.id).toContain("impulse-follows-loop");
@@ -140,7 +143,9 @@ describe("exportRegressionRows", () => {
       for (const r of rows) {
         const exact = r.path === "step-loop-twice" || r.path === "section-loop-twice" || r.group === "sweep"
           || (r.path.startsWith("bounce-") && r.path !== "bounce-tail")
-          || ["stems-fx", "stems-dry", "stems-sends", "stems-metronome", "stems-single-step"].includes(r.path);
+          || ["stems-fx", "stems-dry", "stems-sends", "stems-metronome", "stems-single-step"].includes(r.path)
+          // held to its range's frames on purpose: a range ending inside sound asks whether the render ends there
+          || r.id === "range-none-start-ends-in-sound";
         expect(held.includes(r), r.id).toBe(exact);
       }
       expect(held.filter((r) => r.group === "bounce")).toHaveLength(20);
@@ -209,9 +214,64 @@ describe("exportRegressionRows", () => {
       expect(rows.filter((r) => r.volumeDb !== 0).map((r) => r.id)).toEqual(taps.map(([id]) => id));
     }
   });
-  it("has 296 rows at each rate", () => {
-    expect(buildRows(48000)).toHaveLength(296);
-    expect(buildRows(44100)).toHaveLength(296);
+  it("has 308 rows at each rate", () => {
+    expect(buildRows(48000)).toHaveLength(308);
+    expect(buildRows(44100)).toHaveLength(308);
+  });
+  it("holds the metronome's stems to each beat's frame, and only those rows", () => {
+    for (const rate of [48000, 44100]) {
+      const held = buildRows(rate).filter((r) => r.invariants.includes("clicks-on-beat-frame"));
+      expect(held.map((r) => r.path), String(rate)).toEqual(Array(4).fill("stems-metronome"));
+      held.forEach((r) => expect(r.bpm, r.id).toBe(120));
+    }
+  });
+  it("starts the in-block rows' region inside a block, at the page's own rate, held to the computed frames", () => {
+    for (const rate of [48000, 44100]) {
+      const rows = buildRows(rate).filter((r) => r.group === "in-block");
+      expect(rows.map((r) => r.id)).toEqual(["in-block-none-region-start-predicted-early", "in-block-none-region-start-predicted-on-time"]);
+      for (const r of rows) {
+        const start = (r.regionStartPpqn * rate) / (16 * r.bpm);
+        expect(Number.isInteger(start) && start % 128 !== 0, r.id).toBe(true);
+        expect(r.sourceRate).toBe(rate);
+        expect(Math.round(r.rangeSeconds * rate)).toBe(start + 4 * rate);
+        expect(r.invariants).toContain("impulse-on-computed-frame");
+      }
+    }
+    expect(buildRows(48000).filter((r) => r.regionStartPpqn !== 0).every((r) => r.group === "in-block")).toBe(true);
+  });
+  it("plays the marker rows' first section twice on a block's end and inside one, once as a control, and through start", () => {
+    for (const rate of [48000, 44100]) {
+      const rows = buildRows(rate).filter((r) => r.group === "marker");
+      expect(rows.map((r) => [r.id, r.path, r.markerPlays])).toEqual([
+        ["marker-none-plays1-block-end", "step-one", 1], ["marker-none-plays2-block-end", "step-one", 2],
+        ["marker-none-plays2-mid-block", "step-one", 2], ["marker-none-plays2-block-end-start", "start", 2]]);
+      const ends = rows.map((r) => (r.markerPpqns![1] * rate) / 1920 % 128);
+      expect(ends, String(rate)).toEqual([0, 0, 64, 0]);
+      rows.forEach((r) => expect(r.sourceRate, r.id).toBe(rate));
+      expect(rows[3].referenceId).toBe("marker-none-plays2-block-end");
+      expect(rows[1].invariants).toEqual(expect.arrayContaining(["impulse-follows-playback", "jumps-crossfade"]));
+    }
+    expect(buildRows(48000).filter((r) => r.markerPpqns !== null).every((r) => r.group === "marker")).toBe(true);
+  });
+  it("lays a section played twice end to end over the range, the repeat alone a jump that fades in, and refuses what it cannot lay", () => {
+    const rows = buildRows(48000);
+    const twice = rows.find((r) => r.id === "marker-none-plays2-block-end")!;
+    const segments = playbackSegments(twice, 48000);
+    expect(segments.reduce((sum, s) => sum + s.length, 0)).toBe(Math.round(twice.rangeSeconds * 48000));
+    expect(segments.map(({ jump, fadeIn }) => [jump, fadeIn])).toEqual([[false, false], [true, true], [false, false]]);
+    expect(() => playbackSegments({ ...twice, markerPlays: 0 }, 48000)).toThrow(/never falls through/);
+    expect(() => playbackSegments(rows.find((r) => r.id === "core-none-step-one")!, 48000)).toThrow(/straight through/);
+  });
+  it("ends the wrap rows' loop on a block's end, its last frame and a frame past it", () => {
+    for (const rate of [48000, 44100]) {
+      const rows = buildRows(rate).filter((r) => r.group === "wrap");
+      expect(rows.map((r) => (r.loopEndPpqn! * rate) / 1920 % 128), String(rate)).toEqual([0, 127, 1]);
+      rows.forEach((r) => {
+        expect(r.path).toBe("loop-on-copy");
+        expect(r.invariants, r.id).toContain("jumps-crossfade");
+        expect(r.invariants, r.id).not.toContain("no-jump");
+      });
+    }
   });
 });
 
@@ -316,7 +376,8 @@ describe("the long tail rows", () => {
 describe("the gap rows", () => {
   const GAP_IDS = [
     "gap-none-step-one", "gap-none-start", "gap-none-section-entire",
-    "gap-none-stem-step", "gap-none-stem-start", "gap-none-stem-mix", "gap-none-stem-mix-start"
+    "gap-none-stem-step", "gap-none-stem-start", "gap-none-stem-mix", "gap-none-stem-mix-start",
+    "gap-none-range-start", "gap-none-range-stem-start"
   ];
 
   it("put a second 200 ms region of the same source at 16 s, and only these rows have one", () => {
@@ -327,7 +388,7 @@ describe("the gap rows", () => {
         expect(row.group, row.id).toBe("tail");
         expect(row.signal, row.id).toBe("tail");
         expect(row.latencyCase, row.id).toBe("none");
-        expect([row.seconds, row.rangeStartSeconds, row.secondRegionSeconds], row.id).toEqual([0.2, 0, 16]);
+        expect([row.seconds, row.rangeStartSeconds, row.secondRegionSeconds], row.id).toEqual([0.2, row.exportRange ? 0.1 : 0, 16]);
       }
     }
   });
@@ -386,7 +447,7 @@ describe("the gap rows", () => {
         expect(row.bedSeconds, id).toBe(18);
       }
       expect(buildRows(48000).filter((r) => r.bedSeconds !== null).map((r) => r.id).sort())
-        .toEqual(["gap-none-stem-mix", "gap-none-stem-mix-start", "gap-none-stem-start", "gap-none-stem-step"]);
+        .toEqual(["gap-none-range-stem-start", "gap-none-stem-mix", "gap-none-stem-mix-start", "gap-none-stem-start", "gap-none-stem-step"]);
     });
 
     it("show that same project's mix over the same span: what the stem's render cannot show", () => {

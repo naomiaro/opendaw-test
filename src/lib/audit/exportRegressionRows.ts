@@ -1,4 +1,5 @@
 // Plain Node must load this file: a script reads the catalogue, so no SDK value imports.
+import { exactFrame, ppqnAtBlockResidue, regionStartPpqn } from "./exportRegressionInBlock.ts";
 
 export type LatencyCaseId =
   | "none" | "autotune-muted" | "compressor-track" | "compressor-muted" | "maximizer-muted" | "fold-muted"
@@ -16,12 +17,13 @@ export type InvariantId =
   | "samples-equal-reference" | "samples-equal-warm-pass" | "section-is-slice" | "impulse-on-reference" | "impulse-follows-loop" | "impulse-unmoved-by-latency"
   | "impulse-on-computed-frame" | "no-jump" | "muted-latent-unchanged" | "disabled-equals-absent"
   | "stems-sum-to-mix" | "repeat-identical" | "tail-present" | "tail-absent" | "proves-something"
-  | "latency-as-expected" | "differs-from-reference" | "frames-as-expected";
+  | "latency-as-expected" | "differs-from-reference" | "frames-as-expected" | "clicks-on-beat-frame"
+  | "impulse-follows-playback" | "jumps-crossfade" | "region-seated-on-start";
 
 export type ExportRow = {
   id: string;
   label: string;
-  group: "core" | "master" | "stems" | "bounce" | "position" | "one-frame" | "tail" | "sweep" | "control";
+  group: "core" | "master" | "stems" | "bounce" | "position" | "one-frame" | "tail" | "sweep" | "in-block" | "marker" | "wrap" | "control";
   latencyCase: LatencyCaseId;
   path: PathId;
   signal: "probe" | "sweep" | "tail" | "hot";
@@ -44,6 +46,15 @@ export type ExportRow = {
   volumeDb: number;
   /** Where a second region of the same source starts, for the rows that put a long silence inside the song. */
   secondRegionSeconds: number | null;
+  /** Where the source's first region starts. Every row but the in-block ones keeps it at 0, a block's first frame. */
+  regionStartPpqn: number;
+  /** The loop `loop-on-copy` writes, from 0; null is `LOOP_ON_COPY_SECONDS`. */
+  loopEndPpqn: number | null;
+  /** Two markers on a step render, the first played `markerPlays` times. Null leaves the section paths' own markers. */
+  markerPpqns: readonly [number, number] | null;
+  markerPlays: number;
+  /** `start`, `stems-start` and `stems-single-start` pass the row's range as `ExportConfiguration.range`. */
+  exportRange: boolean;
   repeat: boolean;
   referenceId: string | null;
   noLatencyReferenceId: string | null;
@@ -85,6 +96,48 @@ export const SET_POSITION_SECONDS = 1;
 export const LOOP_ON_COPY_SECONDS = 2;
 
 const QUANTUM = 128;
+
+/** The loop a `loop-on-copy` row writes, from 0, in ppqn and in frames. */
+export const loopOnCopyPpqn = ({ loopEndPpqn, bpm }: ExportRow): number => loopEndPpqn ?? Math.round(LOOP_ON_COPY_SECONDS * 16 * bpm);
+export const loopOnCopyFrames = (row: ExportRow, pageRate: number): number => Math.round(exactFrame(loopOnCopyPpqn(row), row.bpm, pageRate));
+
+/** Where the source's first region starts, in frames of the page. */
+export const regionStartFrameOf = (row: ExportRow, pageRate: number): number => Math.round(exactFrame(row.regionStartPpqn, row.bpm, pageRate));
+
+/**
+ * What a render plays, in order: `length` frames from frame `src` of a render that ran straight through, written at
+ * `out`. `jump` marks a transport jump into the segment, where the old read fades out over the jump window and, past
+ * the region's start, the new read fades in over it.
+ */
+export type PlaybackSegment = { out: number; src: number; length: number; jump: boolean; fadeIn: boolean };
+
+export const playbackSegments = (row: ExportRow, pageRate: number): PlaybackSegment[] => {
+  const total = Math.round(row.rangeSeconds * pageRate);
+  const segments: PlaybackSegment[] = [];
+  let out = 0;
+  const push = (src: number, length: number, jump: boolean, fadeIn: boolean): void => {
+    const kept = Math.min(length, total - out);
+    if (kept <= 0) return;
+    segments.push({ out, src, length: kept, jump, fadeIn });
+    out += kept;
+  };
+  if (row.path === "loop-on-copy") {
+    // the loop starts on the region's start, so a wrap fades only the old read (audio_region_player.rs:862)
+    const loop = loopOnCopyFrames(row, pageRate);
+    push(0, loop, false, false);
+    while (out < total) push(0, loop, true, false);
+    return segments;
+  }
+  if (row.markerPpqns !== null) {
+    if (!(row.markerPlays >= 1)) throw new Error(`${row.id}: ${row.markerPlays} plays never falls through`);
+    const [first, second] = row.markerPpqns.map((ppqn) => Math.round(exactFrame(ppqn, row.bpm, pageRate)));
+    push(0, second, false, false);
+    for (let pass = 1; pass < row.markerPlays; pass++) push(first, second - first, true, first > regionStartFrameOf(row, pageRate));
+    push(second, total, false, false);
+    return segments;
+  }
+  throw new Error(`${row.id}: neither a loop on the copy nor markers, so it plays straight through`);
+};
 
 /** The frame a ppqn lands on: ppqn * 60 / (960 * bpm) seconds, written as one division. */
 const ppqnToFrame = (ppqn: number, bpm: number, pageRate: number): number => (ppqn * pageRate) / (16 * bpm);
@@ -140,9 +193,22 @@ const MASTER_PATHS: readonly PathId[] = [
 
 type Spec = Pick<ExportRow, "id" | "label" | "group" | "latencyCase" | "path"> & Partial<ExportRow>;
 
+/** A field only some paths read: a row that sets it on another path would render without it and say nothing. */
+const assertFieldsRead = (row: ExportRow): ExportRow => {
+  const unread = [
+    row.exportRange && !["start", "stems-start", "stems-single-start"].includes(row.path) ? "exportRange" : null,
+    row.loopEndPpqn !== null && row.path !== "loop-on-copy" ? "loopEndPpqn" : null,
+    // `renderSection` turns the marker track off
+    row.markerPpqns !== null && !["step-one", "start"].includes(row.path) ? "markerPpqns" : null,
+    row.markerPpqns === null && row.markerPlays !== 1 ? "markerPlays" : null
+  ].filter((field) => field !== null);
+  if (unread.length > 0) throw new Error(`${row.id}: ${row.path} does not read ${unread.join(", ")}`);
+  return row;
+};
+
 const make = (spec: Spec): ExportRow => {
   const seconds = spec.seconds ?? 4;
-  return {
+  return assertFieldsRead({
     signal: "probe",
     sourceRate: 48000,
     seconds,
@@ -158,13 +224,18 @@ const make = (spec: Spec): ExportRow => {
     engagedCompressor: false,
     volumeDb: 0,
     secondRegionSeconds: null,
+    regionStartPpqn: 0,
+    loopEndPpqn: null,
+    markerPpqns: null,
+    markerPlays: 1,
+    exportRange: false,
     repeat: false,
     referenceId: null,
     noLatencyReferenceId: null,
     warmReferenceId: null,
     invariants: [],
     ...spec
-  };
+  });
 };
 
 const coreId = (latencyCase: LatencyCaseId, path: PathId): string => `core-${latencyCase}-${path}`;
@@ -270,7 +341,12 @@ const buildStems = (): ExportRow[] => {
       rows.push(make({
         id: `stems-${latencyCase}-${path}`, label: `${latencyCase} through ${path}`,
         group: "stems", latencyCase, path, withBed: true, referenceId: mixId,
-        invariants: [...basics(), "frames-as-expected", ...(path === "stems-fx" ? ["stems-sum-to-mix" as const] : [])]
+        invariants: [
+          ...basics(), "frames-as-expected",
+          ...(path === "stems-fx" ? ["stems-sum-to-mix" as const] : []),
+          // 120 bpm: every beat is a whole frame at both page rates, so each click has one frame to start on
+          ...(path === "stems-metronome" ? ["clicks-on-beat-frame" as const] : [])
+        ]
       }));
     }
     for (const path of STEMS_ROUTE_PATHS) {
@@ -370,6 +446,8 @@ const buildOneFrame = (pageRate: number): ExportRow[] => {
 const TAIL_BURST_SECONDS = 0.2;
 const GAP_SECOND_REGION_SECONDS = 16;
 const GAP_SPAN_SECONDS = 18;
+/** Inside the first burst, so the range holds sound before the gap: a range that starts silent never counts its silence. */
+const GAP_RANGE_START_SECONDS = 0.1;
 
 /**
  * A long silence inside the song: 200 ms at 0 and at 16 s. These rows take no Reverb (`rowTakesReverb`), so the gap is
@@ -406,6 +484,18 @@ const buildGap = (common: Pick<ExportRow, "group" | "latencyCase" | "signal">): 
     make({
       ...bedded, id: "gap-none-stem-mix-start", label: "silent gap, the stem rows' project as a mix, start", path: "start",
       rangeSeconds: end, referenceId: "gap-none-stem-mix", invariants: [...basics(), "section-is-slice"]
+    }),
+    // The gap inside an `ExportConfiguration.range` that is not the song: the render's minimum is the range's length.
+    // The range starts inside the first burst, a jump into a region, so its first 5 ms fade in.
+    make({
+      ...gap, id: "gap-none-range-start", label: "silent gap inside an export range from 0.1 s, start", path: "start",
+      exportRange: true, rangeStartSeconds: GAP_RANGE_START_SECONDS, rangeSeconds: end - GAP_RANGE_START_SECONDS, referenceId,
+      invariants: [...basics(), "section-is-slice"]
+    }),
+    make({
+      ...bedded, id: "gap-none-range-stem-start", label: "silent gap inside an export range from 0.1 s, the source's stem alone, start",
+      path: "stems-single-start", exportRange: true, rangeStartSeconds: GAP_RANGE_START_SECONDS,
+      rangeSeconds: end - GAP_RANGE_START_SECONDS, referenceId: "gap-none-stem-step", invariants: [...basics(), "section-is-slice"]
     })
   ];
 };
@@ -432,7 +522,13 @@ const buildTail = (): ExportRow[] => {
     tailRow("bounce-pre-fader", ["frames-as-expected", "tail-absent"], ringing),
     // the 200 ms of content has ended before 1 s: what the reference holds in the range is the ringing reverb
     tailRow("section-marker", ["section-is-slice"], { ...withWindow("section-marker", 4) }),
-    ...buildGap(common)
+    ...buildGap(common),
+    // A range that ends while the probe still sounds, held to the range's own frames: what comes after its end?
+    make({
+      id: "range-none-start-ends-in-sound", label: "an export range 0..2 s of a 4 s probe that sounds throughout, start",
+      group: "tail", latencyCase: "none", path: "start", exportRange: true, rangeSeconds: 2,
+      referenceId: coreId("none", "step-one"), invariants: [...basics(), "section-is-slice", "frames-as-expected"]
+    })
   ];
 };
 
@@ -450,6 +546,79 @@ const buildSweep = (pageRate: number): ExportRow[] => {
     }
   }
   return rows;
+};
+
+/** A render of the source at the page's own rate, 4 s at 120 bpm: no resampling, so a read seated anywhere is exact. */
+const sameRateReference = (pageRate: number): string => `one-frame-none-step-one-${pageRate}-4-120`;
+
+/**
+ * A region that starts inside a block, on a whole frame: the engine converts its start from the block's start pulse
+ * (`sample_of`), which can land one frame early. One start the engine's arithmetic places early, one it places on its
+ * frame, both near 1 s; `exportRegressionInBlock.ts` writes that arithmetic out.
+ */
+const buildInBlock = (pageRate: number): ExportRow[] =>
+  ([["predicted-early", true], ["predicted-on-time", false]] as const).map(([tag, early]) => {
+    const bpm = 120;
+    const ppqn = regionStartPpqn(1, bpm, pageRate, early);
+    return make({
+      id: `in-block-none-region-start-${tag}`, label: `a region starting inside a block at ppqn ${ppqn}, ${tag}`,
+      group: "in-block", latencyCase: "none", path: "step-one", sourceRate: pageRate, bpm, regionStartPpqn: ppqn,
+      rangeSeconds: exactFrame(ppqn, bpm, pageRate) / pageRate + 4, referenceId: sameRateReference(pageRate),
+      invariants: [...basics(), "impulse-on-computed-frame", "region-seated-on-start"]
+    });
+  });
+
+const MARKER_FIRST_PPQN = 1920;
+
+/**
+ * Two markers on a step render, the first section played twice and then falling through. A section's end on a
+ * block's end is the case 0.0.183 fixed (a marker there was missed); one inside a block is the control. Played once,
+ * the markers change nothing. At the page's own rate, so the read seated at the jump is the reference's, exactly.
+ */
+const buildMarker = (pageRate: number): ExportRow[] => {
+  const bpm = 120;
+  const referenceId = sameRateReference(pageRate);
+  const common = { group: "marker" as const, latencyCase: "none" as const, sourceRate: pageRate, bpm, referenceId };
+  const ends = { "block-end": ppqnAtBlockResidue(2, bpm, pageRate, 0), "mid-block": ppqnAtBlockResidue(2, bpm, pageRate, 64) };
+  const sectionSeconds = (end: number): number => (exactFrame(end, bpm, pageRate) - exactFrame(MARKER_FIRST_PPQN, bpm, pageRate)) / pageRate;
+  const played = (tag: keyof typeof ends): Partial<ExportRow> => ({
+    markerPpqns: [MARKER_FIRST_PPQN, ends[tag]], markerPlays: 2, rangeSeconds: 4 + sectionSeconds(ends[tag])
+  });
+  return [
+    make({
+      ...common, id: "marker-none-plays1-block-end", label: "markers, the first section played once, its end on a block's end",
+      path: "step-one", markerPpqns: [MARKER_FIRST_PPQN, ends["block-end"]], markerPlays: 1,
+      invariants: [...basics(), "samples-equal-reference"]
+    }),
+    ...(["block-end", "mid-block"] as const).map((tag) => make({
+      ...common, id: `marker-none-plays2-${tag}`, label: `markers, the first section played twice, its end ${tag === "block-end" ? "on a block's end" : "inside a block"}`,
+      path: "step-one", ...played(tag), invariants: [...basics(), "impulse-follows-playback", "jumps-crossfade"]
+    })),
+    // `start` leaves the markers on (`renderSection` turns them off), so the song plays as the stepped render does.
+    make({
+      ...common, id: "marker-none-plays2-block-end-start", label: "markers, the first section played twice, through start",
+      path: "start", ...played("block-end"), referenceId: "marker-none-plays2-block-end", invariants: [...basics(), "section-is-slice"]
+    })
+  ];
+};
+
+/**
+ * A loop on the copy whose end is on a block's end, its last frame, or a frame past it: the wrap's jump must reach the
+ * block after it (0.0.183 fixed a wrap on a block's end losing the flag), and `jumps-crossfade` sees whether it did.
+ */
+const buildWrap = (pageRate: number): ExportRow[] => {
+  const bpm = 120;
+  return ([["block-end", 0], ["block-end-minus-1", -1], ["block-end-plus-1", 1]] as const).map(([tag, residue]) => {
+    // From 1.5 s: at 44.1 kHz a whole frame on a given residue comes round only every 4096 ppqn, and from 2 s the
+    // last-frame end would be 3.75 s, leaving the second pass a quarter second.
+    const loopEndPpqn = ppqnAtBlockResidue(1.5, bpm, pageRate, residue);
+    return make({
+      id: `wrap-none-loop-on-copy-${tag}`, label: `a loop on the copy to ppqn ${loopEndPpqn}, its end ${tag}`,
+      group: "wrap", latencyCase: "none", path: "loop-on-copy", sourceRate: pageRate, bpm, loopEndPpqn,
+      referenceId: sameRateReference(pageRate),
+      invariants: [...basics(), "samples-equal-reference", "impulse-follows-loop", "jumps-crossfade"]
+    });
+  });
 };
 
 const bounceTap = (path: "bounce-pre-fx" | "bounce-pre-fader" | "bounce-post-fader", referenceId: string, held: InvariantId): ExportRow =>
@@ -504,7 +673,7 @@ export const buildRows = (pageRate: number): ExportRow[] =>
   [
     ...buildCore(pageRate), ...buildMaster(pageRate), ...buildStems(), ...buildBounce(),
     ...buildPosition(pageRate), ...buildOneFrame(pageRate), ...buildTail(), ...buildSweep(pageRate),
-    ...buildControl()
+    ...buildInBlock(pageRate), ...buildMarker(pageRate), ...buildWrap(pageRate), ...buildControl()
   ].map((row) => REPEATED_CASES.includes(row.latencyCase)
     ? { ...row, repeat: true, invariants: [...row.invariants, "repeat-identical" as const] }
     : row);
