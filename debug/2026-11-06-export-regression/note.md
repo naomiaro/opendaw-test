@@ -70,7 +70,7 @@ SDK 0.0.182, engine `9c44973549a7`, the device at 44100 (read in `system_profile
 | `loop-pass-one-frame-short` | 2 | 17 | [openDAW#533](https://github.com/andremichelle/openDAW/issues/533): [body](./drafts/posted-openDAW-533-loop-pass-one-frame-short.md); **fixed in 0.0.183, label retired** |
 | `loop-bounce-last-frame-silent` | 0 | 4 (the same rows as 4 of the 17) | in the same draft; **fixed in 0.0.183, label retired** |
 | `trailing-silence-trimmed` | 2 | 2 | by design, the user's read; not raised upstream |
-| `range-end-is-a-minimum` | 1 | 1 | measured 2026-11-09, the user's call; not asked upstream |
+| `range-end-is-a-minimum` | 1 | 1 | measured 2026-11-09; a question for upstream is drafted, waiting for the user's read |
 | `in-block-pulse-rounds-early` | 5 | 5 | measured on 0.0.183 (4 metronome stems, 1 region start); a new-issue draft waits for the user's read, [below](#after-533-and-534-four-groups-of-rows-from-upstreams-replies) |
 | `jump-fade-at-start` | 32 | 32 | the user's call (30, and the 2 export-range gap rows added on 2026-11-09) |
 | `jump-fade-cold-maximizer` | 2 | 2 | the user's call |
@@ -452,7 +452,7 @@ matches only a render that ran to the song's last quantum and a quarter second, 
 No demo here passes a `range`. The demos' range exports step an exact frame count (`src/lib/rangeExport.ts`, whose header already
 says `render` "would render past the range while content continues", and `renderOfflineSlice`), and `start` serves only the full song.
 So this costs the demos nothing; it is for other callers of the SDK. Whether a range's end is meant as a minimum is a question for
-upstream, not yet asked.
+upstream, drafted for the user's read: [`drafts/TO-REVIEW-openDAW-export-range-end-is-a-minimum.md`](./drafts/TO-REVIEW-openDAW-export-range-end-is-a-minimum.md).
 
 
 

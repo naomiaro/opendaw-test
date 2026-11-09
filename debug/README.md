@@ -9,6 +9,7 @@ Drafts that are written and not posted. Find them at any time with `ls debug/*/d
 From the export regression harness, 2026-11-06 (the two openDAW drafts were filed as openDAW#533 and #534 on 2026-11-08):
 
 - [A region that starts on a whole frame inside a block plays one frame early — openDAW, new issue](./2026-11-06-export-regression/drafts/TO-REVIEW-openDAW-region-start-inside-a-block-one-frame-early.md): measured at both rates on the `in-block` rows (2026-11-09), the metronome as the same cause. The repro link needs PR #221 merged and deployed.
+- [Question: is `ExportConfiguration.range`'s end meant as a minimum? — openDAW, new issue](./2026-11-06-export-regression/drafts/TO-REVIEW-openDAW-export-range-end-is-a-minimum.md): measured 2026-11-09 on `range-none-start-ends-in-sound`, a range of 0..2 s returns the whole 4 s song; framed as a question. The repro link needs PR #221 merged and deployed.
 - [`createSyncAccessHandle`'s promise does not settle under allocation pressure — Chromium, NOT READY TO POST](./2026-11-06-export-regression/drafts/TO-REVIEW-chromium-sync-access-handle-does-not-settle.md): reproduced without the SDK. Its head lists the evidence still missing. The tracker search is done, no matching issue.
 
 
