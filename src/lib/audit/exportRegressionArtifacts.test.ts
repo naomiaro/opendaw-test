@@ -279,5 +279,24 @@ describe("staleFindings", () => {
     const oneFailing = rows.map((r, index) => (index > 0 ? held(r.id) : failingOn(held(r.id))));
     expect(staleFindings(summary(oneFailing, { sampleRate: 44100 })).map((s) => s.name)).not.toContain(LABEL);
   });
+  it("holds a name with two entries live while either entry's invariant still fails", () => {
+    // `range-missing-tail` labels one row on two invariants. One entry going stale must not report the name while the
+    // other's invariant still fails; with both holding it is reported, on a second invariant than section-is-slice.
+    const NAME = "range-missing-tail";
+    const ID = "tail-none-section-marker";
+    const row = buildRows(48000).find((r) => r.id === ID)!;
+    const withHolding = (failing: readonly string[]): RowRecord => record({
+      id: ID,
+      invariants: row.invariants.map((invariant) => ({
+        invariant, holds: !failing.includes(invariant), detail: "", finding: failing.includes(invariant) ? NAME : null
+      }))
+    });
+    expect(row.invariants).toEqual(expect.arrayContaining(["proves-something", "section-is-slice"]));
+    for (const failing of [["section-is-slice"], ["proves-something"]]) {
+      expect(staleFindings(summary([withHolding(failing)], { sampleRate: 48000 })).map((s) => s.name), failing[0]).not.toContain(NAME);
+    }
+    const stale = staleFindings(summary([withHolding([])], { sampleRate: 48000 }));
+    expect(stale.find((s) => s.name === NAME)?.rows).toEqual([ID]);
+  });
   it("is the schema constant", () => expect(EXPORT_REGRESSION_SCHEMA_VERSION).toBe(1));
 });

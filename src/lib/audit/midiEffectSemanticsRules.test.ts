@@ -39,14 +39,14 @@ describe("arpeggioRule", () => {
     expect(pitches(arpeggioRule(held([60, 64, 67]), { ...base, modeIndex: 2 }, range), 5)).toEqual([60, 64, 67, 64, 60]);
     expect(pitches(arpeggioRule(held([60]), { ...base, modeIndex: 2 }, range), 3)).toEqual([60, 60, 60]);
   });
-  it("UpDown over two octaves on a triad runs a sequence of 2 · 3 · 2 − 2 = 10 steps (mode_run, device-arpeggio/src/lib.rs:143-150)", () => {
+  it("UpDown over two octaves on a triad runs a sequence of 2 · 3 · 2 − 2 = 10 steps (up_down, device-arpeggio/src/lib.rs:237-244)", () => {
     // process_length 3 · 2 = 6, sequence_length 6 · 2 − 2 = 10. From 4800 the global index is 4800 / 240 = 20, 20 % 10 = 0:
     // sequence indices 0..5 walk up (process_index = sequence_index), 6..9 back down (process_index = 10 − sequence_index:
     // 4, 3, 2, 1); local = process_index % 3, octave = process_index / 3. Index 30 starts the sequence again.
     const out = arpeggioRule(held([60, 64, 67], 3840, 7680), { ...base, modeIndex: 2, numOctaves: 2 }, { from: 4800, to: 4800 + 11 * 240 });
     expect(pitches(out, 11)).toEqual([60, 64, 67, 72, 76, 79, 76, 72, 67, 64, 60]);
   });
-  it("stacks the held notes by (start, pitch), not by pitch: a lower pitch that starts later comes after (device-arpeggio/src/lib.rs:294-309)", () => {
+  it("stacks the held notes by (start, pitch), not by pitch: a lower pitch that starts later comes after (collect_pool's order, device-arpeggio/src/lib.rs:530-545)", () => {
     // 67 from 3840, 60 from 4080. Index 16 (3840): stack [67] -> 67. Index 17 (4080): stack [67, 60], 17 % 2 = 1 -> 60.
     // Index 18: 18 % 2 = 0 -> 67; index 19 -> 60. Sorted by pitch alone the stack would be [60, 67]: 67, 67, 60, 67.
     const notes: RuleNote[] = [
@@ -55,7 +55,7 @@ describe("arpeggioRule", () => {
     ];
     expect(pitches(arpeggioRule(notes, base, range), 4)).toEqual([67, 60, 67, 60]);
   });
-  it("a note ending exactly on a grid line is not in the stack at that line: start <= position < end (device-arpeggio/src/lib.rs:286)", () => {
+  it("a note ending exactly on a grid line is not in the stack at that line: start <= position < end (collect_pool, device-arpeggio/src/lib.rs:502)", () => {
     // 60 ends at 4320 (3840 + 480), 64 holds on. Index 16 (3840): [60, 64] -> 60. Index 17 (4080): [60, 64], 17 % 2 = 1 -> 64.
     // Index 18 (4320): 60 has ended, [64] -> 64; were the end inclusive, [60, 64] with 18 % 2 = 0 would give 60.
     const notes: RuleNote[] = [

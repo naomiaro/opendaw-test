@@ -18,7 +18,7 @@ for this repo:
    −31 / −30 dB, the same click count; at 48 kHz that click's onset moved from frame 72 007 to 72 006 and the other seven did not); the
    MIDI effect semantics audit reads 2 rows `changed, rule holds` at 48 kHz and 4 at 44.1, every one a note the reader cannot judge
    (overlapping notes; the judged tally is unchanged). Recording alignment moved a tally bucket by 0.01 ms (below).
-2. **An entire-song render runs to the end of the last region, then keeps exactly a quarter second (openDAW#534 FIXED).**
+2. **An entire-song render runs at least to the end of the last region, and keeps a quarter second after the last sound (openDAW#534 FIXED).**
    `OfflineEngineRenderer` passes `minDurationSeconds` (the range's length; new optional field on `OfflineEngineRenderConfig`) and
    the silence check moved into `core-wasm/src/silence-tail.ts` (`SilenceTail`): 10 s at or below −72 dB ends a render only after
    that minimum. The kept tail is a whole `sampleRate / 4`, **128 frames more than before**, so every entire-song and `start` export
@@ -106,7 +106,7 @@ factory's sound; `BiquadCoeff` (lib-dsp) and `crates/dsp/src/biquad.rs` clamp th
 ## Harmony (`8b2d1990e`, `e526af38c`, `f664d793e`, `3d036330e`, `896a8471b`, `81bcdf730`, `fdc823a44`, `8ce3918b8`, `f8b13773d`, `05e048865`, `73bd45151`, `afdf63451`)
 
 `crates/engine/src/harmony_track.rs` (391) serves `host_harmony_at` to devices and scripts; `crates/math/src/harmony.rs` (217) and lib-dsp `harmony.ts`
-(140) share the scale and chord arithmetic; `device-scale-matrix` (423) quantises to a scale or its custom 12 × 12 grid, following the key when `follow`
+(140) share the scale and chord arithmetic; `device-scale-matrix` (423) quantises to a scale or its custom grid (one offset per pitch class, −6..+12, 12 muting it), following the key when `follow`
 is on; the Arpeggio's chord mode builds its pool from the chord track (`device-arpeggio/src/lib.rs` +147); Autotune's `follow`. Live notes on a stopped
 transport take the key at the playhead. Tests `scale-matrix.test.ts` (204), `arpeggio-follow-chords.test.ts` (135), `script-harmony.test.ts` (102),
 `chord-detection.test.ts` (92), `harmony.test.ts` (137), `ChordOverlaps.test.ts` (59). Manuals `devices/midi/scale-matrix.md` (new), `arpeggio.md` (+3),
@@ -124,10 +124,15 @@ reports made anonymous and logged for engine traps, the WebRTC offer collision, 
 - **Found by reading the release:** the warp-anchor outro (item 3, a test that fails on the old rule); the MIDI Effects intro's count.
 - **Export regression harness:** `loop-pass-one-frame-short`, `loop-bounce-last-frame-silent` and `long-silence-ends-render` retired
   from `exportRegressionFindings.ts` (their fixture uses in the verdict, artifact and table tests moved to `trailing-silence-trimmed` and
-  `loop-wrap-keeps-old-read`); `trailing-silence-trimmed` (by design) now pins 81 120 / 74 129 frames, the whole quarter second.
+  `loop-wrap-keeps-old-read`); `trailing-silence-trimmed` (by design) now pins 81 120 / 74 129 frames, the whole quarter second. The
+  evidence only those labels read (`earlyFrames`, `framePeak`, `referencePeakOver`, `warmHolds`, and the per-row early-frames read) is
+  removed. New tests: the gap rows' old measured stop (21 472 / 19 729 frames) reads failing with no name, and `staleFindings` holds a
+  name with two entries live while either entry's invariant fails (`range-missing-tail`, shown to fail without the `live` filter).
 - **Citations moved:** `midiEffectSemanticsRules.ts`, `.test.ts`, `arpeggioWalk.ts` and the semantics note's rule-source table now cite
-  `device-arpeggio/src/lib.rs:638-692,731-739`, `:306-345`, `:220-230`, `:420-423`, `:199-211`, `:43-52`, `:24-26`, `:143-150`, `:294-309`,
-  `:286`, `arpeggio.md:175-178` (every line checked against the 0.0.182 text). Pitch, Velocity, Zeitgeist, Note Filter, `crates/abi` (`:39-51`)
+  `device-arpeggio/src/lib.rs:638-692,731-739`, `:306-345`, `:220-230`, `:420-423`, `:199-211`, `:43-52`, `:24-26`, `arpeggio.md:175-178`
+  (each checked against the 0.0.182 text). Three test-name citations pointed at the wrong code on 0.0.182 already (`mode_run`, a function
+  the crate does not have, and two ranges inside other functions); they now cite `up_down` `:237-244`, `collect_pool`'s order `:530-545`
+  and its half-open check `:502`, each read at the tag. Pitch, Velocity, Zeitgeist, Note Filter, `crates/abi` (`:39-51`)
   and `wiring.rs` citations stand.
 - **Standing sweeps** (Chrome, the Playwright browser, the tab visible, the Mac's output device at 44.1 kHz; every row read against its
   register): sample-rate **240 of 240**, every family maximum unchanged (metronome 0.08, loop-wrap 0.54, seam 0.2, region-fencepost 0.03,

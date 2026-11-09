@@ -297,7 +297,7 @@ describe("judgeInvariants", () => {
   it("names no finding on a warm pass that differs, whatever it measured", () => {
     const loop = buildRows(44100).find((x) => x.id === "core-none-section-loop-twice")!;
     const r = { ...loop, invariants: ["samples-equal-warm-pass" as const], rangeSeconds: 5 / 44100 };
-    // a sample slice carries no impulses, so it measures no shift and no finding matches
+    // no label sits on samples-equal-warm-pass: a differing warm pass must stay failing, unnamed
     const [bad] = judgeInvariants(r, rendered([0, 1, 0, 0, 0]), { reference: rendered([0, 0, 1, 0, 0]), noLatency: null, warm: rendered([0, 0, 1, 0, 0]) }, 44100);
     expect(bad.holds).toBe(false);
     expect(bad.finding).toBeNull();
@@ -333,7 +333,7 @@ describe("judgeInvariants", () => {
     expect(r.detail).toContain("no warm pass read");
     expect(r.finding).toBeNull();
   });
-  it("judges the impulses on the cold reference, where the warm pass carries the same shift, and names no shift", () => {
+  it("judges the impulses on the cold reference, where the warm pass carries the same shift", () => {
     const loop = buildRows(44100).find((x) => x.id === "core-none-section-loop-twice")!;
     const coldHits = [3, 6, 8];
     const cold = rendered([0], {}, { impulseHits: coldHits });
@@ -343,7 +343,6 @@ describe("judgeInvariants", () => {
     const [held, early] = judgeInvariants({ ...loop, invariants: ["samples-equal-warm-pass", "impulse-on-reference"], rangeSeconds: 10 / 44100 }, got, { reference: cold, noLatency: null, warm }, 44100);
     expect(held.holds).toBe(true);
     expect(early.holds).toBe(false);
-    expect(early.finding).toBeNull();
   });
   it("fails a section loop 4 frames short of its pass, which still covers the row's 43200-frame range", () => {
     const r = buildRows(48000).find((x) => x.id === "one-frame-none-section-loop-twice-48000-0p9-137")!;

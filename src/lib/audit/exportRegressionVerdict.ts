@@ -92,19 +92,6 @@ const peakOver = (samples: readonly Float32Array[], from: number, to: number): n
   return peak;
 };
 
-const equalsBitForBit = (rendered: RenderedRow, other: RenderedRow, exceptFrame: number): boolean => {
-  if (rendered.samples.length !== other.samples.length) return false;
-  for (let c = 0; c < rendered.samples.length; c++) {
-    if (rendered.samples[c].length !== other.samples[c].length) return false;
-    const a = bitsOf(rendered.samples[c]);
-    const b = bitsOf(other.samples[c]);
-    for (let frame = 0; frame < a.length; frame++) {
-      if (a[frame] !== b[frame] && frame !== exceptFrame) return false;
-    }
-  }
-  return true;
-};
-
 /** The render against the reference up to the wrap, then against a fresh pass plus the old read fading over `fade`. */
 const wrapResidueOf = (rendered: RenderedRow, reference: RenderedRow, wrap: number, fade: number): number => {
   if (rendered.samples.length !== reference.samples.length || rendered.samples[0].length !== reference.samples[0].length) return Infinity;
@@ -177,8 +164,7 @@ const compareToSlice = (rendered: RenderedRow, reference: RenderedRow, offset: n
         ...NO_EVIDENCE, firstDifferingFrame: first, lastDifferingFrame: last, largestDifference: largest, comparedFrames: shared,
         bandExcursion: (band) => largestBandExcursion(rendered, reference, offset, shared, band),
         sameDelayedBy: (frames) => isDelayedBy(rendered, reference, offset, shared, frames),
-        headPeak: (frames) => peakOver(rendered.samples, 0, frames),
-        framePeak: (frame) => (frame < shared ? peakOver(rendered.samples, frame, frame + 1) : Infinity)
+        headPeak: (frames) => peakOver(rendered.samples, 0, frames)
       }
     );
   }
@@ -195,14 +181,13 @@ const compareToSlice = (rendered: RenderedRow, reference: RenderedRow, offset: n
 
 const compareHits = (got: readonly number[], expected: readonly number[], against: string): Outcome => {
   if (expected.length === 0) return failUncompared(`${against} has no impulse in the range, so nothing is proven`);
-  const evidence = { ...NO_EVIDENCE, earlyFrames: uniformEarly([...expected], [...got]) };
   const missing = expected.filter((frame) => !got.includes(frame));
   const extra = got.filter((frame) => !expected.includes(frame));
-  if (missing.length === 0 && extra.length === 0) return pass(`impulses at [${got.join(", ")}]`, evidence);
+  if (missing.length === 0 && extra.length === 0) return pass(`impulses at [${got.join(", ")}]`);
   const parts: string[] = [];
   if (missing.length > 0) parts.push(`missing frames ${missing.join(", ")}`);
   if (extra.length > 0) parts.push(`extra frames ${extra.join(", ")}`);
-  return fail(`${parts.join("; ")}; got [${got.join(", ")}], ${against} [${expected.join(", ")}]`, evidence);
+  return fail(`${parts.join("; ")}; got [${got.join(", ")}], ${against} [${expected.join(", ")}]`);
 };
 
 const needs = (what: string, ref: RenderedRow | null): Outcome | null =>
@@ -362,35 +347,18 @@ const judge = (
   }
 };
 
-/**
- * The one shift every impulse of the row shows against the reference's hits in its range (positive: early),
- * read once per row so every invariant of the row sees the same measurement; null when nothing can be read.
- */
-const rowEarlyFrames = (
-  row: ExportRow, rendered: RenderedRow, reference: RenderedRow | null, pageRate: number
-): number | null => {
-  if (reference === null) return null;
-  const start = rangeStartFrame(row, pageRate);
-  const end = start + rangeFramesOf(row, pageRate);
-  const expected = reference.read.impulseHits.filter((hit) => hit >= start && hit < end).map((hit) => hit - start);
-  return uniformEarly(expected, [...rendered.read.impulseHits]);
-};
-
 export function judgeInvariants(row: ExportRow, rendered: RenderedRow, refs: Refs, pageRate: number): InvariantResult[] {
-  const earlyFrames = rowEarlyFrames(row, rendered, refs.reference, pageRate);
   return row.invariants.map((invariant) => {
     const outcome = judge(invariant, row, rendered, refs, pageRate);
     const { holds, detail, compared } = outcome;
     const evidence: FindingEvidence = {
-      ...outcome.evidence, earlyFrames,
+      ...outcome.evidence,
       silent: rendered.read.frames > 0 && rendered.read.nonFinite === 0 && rendered.read.peak === 0,
-      warmHolds: (exceptFrame) => refs.warm !== null && equalsBitForBit(rendered, refs.warm, exceptFrame),
       referenceRangePeak: () => {
         if (refs.reference === null) return Infinity;
         const start = rangeStartFrame(row, pageRate);
         return peakOver(refs.reference.samples, start, start + rangeFramesOf(row, pageRate));
-      },
-      referencePeakOver: (from, to) => (refs.reference === null ? Infinity : peakOver(refs.reference.samples, from, to))
+      }
     };
     const finding = holds || !compared ? null : findingFor(row, invariant, pageRate, evidence)?.name ?? null;
     return { invariant, holds, detail, finding };

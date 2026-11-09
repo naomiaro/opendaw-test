@@ -12,7 +12,6 @@ export type GainBand = {
 
 /** What the verdict measured on a failing invariant; null where the invariant took no such measurement. */
 export type FindingEvidence = {
-  earlyFrames: number | null;
   firstDifferingFrame: number | null;
   lastDifferingFrame: number | null;
   largestDifference: number | null;
@@ -27,29 +26,20 @@ export type FindingEvidence = {
   sameDelayedBy: (frames: number) => boolean;
   /** The row's peak over its first frames. */
   headPeak: (frames: number) => number;
-  /** The row's peak on one frame, across its channels. */
-  framePeak: (frame: number) => number;
   /** How far the row sits from a loop of the reference that wraps at `wrap`: a fresh pass, with the old read fading over `fade`. */
   wrapResidue: (wrap: number, fade: number) => number;
   /** The reference's peak over the row's range. */
   referenceRangePeak: () => number;
-  /** The reference's peak over these of its frames. */
-  referencePeakOver: (from: number, to: number) => number;
-  /** Whether the row's samples equal the warm pass it is held to, bit for bit, this frame aside (-1 for none). */
-  warmHolds: (exceptFrame: number) => boolean;
 };
 
 export const NO_EVIDENCE: FindingEvidence = {
-  earlyFrames: null, firstDifferingFrame: null, lastDifferingFrame: null, largestDifference: null,
+  firstDifferingFrame: null, lastDifferingFrame: null, largestDifference: null,
   comparedFrames: null, silent: null, largestStep: null,
   bandExcursion: () => Infinity,
   sameDelayedBy: () => false,
   headPeak: () => Infinity,
-  framePeak: () => Infinity,
   wrapResidue: () => Infinity,
-  referenceRangePeak: () => Infinity,
-  referencePeakOver: () => Infinity,
-  warmHolds: () => false
+  referenceRangePeak: () => Infinity
 };
 
 /** A claim that a behaviour has been read and is understood, not that it is right: the note says what was read. */

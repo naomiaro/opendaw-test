@@ -70,7 +70,8 @@
   rendering outright. No extrapolation: the engine gates out-of-range blocks before
   the mapping's endpoint clamp (internals ch08) is consulted. Lead-in and outro
   anchors are required, and the range is half-open: the last marker's tick is
-  already outside.
+  already outside. `buildWarpAnchors` leaves the outro out only when the file ends
+  under half a pulse after the last beat, where it would share that beat's tick.
 - Before the first tempo event, the FIRST event's value back-extends;
   `timelineBox.bpm` applies only when the tempo collection is empty.
 

@@ -4,7 +4,7 @@
 >
 > **Prerequisites:** [Ch. 04 (Box System)](./04-box-system-and-reactivity.md), [Ch. 08 (Recording)](./08-recording.md) for capture, [Ch. 11 (Effects)](./11-effects.md) for the MIDI-effect API surface.
 
-MIDI surfaces in openDAW are split across several layers: the box-graph data model (notes are boxes), the live engine (hardware capture and instrument routing), and the studio adapters (typed accessors). This chapter consolidates them into one reference, plus walks through the patterns for programmatic note creation, hardware capture, and the six MIDI effects that ship with the SDK.
+MIDI surfaces in openDAW are split across several layers: the box-graph data model (notes are boxes), the live engine (hardware capture and instrument routing), and the studio adapters (typed accessors). This chapter consolidates them into one reference, plus walks through the patterns for programmatic note creation, hardware capture, and the seven MIDI effects that ship with the SDK.
 
 **Honest about gaps:** the SDK is strong on programmatic note creation and hardware *input*, with a working MIDI-effects pipeline. MIDI *output* to external gear and standalone MIDI Clock configuration exist in the codebase but don't have a documented consumer API yet — flagged inline where they come up.
 
@@ -251,7 +251,7 @@ Seven MIDI effects ship with the SDK, inserted into a track's MIDI device chain 
 
 ### Arpeggio
 
-Plays notes in patterns over a configurable rate and number of octaves. It also runs while the transport is stopped: keys held live are arpeggiated on the free-running clock, and the steps end when the keys go up. When the transport starts or stops, the notes it is sounding end at once (the held keys stay).
+Plays notes in patterns over a configurable rate and number of octaves. It also runs while the transport is stopped: keys held live are arpeggiated on the free-running clock, and the steps end when the keys go up. When the transport starts or stops, the notes it is sounding end at once; keys still held stay, and a Hold latch is cleared.
 
 | Field | Type | Range | Meaning |
 |---|---|---|---|

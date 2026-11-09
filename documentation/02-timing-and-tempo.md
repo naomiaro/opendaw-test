@@ -1008,7 +1008,7 @@ project.editing.modify(() => {
   });
 });
 // after the commit
-const key = project.timelineBoxAdapter.keyTrack.keyAt(PPQN.Bar * 8); // { root: 7, bits: … }
+console.log(project.timelineBoxAdapter.keyTrack.keyAt(PPQN.Bar * 8)); // { root: 7, bits: … }
 ```
 
 ### Reference (Key and Chords)

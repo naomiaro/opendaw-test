@@ -68,7 +68,8 @@ export function clipStartSeconds(markers: ReadonlyArray<BeatMarker>): number {
  *   plays at the first segment's tempo (clamped to second 0 when the file
  *   has less lead-in audio than the lead-in bars ask for), and
  * - an outro anchor pinning the file end, continuing the last segment's tempo
- *   so audio after the final tracked beat still plays.
+ *   so audio after the final tracked beat still plays (left out when the file
+ *   ends under half a pulse after the last beat: it would share that tick).
  */
 export function buildWarpAnchors(
   markers: ReadonlyArray<BeatMarker>,

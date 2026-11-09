@@ -193,7 +193,7 @@ A section without a tail renders in chunks of 48000 frames. A `step` keeps the r
 2. Resolves the render range — `[0, lastRegionAction()]`, or `ExportConfiguration.range` when set
 3. Spawns the offline engine worker (which self-loads the WASM artifacts)
 4. Settles plug-in delay compensation first (idle quanta until every device has reported its latency and no compensation pass is pending, then back to the start position) and trims the total compensation latency from the start, so the output starts aligned on frame 0; a project without a latent device holds no delay line and renders as before (the SDK's own test pins it bit-identical)
-5. Renders all audio with effects: at least the range's length (`minDurationSeconds`), then on until the output has stayed below −72 dB for 10 s, or the range's length plus 30 s (`maxDurationSeconds`). A gap of silence inside the range does not end it. The file keeps the first quarter second of the trailing silence
+5. Renders all audio with effects: at least the range's length (`minDurationSeconds`); past it, the render ends once the output has stayed at or below −72 dB for 10 s (silence before the minimum counts too), or at the range's length plus 30 s (`maxDurationSeconds`). A gap of silence inside the range does not end it. The file ends a quarter second after the last sound, so it can be shorter than the range; a render that never rises above −72 dB never starts the silence count, runs to `maxDurationSeconds` and keeps all of it
 6. Returns `AudioData` with the rendered audio
 
 **For stems export:**

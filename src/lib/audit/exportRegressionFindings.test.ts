@@ -279,13 +279,17 @@ describe("the gap rows", () => {
   const GAP_PATHS = ["gap-none-start", "gap-none-section-entire", "gap-none-stem-start", "gap-none-stem-mix-start"];
 
   it("carry no label: a render that stops in the gap reads failing, with no name", () => {
-    for (const rate of [48000, 44100]) {
+    // 21472 / 19729 frames: where 0.0.182's `render` stopped (openDAW#534), the shape the retired label named.
+    const MEASURED_STOP: readonly [number, number][] = [[48000, 21472], [44100, 19729]];
+    for (const [rate, measured] of MEASURED_STOP) {
       const reference = span(rate);
-      const stopped = reference.map((c) => c.slice(0, Math.round(0.45 * rate)));
-      for (const id of GAP_PATHS) {
-        const row = rowOf(rate, id);
-        expect(KNOWN_FINDINGS.filter((f) => f.applies(row, rate)).map((f) => f.name), `${id} at ${rate}`).toEqual([]);
-        expect(judge(row, stopped, rate, { reference }), `${id} at ${rate}`).toEqual({ standing: "failing", findings: [null] });
+      for (const frames of [Math.round(0.45 * rate), measured]) {
+        const stopped = reference.map((c) => c.slice(0, frames));
+        for (const id of GAP_PATHS) {
+          const row = rowOf(rate, id);
+          expect(KNOWN_FINDINGS.filter((f) => f.applies(row, rate)).map((f) => f.name), `${id} at ${rate}`).toEqual([]);
+          expect(judge(row, stopped, rate, { reference }), `${id} at ${rate}, ${frames}`).toEqual({ standing: "failing", findings: [null] });
+        }
       }
     }
   });

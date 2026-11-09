@@ -15,7 +15,7 @@ configuration since 0.0.160 (openDAW#316, filed by this repo):
 { stems: {}, metronome: { stem: { fileName: "Metronome" } } }
 ```
 
-Key facts (verified SDK 0.0.160):
+Key facts:
 - **Enabled is implied by presence** — `ExportConfiguration.isMetronomeAudible(config)`:
   `includeInMixdown === true` (no stems) or `metronome.stem` defined (with stems). No
   metronome key = silent. `settings` is `Partial<Omit<EngineSettings["metronome"],
@@ -33,7 +33,7 @@ Key facts (verified SDK 0.0.160):
 - **`render` stops at 10 s of silence, judged on the channels it returns, but only past
   `config.minDurationSeconds`.** `start` and `renderSection` with a tail pass the range's length
   there (and that plus 30 s as `maxDurationSeconds`), so a region after a long gap inside the range
-  stays in the file; a direct `render` call without `minDurationSeconds` can still end at the
+  stays in the file; a direct `render` call without `minDurationSeconds` ends at the
   first 10 s gap (openDAW#534, `debug/2026-11-06-export-regression/note.md` Finding 2). In a
   single-stem export the stem's own silence is what counts (with several, all must be silent:
   read, not measured). `step` does not go through `render`. The trailing silence after the last
