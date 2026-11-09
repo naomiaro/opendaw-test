@@ -11,6 +11,7 @@ import { BackLink } from "@/components/BackLink";
 import { DebugLinkBar } from "@/components/DebugLinkBar";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { audioUnitAdapterFor } from "@/lib/adapterUtils";
+import { removeMasterMaximizer } from "@/lib/audit/midiEffectChain";
 import "@radix-ui/themes/styles.css";
 import { Theme, Container, Heading, Text, Flex, Card, Badge, Button, Code, Table } from "@radix-ui/themes";
 
@@ -18,18 +19,21 @@ import { Theme, Container, Heading, Text, Flex, Card, Badge, Button, Code, Table
 //
 // A Vaporisateur holds one note through a 4 s loop. Its unit's volume has an automation lane that is flat at
 // 0 dB, and the volume's own field also sits at 0 dB, so the lane and the field sound the same until the
-// field is written. Each row plays, stops with `engine.stop(true)`, then writes the volume field to 0
-// (−96 dB) — at once (same task), after a delay, or (control) once `engine.isPlaying` reads false — and plays
-// again. A lane that follows its curve plays at 0 dB; a lane left suspended (`AutomationSuspension`, #347)
-// plays the field, 0, and the output falls by more than SUSPENDED_DB. The level is the RMS of the engine's
-// output (`engineTap`) over 1 s, 0.5 s after each play. The positive control writes the field DURING playback,
-// which suspends the lane by design and must silence it.
+// field is written. Each row plays, stops with `engine.stop(true)`, then writes the volume field to unit 0
+// (−∞ dB, silence) — at once (same task), after a delay, or (control) once `engine.isPlaying` reads false — and
+// plays again. A lane that follows its curve plays at 0 dB; a lane left suspended (`AutomationSuspension`, #347)
+// plays the field and the output falls by more than SUSPENDED_DB. The level is the RMS of the engine's output
+// (`engineTap`) over 1 s, starting 0.5 s after `isPlaying` reads true. The master Maximizer is removed first so
+// the levels are the mix's own. The positive control writes the field DURING playback, which suspends the lane
+// by design: its level must fall by more than SUSPENDED_DB.
 //
-// Verdict once the positive control fires and every "before" level is within LEVEL_TOLERANCE_DB of the first:
-// BUG PRESENT when every row whose write saw `isPlaying` true reads suspended and every other row follows the
-// curve; FIXED when every row follows the curve; INCONCLUSIVE otherwise. HUNG / THREW as on the other pages.
-// The 0 ms row writes in the same task as `stop()`, so `isPlaying` always reads true there.
-// `?frameDriver=throttled&frameEvery=5` lowers the SDK's update rate to 24 Hz and widens the gap.
+// Verdict once the positive control fires, the first "before" level is above MIN_LEVEL_DB and every "before"
+// level is within LEVEL_TOLERANCE_DB of it: BUG PRESENT when the rows split exactly by `isPlaying` at the write
+// (suspended where it read true, the curve where it read false); FIXED when every row follows the curve AND at
+// least one write saw `isPlaying` true (the gap was exercised); INCONCLUSIVE otherwise. HUNG / THREW as on the
+// other pages. With the SDK as measured the 0 ms row, written in the same task as `stop()`, sees `isPlaying` true.
+// `?frameDriver=throttled&frameEvery=5` keeps every fifth display frame (24 a second on a 120 Hz panel, 12 on a
+// 60 Hz one) and widens the gap.
 const BPM = 120;
 const LOOP = (PPQN.Quarter * 8) as ppqn; // 4 s at 120 bpm
 const DELAYS_MS: ReadonlyArray<number | null> = [null, 0, 10, 20, 40, 80, 160]; // null = control
@@ -37,7 +41,7 @@ const SETTLE_MS = 500;
 const SAMPLE_MS = 1000;
 const SUSPENDED_DB = 30;
 const LEVEL_TOLERANCE_DB = 3;
-const MIN_LEVEL_DB = -40; // the held note plays at about −14 dB RMS
+const MIN_LEVEL_DB = -40; // the held note measured about −20 dB RMS
 
 type Row = { step: string; playingAtWrite: string; got: string; result: string; ok: boolean | null };
 type Verdict = "BUG PRESENT" | "FIXED" | "INCONCLUSIVE" | "HUNG" | "THREW";
@@ -80,7 +84,11 @@ async function run(onStage: (stage: string, rows: Row[]) => void): Promise<{ ver
     if (audioContext.state !== "running") throw new Error(`AudioContext is ${audioContext.state} after resume`);
 
     enter("build");
-    const built = editing.modify(() => project.api.createInstrument(InstrumentFactories.Vaporisateur, { name: "Synth" })).unwrap("createInstrument");
+    const master = project.rootBoxAdapter.audioUnits.adapters().find((unit) => unit.isOutput);
+    if (master === undefined) throw new Error("the project has no master unit");
+    const removed = removeMasterMaximizer(editing, master.audioEffects.unwrap("the master hosts no audio-effect chain").adapters());
+    if (removed !== 1) throw new Error(`expected one Maximizer on the master, removed ${removed}`);
+    const built =editing.modify(() => project.api.createInstrument(InstrumentFactories.Vaporisateur, { name: "Synth" })).unwrap("createInstrument");
     const unitBox = built.audioUnitBox;
     editing.modify(() => {
       const region = project.api.createNoteRegion({ trackBox: built.trackBox, position: 0 as ppqn, duration: LOOP, loopDuration: LOOP });
@@ -176,7 +184,7 @@ async function run(onStage: (stage: string, rows: Row[]) => void): Promise<{ ver
         playingAtWrite: `${playingAtWrite} (written ${writtenAt.toFixed(1)} ms after stop; false after ${flagFalseAt.toFixed(1)} ms)`,
         got: `${fmtDb(before)}, next play ${fmtDb(after)}`,
         result: suspended ? "curve ignored on the next play" : "curve followed",
-        ok: suspended === playingAtWrite ? null : false,
+        ok: null, // a row is data; the verdict reads the rows together
       });
     }
     restoreField();
@@ -185,24 +193,29 @@ async function run(onStage: (stage: string, rows: Row[]) => void): Promise<{ ver
     const levelsOk = reference > MIN_LEVEL_DB && results.every((r) => Math.abs(r.before - reference) < LEVEL_TOLERANCE_DB);
     const suspendedRows = results.filter((r) => r.after < r.before - SUSPENDED_DB);
     const splitByFlag = results.every((r) => (r.after < r.before - SUSPENDED_DB) === r.playingAtWrite);
-    const verdict: Verdict = !controlFired || !levelsOk ? "INCONCLUSIVE"
-      : suspendedRows.length === 0 ? "FIXED"
-      : splitByFlag ? "BUG PRESENT" : "INCONCLUSIVE";
     const gap = results.filter((r) => r.playingAtWrite).length;
+    const verdict: Verdict = !controlFired || !levelsOk ? "INCONCLUSIVE"
+      : suspendedRows.length === 0 ? (gap > 0 ? "FIXED" : "INCONCLUSIVE")
+      : splitByFlag ? "BUG PRESENT" : "INCONCLUSIVE";
     const message = verdict === "BUG PRESENT"
       ? `${suspendedRows.length} of ${results.length} rows played the next pass at the field value (curve ignored); each was written while isPlaying still read true after stop (${gap} rows), and every row written after the flag flipped followed the curve`
-      : verdict === "FIXED" ? "every row followed the curve on the next play, including the writes that saw isPlaying true after stop"
-      : `controls or levels off (positive control ${fmtDb(controlBefore)} → ${fmtDb(controlAfter)}; first level ${fmtDb(reference)}; rows split by the flag: ${splitByFlag})`;
+      : verdict === "FIXED" ? `every row followed the curve on the next play, including the ${gap} writes that saw isPlaying true after stop`
+      : gap === 0 && suspendedRows.length === 0 && controlFired && levelsOk
+        ? "no write saw isPlaying true after stop, so the gap was not exercised (did stop() start clearing the flag at once?)"
+        : `controls or levels off (positive control ${fmtDb(controlBefore)} → ${fmtDb(controlAfter)}; first level ${fmtDb(reference)}; rows split by the flag: ${splitByFlag})`;
     return { verdict, rows, message };
   } catch (error) {
-    stopTransport?.();
+    let stopFailure = "";
+    try { stopTransport?.(); } catch (stopError) { stopFailure = `; stopping the transport also failed: ${String(stopError)}`; }
     if (error instanceof Hung) {
-      rows.push({ step: stage, playingAtWrite: "", got: `deadline passed in ${error.stage}`, result: "", ok: false });
-      return { verdict: "HUNG", rows, message: `deadline passed in ${error.stage}` };
+      const message = `deadline passed in ${error.stage} (document ${document.visibilityState})${stopFailure}`;
+      rows.push({ step: stage, playingAtWrite: "", got: message, result: "", ok: false });
+      console.error(`[suspension-page] HUNG: ${message}`);
+      return { verdict: "HUNG", rows, message };
     }
-    rows.push({ step: stage, playingAtWrite: "", got: String(error), result: "", ok: false });
-    console.error(`[suspension-page] ${stage}: ${String(error)}`);
-    return { verdict: "THREW", rows, message: `${stage}: ${String(error)}` };
+    rows.push({ step: stage, playingAtWrite: "", got: `${String(error)}${stopFailure}`, result: "", ok: false });
+    console.error(`[suspension-page] ${stage}: ${String(error)}${stopFailure}`);
+    return { verdict: "THREW", rows, message: `${stage}: ${String(error)}${stopFailure}` };
   }
 }
 
@@ -223,10 +236,11 @@ function App() {
           <Heading size="6">Automation lane left suspended by a write just after Stop (debug)</Heading>
           <Text size="2" color="gray">
             A synth holds one note under a volume lane that is flat at 0 dB. Each row stops the transport, writes the
-            volume's own field to 0 (−96 dB) at once, after a delay, or once <Code>engine.isPlaying</Code> reads false, and
-            plays again. A lane that follows its curve plays at 0 dB; a lane left suspended plays the field and goes
-            silent. About a minute; a real click starts it; one run per page load. Add{" "}
-            <Code>?frameDriver=throttled&amp;frameEvery=5</Code> for 24 updates a second.
+            volume's own field to silence (unit 0, −∞ dB) at once, after a delay, or once <Code>engine.isPlaying</Code>{" "}
+            reads false, and plays again. A lane that follows its curve plays at 0 dB; a lane left suspended plays the field
+            and goes silent. About a minute; a real click starts it; one run per page load. Add{" "}
+            <Code>?frameDriver=throttled&amp;frameEvery=5</Code> to keep every fifth display frame (24 updates a second on a
+            120 Hz panel).
           </Text>
           <Flex gap="3" align="center">
             <Button id="run" size="3" onClick={start} disabled={state.kind !== "idle"}>Run</Button>

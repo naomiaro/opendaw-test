@@ -7,11 +7,13 @@ automation recording frame-dependent because it stamps `engine.position` as the 
 anything else in openDAW act on that frame-read state in a way that changes sound, the document or timing?
 
 **Answer:** one measured defect, and it is not tied to unusual displays. After Stop, `engine.isPlaying` keeps
-reading `true` until the next SDK frame tick. A parameter write in that gap sends `suspendAutomation` to an engine
-that has already stopped and cleared its suspensions, and `play` does not clear them. The lane's curve is then
-ignored for the whole next playback: the parameter plays at its field value. The gap was about 20–40 ms at
-57.6 ticks/s across three runs, and 76–83 ms at 24. Slower ticks widen it, and on a hidden page with no frame driver it lasts until the page is
-shown. The other uses found are display only, or are candidates listed below that were not measured.
+reading `true` until a frame tick reads a state the engine wrote after it stopped, one to two ticks later. A
+parameter write in that gap sends `suspendAutomation` to an engine that has already stopped and cleared its
+suspensions, and `play` does not clear them. The lane's curve is then ignored for the whole next playback: the
+parameter plays at its field value. The flag read false 20–38 ms after the stop unthrottled (about 54–58 ticks a
+second, four runs), and 64–83 ms at 24 ticks a second (three runs). From the source, on a hidden page with no frame
+driver the gap would last until the page is shown (not measured). The other uses found are display only, or are
+candidates listed below that were not measured.
 
 ## How the state reaches the main thread
 
@@ -26,73 +28,72 @@ and `recordingStop`. Code that uses those is frame-independent.
 
 Mechanism (source):
 
-- `AutomationSuspension.start` (`studio/core/src/project/AutomationSuspension.ts`) sends
+- `AutomationSuspension.start` (`studio/core/src/project/AutomationSuspension.ts:14-19`) sends
   `engine.suspendAutomation(lane)` the first time a parameter with a lane is written while
-  `engine.isPlaying.getValue()` is true. It clears its own dedup set when `isPlaying` turns false.
+  `engine.isPlaying.getValue()` is true. Playing or recording, it checks only that flag. It clears its own dedup set
+  when `isPlaying` turns false (`:22`).
 - The engine clears `SUSPENDED_AUTOMATION` in `stop_recording`, `pause` and `halt` (`crates/engine/src/lib.rs:2181`,
   `:2193`, `:2222`; `stop` and `stop_faded` go through `halt`). `suspend_automation` (`lib.rs:3371`) adds the lane
   whatever the transport state is. `play` (`lib.rs:2122`) does not clear the set.
 - Upstream's `docs/automation.md`, "Manual control (#347)", describes the clear on those three exits. It does not
   mention this gap.
 
-Probe: [`suspension-probe.js`](./suspension-probe.js) on `track-automation-demo.html`, with the volume lane set to
-the "Fade Out" preset so the loop start is loud. For each row the probe plays from the loop start and calls
-`engine.stop(true)`. It then writes the volume's own field to 0 (−96 dB) through
-`editing.modify(() => volume.setUnitValue(0), false)`, after a delay or (control) once `isPlaying` reads false.
-It plays again from the loop start and reads the engine's master peak meter (`EngineAddresses.PEAKS`) 0.6–3.0 s in.
-The first 0.6 s are skipped because the meter is still decaying from the previous playback. A lane that follows its
-curve plays at about −17 dB. A suspended lane plays its field value, 0, and reads 40–57 dB lower. Positive control:
-the same write during playback, which is the suspension by design, read −17.2 → −50.2 dB (57.6 ticks/s) and
-−17.1 → −46.6 dB (24).
-
-57.6 SDK ticks/s (unthrottled, 120 Hz panel):
-
-| Write after Stop | `isPlaying` at the write | `isPlaying` false after | Peak before | Peak on next play | Result |
-|---|---|---|---|---|---|
-| control (after the flag) | false | 37.7 ms | −17.1 dB | −16.7 dB | curve followed |
-| 0.1 ms | true | 30.2 ms | −17.0 | −73.2 | **curve ignored** |
-| 10.3 ms | true | 29.7 ms | −16.8 | −57.4 | **curve ignored** |
-| 20.8 ms | true | 31.4 ms | −17.0 | −59.1 | **curve ignored** |
-| 30.9 ms | false | 31.9 ms | −17.0 | −16.9 | curve followed |
-| 41.2 / 61.0 / 80.1 ms | false | — | −16.8 … −16.9 | −16.9 … −17.2 | curve followed |
-
-24 SDK ticks/s (`?frameDriver=throttled&frameEvery=5`):
-
-| Write after Stop | `isPlaying` at the write | `isPlaying` false after | Peak before | Peak on next play | Result |
-|---|---|---|---|---|---|
-| control (after the flag) | false | 81.0 ms | −17.0 dB | −17.2 dB | curve followed |
-| 0.1 ms | true | 81.6 ms | −17.2 | −74.2 | **curve ignored** |
-| 20.8 ms | true | 82.6 ms | −17.3 | −59.8 | **curve ignored** |
-| 41.5 ms | true | 80.6 ms | −17.2 | −61.6 | **curve ignored** |
-| 61.1 ms | true | 76.1 ms | −17.3 | −59.4 | **curve ignored** |
-| 81.1 / 120.6 ms | false | — | −17.2 | −17.1 / −17.0 | curve followed |
-
-In both runs the result follows `isPlaying` at the write, row for row. Earlier runs on the same page are left out
-of the tables: the default "Fade In" preset sits near the noise floor for the first seconds, so the positive control
-did not fire on it. Those runs show the same split by `isPlaying` at the write.
+Every row below writes the volume's own field to unit 0 with `editing.modify(() => volume.setUnitValue(0), false)`.
+Unit 0 is −∞ dB (`VolumeMapper` is `decibel(-96, -9, +6)`, and lib-std's `y(x)` returns −∞ for `x ≤ 0`). A lane
+left suspended therefore plays true silence. The write comes after a delay or, as the control, once `isPlaying` reads
+false. The row then plays again from the loop start.
 
 ### Repro page
 
 [`automation-suspended-after-stop-debug-demo.html`](../../automation-suspended-after-stop-debug-demo.html) runs the
-same rows without the demo's sample and needs no console. A Vaporisateur holds one note through a 4 s loop under a
-volume lane that is flat at 0 dB. The level is the RMS of the engine output (`engineTap`) over 1 s, starting 0.5 s
-into each play. The page self-classifies: BUG PRESENT / FIXED / INCONCLUSIVE / HUNG / THREW. Runs on 2026-11-09,
-Playwright's Chrome:
+rows on its own, without the demo's sample or a console. Setup:
 
-- Unthrottled: **BUG PRESENT**. The positive control went −19.8 dB → silent. Writes at 0.1, 10.8 and 20.3 ms after
-  the stop (`isPlaying` true) gave a silent next play. The control at 32.1 ms and writes at 41.7, 81.2 and 161.7 ms
-  (`isPlaying` false) played the curve at −19.8 dB. The flag read false 19.5–33.1 ms after the stop.
-- `?frameDriver=throttled&frameEvery=5`: **BUG PRESENT**. Writes at 0.1, 11.8, 21.1 and 41.1 ms gave a silent
-  next play. The control at 81.0 ms and writes at 80.9 and 161.1 ms played the curve. The flag read false 64.4–82.0 ms
-  after the stop.
+- A Vaporisateur holds one note through a 4 s loop under a volume lane that is flat at 0 dB.
+- The master Maximizer is removed first.
+- The level is the RMS of the engine output (`engineTap`) over 1 s, starting 0.5 s after `isPlaying` reads true.
+- The positive control writes during playback, which is the suspension by design.
+
+The page reports BUG PRESENT, FIXED, INCONCLUSIVE, HUNG or THREW. It reports FIXED only when at least one write
+saw `isPlaying` true, so a run that never reaches the gap cannot pass as fixed. Runs on 2026-11-09:
+
+| Run | Positive control | Rows that saw `isPlaying` true (write ms after stop) | Their next play | Rows that saw it false | Flag false after | Verdict |
+|---|---|---|---|---|---|---|
+| unthrottled 1 (Maximizer still on) | −19.8 dB → silent | 0.1, 10.8, 20.3 | silent | control 32.1, then 41.7, 81.2, 161.7: −19.8 dB | 19.5–33.1 ms | BUG PRESENT |
+| unthrottled 2 | −19.8 dB → silent | 0.1, 12.3 | silent | control 24.7, then 20.4, 42.1, 82.1, 161.2: −19.8 dB | 20.4–33.0 ms | BUG PRESENT |
+| `frameEvery=5`, 1 (Maximizer still on) | −19.8 dB → silent | 0.1, 11.8, 21.1, 41.1 | silent | control 81.0, then 80.9, 161.1: −19.8 dB | 64.4–81.9 ms | BUG PRESENT |
+| `frameEvery=5`, 2 | −19.8 dB → silent | 0.1, 11.0, 21.6, 41.2 | silent | control 68.9, then 81.5, 162.3: −19.8 dB | 66.4–76.6 ms | BUG PRESENT |
+
+The levels match to 0.1 dB with and without the Maximizer. `?frameDriver=throttled&frameEvery=5` keeps every fifth
+display frame, which is 24 ticks a second on this 120 Hz panel. The page does not count its own ticks.
+
+### Console probe
+
+[`suspension-probe.js`](./suspension-probe.js) is for the dev server only, on `track-automation-demo.html` with the
+volume lane on its "Fade Out" preset. It reads the engine's master peak meter (`EngineAddresses.PEAKS`, 250 ms
+decay) 0.6–3.0 s after `isPlaying` reads true. The first 0.6 s are skipped while the meter decays from the previous
+playback. The default "Fade In" preset sits near the noise floor at the loop start: the positive control did not fire
+on it, and those runs are left out. The probe now runs the positive control first and returns "blind" when it does
+not fire.
+
+SDK ticks measured by the probe in each run. Unthrottled rows used delays `[control, 0, 10, 20, 30, 40, 60, 80]`; the
+24-tick rows used `[control, 0, 20, 40, 60, 80, 120]`.
+
+| Run | Positive control | Rows that saw `isPlaying` true (write ms after stop) | Their next play | Rows that saw it false | Flag false after |
+|---|---|---|---|---|---|
+| 57.6 ticks/s | −17.2 → −50.2 dB | 0.1, 10.3, 20.8 | −73.2, −57.4, −59.1 dB | control 36.3, then 30.9, 41.2, 61.0, 80.1: −16.7 … −17.0 dB | 29.7–37.7 ms |
+| 53.7 ticks/s (probe as committed) | −16.8 → −49.2 dB | 0.1, 11.6, 22.0 | −73.1, −57.1, −55.5 dB | control 29.5, then 32.2, 40.9, 60.8, 81.7: −17.0 … −17.2 dB | 27.9–30.7 ms |
+| 24.0 ticks/s | −17.1 → −46.6 dB | 0.1, 20.8, 41.5, 61.1 | −74.2, −59.8, −61.6, −59.4 dB | control 80.1, then 81.1, 120.6: −17.0 … −17.2 dB | 76.1–82.6 ms |
+
+At 24 ticks the probe's positive control fell 29.5 dB, just short of the 30 dB the rows are judged by. Its rows still
+fell 42–57 dB. The residual −55 … −74 dB on the "silent" rows is the meter's leftover decay, not sound: the page's RMS
+reads true silence on the same rows.
 
 Who writes in that gap: a MIDI-learned controller still moving when Stop is pressed (`MIDILearning` writes through
 `setUnitValue`), a knob held or a wheel still turning, a script, or the transport stopping by itself (end of the
-song, `pauseOnLoopDisabled`) while a hand is on a control. Stop and Pause (`stop(false)`) take the same path. Only
-`stop(true)` was measured.
+song, `pauseOnLoopDisabled`) while a hand is on a control. Only `stop(true)` was measured. From the source, Pause
+(`stop(false)`) and `stopRecording` go through the same flag and the same clears.
 
-Not measured: a recording stop (`stopRecording`, same clear and same flag lag, inferred to behave the same); a hidden
-page; a real display below 60 Hz.
+Not measured: Pause, a recording stop, a hidden page, a real display below 60 Hz.
 
 ## Other code that reads the frame state
 
