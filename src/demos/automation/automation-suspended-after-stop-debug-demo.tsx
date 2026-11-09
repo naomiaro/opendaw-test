@@ -15,7 +15,7 @@ import { removeMasterMaximizer } from "@/lib/audit/midiEffectChain";
 import "@radix-ui/themes/styles.css";
 import { Theme, Container, Heading, Text, Flex, Card, Badge, Button, Code, Table } from "@radix-ui/themes";
 
-// Repro for `debug/2026-11-09-frame-clock-consumers/note.md`.
+// Repro for `debug/2026-11-09-frame-clock-consumers/note.md` (openDAW#537).
 //
 // A Vaporisateur holds one note through a 4 s loop. Its unit's volume has an automation lane that is flat at
 // 0 dB, and the volume's own field also sits at 0 dB, so the lane and the field sound the same until the
@@ -278,6 +278,7 @@ function App() {
           <DebugLinkBar
             links={[
               { label: "debug/2026-11-09-frame-clock-consumers/note.md", href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-11-09-frame-clock-consumers/note.md", kind: "note" },
+              { label: "Upstream: openDAW#537", href: "https://github.com/andremichelle/openDAW/issues/537", kind: "note" },
             ]}
           />
           <MoisesLogo />

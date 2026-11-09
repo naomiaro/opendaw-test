@@ -1,5 +1,4 @@
-<!-- TO REVIEW, nothing posted. Target: andremichelle/openDAW issues. The repro link goes live once the PR that adds
-the page is merged and deployed; check it answers before posting. Title is the heading below. -->
+<!-- Posted as https://github.com/andremichelle/openDAW/issues/537 on 2026-11-09. Body as filed (the title is the heading below). -->
 
 # A parameter written just after Stop leaves its automation lane suspended through the next playback
 
