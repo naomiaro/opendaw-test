@@ -136,7 +136,7 @@ const WRAP_STEP_LIMIT: Readonly<Record<number, number>> = { 48000: 0.131, 44100:
 const inBlockRoundsEarly = (invariant: InvariantId, applies: KnownFinding["applies"]): KnownFinding => ({
   name: "in-block-pulse-rounds-early",
   invariant,
-  note: "a pulse inside a 128-frame block is converted from the block's start pulse and truncated, so an event on a whole frame can land one frame early: a metronome click at `floor(pulses_to_samples(beat - p0))` (crates/engine/src/metronome.rs:212), a region's start at `sample_of` (audio_region_player.rs:974-976), the whole region then the reference seated a frame early, bit for bit. Since 0.0.183 the block's start is exact and the error no longer builds up; this one rounding is what is left (upstream's #533 reply). Measured, not filed: the signature holds every event to the frame that arithmetic, written out in exportRegressionInBlock.ts, gives it",
+  note: "a pulse inside a 128-frame block is converted from the block's start pulse and truncated, so an event on a whole frame can land one frame early: a metronome click at `floor(pulses_to_samples(beat - p0))` (crates/engine/src/metronome.rs:212), a region's start at `sample_of` (audio_region_player.rs:974-976), the whole region then the reference seated a frame early, bit for bit. Since 0.0.183 the block's start is exact and the error no longer builds up; this one rounding is what is left (upstream's #533 reply). Filed as openDAW#536 (2026-11-09). The signature holds every event to the frame that arithmetic, written out in exportRegressionInBlock.ts, gives it",
   applies,
   signature: ({ frameOffsets }) =>
     frameOffsets !== null && frameOffsets.got.length === frameOffsets.predicted.length

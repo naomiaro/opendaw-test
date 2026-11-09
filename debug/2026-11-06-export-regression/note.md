@@ -5,7 +5,7 @@
 **Status: FINDINGS 1 AND 2 FIXED IN `@opendaw/studio-sdk@0.0.183`** (re-measured 2026-11-09, [below](#sdk-0183-both-findings-fixed); their labels are retired). **REGISTER ACCEPTED ON 0.0.183 on the user's word (2026-11-09), library filled; a re-run of each rate reads 296 of 296 `identical`.** Before: register accepted on 0.0.182, library filled; findings 1 and 2 filed as [openDAW#533](https://github.com/andremichelle/openDAW/issues/533) and [openDAW#534](https://github.com/andremichelle/openDAW/issues/534) on 2026-11-08. The user read the findings and approved the labels and the first fill. Both page rates are accepted, a re-run of each reads every row `identical`, and a changed render is caught (below). Nothing is posted. Three drafts wait (below). `trailing-silence-trimmed` is ruled by design and not raised upstream. The other findings are the
 user's call, each with the read it got.
 
-**The catalogue holds 308 rows and none reads `failing`.** The 12 added on 2026-11-09 ([below](../2026-11-09-export-harness-followups/note.md)) are accepted (2026-11-09, the user's word, runs 1794253004161 and 1794253155843); one of them measures a region starting inside a block playing one frame early (a new-issue draft waits), and one an export range that runs on past its end (labelled; upstream's plan 434 records it). A label means read and understood, not fine.
+**The catalogue holds 308 rows and none reads `failing`.** The 12 added on 2026-11-09 ([below](../2026-11-09-export-harness-followups/note.md)) are accepted (2026-11-09, the user's word, runs 1794253004161 and 1794253155843); one of them measures a region starting inside a block playing one frame early ([openDAW#536](https://github.com/andremichelle/openDAW/issues/536)), and one an export range that runs on past its end (labelled; upstream's plan 434 records it). A label means read and understood, not fine.
 
 **Verified against:** `@opendaw/studio-sdk@0.0.182`, engine `9c44973549a7`, checkout at the tag (`766204efe`). Chrome
 156.0.8078.81 (Playwright's), macOS 15.6.1. The Mac's output device read 44100 Hz for every run below unless it says otherwise; each summary since the device rate was added records it (`deviceRateHz`). These renders are offline, and the page's own context takes the rate in the URL. Source citations are read at the tag.
@@ -73,7 +73,7 @@ SDK 0.0.182, engine `9c44973549a7`, the device at 44100 (read in `system_profile
 | `loop-bounce-last-frame-silent` | 0 | 4 (the same rows as 4 of the 17) | in the same draft; **fixed in 0.0.183, label retired** |
 | `trailing-silence-trimmed` | 2 | 2 | by design, the user's read; not raised upstream |
 | `range-end-is-a-minimum` | 1 | 1 | measured 2026-11-09; upstream's plan 434 records it, so not raised ([the 11-09 note](../2026-11-09-export-harness-followups/note.md)) |
-| `in-block-pulse-rounds-early` | 5 | 5 | measured on 0.0.183 (4 metronome stems, 1 region start); a new-issue draft waits for the user's read, [below](../2026-11-09-export-harness-followups/note.md) |
+| `in-block-pulse-rounds-early` | 5 | 5 | measured on 0.0.183 (4 metronome stems, 1 region start); filed as [openDAW#536](https://github.com/andremichelle/openDAW/issues/536), [the 11-09 note](../2026-11-09-export-harness-followups/note.md) |
 | `jump-fade-at-start` | 32 | 32 | the user's call (30, and the 2 export-range gap rows added on 2026-11-09) |
 | `jump-fade-cold-maximizer` | 2 | 2 | the user's call |
 | `reset-keeps-compensation-delay` | 11 | 11 | the user's call |

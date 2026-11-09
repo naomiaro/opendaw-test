@@ -143,8 +143,8 @@ descending run. The WAV library is the private LFS repo `naomiaro/opendaw-export
 (or `$EXPORT_WAV_LIBRARY`); `&fill=1` uploads every row's WAV; every download counts against its bandwidth. Hash the audio, never the project bytes (above).
 A pulse inside a 128-frame block still rounds from the block's start pulse: a metronome click, and a region starting on a whole
 frame inside a block, can land one frame early (about half such region starts at 120 bpm). The harness labels it
-`in-block-pulse-rounds-early` from the engine's own arithmetic (`src/lib/audit/exportRegressionInBlock.ts`): measured, not filed;
-filing it is the user's call. A row that needs an exact region start puts it on a block's first frame. The run, its
+`in-block-pulse-rounds-early` from the engine's own arithmetic (`src/lib/audit/exportRegressionInBlock.ts`), filed as openDAW#536
+(https://github.com/andremichelle/openDAW/issues/536); a fix moves those rows' hashes and the label then reads stale. A row that needs an exact region start puts it on a block's first frame. The run, its
 findings and the reading recipe: `debug/2026-11-06-export-regression/note.md`.
 
 ### Mutate-Copy-Restore Pattern for Offline Rendering
