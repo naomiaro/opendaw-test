@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "sdkVersion": "0.0.183",
   "engineWasmSha256": "447481d683c62c21000ad9fb06d122aba59f2a092f5e40cfa131f661bb1136a3",
-  "acceptedRunToken": 1794246918474,
-  "acceptedAt": "2026-11-09T18:27:58.093Z",
+  "acceptedRunToken": 1794253004161,
+  "acceptedAt": "2026-11-09T19:49:11.743Z",
   "sampleRate": 48000,
   "rows": {
     "core-none-step-one": {
@@ -3395,6 +3395,42 @@
       ],
       "wav": "wav/9861b71389fe698a67962a7427370a7ecff7706eecbe75ddbab980be725a4649.wav"
     },
+    "gap-none-range-start": {
+      "hash": "a70dc47f728669ac4b8a2cfd9f3adcf1f1a7d8cb00584c1891b92720cda1aba8",
+      "frames": 784864,
+      "channels": 2,
+      "peak": 0.5,
+      "impulseHits": [
+        300,
+        763500
+      ],
+      "wav": "wav/a70dc47f728669ac4b8a2cfd9f3adcf1f1a7d8cb00584c1891b92720cda1aba8.wav"
+    },
+    "gap-none-range-stem-start": {
+      "hash": "a70dc47f728669ac4b8a2cfd9f3adcf1f1a7d8cb00584c1891b92720cda1aba8",
+      "frames": 784864,
+      "channels": 2,
+      "peak": 0.5,
+      "impulseHits": [
+        300,
+        763500
+      ],
+      "wav": "wav/a70dc47f728669ac4b8a2cfd9f3adcf1f1a7d8cb00584c1891b92720cda1aba8.wav"
+    },
+    "range-none-start-ends-in-sound": {
+      "hash": "1e61fd40f2d76f70b703272996a84b81e8545222fb09840a14ff9a3d25a465d7",
+      "frames": 204000,
+      "channels": 2,
+      "peak": 0.8999999761581421,
+      "impulseHits": [
+        4096,
+        24037,
+        72064,
+        120037,
+        168064
+      ],
+      "wav": "wav/1e61fd40f2d76f70b703272996a84b81e8545222fb09840a14ff9a3d25a465d7.wav"
+    },
     "sweep-none-step-one": {
       "hash": "4f35ec5dea008c32460c9e2c9a23f2cf18f7e454f05a7b99e82c9d0bb4fa8e58",
       "frames": 192000,
@@ -3614,6 +3650,144 @@
         1744
       ],
       "wav": "wav/33cad019583da935d9a334138b7a314d6c40946ecf4e011fbe8f39a5577f9800.wav"
+    },
+    "in-block-none-region-start-predicted-early": {
+      "hash": "c9e1de3ab3830b4898cbff4ad6e40be2158615770d2ae2e7e6c5073851a38053",
+      "frames": 240250,
+      "channels": 2,
+      "peak": 0.8999999761581421,
+      "impulseHits": [
+        52345,
+        72286,
+        120313,
+        168286,
+        216313
+      ],
+      "wav": "wav/c9e1de3ab3830b4898cbff4ad6e40be2158615770d2ae2e7e6c5073851a38053.wav"
+    },
+    "in-block-none-region-start-predicted-on-time": {
+      "hash": "a1339af52de5df8bfc7d95b1ba5f5726b908f2759f19ea5648be040824955b6d",
+      "frames": 240025,
+      "channels": 2,
+      "peak": 0.8999999761581421,
+      "impulseHits": [
+        52121,
+        72062,
+        120089,
+        168062,
+        216089
+      ],
+      "wav": "wav/a1339af52de5df8bfc7d95b1ba5f5726b908f2759f19ea5648be040824955b6d.wav"
+    },
+    "marker-none-plays1-block-end": {
+      "hash": "02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5",
+      "frames": 192000,
+      "channels": 2,
+      "peak": 0.8999999761581421,
+      "impulseHits": [
+        4096,
+        24037,
+        72064,
+        120037,
+        168064
+      ],
+      "wav": "wav/02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5.wav"
+    },
+    "marker-none-plays2-block-end": {
+      "hash": "71e63f4af67ae03fb7929c999b3b4ff2c29c0b654e87ea9128e0a14b353b5452",
+      "frames": 240000,
+      "channels": 2,
+      "peak": 0.8999999761581421,
+      "impulseHits": [
+        4096,
+        24037,
+        72064,
+        120064,
+        168037,
+        216064
+      ],
+      "wav": "wav/71e63f4af67ae03fb7929c999b3b4ff2c29c0b654e87ea9128e0a14b353b5452.wav"
+    },
+    "marker-none-plays2-mid-block": {
+      "hash": "48198b821b333c0a53847158dc867ca4e529f4a1d4e36f9f167754596209e21e",
+      "frames": 241600,
+      "channels": 2,
+      "peak": 0.8999999761581421,
+      "impulseHits": [
+        4096,
+        24037,
+        72064,
+        121664,
+        169637,
+        217664
+      ],
+      "wav": "wav/48198b821b333c0a53847158dc867ca4e529f4a1d4e36f9f167754596209e21e.wav"
+    },
+    "marker-none-plays2-block-end-start": {
+      "hash": "8b7fc012dca71008a82983dc05bd9f4b2bd79c1aee459033ca87a63873becdca",
+      "frames": 252000,
+      "channels": 2,
+      "peak": 0.8999999761581421,
+      "impulseHits": [
+        4096,
+        24037,
+        72064,
+        120064,
+        168037,
+        216064
+      ],
+      "wav": "wav/8b7fc012dca71008a82983dc05bd9f4b2bd79c1aee459033ca87a63873becdca.wav"
+    },
+    "wrap-none-loop-on-copy-block-end": {
+      "hash": "a505b02fc3796b3946826044c5267a0e486e8a15ff9dc0e50225560de99ba53b",
+      "frames": 192000,
+      "channels": 2,
+      "peak": 0.8999999761581421,
+      "impulseHits": [
+        4096,
+        24037,
+        72064,
+        77696,
+        97637,
+        145664,
+        151296,
+        171237
+      ],
+      "wav": "wav/a505b02fc3796b3946826044c5267a0e486e8a15ff9dc0e50225560de99ba53b.wav"
+    },
+    "wrap-none-loop-on-copy-block-end-minus-1": {
+      "hash": "edd8f22e6f805b00e03b55bc8f8d155d53e54af63c7a7a208c1a3a3c279965e6",
+      "frames": 192000,
+      "channels": 2,
+      "peak": 0.8999999761581421,
+      "impulseHits": [
+        4096,
+        24037,
+        72064,
+        76671,
+        96612,
+        144639,
+        149246,
+        169187
+      ],
+      "wav": "wav/edd8f22e6f805b00e03b55bc8f8d155d53e54af63c7a7a208c1a3a3c279965e6.wav"
+    },
+    "wrap-none-loop-on-copy-block-end-plus-1": {
+      "hash": "d739ca1934fc627b8d988d67725a30094fab7ff5f9686c63e63d15d24f6c0517",
+      "frames": 192000,
+      "channels": 2,
+      "peak": 0.9724845886230469,
+      "impulseHits": [
+        4096,
+        24037,
+        72064,
+        78721,
+        98662,
+        146689,
+        153346,
+        173287
+      ],
+      "wav": "wav/d739ca1934fc627b8d988d67725a30094fab7ff5f9686c63e63d15d24f6c0517.wav"
     },
     "control-nudged": {
       "hash": "33366f546641aa64445b7997f41db85c900bd189b4f26f3503598e5c252765c5",

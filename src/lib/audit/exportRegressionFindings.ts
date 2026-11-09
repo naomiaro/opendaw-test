@@ -222,7 +222,7 @@ export const KNOWN_FINDINGS: readonly KnownFinding[] = [
   {
     name: "range-end-is-a-minimum",
     invariant: "frames-as-expected",
-    note: "an `ExportConfiguration.range` passed to `start` sets the render's minimum length, not its end: `minDurationSeconds` is the range's length and `maxDurationSeconds` 30 s more (OfflineEngineRenderer.ts:271-282), and `render` stops only on 10 s of silence past the minimum (offline-worker.ts). A range ending inside sound comes back running on to the song's end, here 2 s of music past the range, then a quarter second, bit for bit the song. Read as the API stands; whether a range's end is meant as a minimum is the user's call. The studio's own export dialog passes no range (its sections go through `renderSection`)",
+    note: "an `ExportConfiguration.range` passed to `start` sets the render's minimum length, not its end: `minDurationSeconds` is the range's length and `maxDurationSeconds` 30 s more (OfflineEngineRenderer.ts:271-282), and `render` stops only on 10 s of silence past the minimum (offline-worker.ts). A range ending inside sound comes back running on to the song's end, here 2 s of music past the range, then a quarter second, bit for bit the song. Upstream's plan records it (openDAW plans/issues/434-mixdown-sections.md:21-24: a range \"still renders a tail, never ends sample-exact\") and answered with `renderSection`; no studio caller passes a range",
     applies: (row) => row.exportRange && row.path === "start",
     signature: ({ comparedFrames }, row, pageRate) => comparedFrames === renderedToSongEnd(row, pageRate)
   },

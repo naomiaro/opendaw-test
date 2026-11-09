@@ -1,5 +1,8 @@
-<!-- TO REVIEW: not posted. Target: a new issue on andremichelle/openDAW, framed as a question (not a defect report).
-The repro link works only once PR #221 is merged and deployed: check it on the public host first. -->
+<!-- WITHDRAWN 2026-11-09, not posted. Upstream's own plan answers the question: openDAW
+`plans/issues/434-mixdown-sections.md:21-24` records that `start` with `ExportConfiguration.range` "stops on 10 s silence or
+`end + 30 s`. So a range today still renders a tail, never ends sample-exact", and that no UI sets it; the plan's remedy was
+`renderSection`, sample-exact for every section but Entire song and the last marker (`:14`, `:54-56`). Found through XERJ after
+the draft was written. Kept as written below. -->
 
 # Question: is `ExportConfiguration.range`'s end meant as a minimum?
 
@@ -27,7 +30,11 @@ When `OfflineEngineRenderer.start` gets a `range` whose end falls inside sound, 
 - `start` resolves `range` to `startPosition` and `endPosition`, then passes the range's length as `minDurationSeconds` and that plus 30 s as `maxDurationSeconds` (`packages/studio/core/src/OfflineEngineRenderer.ts:271-282`).
 - `render` then stops only when `SilenceTail` sees 10 s at or below −72 dB past the minimum, or at the maximum (`packages/studio/core-wasm/src/offline-worker.ts:401-418`). Nothing in the loop reads `endPosition`.
 - `ExportRange` (`"full" | {start, end}`, `packages/studio/adapters/src/EngineProcessorAttachment.ts`) has no comment.
-- The studio's own export dialog passes no range: its sections go through `renderSection`, and a section without a tail renders an exact frame count.
+- The studio passes no range anywhere I can find. Every `start` caller in `packages/app/studio`:
+  - the mixdown and stems export, `Mixdowns.render`, with `{stems}` or `{stems, metronome}` from the dialog (`ProjectDialogs.tsx:186-189`);
+  - SoundCloud upload, Publish, AutoEq and Contest, with `Option.None`.
+
+  In `studio/core`, freeze (`AudioUnitFreeze.ts:98`) passes `{stems}`. A section other than the song goes through `renderSection`, and without a tail it renders an exact frame count.
 
 **Two readings I can see:**
 

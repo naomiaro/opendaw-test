@@ -2,9 +2,10 @@
 
 **Title:** A region that starts on a whole frame inside a block plays one frame early, an export range's end is a minimum, and what markers, loop wraps and a gap inside a range do on 0.0.183
 
-**Status: MEASURED, PR #221 open; two drafts wait for the user's read** (both new issues on openDAW, nothing posted):
-[the region start](./drafts/TO-REVIEW-openDAW-region-start-inside-a-block-one-frame-early.md) and
-[the range question](./drafts/TO-REVIEW-openDAW-export-range-end-is-a-minimum.md). The 12 rows read `unregistered` until accepted.
+**Status: MEASURED.** The region start is drafted as a new openDAW issue:
+[`drafts/TO-REVIEW-openDAW-region-start-inside-a-block-one-frame-early.md`](./drafts/TO-REVIEW-openDAW-region-start-inside-a-block-one-frame-early.md).
+The range question is withdrawn, because upstream's own plan answers it (5, below):
+[`drafts/withdrawn-openDAW-export-range-end-is-a-minimum.md`](./drafts/withdrawn-openDAW-export-range-end-is-a-minimum.md). The 12 rows are accepted into the register (2026-11-09, the user's word): runs 1794253004161 (48 kHz) and 1794253155843 (44.1 kHz), 9 WAVs per rate, library commit `e5dcaa1`.
 The user's decision stands for #533 and #534: no follow-up comments there.
 
 **Verified against:** `@opendaw/studio-sdk@0.0.183`, engine `447481d683c6`, checkout at the tag (`81dc378c8`). Chrome 156 (Playwright's),
@@ -86,17 +87,20 @@ Before 0.0.183 these would have stopped at about 10.2 s (computed from [Finding 
 1794252329469 (44.1 kHz page), each clean 246 / known 61, and `table.ts --compare-device` against the runs above reads `307 of 307 rows
 identical` at both page rates. That covers the 11 rows and the four single-stem rows the first device proof never rendered.
 
-**5. A range whose end is inside sound does not stop there (measured; label `range-end-is-a-minimum`, the user's call).**
+**5. A range whose end is inside sound does not stop there (measured; label `range-end-is-a-minimum`, as upstream's plan records it).**
 `range-none-start-ends-in-sound` passes a range of 0 to 2 s of the 4 s probe, which sounds throughout, to `start`. It comes back as **204000
 frames at 48 kHz and 187537 at 44.1** (runs 1794252850097 and 1794252902633). Those are the quantum holding the song's last sample (192000,
 176512) plus exactly a quarter second. That is the whole song, bit for bit the stepped reference over its 4 s, so 2 s of music past the range's
 end. *Read:* `start` makes the range's length `minDurationSeconds` and adds 30 s for `maxDurationSeconds`
-(`OfflineEngineRenderer.ts:271-282`), and `render` stops only on 10 s of silence past the minimum. Nothing upstream documents the end
-as a minimum: `ExportRange` carries no comment, and the commit that added it (`33b4e72ba`, "export config") has no description. The
-studio passes no range (its dialog renders sections). Our export chapter said the render runs on "until the tail has decayed", which
+(`OfflineEngineRenderer.ts:271-282`), and `render` stops only on 10 s of silence past the minimum. The API does not document the end as a minimum (upstream's plan does, below): `ExportRange` carries no comment, and the commit that added it (`33b4e72ba`, "export config") has no description. The
+studio passes no range: every `start` caller was read on 2026-11-09 (the mixdown and stems export with `{stems}` or `{stems,
+metronome}`, freeze with `{stems}`, SoundCloud, Publish, AutoEq and Contest with none). Our export chapter said the render runs on "until the tail has decayed", which
 understates it. The timeline plays on, so it now says that. `frames-as-expected` holds the row to the range's 2 s. The label
 matches only a render that ran to the song's last quantum and a quarter second, and anything else reads `failing`.
 No demo here passes a `range`. The demos' range exports step an exact frame count (`src/lib/rangeExport.ts`, whose header already
 says `render` "would render past the range while content continues", and `renderOfflineSlice`), and `start` serves only the full song.
-So this costs the demos nothing; it is for other callers of the SDK. Whether a range's end is meant as a minimum is a question for
-upstream, drafted for the user's read: [`drafts/TO-REVIEW-openDAW-export-range-end-is-a-minimum.md`](./drafts/TO-REVIEW-openDAW-export-range-end-is-a-minimum.md).
+So this costs the demos nothing; it is for other callers of the SDK. Upstream has written this down, in a plan rather than in the API: openDAW
+`plans/issues/434-mixdown-sections.md:21-24` says `start` with a range "stops on 10 s silence or `end + 30 s`. So a range today still
+renders a tail, never ends sample-exact", and that no UI sets it. Its remedy was `renderSection`, which ends sample-exact for every
+section except Entire song and the last marker (`:14`, `:54-56`). Found through XERJ after the question was drafted, so the draft is
+withdrawn: [`drafts/withdrawn-openDAW-export-range-end-is-a-minimum.md`](./drafts/withdrawn-openDAW-export-range-end-is-a-minimum.md).

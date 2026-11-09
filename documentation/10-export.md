@@ -457,7 +457,9 @@ region end]`) or `{ start: ppqn, end: ppqn }`. `end` is not where the render sto
 whatever the timeline holds after `end` is rendered too, not only the ringing of what sounded inside the range, until the
 output has been silent for 10 s or 30 s have passed. A range of 0..2 s on a 4 s region that sounds throughout comes back as the
 whole 4 s and a quarter second ([regression page](https://opendaw-test.pages.dev/export-regression-audit-debug-demo?rows=range-none-start-ends-in-sound)).
-For a file that ends at `end`, use the [step API](#range-bounded-export-via-the-step-api).
+Upstream records this in its mixdown-sections plan (openDAW `plans/issues/434-mixdown-sections.md`: a range "never ends
+sample-exact"), and its answer was `renderSection`, sample-exact for every section but Entire song and the last marker. For a file that
+ends at `end`, use `renderSection` or the [step API](#range-bounded-export-via-the-step-api).
 
 ### Filenames
 
