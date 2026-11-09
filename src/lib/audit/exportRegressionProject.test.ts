@@ -105,6 +105,12 @@ describe("placeSourceRegions", () => {
     };
   };
 
+  it("starts an in-block row's region at its ppqn, and that row's bed at 0", () => {
+    const row = rowOf("in-block-none-region-start-predicted-early");
+    expect(place(row).regions.map((region) => region.position.getValue())).toEqual([1930]);
+    expect(place(bedRow(row)).regions.map((region) => region.position.getValue())).toEqual([0]);
+  });
+
   it("places one region at 0 for a row with no second region", () => {
     const { regions, files } = place(rowOf("tail-none-step-one"));
     expect(regions.map((region) => region.position.getValue())).toEqual([0]);

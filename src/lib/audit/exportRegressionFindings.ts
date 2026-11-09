@@ -96,7 +96,10 @@ const fadedStart = (invariant: InvariantId, applies: KnownFinding["applies"]): K
     const settled = fadeFrames(pageRate) + chainFrames(row);
     // `start` keeps a quarter second past a range it was given, so it compares more than the range, never less
     const covered = comparedFrames !== null
-      && (row.exportRange ? comparedFrames >= rangeFrames(row, pageRate) : comparedFrames === rangeFrames(row, pageRate));
+      && (row.exportRange
+        // the quarter second `render` keeps after the last sound, and the quantum it keeps that sound in
+        ? comparedFrames >= rangeFrames(row, pageRate) && comparedFrames <= rangeFrames(row, pageRate) + Math.ceil(0.25 * pageRate) + 128
+        : comparedFrames === rangeFrames(row, pageRate));
     return firstDifferingFrame === 0 && covered
       && bandExcursion({ from: 0, to: settled, low: ramp, high: ramp, readOffset: offset }) <= windowTolerance(row)
       && bandExcursion({ from: settled, to: Infinity, low: unity, high: unity, readOffset: offset }) <= ROUNDING;
@@ -133,7 +136,7 @@ const WRAP_STEP_LIMIT: Readonly<Record<number, number>> = { 48000: 0.131, 44100:
 const inBlockRoundsEarly = (invariant: InvariantId, applies: KnownFinding["applies"]): KnownFinding => ({
   name: "in-block-pulse-rounds-early",
   invariant,
-  note: "a pulse inside a 128-frame block is converted from the block's start pulse and truncated, so an event on a whole frame can land one frame early: a metronome click at `floor(pulses_to_samples(beat - p0))` (crates/engine/src/metronome.rs:212), a region's start at `sample_of` (audio_region_player.rs:974-976). Since 0.0.183 the block's start is exact and the error no longer builds up; this one rounding is what is left (upstream's #533 reply). Measured, not filed: the signature holds every event to the frame that arithmetic, written out in exportRegressionInBlock.ts, gives it",
+  note: "a pulse inside a 128-frame block is converted from the block's start pulse and truncated, so an event on a whole frame can land one frame early: a metronome click at `floor(pulses_to_samples(beat - p0))` (crates/engine/src/metronome.rs:212), a region's start at `sample_of` (audio_region_player.rs:974-976), the whole region then the reference seated a frame early, bit for bit. Since 0.0.183 the block's start is exact and the error no longer builds up; this one rounding is what is left (upstream's #533 reply). Measured, not filed: the signature holds every event to the frame that arithmetic, written out in exportRegressionInBlock.ts, gives it",
   applies,
   signature: ({ frameOffsets }) =>
     frameOffsets !== null && frameOffsets.got.length === frameOffsets.predicted.length
@@ -212,7 +215,8 @@ export const KNOWN_FINDINGS: readonly KnownFinding[] = [
     }
   },
   inBlockRoundsEarly("clicks-on-beat-frame", (row) => row.path === "stems-metronome"),
-  inBlockRoundsEarly("impulse-on-computed-frame", (row) => row.group === "in-block")
+  inBlockRoundsEarly("impulse-on-computed-frame", (row) => row.group === "in-block"),
+  inBlockRoundsEarly("region-seated-on-start", (row) => row.group === "in-block")
 ];
 
 export const findingFor = (

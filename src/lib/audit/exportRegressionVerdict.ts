@@ -232,10 +232,10 @@ const segmentResidue = (
 ): { largest: number; frame: number } => {
   let largest = 0;
   let worst = -1;
-  for (let c = 0; c < rendered.samples.length; c++) {
+  scan: for (let c = 0; c < rendered.samples.length; c++) {
     const x = rendered.samples[c];
     const y = reference.samples[c];
-    segments.forEach(({ out, src, length, jump, fadeIn }, index) => {
+    for (const [index, { out, src, length, jump, fadeIn }] of segments.entries()) {
       const before = index > 0 ? segments[index - 1] : null;
       const left = before === null ? 0 : before.src + before.length;
       for (let i = 0; i < length; i++) {
@@ -247,12 +247,24 @@ const segmentResidue = (
         if (!(delta <= largest)) {
           largest = Number.isNaN(delta) ? Infinity : delta;
           worst = frame;
-          if (largest === Infinity) return;
+          if (largest === Infinity) break scan;
         }
       }
-    });
+    }
   }
   return { largest, frame: worst };
+};
+
+/** Whether the render is silence up to `seat`, then the reference from its first frame, bit for bit, for all the reference holds. */
+const isSeatedAt = (rendered: RenderedRow, reference: RenderedRow, seat: number): boolean => {
+  if (seat < 0 || rendered.samples[0].length < seat + reference.samples[0].length) return false;
+  for (let c = 0; c < rendered.samples.length; c++) {
+    const a = bitsOf(rendered.samples[c]);
+    const b = bitsOf(reference.samples[c]);
+    for (let frame = 0; frame < seat; frame++) if (a[frame] !== 0) return false;
+    for (let i = 0; i < b.length; i++) if (a[seat + i] !== b[i]) return false;
+  }
+  return true;
 };
 
 /** Where the engine starts the row's first region, as its own arithmetic does it. */
@@ -316,7 +328,8 @@ const judge = (
       );
     }
     case "clicks-on-beat-frame": {
-      if (hasNoFrames(rendered) || rendered.samples.length < 2) return failUncompared("no metronome stem to read");
+      // the source's stem, the bed's, then the metronome's: read by position, so a missing stem must not move it
+      if (hasNoFrames(rendered) || rendered.samples.length !== 6) return failUncompared(`${rendered.samples.length} channels, 6 expected: the source's, the bed's and the metronome's stems`);
       // The metronome's stem is appended after the unit stems; a click's first sample is 0, so it sounds a frame later.
       const onsets = findOnsets(rendered.samples[rendered.samples.length - 2], CLICK_MIN_GAP_FRAMES).map((frame) => frame - 1);
       const beats: number[] = [];
@@ -324,6 +337,20 @@ const judge = (
       const exact = beats.map((beat) => exactFrame(beat, row.bpm, pageRate));
       if (exact.some((frame) => !Number.isInteger(frame))) return failUncompared("a beat between two frames has no frame to be held to");
       return compareHits(onsets, exact, "the beats' frames", beats.map((beat) => metronomeClickFrame(beat, row.bpm, pageRate)));
+    }
+    case "region-seated-on-start": {
+      const missing = needs("reference", refs.reference);
+      if (missing !== null) return missing;
+      const reference = refs.reference!;
+      if (hasNoFrames(rendered) || hasNoFrames(reference)) return failUncompared("a render holds no frames");
+      if (rendered.samples.length !== reference.samples.length) return failUncompared("channel counts differ");
+      const exact = regionStartFrameOf(row, pageRate);
+      if (isSeatedAt(rendered, reference, exact)) return pass(`the reference seated on frame ${exact}, bit for bit, ${reference.samples[0].length} frames`);
+      // A whole region a frame off is a seat; anything else is no seat at all, and no finding reads it.
+      const off = [-1, 1].find((offset) => isSeatedAt(rendered, reference, exact + offset));
+      if (off === undefined) return fail(`not the reference seated on frame ${exact}, nor a frame either side of it`);
+      return fail(`the reference seated on frame ${exact + off}, bit for bit, not on ${exact}`,
+        { ...NO_EVIDENCE, frameOffsets: { got: [off], predicted: [regionStartFrameFromEngine(row, pageRate) - exact] } });
     }
     case "jumps-crossfade": {
       const missing = needs("reference", refs.reference);

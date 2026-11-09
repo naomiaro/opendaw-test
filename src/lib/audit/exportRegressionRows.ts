@@ -18,7 +18,7 @@ export type InvariantId =
   | "impulse-on-computed-frame" | "no-jump" | "muted-latent-unchanged" | "disabled-equals-absent"
   | "stems-sum-to-mix" | "repeat-identical" | "tail-present" | "tail-absent" | "proves-something"
   | "latency-as-expected" | "differs-from-reference" | "frames-as-expected" | "clicks-on-beat-frame"
-  | "impulse-follows-playback" | "jumps-crossfade";
+  | "impulse-follows-playback" | "jumps-crossfade" | "region-seated-on-start";
 
 export type ExportRow = {
   id: string;
@@ -53,7 +53,7 @@ export type ExportRow = {
   /** Two markers on a step render, the first played `markerPlays` times. Null leaves the section paths' own markers. */
   markerPpqns: readonly [number, number] | null;
   markerPlays: number;
-  /** `start` and `stems-single-start` pass the row's range as `ExportConfiguration.range`. */
+  /** `start`, `stems-start` and `stems-single-start` pass the row's range as `ExportConfiguration.range`. */
   exportRange: boolean;
   repeat: boolean;
   referenceId: string | null;
@@ -193,9 +193,22 @@ const MASTER_PATHS: readonly PathId[] = [
 
 type Spec = Pick<ExportRow, "id" | "label" | "group" | "latencyCase" | "path"> & Partial<ExportRow>;
 
+/** A field only some paths read: a row that sets it on another path would render without it and say nothing. */
+const assertFieldsRead = (row: ExportRow): ExportRow => {
+  const unread = [
+    row.exportRange && !["start", "stems-start", "stems-single-start"].includes(row.path) ? "exportRange" : null,
+    row.loopEndPpqn !== null && row.path !== "loop-on-copy" ? "loopEndPpqn" : null,
+    // `renderSection` turns the marker track off
+    row.markerPpqns !== null && !["step-one", "start"].includes(row.path) ? "markerPpqns" : null,
+    row.markerPpqns === null && row.markerPlays !== 1 ? "markerPlays" : null
+  ].filter((field) => field !== null);
+  if (unread.length > 0) throw new Error(`${row.id}: ${row.path} does not read ${unread.join(", ")}`);
+  return row;
+};
+
 const make = (spec: Spec): ExportRow => {
   const seconds = spec.seconds ?? 4;
-  return {
+  return assertFieldsRead({
     signal: "probe",
     sourceRate: 48000,
     seconds,
@@ -222,7 +235,7 @@ const make = (spec: Spec): ExportRow => {
     warmReferenceId: null,
     invariants: [],
     ...spec
-  };
+  });
 };
 
 const coreId = (latencyCase: LatencyCaseId, path: PathId): string => `core-${latencyCase}-${path}`;
@@ -544,8 +557,8 @@ const buildInBlock = (pageRate: number): ExportRow[] =>
     return make({
       id: `in-block-none-region-start-${tag}`, label: `a region starting inside a block at ppqn ${ppqn}, ${tag}`,
       group: "in-block", latencyCase: "none", path: "step-one", sourceRate: pageRate, bpm, regionStartPpqn: ppqn,
-      rangeSeconds: exactFrame(ppqn, bpm, pageRate) / pageRate + 4,
-      invariants: [...basics(), "impulse-on-computed-frame"]
+      rangeSeconds: exactFrame(ppqn, bpm, pageRate) / pageRate + 4, referenceId: sameRateReference(pageRate),
+      invariants: [...basics(), "impulse-on-computed-frame", "region-seated-on-start"]
     });
   });
 

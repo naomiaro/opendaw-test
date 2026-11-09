@@ -386,10 +386,14 @@ pulse, truncated (`audio_region_player.rs:974-976`). Its tests hold it to the cl
 - *A region's start (new).* The `in-block` rows start the probe's region on a whole frame inside a block, at the page's own rate. One start is the first
   after 1 s that the arithmetic places a frame early, the other the first it places on its frame: 48 kHz ppqn 1930 (frame 48250) and 1921
   (48025); 44.1 kHz ppqn 1920 (44100) and 1952 (44835). **Measured: the predicted-early region plays a frame early at both
-  rates, all five impulses one frame before their computed frames** (48 kHz: 52345 … 216313 against 52346 … 216314). The on-time
-  control holds `impulse-on-computed-frame`. Computed over 1 to 4 s at 120 bpm: of the whole-frame starts inside a block, 3776 of 7620
+  rates, all five impulses one frame before their computed frames** (48 kHz: 52345 … 216313 against 52346 … 216314). And it is the
+  whole region: `region-seated-on-start` reads the render as silence up to frame 48249 (44099 at 44.1 kHz), then the same-rate reference
+  from its first frame, bit for bit, over all 4 s (runs 1794252503374 and 1794252536982, `?group=in-block`). The on-time control holds
+  both invariants, seated on its own frame. Computed over 1 to 4 s at 120 bpm: of the whole-frame starts inside a block, 3776 of 7620
   land early at 48 kHz and 123 of 238 at 44.1. So about half of them do, by one frame, and the region's whole read moves with its start.
-- The signature holds every event to the arithmetic's frame and needs at least one off its exact frame. A click or a region early
+- The signature holds every event to the arithmetic's frame and needs at least one off its exact frame. On a region, the events are
+  the impulses and the seat. Only a render that is the reference seated exactly at the arithmetic's frame matches. A region a frame early with
+  anything else wrong reads `failing`, and so does one two frames off. A click or a region early
   where the arithmetic says on time, a late one, or a missing one stays `failing` (tested).
 - *Not covered:* a note-on inside a block (the harness has Tapes only), and other bpm. Upstream said none of the filed cases hit the rounding. The region rows
   are the first case here that does, on audio. Whether that changes "label, not file" is the user's call.
@@ -400,7 +404,9 @@ marker exactly on a block's end being missed. The `marker` rows put Marker 1 at 
 on a block's end (48 kHz ppqn 3840, frame 96000; 44.1 kHz ppqn 4096, frame 94080) or 64 frames into a block (3904 / 97600; 6144 / 141120),
 at the page's own rate. They are stepped with the marker track on, which `renderSection` turns off.
 
-- `marker-none-plays1-block-end`: played once, the render is the reference's bit for bit (the same hash at 48 kHz).
+- `marker-none-plays1-block-end`: played once, the render is the reference's bit for bit (the same hash at 48 kHz). A control
+  that markers alone change nothing, not coverage of the block-end fix: with one play a missed marker is not heard. The plays-2 rows
+  carry that.
 - `marker-none-plays2-*`: `impulse-follows-playback` (the reference's hits carried through 0..M2, M1..M2 again, then M2 on) and
   `jumps-crossfade` (below) hold on a block's end and inside one, at both rates.
 - `marker-none-plays2-block-end-start`: `start` leaves the markers on, and its render is the stepped one over the stepped one's range,
@@ -424,6 +430,10 @@ before the first sound never counts. **Both render the whole range, the second b
 They are bit-identical to the stepped gap from frame 240 at 48 kHz, and within the 48 kHz source's read drift at 44.1. Their one difference is the start's 5 ms fade, a jump into a region, so
 they carry `jump-fade-at-start`. On an exported range that label now accepts a render longer than the range, since `start` keeps its quarter second of silence.
 Before 0.0.183 these would have stopped at about 10.2 s (computed from Finding 2's rule).
+
+**The device rate moves none of them (measured).** The same catalogue with the device at 48 kHz: 1794252210443 (48 kHz page) and
+1794252329469 (44.1 kHz page), each clean 246 / known 61, and `table.ts --compare-device` against the runs above reads `307 of 307 rows
+identical` at both page rates. That covers the 11 rows and the four single-stem rows the first device proof never rendered.
 
 **Still open from these rows.** The render of a range runs on past the range's end until silence, here the quarter second after the burst. Whether a
 range whose end cuts into sound stops at that end was not tried.

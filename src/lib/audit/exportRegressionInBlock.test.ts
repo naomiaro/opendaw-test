@@ -17,12 +17,21 @@ describe("exportRegressionInBlock", () => {
     expect(earlyClicks(48000)).toEqual([24000, 72000]);
     expect(earlyClicks(44100)).toEqual([110250, 132300, 154350]);
   });
+  it("picks the region starts the in-block rows rendered, one of them measured a frame early", () => {
+    // runs 1794251449772 (48 kHz) and 1794251607099 (44.1 kHz): the predicted-early region's impulses a frame before the computed ones
+    const picks = [48000, 44100].flatMap((rate) => [true, false].map((early) => {
+      const ppqn = regionStartPpqn(1, 120, rate, early);
+      return [rate, early, ppqn, regionStartFrame(ppqn, 120, rate), exactFrame(ppqn, 120, rate)];
+    }));
+    expect(picks).toEqual([
+      [48000, true, 1930, 48249, 48250], [48000, false, 1921, 48025, 48025],
+      [44100, true, 1920, 44099, 44100], [44100, false, 1952, 44835, 44835]
+    ]);
+  });
   it("puts a pulse on a block's first frame on that frame, whatever the arithmetic inside a block does", () => {
-    for (const rate of [48000, 44100]) {
-      expect(regionStartFrame(0, 120, rate)).toBe(0);
-      expect(regionStartFrame(4096, 120, 44100)).toBe(94080);
-      expect(metronomeClickFrame(1920, 120, 48000)).toBe(48000);
-    }
+    for (const rate of [48000, 44100]) expect(regionStartFrame(0, 120, rate)).toBe(0);
+    expect(regionStartFrame(4096, 120, 44100)).toBe(94080);
+    expect(metronomeClickFrame(1920, 120, 48000)).toBe(48000);
   });
   it("picks a whole-frame start inside a block that the engine places early, and one it places on its frame", () => {
     for (const rate of [48000, 44100]) {

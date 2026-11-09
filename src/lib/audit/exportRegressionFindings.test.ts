@@ -491,9 +491,11 @@ describe("jump-fade-at-start on an exported range", () => {
     const result = judged("gap-none-range-start", 12000, true);
     expect([result.holds, result.finding]).toEqual([false, "jump-fade-at-start"]);
   });
-  it("names nothing on a range render with no fade, or one short of its range", () => {
+  it("names nothing on a range render with no fade, one short of its range, or one past its quarter second and quantum", () => {
     expect(judged("gap-none-range-start", 12000, false).holds).toBe(true);
     const short = judged("gap-none-range-start", -128, true);
     expect([short.holds, short.finding]).toEqual([false, null]);
+    const overlong = judged("gap-none-range-start", 12000 + 128 + 1, true);
+    expect([overlong.holds, overlong.finding]).toEqual([false, null]);
   });
 });

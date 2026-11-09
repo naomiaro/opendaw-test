@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRows, expectedFrames, expectedLatencyFrames, lastReaders, LOOP_ON_COPY_SECONDS, selectRows, setPositionStart, SET_POSITION_SECONDS, type ExportRow, type InvariantId } from "./exportRegressionRows.ts";
+import { buildRows, expectedFrames, playbackSegments, expectedLatencyFrames, lastReaders, LOOP_ON_COPY_SECONDS, selectRows, setPositionStart, SET_POSITION_SECONDS, type ExportRow, type InvariantId } from "./exportRegressionRows.ts";
 
 describe("exportRegressionRows", () => {
   it("gives the latency figures the crates and the #530 note read", () => {
@@ -40,6 +40,9 @@ describe("exportRegressionRows", () => {
       "section-is-slice": "referenceId",
       "impulse-on-reference": "referenceId",
       "impulse-follows-loop": "referenceId",
+      "impulse-follows-playback": "referenceId",
+      "jumps-crossfade": "referenceId",
+      "region-seated-on-start": "referenceId",
       "disabled-equals-absent": "referenceId",
       "differs-from-reference": "referenceId",
       "stems-sum-to-mix": "referenceId",
@@ -247,6 +250,15 @@ describe("exportRegressionRows", () => {
       expect(rows[1].invariants).toEqual(expect.arrayContaining(["impulse-follows-playback", "jumps-crossfade"]));
     }
     expect(buildRows(48000).filter((r) => r.markerPpqns !== null).every((r) => r.group === "marker")).toBe(true);
+  });
+  it("lays a section played twice end to end over the range, the repeat alone a jump that fades in, and refuses what it cannot lay", () => {
+    const rows = buildRows(48000);
+    const twice = rows.find((r) => r.id === "marker-none-plays2-block-end")!;
+    const segments = playbackSegments(twice, 48000);
+    expect(segments.reduce((sum, s) => sum + s.length, 0)).toBe(Math.round(twice.rangeSeconds * 48000));
+    expect(segments.map(({ jump, fadeIn }) => [jump, fadeIn])).toEqual([[false, false], [true, true], [false, false]]);
+    expect(() => playbackSegments({ ...twice, markerPlays: 0 }, 48000)).toThrow(/never falls through/);
+    expect(() => playbackSegments(rows.find((r) => r.id === "core-none-step-one")!, 48000)).toThrow(/straight through/);
   });
   it("ends the wrap rows' loop on a block's end, its last frame and a frame past it", () => {
     for (const rate of [48000, 44100]) {
