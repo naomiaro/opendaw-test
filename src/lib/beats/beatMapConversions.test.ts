@@ -91,6 +91,15 @@ describe("buildWarpAnchors", () => {
     expect(anchors[4]).toEqual({ tick: 4800 + 1255, second: 3.0 });
   });
 
+  it("drops the outro anchor when the file ends less than half a pulse after the last beat", () => {
+    // 0.2 ms at 0.52 s/beat rounds to 0 ticks: the outro would share the last beat's tick, and two
+    // warp markers at one position make the project's WarpMarkerGuard panic.
+    const anchors = buildWarpAnchors(PICKUP, 2.3202, Q);
+    const ticks = anchors.map((a) => a.tick);
+    expect(new Set(ticks).size).toBe(ticks.length);
+    expect(anchors[anchors.length - 1]).toEqual({ tick: 4800, second: 2.32 });
+  });
+
   it("emits integer ticks only (Int32 box field)", () => {
     for (const a of buildWarpAnchors(PICKUP, 3.0, Q)) {
       expect(Number.isInteger(a.tick)).toBe(true);

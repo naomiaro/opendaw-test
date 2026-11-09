@@ -2,7 +2,7 @@
 
 **Title:** Every SDK export path, 296 rows at two page rates: what holds, what each row that does not hold measured, and a full run's stall in the OPFS worker
 
-**Status: REGISTER ACCEPTED ON 0.0.182, LIBRARY FILLED; FINDINGS 1 AND 2 FILED as [openDAW#533](https://github.com/andremichelle/openDAW/issues/533) and [openDAW#534](https://github.com/andremichelle/openDAW/issues/534) on 2026-11-08.** The user read the findings and approved the labels and the first fill. Both page rates are accepted, a re-run of each reads every row `identical`, and a changed render is caught (below). Nothing is posted. Three drafts wait (below). `trailing-silence-trimmed` is ruled by design and not raised upstream. The other findings are the
+**Status: FINDINGS 1 AND 2 FIXED IN `@opendaw/studio-sdk@0.0.183`** (re-measured 2026-11-09, [below](#sdk-0183-both-findings-fixed); their labels are retired). **REGISTER ACCEPTED ON 0.0.183 on the user's word (2026-11-09), library filled; a re-run of each rate reads 296 of 296 `identical`.** Before: register accepted on 0.0.182, library filled; findings 1 and 2 filed as [openDAW#533](https://github.com/andremichelle/openDAW/issues/533) and [openDAW#534](https://github.com/andremichelle/openDAW/issues/534) on 2026-11-08. The user read the findings and approved the labels and the first fill. Both page rates are accepted, a re-run of each reads every row `identical`, and a changed render is caught (below). Nothing is posted. Three drafts wait (below). `trailing-silence-trimmed` is ruled by design and not raised upstream. The other findings are the
 user's call, each with the read it got.
 
 **The catalogue holds 296 rows and none reads `failing`.** `gap-none-start`, `gap-none-section-entire` and `gap-none-stem-start` carry `long-silence-ends-render` (Finding 2), which is a defect with a draft: a label means read and understood, not fine.
@@ -63,8 +63,8 @@ SDK 0.0.182, engine `9c44973549a7`, the device at 44100 (read in `system_profile
 
 | finding | rows at 48000 | rows at 44100 | where it stands |
 |---|---|---|---|
-| `loop-pass-one-frame-short` | 2 | 17 | [openDAW#533](https://github.com/andremichelle/openDAW/issues/533): [body](./drafts/posted-openDAW-533-loop-pass-one-frame-short.md) |
-| `loop-bounce-last-frame-silent` | 0 | 4 (the same rows as 4 of the 17) | in the same draft |
+| `loop-pass-one-frame-short` | 2 | 17 | [openDAW#533](https://github.com/andremichelle/openDAW/issues/533): [body](./drafts/posted-openDAW-533-loop-pass-one-frame-short.md); **fixed in 0.0.183, label retired** |
+| `loop-bounce-last-frame-silent` | 0 | 4 (the same rows as 4 of the 17) | in the same draft; **fixed in 0.0.183, label retired** |
 | `trailing-silence-trimmed` | 2 | 2 | by design, the user's read; not raised upstream |
 | `jump-fade-at-start` | 30 | 30 | the user's call |
 | `jump-fade-cold-maximizer` | 2 | 2 | the user's call |
@@ -72,7 +72,7 @@ SDK 0.0.182, engine `9c44973549a7`, the device at 44100 (read in `system_profile
 | `range-missing-tail` | 1 | 1 | the user's call |
 | `loop-wrap-keeps-old-read` | 4 | 4 | the user's call |
 | `merge-seam-reseats-read` | 4 | 4 | the user's call |
-| `long-silence-ends-render` | 3 | 3 | a defect, [openDAW#534](https://github.com/andremichelle/openDAW/issues/534): [body](./drafts/posted-openDAW-534-entire-song-ends-at-silence.md), not posted |
+| `long-silence-ends-render` | 3 | 3 | a defect, [openDAW#534](https://github.com/andremichelle/openDAW/issues/534): [body](./drafts/posted-openDAW-534-entire-song-ends-at-silence.md); **fixed in 0.0.183, label retired** |
 
 **The register and the library (measured).**
 
@@ -127,6 +127,8 @@ stays failing, so the labels do not hide those two defects.
 - The bounce's three taps on that Compressor with the unit's fader at −6 dB: pre-fx bit-identical to the no-device render (tone 0.5000); pre-fader bit-identical to `control-compressor-engaged` (0.1059); post-fader exactly −6.000 dB from pre-fader (0.0531).
 
 ## Finding 1: a looped pass runs one frame short at some rate, length and bpm
+
+**FIXED in 0.0.183** (`5f6b53791`, the transport counts frames from an anchor): see [SDK 0.0.183](#sdk-0183-both-findings-fixed).
 
 **Filed:** [openDAW#533](https://github.com/andremichelle/openDAW/issues/533), body as filed in [`drafts/posted-openDAW-533-loop-pass-one-frame-short.md`](./drafts/posted-openDAW-533-loop-pass-one-frame-short.md). This answers the unexplained
 frame in [the #530 note](../2026-11-05-render-section-latency-gap/note.md) and the
@@ -183,6 +185,8 @@ holds 0 on both channels, and the stepped loop holds 0.07072490, which is the so
 - The looped bounce at 48 kHz and 137 bpm does the same. The catalogue has `bounce-loop` at 120 bpm only. Computed: the emulation of the cycle start marks the same two of 12 combinations short as the transport's, and at this one the last frame's read lands on exactly 192000 of 192000, past the end. Still unmeasured.
 
 ## Finding 2: an entire-song render stops at 10 s of silence even when regions follow, and they are missing from the file
+
+**FIXED in 0.0.183** (`0f2b76d76`, `minDurationSeconds` and `SilenceTail`): see [SDK 0.0.183](#sdk-0183-both-findings-fixed).
 
 **Filed:** [openDAW#534](https://github.com/andremichelle/openDAW/issues/534), body as filed in [`drafts/posted-openDAW-534-entire-song-ends-at-silence.md`](./drafts/posted-openDAW-534-entire-song-ends-at-silence.md). Label: `long-silence-ends-render`, approved by the user (below).
 
@@ -331,6 +335,33 @@ What I did not get: an observed natural hang with the observer attached. Two run
 
 **For a person running the page.** A run stuck on a row with those two console lines is this. Its rows error at 60 s each. Reload and wait about 30 s before Run: both times that was done right after a hang, the run passed. Reloading and clicking at about 2 s hung again twice. This lowers the odds at best, on small counts. It is not a fix.
 
+## SDK 0.0.183: both findings fixed
+
+Runs 1794244340183 (48 kHz) and 1794244550684 (44.1 kHz), 2026-11-09, `@opendaw/studio-sdk@0.0.183`, engine `447481d683c6`, the device at
+44.1 kHz, 296 rows each, errored 0. Against the 0.0.182 register: 48 kHz 240 identical / 56 changed, 44.1 kHz 210 / 86. Every changed row
+is one of three causes, read row by row in `table.ts` and, for the metronome stems, sample by sample:
+
+- **The quarter-second tail is whole now** (`0f2b76d76`): every entire-song and `start` render, mix and stem, and the
+  `section-marker-last` rows are 128 frames longer with no differing frame in the shared span (e.g. `core-none-start` 203 872 → 204 000).
+  The by-design `trailing-silence-trimmed` rows read 81 120 / 74 129 frames (were 80 992 / 74 001); its pinned figure moved with them.
+- **The gap rows render their range** (#534 fixed): 21 472 → 789 600 frames at 48 kHz, and they hold `section-is-slice`.
+- **A loop pass is its whole frame count** (#533 fixed, `5f6b53791`): the 4 `one-frame` rows at 48 kHz (137 bpm) and 34 loop-twice /
+  bounce-loop rows at 44.1 kHz (120 bpm) read `changed shift 1`, and hold their invariants; the larger figures (up to +5.0 dB) are the same
+  one-frame shift on the denser aux, several and master signals. The same transport change moves one metronome click per stem: the
+  metronome places a click at `floor(pulses_to_samples(beat − p0))`, and at 48 kHz the click at frame 72 000 now starts one frame earlier
+  (onset 72 007 → 72 006; the other seven unchanged); the 4 metronome stems per rate differ from that click on, −31 dB (−30.2 at 44.1).
+
+The table printed `no longer reproducing` for `loop-pass-one-frame-short`, `loop-bounce-last-frame-silent` and `long-silence-ends-render`;
+all three are retired from `exportRegressionFindings.ts`. Standing in those runs: clean 242 / known 52 / failing 2 at both rates, the two
+failing rows the trimmed-tail rows, whose label pinned the old frame count (`TRIMMED_FRAMES`, now 81 120 / 74 129). Re-run with the retired labels and the new figure, runs 1794246918474 (48 kHz) and 1794247036602 (44.1 kHz): **clean 242, known 54, failing 0,
+errored 0** at both rates, against the register 240 / 56 and 210 / 86 as before (the renders are deterministic). The expected line below
+moves to these counts once a person accepts the runs.
+
+**Accepted 2026-11-09 on the user's word** ("accept the new baselines since it's on top of the new export fixes"): `register/48000.json`
+from 1794246918474, `register/44100.json` from 1794247036602, nothing forced; 22 and 26 WAVs copied, library commit `26b06b7` pushed (48 LFS
+objects, 88 MB). Re-run against the new registers: 1794248944040 (48 kHz) and 1794249053719 (44.1 kHz) each read 296 `identical`, clean 242,
+known 54, failing 0, errored 0.
+
 ## Reading recipe for an SDK bump
 
 1. `export-regression-audit-debug-demo.html?rate=48000` on the dev server, a real click on Run about 30 s after load, the tab visible, 73 to 74 s, then `?rate=44100`. Standing is about the invariants alone, so read it with `data-register-counts` (identical, changed, unregistered) beside `data-standing-counts`: expect `296,0,0`. On the public host the page finds no register and has no sink, so every row reads `unregistered`, a callout says the run proves the invariants only, the state ends in `done:no-summary`, and `table.ts` finds no summary. The page reads `register/<rate>.json` and uploads a WAV only for a row that is not `identical`. A stall as above: reload, wait and run again.
@@ -339,7 +370,7 @@ What I did not get: an observed natural hang with the observer attached. Two run
 4. A `known-finding` is a row whose signature still matches. It is not a pass: this note's reads are what it rests on.
 5. `--accept --library <clone>` only after a person has read that run's table, and never on a run with a row failing or errored, a descending run, a row the catalogue does not hold or holds with other invariants (a summary from before the catalogue changed) or, without `--force`, a partial one. It writes the register and copies the new WAVs. Then in the clone `git add wav`, commit and push, and commit the register here.
 
-**Expected on 0.0.182:** 296 of 296 `identical`; 48 kHz clean 237, known 59; 44.1 kHz clean 222, known 74.
+**Expected on 0.0.183:** 296 of 296 `identical`; clean 242, known 54 at both rates (0.0.182: 48 kHz clean 237, known 59; 44.1 kHz clean 222, known 74).
 
 Once a release ships a fix, the row's invariant holds, its hash moves so it reads `changed`, and the table prints `no longer reproducing: <finding>`. Retire the finding from `exportRegressionFindings.ts` then, and say so here.
 

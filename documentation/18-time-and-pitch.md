@@ -467,6 +467,7 @@ region.optWarpMarkers.ifSome(collection => {
 - Always have a marker at PPQN 0 (or near it) and at the region's full duration. Without anchors at both ends, the linear interpolation has no slope at the edges and the engine bails.
 - Between any two consecutive markers the playback rate is constant. Add more markers to "lock" beats; remove them to let the rate flow.
 - Sort order is by PPQN — the SDK keeps the collection ordered for you via `MarkerComparator`.
+- **No two markers of one play-mode at the same position.** A `Project` checks every transaction that touches a warp marker: one that *ends* with two markers of one play-mode box on the same PPQN panics (`Warp markers at the same position …`) when it commits. Positions may coincide in between — shift a run of markers in any order inside one `editing.modify()`. Loading a project drops duplicate markers from `AudioPitchStretchBox`, `AudioTimeStretchBox` and `AudioSignalsmithBox`.
 
 ---
 

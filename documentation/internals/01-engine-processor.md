@@ -211,13 +211,15 @@ The first two are *state* flags that persist across a block's sub-chunks. The la
 
 ### How the quantum is split
 
-`Transport::render_quantum` (`crates/transport/src/transport.rs:192`) is the loop. Per iteration it computes the candidate `p1` assuming the whole remaining quantum runs at the current bpm, then looks for the earliest of three actions inside `[p0, p1)`, in a strict precedence:
+`Transport::render_quantum` (`crates/transport/src/transport.rs:223`) is the loop. Per iteration it computes the candidate `p1` assuming the whole remaining quantum runs at the current bpm, then looks for the earliest of three actions inside `[p0, p1)`, in a strict precedence:
 
 1. **Marker** — evaluated first. Crossing a section boundary either repeats the section (jump back to its start, `discontinuous = true`) or falls through to the next one once `plays` is exhausted. `plays == 0` means forever.
 2. **Loop end** — takes over only when strictly earlier than the marker action. Wraps to `loop_from`, or, when `pauseOnLoopDisabled` is set, pauses the transport *at* the loop end and returns; the engine then renders the quantum's remainder as a non-playing tail so voices release and tails ring out instead of hard-cutting.
 3. **Tempo automation** — evaluated last, strictly-earlier only. Tempo is re-evaluated on a fixed grid: `TEMPO_CHANGE_GRID = 80.0` pulses, which is `PPQN.fromSignature(1, 48)`, roughly a 10 ms window.
 
 With no markers, no loop and a fixed tempo this emits exactly one block spanning the whole quantum — the common case, and the cheapest.
+
+The position is computed from an **anchor** (a pulse position, the bpm at it and a frame offset), which the transport sets wherever the position is set from outside the block flow (seek, loop wrap, marker jump, a bpm change), and computes every block end as anchor + frames-since-anchor converted to pulses (`pulse_at`). Split points go the other way through the same anchor (`emit_until`), so a loop end or marker on a whole frame lands on it exactly: a loop that is a whole number of frames long plays exactly that many frames on every pass, live and offline. A marker exactly on a block's end counts as inside the block (`next.position <= p1`, matching the loop end), and a jump on the quantum's last frame carries `DISCONTINUOUS` into the next quantum's first block (`leap`).
 
 `Block` values are pushed into a `Vec` pre-sized to `MAX_BLOCKS_PER_QUANTUM` (16), so the render path never reallocates.
 

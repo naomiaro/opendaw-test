@@ -8,8 +8,11 @@ quantum for the next one (`QuantumStepper`, `core-wasm/src/quantum-stepper.ts`),
 **Measured on 0.0.182, 2026-11-06, both page rates, the device at 44.1 kHz:** `Done: no frames lost on any of 12 rows`; every row the formula gave frames for reads
 "fixed: no frames lost" (a third verdict, `no-frames-lost`, so a new loss still reads "differs from the formula"): 0 frames early, before and after the boundary, on all hits, the tone step 0.065 at frame 21834
 as the reference, no jump (Compressor 240 / 220, Maximizer 240 / 221, Fold 15 frames of latency; two passes and the 0.9 s
-sections too). At 44.1 kHz the 4 s two-pass rows keep their 1 early, the no-latency baseline of that length. The figures
-below are the defect as measured on 0.0.181.
+sections too). At 44.1 kHz the 4 s two-pass rows kept their 1 early, the no-latency baseline of that length.
+**Re-measured on 0.0.183, 2026-11-09, both page rates, the device at 44.1 kHz:** `Done: no frames lost on any of 12 rows`, 7 rows
+"fixed: no frames lost", and the 44.1 kHz 4 s two-pass rows now read 0 early with a baseline of 0: that 1 early was the loop pass
+one frame short, openDAW#533, fixed in 0.0.183 (the export regression note's Finding 1). The figures below are the defect as
+measured on 0.0.181.
 
 **Issue:** [openDAW#530](https://github.com/andremichelle/openDAW/issues/530) (filed 2026-11-05). Body as filed: [`drafts/posted-openDAW-530-render-section-latency-gap.md`](./drafts/posted-openDAW-530-render-section-latency-gap.md)
 

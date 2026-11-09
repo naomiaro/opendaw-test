@@ -213,15 +213,6 @@ describe("exportRegressionRows", () => {
     expect(buildRows(48000)).toHaveLength(296);
     expect(buildRows(44100)).toHaveLength(296);
   });
-  it("labels the one frame only where it was measured", async () => {
-    const { findingFor, NO_EVIDENCE } = await import("./exportRegressionFindings.ts");
-    const row = buildRows(44100).find((r) => r.id === "core-none-section-loop-twice")!;
-    const one = { ...NO_EVIDENCE, earlyFrames: 1, warmHolds: () => true };
-    expect(findingFor(row, "impulse-on-reference", 44100, one)?.name).toBe("loop-pass-one-frame-short");
-    expect(findingFor(row, "impulse-on-reference", 48000, one)).toBeNull();
-    expect(findingFor(row, "section-is-slice", 44100, one)).toBeNull();
-    expect(findingFor(row, "no-jump", 44100, one)).toBeNull();
-  });
 });
 
 describe("setPositionStart", () => {

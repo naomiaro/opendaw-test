@@ -31,6 +31,9 @@ reads `this.samples.<name>` like Apparat). Werkstatt and Apparat also take `// @
 engine's delay compensation aligns the mix to it; a positive `this.latency = frames` overrides
 it at runtime). A script that throws in `process()` is muted until it is compiled again, not
 left looping its previous block.
+All three read the song's harmony inside `process` (not the constructor): `this.keyAt(ppqn)` →
+`{root, steps}` and `this.chordAt(ppqn)` → `{root, notes}` or `null` (frozen, shared objects; a chord
+note is `60 + root + note`) — from the timeline's key and chord tracks.
 Box types: `ApparatDeviceBox`, `WerkstattDeviceBox`, `SpielwerkDeviceBox`.
 SDK 0.0.132 adds `// @label <name>` (auto-sets device label) and `// @group <name> [color]` (groups params visually).
 `ScriptParamDeclaration` was renamed to `ScriptDeclaration` in 0.0.132.

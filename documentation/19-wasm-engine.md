@@ -122,6 +122,7 @@ EngineVariant.install((): EngineWorkletVariant => ({
   attachment: { /* structured-clone extras */ }, // handed to processorOptions.variant
   connectSync: (messenger, project) => wireSync(messenger, project), // returns Terminable
   connectFrozenAudio: (messenger) => makeFrozenWriter(messenger),    // optional; omit it and freeze PCM routes through the setFrozenAudio engine command
+  recordSampleLoad: (event) => log(event), // optional; every sample the engine requests: "requested", then "delivered" (frames, channels, rate) or "failed"
 }));
 ```
 

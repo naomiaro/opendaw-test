@@ -20,7 +20,10 @@ Wire it via the `WasmEngine` façade from `@opendaw/studio-core-wasm` (see `src/
   `installWasmEngine()` then `ensureWasmReady(audioContext)` BEFORE the first
   `startAudioWorklet()` and THROWS if `ensureWasmReady` resolves false — there is no
   fallback engine anywhere.
-- The full façade is `install` / `ensureReady` / `isReady` — the old
+- The full façade is `install` / `ensureReady` / `isReady`, plus `recentUpdates()` (the last box
+  update ops sent to the realtime engine — box types and field keys, no values — kept for trap
+  reports; the provider also records every sample request and its outcome there through the
+  variant's optional `recordSampleLoad`) — the old
   `setEnabled`/`isEnabled` localStorage flag (`opendaw-wasm-engine`) and `useForExports()`
   are gone from the SDK (nothing to toggle to).
 

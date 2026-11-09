@@ -85,7 +85,7 @@ describe("acceptPath", () => {
   });
 });
 
-const KNOWN_FAILURE = { invariant: "impulse-on-reference", holds: false, detail: "", finding: "loop-pass-one-frame-short" } as const;
+const KNOWN_FAILURE = { invariant: "section-is-slice", holds: false, detail: "", finding: "trailing-silence-trimmed" } as const;
 const BARE_FAILURE = { invariant: "no-jump", holds: false, detail: "", finding: null } as const;
 
 describe("newestRunLine", () => {
@@ -104,7 +104,7 @@ describe("formatRows and runLine", () => {
     });
     expect(formatRows(summary([record(), failing]))).toEqual([
       "a | clean | unregistered | 0123456789 | 4 | 0 | -",
-      "b | known-finding | changed shift -1 | 0123456789 | 4 | 64 | impulse-on-reference (loop-pass-one-frame-short)"
+      "b | known-finding | changed shift -1 | 0123456789 | 4 | 64 | section-is-slice (trailing-silence-trimmed)"
     ]);
   });
   it("counts the three standings and the errored on the run line", () => {
@@ -356,14 +356,15 @@ describe("the script", () => {
   });
 
   it("prints stale findings and the standing counts on the run line", () => {
-    const rows = buildRows(44100).filter((r) => r.path === "section-loop-twice" && r.seconds === 4).map((r) => record({
+    const trimmed = ["tail-none-section-entire-long", "tail-none-start-long"];
+    const rows = buildRows(44100).filter((r) => trimmed.includes(r.id)).map((r) => record({
       id: r.id, invariants: r.invariants.map((invariant) => ({ invariant, holds: true, detail: "", finding: null }))
     }));
-    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.length).toBe(2);
     const { root } = scratch(summary(rows, { sampleRate: 44100 }));
     const result = run(root, []);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain(`clean ${rows.length}, known finding 0, failing 0, errored 0`);
-    expect(result.stdout).toContain("no longer reproducing: loop-pass-one-frame-short");
+    expect(result.stdout).toContain("no longer reproducing: trailing-silence-trimmed");
   });
 });

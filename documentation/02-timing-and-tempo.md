@@ -961,3 +961,58 @@ const markers = markerTrack.events; // EventCollection of MarkerBoxAdapter
 
 - `MarkerTrackAdapter` from `@opendaw/studio-adapters`
 - `MarkerBoxAdapter` from `@opendaw/studio-adapters`
+
+## Advanced: Key and Chord Tracks
+
+### Overview
+
+The timeline also carries the song's harmony: a **key track** and a **chord track**. They make no sound. Scale Matrix and Autotune (with `follow`) read the key, Arpeggio (with `followChords`) reads the chord, and scripts read both through `this.keyAt(position)` / `this.chordAt(position)` (see [Ch. 16 — MIDI effects](./16-midi.md#midi-effects) and [Ch. 17](./17-modular-devices.md#key-and-chord)).
+
+### Boxes
+
+| Box / object | Fields |
+|---|---|
+| `timelineBox.keyTrack` (`KeyTrack`) | `events`, `root` (0–11, 0 = C), `scale` (12-bit pitch-class mask, bit *n* = *n* semitones above the root; default major `0b101010110101`), `enabled` (default true) |
+| `KeyEventBox` | `track` (→ `keyTrack.events`), `position` (PPQN), `root`, `scale` |
+| `timelineBox.chordTrack` (`ChordTrack`) | `events`, `enabled` (default true) |
+| `ChordEventBox` | `track` (→ `chordTrack.events`), `position`, `duration` (PPQN), `degree` (1–7, the step of the key), `shift` (−1 to +1 semitone), `shape` (12-bit mask, 0 = stacked from the scale), `notes` (3–5), `inversion` (0–4) |
+
+`keyTrack.root` / `.scale` is the **project key**: it applies before the first key event, and everywhere while the key track is disabled. A chord is stored as a step of the key, not as fixed pitches, so a key change moves every chord; a chord resolves against the key at its own start.
+
+### Adapters
+
+`project.timelineBoxAdapter.keyTrack` is a `KeyTrackAdapter`:
+- `.enabled`, `.events` (`EventCollection<KeyEventBoxAdapter>`), `.storageKey` (the project key)
+- `.keyAt(ppqn)` — the `Harmony.Key` (`{root, bits}`) at a position
+- `.subscribe(observer)` — any change to the track, its events or the project key
+
+`project.timelineBoxAdapter.chordTrack` is a `ChordTrackAdapter`:
+- `.enabled`, `.events` (`EventCollection<ChordEventBoxAdapter>`), `.keyTrack`
+- `.eventAt(ppqn)` — the chord event covering the position, or `null`
+- `.chordAt(ppqn)` — `Option<Harmony.Chord>` (`{root, stack, voicing, bits, shaped}`); `None` where no chord sits or the track is disabled
+- `.resolve(event)`, `.subscribe(observer)`
+
+`ChordOverlaps.resolve(boxGraph, chords, inserted)` keeps the inserted chord boxes and shortens, splits or removes the ones they cover. `Harmony` (keys, `quantise`, `chord`, names) and `ChordDetection` (`detectKey`, `detectChord`, `segment`) from `@opendaw/lib-dsp` are the pure parts.
+
+```typescript
+import { KeyEventBox } from "@opendaw/studio-boxes";
+import { Harmony, PPQN } from "@opendaw/lib-dsp";
+import { UUID } from "@opendaw/lib-std";
+
+project.editing.modify(() => {
+  KeyEventBox.create(project.boxGraph, UUID.generate(), box => {
+    box.track.refer(project.timelineBox.keyTrack.events);
+    box.position.setValue(PPQN.Bar * 8);
+    box.root.setValue(7); // G
+    box.scale.setValue(Harmony.MajorBits);
+  });
+});
+// after the commit
+console.log(project.timelineBoxAdapter.keyTrack.keyAt(PPQN.Bar * 8)); // { root: 7, bits: … }
+```
+
+### Reference (Key and Chords)
+
+- `KeyTrackAdapter`, `KeyEventBoxAdapter`, `ChordTrackAdapter`, `ChordEventBoxAdapter`, `ChordOverlaps` from `@opendaw/studio-adapters`
+- `KeyEventBox`, `ChordEventBox` from `@opendaw/studio-boxes`
+- `Harmony`, `ChordDetection` from `@opendaw/lib-dsp`

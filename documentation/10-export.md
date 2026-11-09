@@ -193,7 +193,7 @@ A section without a tail renders in chunks of 48000 frames. A `step` keeps the r
 2. Resolves the render range — `[0, lastRegionAction()]`, or `ExportConfiguration.range` when set
 3. Spawns the offline engine worker (which self-loads the WASM artifacts)
 4. Settles plug-in delay compensation first (idle quanta until every device has reported its latency and no compensation pass is pending, then back to the start position) and trims the total compensation latency from the start, so the output starts aligned on frame 0; a project without a latent device holds no delay line and renders as before (the SDK's own test pins it bit-identical)
-5. Renders all audio with effects, bounded by silence detection / `maxDurationSeconds`
+5. Renders all audio with effects: at least the range's length (`minDurationSeconds`); past it, the render ends once the output has stayed at or below −72 dB for 10 s (silence before the minimum counts too), or at the range's length plus 30 s (`maxDurationSeconds`). A gap of silence inside the range does not end it. The file ends a quarter second after the last sound, so it can be shorter than the range; a render that never rises above −72 dB never starts the silence count, runs to `maxDurationSeconds` and keeps all of it
 6. Returns `AudioData` with the rendered audio
 
 **For stems export:**
@@ -205,7 +205,7 @@ A section without a tail renders in chunks of 48000 frames. A `step` keeps the r
 `.create(source, optConfig, sampleRate?, abortSignal?)` (then `play()`, `step(samples)`,
 `setPosition`, `waitForLoading`, `terminate`) and
 `.render(config, startPosition, endPosition, progress, abortSignal?)` for arbitrary
-ranges (where `config` is an `OfflineEngineRenderConfig`, not an `ExportConfiguration`).
+ranges (where `config` is an `OfflineEngineRenderConfig`, not an `ExportConfiguration`: `silenceThresholdDb` (default −72), `silenceDurationSeconds` (default 10), `minDurationSeconds` (default 0: silence may end the render anywhere after the first sound) and `maxDurationSeconds`, all optional). `start` and `renderSection` with a tail pass the range's length as `minDurationSeconds`.
 
 > **Live-project caveat:** the renderer connects the source project's
 > `liveStreamReceiver`, which throws "Already connected" if the live engine already holds
@@ -453,8 +453,8 @@ try {
 ### Range
 
 `ExportConfiguration.range` bounds the render window: `"full"` (the default — `[0, last
-region end]`) or `{ start: ppqn, end: ppqn }`. Note the worker's loop still stops on
-silence detection, not at `end` — for an exact frame count use the
+region end]`) or `{ start: ppqn, end: ppqn }`. The render runs at least to `end`, then on
+until the tail has decayed (silence detection), not exactly at `end` — for an exact frame count use the
 [step API](#range-bounded-export-via-the-step-api).
 
 ### Filenames
@@ -770,10 +770,11 @@ Range-bounded export and metronome rendering.
 - `Option.None` / undefined `exportConfiguration` = **mixdown path** (add `metronome: { includeInMixdown: true }` for a click)
 - non-empty `stems` map = **stem path** (add `metronome: { stem: { fileName } }` for a click stem)
 
-**Range bounds:** the `start()` convenience method relies on silence detection or
-`maxDurationSeconds` for the end bound, and `OfflineEngineRenderer.render(config,
-startPosition, endPosition, progress)` does NOT stop at `endPosition` either — the worker's
-loop runs until silence/`maxDurationSeconds`; `endPosition` only drives the progress value.
+**Range bounds:** the `start()` convenience method renders at least the range's length
+(`minDurationSeconds`) and then relies on silence detection or `maxDurationSeconds` for the
+end bound, and `OfflineEngineRenderer.render(config, startPosition, endPosition, progress)`
+does NOT stop at `endPosition` either — the worker's loop runs until silence (once past
+`config.minDurationSeconds`) or `maxDurationSeconds`; `endPosition` only drives the progress value.
 For an **exact** range (precise sample count, stems of equal length), use the step API:
 
 ### Range-Bounded Export via the Step API

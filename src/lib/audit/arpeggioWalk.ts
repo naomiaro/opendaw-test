@@ -1,7 +1,7 @@
 /**
  * The Arpeggio's eighteen walks as pure arithmetic: which position of the expanded pool (held notes × octaves) a walk
  * step plays. The modes and their order are `ArpeggioDeviceBoxAdapter.Modes`; the behaviour is the manual's table
- * (`manual/.../arpeggio.md`, "1. Walk") and the crate's `walk_index` (`device-arpeggio/src/lib.rs:300-339`),
+ * (`manual/.../arpeggio.md`, "1. Walk") and the crate's `walk_index` (`device-arpeggio/src/lib.rs:306-345`),
  * which the semantics audit checks against a render. The divisions floor and the remainders are Euclidean, as the
  * crate's `div_euclid` and `rem_euclid`; a walk step is not negative, but the hash also takes Random Once's key -1, as
  * two's complement. The random modes follow a 64-bit hash of (seed, step, salt) only: a step plays the same note
@@ -11,7 +11,7 @@
 const U64 = 64;
 const mul = (a: bigint, b: bigint): bigint => BigInt.asUintN(U64, a * b);
 
-/** The crate's `hash` (`device-arpeggio/src/lib.rs:214-224`): the high 32 bits of a 64-bit mix. */
+/** The crate's `hash` (`device-arpeggio/src/lib.rs:220-230`): the high 32 bits of a 64-bit mix. */
 export function walkHash(seed: number, step: number, salt: number): number {
   let value = mul(BigInt(seed), 0xd6e8feb86659fd93n)
     ^ mul(BigInt.asUintN(U64, BigInt(step)), 0x9e3779b97f4a7c15n)

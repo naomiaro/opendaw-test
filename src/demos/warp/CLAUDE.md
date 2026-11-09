@@ -16,6 +16,10 @@
 - ~513 WarpMarkerBox creations in one `editing.modify()` are fine. WarpMarkerBox.owner is a
   mandatory pointer — deleting the stretch box cascades to its markers; repeated mode toggles
   do not accumulate boxes.
+- A transaction that ENDS with two warp markers of one play-mode box at the same `position`
+  panics on commit ("Warp markers at the same position …", the `WarpMarkerGuard` every `Project`
+  installs); coinciding positions in between are fine, so a shift of many markers needs no
+  ordering. Project migration drops duplicates on all three play-mode boxes (Signalsmith included).
 - The SDK never DERIVES warp markers from audio. Its only audio analysis is
   `Workers.Transients.detect()` (returns positions; caller writes TransientMarkerBoxes
   onto the AudioFileBox — see `src/lib/transientDetection.ts`). SDK-created warp markers
@@ -66,7 +70,8 @@
   rendering outright. No extrapolation: the engine gates out-of-range blocks before
   the mapping's endpoint clamp (internals ch08) is consulted. Lead-in and outro
   anchors are required, and the range is half-open: the last marker's tick is
-  already outside.
+  already outside. `buildWarpAnchors` leaves the outro out only when the file ends
+  under half a pulse after the last beat, where it would share that beat's tick.
 - Before the first tempo event, the FIRST event's value back-extends;
   `timelineBox.bpm` applies only when the tempo collection is empty.
 

@@ -1,5 +1,5 @@
 /**
- * The MIDI effects demo's device registry: the five stock MIDI effects, their copy, and the
+ * The MIDI effects demo's device registry: the five stock MIDI effects it shows (the SDK has more), their copy, and the
  * parameters each card renders, read through the SDK's device adapters so the controls print the
  * SDK's own strings ("Up", "1/16", "+7 st", "On") instead of raw field values.
  */

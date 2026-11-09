@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "sdkVersion": "0.0.182",
-  "engineWasmSha256": "9c44973549a70ab408d3e1de13c9255bde86673e1013041bcf9583e606fe23d6",
-  "acceptedRunToken": 1794012843131,
-  "acceptedAt": "2026-11-07T00:58:28.542Z",
+  "sdkVersion": "0.0.183",
+  "engineWasmSha256": "447481d683c62c21000ad9fb06d122aba59f2a092f5e40cfa131f661bb1136a3",
+  "acceptedRunToken": 1794246918474,
+  "acceptedAt": "2026-11-09T18:27:58.093Z",
   "sampleRate": 48000,
   "rows": {
     "core-none-step-one": {
@@ -77,8 +77,8 @@
       "wav": "wav/02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5.wav"
     },
     "core-none-start": {
-      "hash": "beb464c0d6db11374ab41495f45ee8313cce7862ed2fb00e6de27c12b112a587",
-      "frames": 203872,
+      "hash": "1e61fd40f2d76f70b703272996a84b81e8545222fb09840a14ff9a3d25a465d7",
+      "frames": 204000,
       "channels": 2,
       "peak": 0.8999999761581421,
       "impulseHits": [
@@ -88,11 +88,11 @@
         120037,
         168064
       ],
-      "wav": "wav/beb464c0d6db11374ab41495f45ee8313cce7862ed2fb00e6de27c12b112a587.wav"
+      "wav": "wav/1e61fd40f2d76f70b703272996a84b81e8545222fb09840a14ff9a3d25a465d7.wav"
     },
     "core-none-section-entire": {
-      "hash": "beb464c0d6db11374ab41495f45ee8313cce7862ed2fb00e6de27c12b112a587",
-      "frames": 203872,
+      "hash": "1e61fd40f2d76f70b703272996a84b81e8545222fb09840a14ff9a3d25a465d7",
+      "frames": 204000,
       "channels": 2,
       "peak": 0.8999999761581421,
       "impulseHits": [
@@ -102,7 +102,7 @@
         120037,
         168064
       ],
-      "wav": "wav/beb464c0d6db11374ab41495f45ee8313cce7862ed2fb00e6de27c12b112a587.wav"
+      "wav": "wav/1e61fd40f2d76f70b703272996a84b81e8545222fb09840a14ff9a3d25a465d7.wav"
     },
     "core-none-section-loop-once": {
       "hash": "02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5",
@@ -144,14 +144,14 @@
       "wav": "wav/e1e0e5a24df79c1913fa6e415c67d5ee55e23d6ed758e1c853f2f2bee3e96584.wav"
     },
     "core-none-section-marker-last": {
-      "hash": "92b8ae9d7d9f6cbda43384c15cca7cc8a6aa97a9ab8892acf4bcdcf99294ec35",
-      "frames": 59872,
+      "hash": "9b9af40d39dcd558fff74db9dc759ce5bc94b4951e3dd53ecfb761ed12f4bf89",
+      "frames": 60000,
       "channels": 2,
       "peak": 0.8999999761581421,
       "impulseHits": [
         24064
       ],
-      "wav": "wav/92b8ae9d7d9f6cbda43384c15cca7cc8a6aa97a9ab8892acf4bcdcf99294ec35.wav"
+      "wav": "wav/9b9af40d39dcd558fff74db9dc759ce5bc94b4951e3dd53ecfb761ed12f4bf89.wav"
     },
     "core-autotune-muted-step-one": {
       "hash": "02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5",
@@ -224,8 +224,8 @@
       "wav": "wav/02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5.wav"
     },
     "core-autotune-muted-start": {
-      "hash": "beb464c0d6db11374ab41495f45ee8313cce7862ed2fb00e6de27c12b112a587",
-      "frames": 203872,
+      "hash": "1e61fd40f2d76f70b703272996a84b81e8545222fb09840a14ff9a3d25a465d7",
+      "frames": 204000,
       "channels": 2,
       "peak": 0.8999999761581421,
       "impulseHits": [
@@ -235,11 +235,11 @@
         120037,
         168064
       ],
-      "wav": "wav/beb464c0d6db11374ab41495f45ee8313cce7862ed2fb00e6de27c12b112a587.wav"
+      "wav": "wav/1e61fd40f2d76f70b703272996a84b81e8545222fb09840a14ff9a3d25a465d7.wav"
     },
     "core-autotune-muted-section-entire": {
-      "hash": "beb464c0d6db11374ab41495f45ee8313cce7862ed2fb00e6de27c12b112a587",
-      "frames": 203872,
+      "hash": "1e61fd40f2d76f70b703272996a84b81e8545222fb09840a14ff9a3d25a465d7",
+      "frames": 204000,
       "channels": 2,
       "peak": 0.8999999761581421,
       "impulseHits": [
@@ -249,7 +249,7 @@
         120037,
         168064
       ],
-      "wav": "wav/beb464c0d6db11374ab41495f45ee8313cce7862ed2fb00e6de27c12b112a587.wav"
+      "wav": "wav/1e61fd40f2d76f70b703272996a84b81e8545222fb09840a14ff9a3d25a465d7.wav"
     },
     "core-autotune-muted-section-loop-once": {
       "hash": "02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5",
@@ -291,14 +291,14 @@
       "wav": "wav/e1e0e5a24df79c1913fa6e415c67d5ee55e23d6ed758e1c853f2f2bee3e96584.wav"
     },
     "core-autotune-muted-section-marker-last": {
-      "hash": "92b8ae9d7d9f6cbda43384c15cca7cc8a6aa97a9ab8892acf4bcdcf99294ec35",
-      "frames": 59872,
+      "hash": "9b9af40d39dcd558fff74db9dc759ce5bc94b4951e3dd53ecfb761ed12f4bf89",
+      "frames": 60000,
       "channels": 2,
       "peak": 0.8999999761581421,
       "impulseHits": [
         24064
       ],
-      "wav": "wav/92b8ae9d7d9f6cbda43384c15cca7cc8a6aa97a9ab8892acf4bcdcf99294ec35.wav"
+      "wav": "wav/9b9af40d39dcd558fff74db9dc759ce5bc94b4951e3dd53ecfb761ed12f4bf89.wav"
     },
     "core-compressor-track-step-one": {
       "hash": "02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5",
@@ -371,8 +371,8 @@
       "wav": "wav/02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5.wav"
     },
     "core-compressor-track-start": {
-      "hash": "5a20130c9ee8cd98e07859897d7d293fc6145de16b20e6f50584ee71912b2d75",
-      "frames": 203888,
+      "hash": "b0d2aa971ed8ec36f52351bfa500f12dd42c34501c6a4ef84993bf8189cb71b6",
+      "frames": 204016,
       "channels": 2,
       "peak": 0.8999999761581421,
       "impulseHits": [
@@ -382,11 +382,11 @@
         120037,
         168064
       ],
-      "wav": "wav/5a20130c9ee8cd98e07859897d7d293fc6145de16b20e6f50584ee71912b2d75.wav"
+      "wav": "wav/b0d2aa971ed8ec36f52351bfa500f12dd42c34501c6a4ef84993bf8189cb71b6.wav"
     },
     "core-compressor-track-section-entire": {
-      "hash": "5a20130c9ee8cd98e07859897d7d293fc6145de16b20e6f50584ee71912b2d75",
-      "frames": 203888,
+      "hash": "b0d2aa971ed8ec36f52351bfa500f12dd42c34501c6a4ef84993bf8189cb71b6",
+      "frames": 204016,
       "channels": 2,
       "peak": 0.8999999761581421,
       "impulseHits": [
@@ -396,7 +396,7 @@
         120037,
         168064
       ],
-      "wav": "wav/5a20130c9ee8cd98e07859897d7d293fc6145de16b20e6f50584ee71912b2d75.wav"
+      "wav": "wav/b0d2aa971ed8ec36f52351bfa500f12dd42c34501c6a4ef84993bf8189cb71b6.wav"
     },
     "core-compressor-track-section-loop-once": {
       "hash": "02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5",
@@ -438,14 +438,14 @@
       "wav": "wav/e1e0e5a24df79c1913fa6e415c67d5ee55e23d6ed758e1c853f2f2bee3e96584.wav"
     },
     "core-compressor-track-section-marker-last": {
-      "hash": "968cab7b80490757eb8819469a766c29c3a35c36d039ddbcdad756dfe8f23a3a",
-      "frames": 59888,
+      "hash": "8b08ea69c9803a72682aa9f8e5adf85efe7e2fe522b7323fbc6542c39c1f5094",
+      "frames": 60016,
       "channels": 2,
       "peak": 0.8999999761581421,
       "impulseHits": [
         24064
       ],
-      "wav": "wav/968cab7b80490757eb8819469a766c29c3a35c36d039ddbcdad756dfe8f23a3a.wav"
+      "wav": "wav/8b08ea69c9803a72682aa9f8e5adf85efe7e2fe522b7323fbc6542c39c1f5094.wav"
     },
     "core-compressor-muted-step-one": {
       "hash": "02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5",
@@ -518,8 +518,8 @@
       "wav": "wav/02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5.wav"
     },
     "core-compressor-muted-start": {
-      "hash": "5a20130c9ee8cd98e07859897d7d293fc6145de16b20e6f50584ee71912b2d75",
-      "frames": 203888,
+      "hash": "b0d2aa971ed8ec36f52351bfa500f12dd42c34501c6a4ef84993bf8189cb71b6",
+      "frames": 204016,
       "channels": 2,
       "peak": 0.8999999761581421,
       "impulseHits": [
@@ -529,11 +529,11 @@
         120037,
         168064
       ],
-      "wav": "wav/5a20130c9ee8cd98e07859897d7d293fc6145de16b20e6f50584ee71912b2d75.wav"
+      "wav": "wav/b0d2aa971ed8ec36f52351bfa500f12dd42c34501c6a4ef84993bf8189cb71b6.wav"
     },
     "core-compressor-muted-section-entire": {
-      "hash": "5a20130c9ee8cd98e07859897d7d293fc6145de16b20e6f50584ee71912b2d75",
-      "frames": 203888,
+      "hash": "b0d2aa971ed8ec36f52351bfa500f12dd42c34501c6a4ef84993bf8189cb71b6",
+      "frames": 204016,
       "channels": 2,
       "peak": 0.8999999761581421,
       "impulseHits": [
@@ -543,7 +543,7 @@
         120037,
         168064
       ],
-      "wav": "wav/5a20130c9ee8cd98e07859897d7d293fc6145de16b20e6f50584ee71912b2d75.wav"
+      "wav": "wav/b0d2aa971ed8ec36f52351bfa500f12dd42c34501c6a4ef84993bf8189cb71b6.wav"
     },
     "core-compressor-muted-section-loop-once": {
       "hash": "02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5",
@@ -585,14 +585,14 @@
       "wav": "wav/e1e0e5a24df79c1913fa6e415c67d5ee55e23d6ed758e1c853f2f2bee3e96584.wav"
     },
     "core-compressor-muted-section-marker-last": {
-      "hash": "968cab7b80490757eb8819469a766c29c3a35c36d039ddbcdad756dfe8f23a3a",
-      "frames": 59888,
+      "hash": "8b08ea69c9803a72682aa9f8e5adf85efe7e2fe522b7323fbc6542c39c1f5094",
+      "frames": 60016,
       "channels": 2,
       "peak": 0.8999999761581421,
       "impulseHits": [
         24064
       ],
-      "wav": "wav/968cab7b80490757eb8819469a766c29c3a35c36d039ddbcdad756dfe8f23a3a.wav"
+      "wav": "wav/8b08ea69c9803a72682aa9f8e5adf85efe7e2fe522b7323fbc6542c39c1f5094.wav"
     },
     "core-maximizer-muted-step-one": {
       "hash": "02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5",
@@ -665,8 +665,8 @@
       "wav": "wav/02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5.wav"
     },
     "core-maximizer-muted-start": {
-      "hash": "5a20130c9ee8cd98e07859897d7d293fc6145de16b20e6f50584ee71912b2d75",
-      "frames": 203888,
+      "hash": "b0d2aa971ed8ec36f52351bfa500f12dd42c34501c6a4ef84993bf8189cb71b6",
+      "frames": 204016,
       "channels": 2,
       "peak": 0.8999999761581421,
       "impulseHits": [
@@ -676,11 +676,11 @@
         120037,
         168064
       ],
-      "wav": "wav/5a20130c9ee8cd98e07859897d7d293fc6145de16b20e6f50584ee71912b2d75.wav"
+      "wav": "wav/b0d2aa971ed8ec36f52351bfa500f12dd42c34501c6a4ef84993bf8189cb71b6.wav"
     },
     "core-maximizer-muted-section-entire": {
-      "hash": "5a20130c9ee8cd98e07859897d7d293fc6145de16b20e6f50584ee71912b2d75",
-      "frames": 203888,
+      "hash": "b0d2aa971ed8ec36f52351bfa500f12dd42c34501c6a4ef84993bf8189cb71b6",
+      "frames": 204016,
       "channels": 2,
       "peak": 0.8999999761581421,
       "impulseHits": [
@@ -690,7 +690,7 @@
         120037,
         168064
       ],
-      "wav": "wav/5a20130c9ee8cd98e07859897d7d293fc6145de16b20e6f50584ee71912b2d75.wav"
+      "wav": "wav/b0d2aa971ed8ec36f52351bfa500f12dd42c34501c6a4ef84993bf8189cb71b6.wav"
     },
     "core-maximizer-muted-section-loop-once": {
       "hash": "02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5",
@@ -732,14 +732,14 @@
       "wav": "wav/e1e0e5a24df79c1913fa6e415c67d5ee55e23d6ed758e1c853f2f2bee3e96584.wav"
     },
     "core-maximizer-muted-section-marker-last": {
-      "hash": "968cab7b80490757eb8819469a766c29c3a35c36d039ddbcdad756dfe8f23a3a",
-      "frames": 59888,
+      "hash": "8b08ea69c9803a72682aa9f8e5adf85efe7e2fe522b7323fbc6542c39c1f5094",
+      "frames": 60016,
       "channels": 2,
       "peak": 0.8999999761581421,
       "impulseHits": [
         24064
       ],
-      "wav": "wav/968cab7b80490757eb8819469a766c29c3a35c36d039ddbcdad756dfe8f23a3a.wav"
+      "wav": "wav/8b08ea69c9803a72682aa9f8e5adf85efe7e2fe522b7323fbc6542c39c1f5094.wav"
     },
     "core-fold-muted-step-one": {
       "hash": "02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5",
@@ -812,8 +812,8 @@
       "wav": "wav/02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5.wav"
     },
     "core-fold-muted-start": {
-      "hash": "e8f8dca265d1b9c987c575c9cd57605fabb25ab33f7f6f300b7b075c7a0550ac",
-      "frames": 203985,
+      "hash": "5ebcad78ac3f88e3250bccef00260585c566b94e635ec2760c7169dff608cde5",
+      "frames": 204113,
       "channels": 2,
       "peak": 0.8999999761581421,
       "impulseHits": [
@@ -823,11 +823,11 @@
         120037,
         168064
       ],
-      "wav": "wav/e8f8dca265d1b9c987c575c9cd57605fabb25ab33f7f6f300b7b075c7a0550ac.wav"
+      "wav": "wav/5ebcad78ac3f88e3250bccef00260585c566b94e635ec2760c7169dff608cde5.wav"
     },
     "core-fold-muted-section-entire": {
-      "hash": "e8f8dca265d1b9c987c575c9cd57605fabb25ab33f7f6f300b7b075c7a0550ac",
-      "frames": 203985,
+      "hash": "5ebcad78ac3f88e3250bccef00260585c566b94e635ec2760c7169dff608cde5",
+      "frames": 204113,
       "channels": 2,
       "peak": 0.8999999761581421,
       "impulseHits": [
@@ -837,7 +837,7 @@
         120037,
         168064
       ],
-      "wav": "wav/e8f8dca265d1b9c987c575c9cd57605fabb25ab33f7f6f300b7b075c7a0550ac.wav"
+      "wav": "wav/5ebcad78ac3f88e3250bccef00260585c566b94e635ec2760c7169dff608cde5.wav"
     },
     "core-fold-muted-section-loop-once": {
       "hash": "02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5",
@@ -879,14 +879,14 @@
       "wav": "wav/e1e0e5a24df79c1913fa6e415c67d5ee55e23d6ed758e1c853f2f2bee3e96584.wav"
     },
     "core-fold-muted-section-marker-last": {
-      "hash": "df68ebac3408431f7452e3a85e2542e76a4057156262c6ac5e9b0e10fbf3477a",
-      "frames": 59985,
+      "hash": "7c4bc45e4b3f5d2466331b62ee6e81c410d02d344cc6c1f0680f3e2595dfd563",
+      "frames": 60113,
       "channels": 2,
       "peak": 0.8999999761581421,
       "impulseHits": [
         24064
       ],
-      "wav": "wav/df68ebac3408431f7452e3a85e2542e76a4057156262c6ac5e9b0e10fbf3477a.wav"
+      "wav": "wav/7c4bc45e4b3f5d2466331b62ee6e81c410d02d344cc6c1f0680f3e2595dfd563.wav"
     },
     "core-script-10ms-muted-step-one": {
       "hash": "02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5",
@@ -959,8 +959,8 @@
       "wav": "wav/02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5.wav"
     },
     "core-script-10ms-muted-start": {
-      "hash": "0123fb498ddc9a81898f8fc22a8bb5470b3e94149a20fd2ce9d90a94b58d9192",
-      "frames": 203904,
+      "hash": "a5f01c56a7dd42ef65edf9066a60a37efc5983f6ffee9401966c352d28619313",
+      "frames": 204032,
       "channels": 2,
       "peak": 0.8999999761581421,
       "impulseHits": [
@@ -970,11 +970,11 @@
         120037,
         168064
       ],
-      "wav": "wav/0123fb498ddc9a81898f8fc22a8bb5470b3e94149a20fd2ce9d90a94b58d9192.wav"
+      "wav": "wav/a5f01c56a7dd42ef65edf9066a60a37efc5983f6ffee9401966c352d28619313.wav"
     },
     "core-script-10ms-muted-section-entire": {
-      "hash": "0123fb498ddc9a81898f8fc22a8bb5470b3e94149a20fd2ce9d90a94b58d9192",
-      "frames": 203904,
+      "hash": "a5f01c56a7dd42ef65edf9066a60a37efc5983f6ffee9401966c352d28619313",
+      "frames": 204032,
       "channels": 2,
       "peak": 0.8999999761581421,
       "impulseHits": [
@@ -984,7 +984,7 @@
         120037,
         168064
       ],
-      "wav": "wav/0123fb498ddc9a81898f8fc22a8bb5470b3e94149a20fd2ce9d90a94b58d9192.wav"
+      "wav": "wav/a5f01c56a7dd42ef65edf9066a60a37efc5983f6ffee9401966c352d28619313.wav"
     },
     "core-script-10ms-muted-section-loop-once": {
       "hash": "02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5",
@@ -1026,14 +1026,14 @@
       "wav": "wav/e1e0e5a24df79c1913fa6e415c67d5ee55e23d6ed758e1c853f2f2bee3e96584.wav"
     },
     "core-script-10ms-muted-section-marker-last": {
-      "hash": "f7c604734a7b5a03ffe91ec7c92fdc328f0525d54a7aae36d8f48ce1293c51a6",
-      "frames": 59904,
+      "hash": "5aab2cb293d86a89c8e45d482489567a6c26f565c954f08c9f4a55a8e48645ff",
+      "frames": 60032,
       "channels": 2,
       "peak": 0.8999999761581421,
       "impulseHits": [
         24064
       ],
-      "wav": "wav/f7c604734a7b5a03ffe91ec7c92fdc328f0525d54a7aae36d8f48ce1293c51a6.wav"
+      "wav": "wav/5aab2cb293d86a89c8e45d482489567a6c26f565c954f08c9f4a55a8e48645ff.wav"
     },
     "core-script-150ms-parallel-step-one": {
       "hash": "02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5",
@@ -1106,8 +1106,8 @@
       "wav": "wav/02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5.wav"
     },
     "core-script-150ms-parallel-start": {
-      "hash": "23d586b7441a9068ac9732936cc8c292e1eb4bdce82288424179ed7e8c122ee0",
-      "frames": 203936,
+      "hash": "eb35beb297283317da54392d8e2d796d42f668e35feaf3be8f7c8c57705115fa",
+      "frames": 204064,
       "channels": 2,
       "peak": 0.8999999761581421,
       "impulseHits": [
@@ -1117,11 +1117,11 @@
         120037,
         168064
       ],
-      "wav": "wav/23d586b7441a9068ac9732936cc8c292e1eb4bdce82288424179ed7e8c122ee0.wav"
+      "wav": "wav/eb35beb297283317da54392d8e2d796d42f668e35feaf3be8f7c8c57705115fa.wav"
     },
     "core-script-150ms-parallel-section-entire": {
-      "hash": "23d586b7441a9068ac9732936cc8c292e1eb4bdce82288424179ed7e8c122ee0",
-      "frames": 203936,
+      "hash": "eb35beb297283317da54392d8e2d796d42f668e35feaf3be8f7c8c57705115fa",
+      "frames": 204064,
       "channels": 2,
       "peak": 0.8999999761581421,
       "impulseHits": [
@@ -1131,7 +1131,7 @@
         120037,
         168064
       ],
-      "wav": "wav/23d586b7441a9068ac9732936cc8c292e1eb4bdce82288424179ed7e8c122ee0.wav"
+      "wav": "wav/eb35beb297283317da54392d8e2d796d42f668e35feaf3be8f7c8c57705115fa.wav"
     },
     "core-script-150ms-parallel-section-loop-once": {
       "hash": "02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5",
@@ -1173,14 +1173,14 @@
       "wav": "wav/e1e0e5a24df79c1913fa6e415c67d5ee55e23d6ed758e1c853f2f2bee3e96584.wav"
     },
     "core-script-150ms-parallel-section-marker-last": {
-      "hash": "e52b9f039d0689b746a2ee7c84f9b950feaafa7a2aaa6af56bec3d3280122961",
-      "frames": 59936,
+      "hash": "64913ae6380d0d2623a7d7453bf51804171ee12fbf6da0cb4be8f683f91f7a98",
+      "frames": 60064,
       "channels": 2,
       "peak": 0.8999999761581421,
       "impulseHits": [
         24064
       ],
-      "wav": "wav/e52b9f039d0689b746a2ee7c84f9b950feaafa7a2aaa6af56bec3d3280122961.wav"
+      "wav": "wav/64913ae6380d0d2623a7d7453bf51804171ee12fbf6da0cb4be8f683f91f7a98.wav"
     },
     "core-compressor-bus-step-one": {
       "hash": "02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5",
@@ -1253,8 +1253,8 @@
       "wav": "wav/02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5.wav"
     },
     "core-compressor-bus-start": {
-      "hash": "5a20130c9ee8cd98e07859897d7d293fc6145de16b20e6f50584ee71912b2d75",
-      "frames": 203888,
+      "hash": "b0d2aa971ed8ec36f52351bfa500f12dd42c34501c6a4ef84993bf8189cb71b6",
+      "frames": 204016,
       "channels": 2,
       "peak": 0.8999999761581421,
       "impulseHits": [
@@ -1264,11 +1264,11 @@
         120037,
         168064
       ],
-      "wav": "wav/5a20130c9ee8cd98e07859897d7d293fc6145de16b20e6f50584ee71912b2d75.wav"
+      "wav": "wav/b0d2aa971ed8ec36f52351bfa500f12dd42c34501c6a4ef84993bf8189cb71b6.wav"
     },
     "core-compressor-bus-section-entire": {
-      "hash": "5a20130c9ee8cd98e07859897d7d293fc6145de16b20e6f50584ee71912b2d75",
-      "frames": 203888,
+      "hash": "b0d2aa971ed8ec36f52351bfa500f12dd42c34501c6a4ef84993bf8189cb71b6",
+      "frames": 204016,
       "channels": 2,
       "peak": 0.8999999761581421,
       "impulseHits": [
@@ -1278,7 +1278,7 @@
         120037,
         168064
       ],
-      "wav": "wav/5a20130c9ee8cd98e07859897d7d293fc6145de16b20e6f50584ee71912b2d75.wav"
+      "wav": "wav/b0d2aa971ed8ec36f52351bfa500f12dd42c34501c6a4ef84993bf8189cb71b6.wav"
     },
     "core-compressor-bus-section-loop-once": {
       "hash": "02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5",
@@ -1320,14 +1320,14 @@
       "wav": "wav/e1e0e5a24df79c1913fa6e415c67d5ee55e23d6ed758e1c853f2f2bee3e96584.wav"
     },
     "core-compressor-bus-section-marker-last": {
-      "hash": "968cab7b80490757eb8819469a766c29c3a35c36d039ddbcdad756dfe8f23a3a",
-      "frames": 59888,
+      "hash": "8b08ea69c9803a72682aa9f8e5adf85efe7e2fe522b7323fbc6542c39c1f5094",
+      "frames": 60016,
       "channels": 2,
       "peak": 0.8999999761581421,
       "impulseHits": [
         24064
       ],
-      "wav": "wav/968cab7b80490757eb8819469a766c29c3a35c36d039ddbcdad756dfe8f23a3a.wav"
+      "wav": "wav/8b08ea69c9803a72682aa9f8e5adf85efe7e2fe522b7323fbc6542c39c1f5094.wav"
     },
     "core-compressor-aux-step-one": {
       "hash": "e1104445bb3f7426ce727bb32e64479e095348b035fe5e7f7b16562dd5d21db4",
@@ -1400,8 +1400,8 @@
       "wav": "wav/e1104445bb3f7426ce727bb32e64479e095348b035fe5e7f7b16562dd5d21db4.wav"
     },
     "core-compressor-aux-start": {
-      "hash": "0d9a3093bf8b118798ca9b0495282fc3cd6e5da91a769fcf587924d78fd1063a",
-      "frames": 203888,
+      "hash": "456df29cb3cfc139e16b62e207517cad0c72bf7ab868566fa92b4528c16eb439",
+      "frames": 204016,
       "channels": 2,
       "peak": 1.7999999523162842,
       "impulseHits": [
@@ -1411,11 +1411,11 @@
         120037,
         168064
       ],
-      "wav": "wav/0d9a3093bf8b118798ca9b0495282fc3cd6e5da91a769fcf587924d78fd1063a.wav"
+      "wav": "wav/456df29cb3cfc139e16b62e207517cad0c72bf7ab868566fa92b4528c16eb439.wav"
     },
     "core-compressor-aux-section-entire": {
-      "hash": "0d9a3093bf8b118798ca9b0495282fc3cd6e5da91a769fcf587924d78fd1063a",
-      "frames": 203888,
+      "hash": "456df29cb3cfc139e16b62e207517cad0c72bf7ab868566fa92b4528c16eb439",
+      "frames": 204016,
       "channels": 2,
       "peak": 1.7999999523162842,
       "impulseHits": [
@@ -1425,7 +1425,7 @@
         120037,
         168064
       ],
-      "wav": "wav/0d9a3093bf8b118798ca9b0495282fc3cd6e5da91a769fcf587924d78fd1063a.wav"
+      "wav": "wav/456df29cb3cfc139e16b62e207517cad0c72bf7ab868566fa92b4528c16eb439.wav"
     },
     "core-compressor-aux-section-loop-once": {
       "hash": "e1104445bb3f7426ce727bb32e64479e095348b035fe5e7f7b16562dd5d21db4",
@@ -1467,14 +1467,14 @@
       "wav": "wav/bee51368eadb65c2b98c73f3ea6e8b3a67969f60532497889819d836a39f0338.wav"
     },
     "core-compressor-aux-section-marker-last": {
-      "hash": "c2268c9da11e3a8d3d49ffa2428cee97c5158d823cdaf58cebb2617e1fc18bad",
-      "frames": 59888,
+      "hash": "1777f06d16013753f49d33d463b01f177f07feb2f50d95eab0b8e7d7980babf6",
+      "frames": 60016,
       "channels": 2,
       "peak": 1.7999999523162842,
       "impulseHits": [
         24064
       ],
-      "wav": "wav/c2268c9da11e3a8d3d49ffa2428cee97c5158d823cdaf58cebb2617e1fc18bad.wav"
+      "wav": "wav/1777f06d16013753f49d33d463b01f177f07feb2f50d95eab0b8e7d7980babf6.wav"
     },
     "core-several-step-one": {
       "hash": "d422538f169ad777de8b46a8cef455ed00f49edb498bbae38beda82828e4f0fd",
@@ -1547,8 +1547,8 @@
       "wav": "wav/bf8bde9fc14dcfb3d3ca0636810891d60d3c2c8d829a6e96121704536d6a2855.wav"
     },
     "core-several-start": {
-      "hash": "225e5bd26cfb051c4416bb23fec7bc33d6a904f448a6bc8de06ef60efdaa5730",
-      "frames": 204001,
+      "hash": "f5f57fce1b28588724ad4d38aff2c8e7ed3bb3c0b992ba95863ffe3528ee58e0",
+      "frames": 204129,
       "channels": 2,
       "peak": 0.5616631507873535,
       "impulseHits": [
@@ -1558,11 +1558,11 @@
         120037,
         168064
       ],
-      "wav": "wav/225e5bd26cfb051c4416bb23fec7bc33d6a904f448a6bc8de06ef60efdaa5730.wav"
+      "wav": "wav/f5f57fce1b28588724ad4d38aff2c8e7ed3bb3c0b992ba95863ffe3528ee58e0.wav"
     },
     "core-several-section-entire": {
-      "hash": "225e5bd26cfb051c4416bb23fec7bc33d6a904f448a6bc8de06ef60efdaa5730",
-      "frames": 204001,
+      "hash": "f5f57fce1b28588724ad4d38aff2c8e7ed3bb3c0b992ba95863ffe3528ee58e0",
+      "frames": 204129,
       "channels": 2,
       "peak": 0.5616631507873535,
       "impulseHits": [
@@ -1572,7 +1572,7 @@
         120037,
         168064
       ],
-      "wav": "wav/225e5bd26cfb051c4416bb23fec7bc33d6a904f448a6bc8de06ef60efdaa5730.wav"
+      "wav": "wav/f5f57fce1b28588724ad4d38aff2c8e7ed3bb3c0b992ba95863ffe3528ee58e0.wav"
     },
     "core-several-section-loop-once": {
       "hash": "d422538f169ad777de8b46a8cef455ed00f49edb498bbae38beda82828e4f0fd",
@@ -1614,14 +1614,14 @@
       "wav": "wav/c27b00989c9b4b6d636935b8260300a53f71a330775de9f67933e59d2039f0d7.wav"
     },
     "core-several-section-marker-last": {
-      "hash": "bb6d29ed16016b4ded586cee9e33203b331f67faa96b1336242f89f522298463",
-      "frames": 60001,
+      "hash": "73e1e23ed50df9199275e4c08027e71949f93a799e5a2af3f957ec4be3c374c2",
+      "frames": 60129,
       "channels": 2,
       "peak": 0.5616631507873535,
       "impulseHits": [
         24064
       ],
-      "wav": "wav/bb6d29ed16016b4ded586cee9e33203b331f67faa96b1336242f89f522298463.wav"
+      "wav": "wav/73e1e23ed50df9199275e4c08027e71949f93a799e5a2af3f957ec4be3c374c2.wav"
     },
     "master-none-bypass": {
       "hash": "01c518ed059bbb28e2824f98fe3698bb4895fe589e3ef03be1a7eeef331fc7e5",
@@ -1684,24 +1684,24 @@
       "wav": "wav/6e0877b0e644516001a6929478d9ab83c33133a0cb76f646da9c3cd69c7b268e.wav"
     },
     "master-none-start": {
-      "hash": "2fbbd831970077725f7a352a21989fe75136300244bc87f0809d5f22e6f04215",
-      "frames": 203872,
+      "hash": "5455e920a3d858c6c13321750aa7c042354f071aba8249182e8cef206d08dcf5",
+      "frames": 204000,
       "channels": 2,
       "peak": 1.4997632503509521,
       "impulseHits": [
         12
       ],
-      "wav": "wav/2fbbd831970077725f7a352a21989fe75136300244bc87f0809d5f22e6f04215.wav"
+      "wav": "wav/5455e920a3d858c6c13321750aa7c042354f071aba8249182e8cef206d08dcf5.wav"
     },
     "master-none-section-entire": {
-      "hash": "2fbbd831970077725f7a352a21989fe75136300244bc87f0809d5f22e6f04215",
-      "frames": 203872,
+      "hash": "5455e920a3d858c6c13321750aa7c042354f071aba8249182e8cef206d08dcf5",
+      "frames": 204000,
       "channels": 2,
       "peak": 1.4997632503509521,
       "impulseHits": [
         12
       ],
-      "wav": "wav/2fbbd831970077725f7a352a21989fe75136300244bc87f0809d5f22e6f04215.wav"
+      "wav": "wav/5455e920a3d858c6c13321750aa7c042354f071aba8249182e8cef206d08dcf5.wav"
     },
     "master-none-section-loop-once": {
       "hash": "9cbfed28797d7ea7a28089cfdb614e4abb92dee4eb0f1709651237244b8bc059",
@@ -1794,24 +1794,24 @@
       "wav": "wav/6e0877b0e644516001a6929478d9ab83c33133a0cb76f646da9c3cd69c7b268e.wav"
     },
     "master-compressor-track-start": {
-      "hash": "fde9e6e71f31dbe9d7d9077c23d5fe80dfff813fe3c8040da264dd4a6b8dd88f",
-      "frames": 203888,
+      "hash": "a4b4a5289a03c0f23a576c4c887bbb9c6331bae0d92c7e894e9b3fac422ef692",
+      "frames": 204016,
       "channels": 2,
       "peak": 1.4997632503509521,
       "impulseHits": [
         12
       ],
-      "wav": "wav/fde9e6e71f31dbe9d7d9077c23d5fe80dfff813fe3c8040da264dd4a6b8dd88f.wav"
+      "wav": "wav/a4b4a5289a03c0f23a576c4c887bbb9c6331bae0d92c7e894e9b3fac422ef692.wav"
     },
     "master-compressor-track-section-entire": {
-      "hash": "fde9e6e71f31dbe9d7d9077c23d5fe80dfff813fe3c8040da264dd4a6b8dd88f",
-      "frames": 203888,
+      "hash": "a4b4a5289a03c0f23a576c4c887bbb9c6331bae0d92c7e894e9b3fac422ef692",
+      "frames": 204016,
       "channels": 2,
       "peak": 1.4997632503509521,
       "impulseHits": [
         12
       ],
-      "wav": "wav/fde9e6e71f31dbe9d7d9077c23d5fe80dfff813fe3c8040da264dd4a6b8dd88f.wav"
+      "wav": "wav/a4b4a5289a03c0f23a576c4c887bbb9c6331bae0d92c7e894e9b3fac422ef692.wav"
     },
     "master-compressor-track-section-loop-once": {
       "hash": "9cbfed28797d7ea7a28089cfdb614e4abb92dee4eb0f1709651237244b8bc059",
@@ -1896,7 +1896,7 @@
       "wav": "wav/c2810b6e2407221fbfa8550b604e0dd97fa8166384ff70e36c9414d11304e7f3.wav"
     },
     "stems-none-stems-metronome": {
-      "hash": "1a3a2479c921f4077e38d81dee2a2654281b1a58d1082f1b70be67a7fb5b6dbf",
+      "hash": "b83237695e3456a6a00af455458a61a0d8b4a647ba81ed9a503f55fc0d82fd93",
       "frames": 192000,
       "channels": 6,
       "peak": 0.8999999761581421,
@@ -1907,11 +1907,11 @@
         120037,
         168064
       ],
-      "wav": "wav/1a3a2479c921f4077e38d81dee2a2654281b1a58d1082f1b70be67a7fb5b6dbf.wav"
+      "wav": "wav/b83237695e3456a6a00af455458a61a0d8b4a647ba81ed9a503f55fc0d82fd93.wav"
     },
     "stems-none-stems-start": {
-      "hash": "7cf22f0d808d56add3e7b27fd4fbbec19d5ba51d3d2178afcd84fb6a1c264a72",
-      "frames": 203872,
+      "hash": "382f4a831dfeba1250f587a481c2a23cbd596741e241a17f8e88ed721b2553b6",
+      "frames": 204000,
       "channels": 4,
       "peak": 0.8999999761581421,
       "impulseHits": [
@@ -1921,7 +1921,7 @@
         120037,
         168064
       ],
-      "wav": "wav/7cf22f0d808d56add3e7b27fd4fbbec19d5ba51d3d2178afcd84fb6a1c264a72.wav"
+      "wav": "wav/382f4a831dfeba1250f587a481c2a23cbd596741e241a17f8e88ed721b2553b6.wav"
     },
     "stems-none-stems-section-loop": {
       "hash": "c2810b6e2407221fbfa8550b604e0dd97fa8166384ff70e36c9414d11304e7f3",
@@ -1990,7 +1990,7 @@
       "wav": "wav/c2810b6e2407221fbfa8550b604e0dd97fa8166384ff70e36c9414d11304e7f3.wav"
     },
     "stems-autotune-muted-stems-metronome": {
-      "hash": "1a3a2479c921f4077e38d81dee2a2654281b1a58d1082f1b70be67a7fb5b6dbf",
+      "hash": "b83237695e3456a6a00af455458a61a0d8b4a647ba81ed9a503f55fc0d82fd93",
       "frames": 192000,
       "channels": 6,
       "peak": 0.8999999761581421,
@@ -2001,11 +2001,11 @@
         120037,
         168064
       ],
-      "wav": "wav/1a3a2479c921f4077e38d81dee2a2654281b1a58d1082f1b70be67a7fb5b6dbf.wav"
+      "wav": "wav/b83237695e3456a6a00af455458a61a0d8b4a647ba81ed9a503f55fc0d82fd93.wav"
     },
     "stems-autotune-muted-stems-start": {
-      "hash": "7cf22f0d808d56add3e7b27fd4fbbec19d5ba51d3d2178afcd84fb6a1c264a72",
-      "frames": 203872,
+      "hash": "382f4a831dfeba1250f587a481c2a23cbd596741e241a17f8e88ed721b2553b6",
+      "frames": 204000,
       "channels": 4,
       "peak": 0.8999999761581421,
       "impulseHits": [
@@ -2015,7 +2015,7 @@
         120037,
         168064
       ],
-      "wav": "wav/7cf22f0d808d56add3e7b27fd4fbbec19d5ba51d3d2178afcd84fb6a1c264a72.wav"
+      "wav": "wav/382f4a831dfeba1250f587a481c2a23cbd596741e241a17f8e88ed721b2553b6.wav"
     },
     "stems-autotune-muted-stems-section-loop": {
       "hash": "c2810b6e2407221fbfa8550b604e0dd97fa8166384ff70e36c9414d11304e7f3",
@@ -2084,7 +2084,7 @@
       "wav": "wav/c2810b6e2407221fbfa8550b604e0dd97fa8166384ff70e36c9414d11304e7f3.wav"
     },
     "stems-compressor-track-stems-metronome": {
-      "hash": "1a3a2479c921f4077e38d81dee2a2654281b1a58d1082f1b70be67a7fb5b6dbf",
+      "hash": "b83237695e3456a6a00af455458a61a0d8b4a647ba81ed9a503f55fc0d82fd93",
       "frames": 192000,
       "channels": 6,
       "peak": 0.8999999761581421,
@@ -2095,11 +2095,11 @@
         120037,
         168064
       ],
-      "wav": "wav/1a3a2479c921f4077e38d81dee2a2654281b1a58d1082f1b70be67a7fb5b6dbf.wav"
+      "wav": "wav/b83237695e3456a6a00af455458a61a0d8b4a647ba81ed9a503f55fc0d82fd93.wav"
     },
     "stems-compressor-track-stems-start": {
-      "hash": "41792e5cee8ef5e33b495b5bb25624bcfc9335f095e1f2373cb2c4665ac09faa",
-      "frames": 203888,
+      "hash": "1d6de59a64ea692e42b5a6b5520b0e5e68a91ebc7631aa47d2359965718645bf",
+      "frames": 204016,
       "channels": 4,
       "peak": 0.8999999761581421,
       "impulseHits": [
@@ -2109,7 +2109,7 @@
         120037,
         168064
       ],
-      "wav": "wav/41792e5cee8ef5e33b495b5bb25624bcfc9335f095e1f2373cb2c4665ac09faa.wav"
+      "wav": "wav/1d6de59a64ea692e42b5a6b5520b0e5e68a91ebc7631aa47d2359965718645bf.wav"
     },
     "stems-compressor-track-stems-section-loop": {
       "hash": "c2810b6e2407221fbfa8550b604e0dd97fa8166384ff70e36c9414d11304e7f3",
@@ -2178,7 +2178,7 @@
       "wav": "wav/c2810b6e2407221fbfa8550b604e0dd97fa8166384ff70e36c9414d11304e7f3.wav"
     },
     "stems-compressor-muted-stems-metronome": {
-      "hash": "1a3a2479c921f4077e38d81dee2a2654281b1a58d1082f1b70be67a7fb5b6dbf",
+      "hash": "b83237695e3456a6a00af455458a61a0d8b4a647ba81ed9a503f55fc0d82fd93",
       "frames": 192000,
       "channels": 6,
       "peak": 0.8999999761581421,
@@ -2189,11 +2189,11 @@
         120037,
         168064
       ],
-      "wav": "wav/1a3a2479c921f4077e38d81dee2a2654281b1a58d1082f1b70be67a7fb5b6dbf.wav"
+      "wav": "wav/b83237695e3456a6a00af455458a61a0d8b4a647ba81ed9a503f55fc0d82fd93.wav"
     },
     "stems-compressor-muted-stems-start": {
-      "hash": "41792e5cee8ef5e33b495b5bb25624bcfc9335f095e1f2373cb2c4665ac09faa",
-      "frames": 203888,
+      "hash": "1d6de59a64ea692e42b5a6b5520b0e5e68a91ebc7631aa47d2359965718645bf",
+      "frames": 204016,
       "channels": 4,
       "peak": 0.8999999761581421,
       "impulseHits": [
@@ -2203,7 +2203,7 @@
         120037,
         168064
       ],
-      "wav": "wav/41792e5cee8ef5e33b495b5bb25624bcfc9335f095e1f2373cb2c4665ac09faa.wav"
+      "wav": "wav/1d6de59a64ea692e42b5a6b5520b0e5e68a91ebc7631aa47d2359965718645bf.wav"
     },
     "stems-compressor-muted-stems-section-loop": {
       "hash": "c2810b6e2407221fbfa8550b604e0dd97fa8166384ff70e36c9414d11304e7f3",
@@ -2910,32 +2910,32 @@
       "wav": "wav/02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5.wav"
     },
     "one-frame-none-step-loop-twice-48000-4-137": {
-      "hash": "62831015078bf5d656e7f8b59cf7b3536ad361ceb8c4038b7e7fd60e20db0b07",
+      "hash": "02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5",
       "frames": 192000,
       "channels": 2,
       "peak": 0.8999999761581421,
       "impulseHits": [
-        4095,
-        24036,
-        72063,
-        120036,
-        168063
+        4096,
+        24037,
+        72064,
+        120037,
+        168064
       ],
-      "wav": "wav/62831015078bf5d656e7f8b59cf7b3536ad361ceb8c4038b7e7fd60e20db0b07.wav"
+      "wav": "wav/02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5.wav"
     },
     "one-frame-none-section-loop-twice-48000-4-137": {
-      "hash": "62831015078bf5d656e7f8b59cf7b3536ad361ceb8c4038b7e7fd60e20db0b07",
+      "hash": "02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5",
       "frames": 192000,
       "channels": 2,
       "peak": 0.8999999761581421,
       "impulseHits": [
-        4095,
-        24036,
-        72063,
-        120036,
-        168063
+        4096,
+        24037,
+        72064,
+        120037,
+        168064
       ],
-      "wav": "wav/62831015078bf5d656e7f8b59cf7b3536ad361ceb8c4038b7e7fd60e20db0b07.wav"
+      "wav": "wav/02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5.wav"
     },
     "one-frame-none-step-chunked-whole-48000-4-137": {
       "hash": "02c6a3e185c597c3e80e3b0fedc5d0b60939023c88c5649ffa2547cfced86bc5",
@@ -3206,32 +3206,32 @@
       "wav": "wav/63f22b8eb1dc0a0e8d2d5c13ac46b2ac24e0528c4031004dad6152947a175acd.wav"
     },
     "one-frame-none-step-loop-twice-44100-4-137": {
-      "hash": "d2842f8654e21faa89809c3d7d42b7a2de1388b30f90135ca7e556d64eaad289",
+      "hash": "a3a3b4a4be5272ba35c652f47ebf34ce77f4f732333c725cfdbd3fdc83e883f2",
       "frames": 192000,
       "channels": 2,
       "peak": 0.89353346824646,
       "impulseHits": [
-        4457,
-        26162,
-        78436,
-        130652,
-        182926
+        4458,
+        26163,
+        78437,
+        130653,
+        182927
       ],
-      "wav": "wav/d2842f8654e21faa89809c3d7d42b7a2de1388b30f90135ca7e556d64eaad289.wav"
+      "wav": "wav/a3a3b4a4be5272ba35c652f47ebf34ce77f4f732333c725cfdbd3fdc83e883f2.wav"
     },
     "one-frame-none-section-loop-twice-44100-4-137": {
-      "hash": "d2842f8654e21faa89809c3d7d42b7a2de1388b30f90135ca7e556d64eaad289",
+      "hash": "a3a3b4a4be5272ba35c652f47ebf34ce77f4f732333c725cfdbd3fdc83e883f2",
       "frames": 192000,
       "channels": 2,
       "peak": 0.89353346824646,
       "impulseHits": [
-        4457,
-        26162,
-        78436,
-        130652,
-        182926
+        4458,
+        26163,
+        78437,
+        130653,
+        182927
       ],
-      "wav": "wav/d2842f8654e21faa89809c3d7d42b7a2de1388b30f90135ca7e556d64eaad289.wav"
+      "wav": "wav/a3a3b4a4be5272ba35c652f47ebf34ce77f4f732333c725cfdbd3fdc83e883f2.wav"
     },
     "one-frame-none-step-chunked-whole-44100-4-137": {
       "hash": "63f22b8eb1dc0a0e8d2d5c13ac46b2ac24e0528c4031004dad6152947a175acd",
@@ -3259,37 +3259,37 @@
       "wav": "wav/1d2d157b83c55f695bd4471ae6a922a5e84ec08ffc9704e9086c8c62f02645c5.wav"
     },
     "tail-none-section-entire-long": {
-      "hash": "993e098bf9f3cf790c5f0330fa4c581da29cc05ef3a861d4520df5030672f05e",
-      "frames": 80992,
+      "hash": "f2ff67a50d61e897ac2e5305a542988ac085e481085848d8939ba83160bf9d1b",
+      "frames": 81120,
       "channels": 2,
       "peak": 0.5475195050239563,
       "impulseHits": [
         7282,
         15795
       ],
-      "wav": "wav/993e098bf9f3cf790c5f0330fa4c581da29cc05ef3a861d4520df5030672f05e.wav"
+      "wav": "wav/f2ff67a50d61e897ac2e5305a542988ac085e481085848d8939ba83160bf9d1b.wav"
     },
     "tail-none-start-long": {
-      "hash": "993e098bf9f3cf790c5f0330fa4c581da29cc05ef3a861d4520df5030672f05e",
-      "frames": 80992,
+      "hash": "f2ff67a50d61e897ac2e5305a542988ac085e481085848d8939ba83160bf9d1b",
+      "frames": 81120,
       "channels": 2,
       "peak": 0.5475195050239563,
       "impulseHits": [
         7282,
         15795
       ],
-      "wav": "wav/993e098bf9f3cf790c5f0330fa4c581da29cc05ef3a861d4520df5030672f05e.wav"
+      "wav": "wav/f2ff67a50d61e897ac2e5305a542988ac085e481085848d8939ba83160bf9d1b.wav"
     },
     "tail-none-section-entire": {
-      "hash": "993e098bf9f3cf790c5f0330fa4c581da29cc05ef3a861d4520df5030672f05e",
-      "frames": 80992,
+      "hash": "f2ff67a50d61e897ac2e5305a542988ac085e481085848d8939ba83160bf9d1b",
+      "frames": 81120,
       "channels": 2,
       "peak": 0.5475195050239563,
       "impulseHits": [
         7282,
         15795
       ],
-      "wav": "wav/993e098bf9f3cf790c5f0330fa4c581da29cc05ef3a861d4520df5030672f05e.wav"
+      "wav": "wav/f2ff67a50d61e897ac2e5305a542988ac085e481085848d8939ba83160bf9d1b.wav"
     },
     "tail-none-bounce-tail": {
       "hash": "d57c34b371aa24733306ecd9438db4a1deee1e6b66e68053511dfdb870349cfd",
@@ -3332,24 +3332,26 @@
       "wav": "wav/8c5076eaa0fe2d67f9af3be87fa42e9cfbde6a5a332e58a4797e13814f821259.wav"
     },
     "gap-none-start": {
-      "hash": "4d1742bd6d17a6779c5354bf5f3e1470f6eff37505cc93476ba6d5e19ca9f422",
-      "frames": 21472,
+      "hash": "eecc95c3739f6885992e474bc4451aa9d2fe56401ccd40d092ed6cbdfe16dea5",
+      "frames": 789600,
       "channels": 2,
       "peak": 0.5,
       "impulseHits": [
-        300
+        300,
+        768300
       ],
-      "wav": "wav/4d1742bd6d17a6779c5354bf5f3e1470f6eff37505cc93476ba6d5e19ca9f422.wav"
+      "wav": "wav/eecc95c3739f6885992e474bc4451aa9d2fe56401ccd40d092ed6cbdfe16dea5.wav"
     },
     "gap-none-section-entire": {
-      "hash": "4d1742bd6d17a6779c5354bf5f3e1470f6eff37505cc93476ba6d5e19ca9f422",
-      "frames": 21472,
+      "hash": "eecc95c3739f6885992e474bc4451aa9d2fe56401ccd40d092ed6cbdfe16dea5",
+      "frames": 789600,
       "channels": 2,
       "peak": 0.5,
       "impulseHits": [
-        300
+        300,
+        768300
       ],
-      "wav": "wav/4d1742bd6d17a6779c5354bf5f3e1470f6eff37505cc93476ba6d5e19ca9f422.wav"
+      "wav": "wav/eecc95c3739f6885992e474bc4451aa9d2fe56401ccd40d092ed6cbdfe16dea5.wav"
     },
     "gap-none-stem-step": {
       "hash": "8c5076eaa0fe2d67f9af3be87fa42e9cfbde6a5a332e58a4797e13814f821259",
@@ -3363,14 +3365,15 @@
       "wav": "wav/8c5076eaa0fe2d67f9af3be87fa42e9cfbde6a5a332e58a4797e13814f821259.wav"
     },
     "gap-none-stem-start": {
-      "hash": "4d1742bd6d17a6779c5354bf5f3e1470f6eff37505cc93476ba6d5e19ca9f422",
-      "frames": 21472,
+      "hash": "eecc95c3739f6885992e474bc4451aa9d2fe56401ccd40d092ed6cbdfe16dea5",
+      "frames": 789600,
       "channels": 2,
       "peak": 0.5,
       "impulseHits": [
-        300
+        300,
+        768300
       ],
-      "wav": "wav/4d1742bd6d17a6779c5354bf5f3e1470f6eff37505cc93476ba6d5e19ca9f422.wav"
+      "wav": "wav/eecc95c3739f6885992e474bc4451aa9d2fe56401ccd40d092ed6cbdfe16dea5.wav"
     },
     "gap-none-stem-mix": {
       "hash": "af2e98c443eeafc67fa02038aa06d06260a6e23a2350211c43fc198c00e6cc2d",
@@ -3383,14 +3386,14 @@
       "wav": "wav/af2e98c443eeafc67fa02038aa06d06260a6e23a2350211c43fc198c00e6cc2d.wav"
     },
     "gap-none-stem-mix-start": {
-      "hash": "bde0f5a8a0010ba5539c13eb133ebc608ba96ed31a2fdbdfc39c8543ae0d77c6",
-      "frames": 875872,
+      "hash": "9861b71389fe698a67962a7427370a7ecff7706eecbe75ddbab980be725a4649",
+      "frames": 876000,
       "channels": 2,
       "peak": 0.7587313652038574,
       "impulseHits": [
         6080
       ],
-      "wav": "wav/bde0f5a8a0010ba5539c13eb133ebc608ba96ed31a2fdbdfc39c8543ae0d77c6.wav"
+      "wav": "wav/9861b71389fe698a67962a7427370a7ecff7706eecbe75ddbab980be725a4649.wav"
     },
     "sweep-none-step-one": {
       "hash": "4f35ec5dea008c32460c9e2c9a23f2cf18f7e454f05a7b99e82c9d0bb4fa8e58",

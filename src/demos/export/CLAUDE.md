@@ -15,7 +15,7 @@ configuration since 0.0.160 (openDAW#316, filed by this repo):
 { stems: {}, metronome: { stem: { fileName: "Metronome" } } }
 ```
 
-Key facts (verified SDK 0.0.160):
+Key facts:
 - **Enabled is implied by presence** — `ExportConfiguration.isMetronomeAudible(config)`:
   `includeInMixdown === true` (no stems) or `metronome.stem` defined (with stems). No
   metronome key = silent. `settings` is `Partial<Omit<EngineSettings["metronome"],
@@ -30,13 +30,14 @@ Key facts (verified SDK 0.0.160):
 - **`renderer.render(config, start, end, progress)` does NOT stop at `end`** — the worker
   loop runs until silence detection or `config.maxDurationSeconds`; `endPosition` only
   drives the progress observable. For exact ranges always use `step(numSamples)`.
-- **`render` stops at 10 s of silence, judged on the channels it returns.** A region after a gap
-  longer than that is lost from the file, and in a single-stem export the stem's own silence ends
-  the render (with several, all must be silent: read, not measured). `start` and `renderSection` with a tail go through `render`; `step`
-  does not. It is a defect filed upstream as openDAW#534
-  (`debug/2026-11-06-export-regression/drafts/posted-openDAW-534-entire-song-ends-at-silence.md`,
-  measured in the note, Finding 2): a demo that needs a long gap uses `step`. Trailing silence
-  with nothing after it is trimmed by design.
+- **`render` stops at 10 s of silence, judged on the channels it returns, but only past
+  `config.minDurationSeconds`.** `start` and `renderSection` with a tail pass the range's length
+  there (and that plus 30 s as `maxDurationSeconds`), so a region after a long gap inside the range
+  stays in the file; a direct `render` call without `minDurationSeconds` ends at the
+  first 10 s gap (openDAW#534, `debug/2026-11-06-export-regression/note.md` Finding 2). In a
+  single-stem export the stem's own silence is what counts (with several, all must be silent:
+  read, not measured). `step` does not go through `render`. The trailing silence after the last
+  sound is trimmed to its first quarter second (`sampleRate / 4` frames).
 - **A section or `setPosition` start fades in over about 5 ms**, the engine treating the first
   block as a jump; the first frames of such a render differ from a continuous pass. A second
   `play` on one renderer after a stop with reset is not trimmed of its plug-in compensation: on a chain with a reported latency the

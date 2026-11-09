@@ -4,7 +4,7 @@
 >
 > **Prerequisites:** [Ch. 04 (Box System)](./04-box-system-and-reactivity.md), [Ch. 08 (Recording)](./08-recording.md) for capture, [Ch. 11 (Effects)](./11-effects.md) for the MIDI-effect API surface.
 
-MIDI surfaces in openDAW are split across several layers: the box-graph data model (notes are boxes), the live engine (hardware capture and instrument routing), and the studio adapters (typed accessors). This chapter consolidates them into one reference, plus walks through the patterns for programmatic note creation, hardware capture, and the six MIDI effects that ship with the SDK.
+MIDI surfaces in openDAW are split across several layers: the box-graph data model (notes are boxes), the live engine (hardware capture and instrument routing), and the studio adapters (typed accessors). This chapter consolidates them into one reference, plus walks through the patterns for programmatic note creation, hardware capture, and the seven MIDI effects that ship with the SDK.
 
 **Honest about gaps:** the SDK is strong on programmatic note creation and hardware *input*, with a working MIDI-effects pipeline. MIDI *output* to external gear and standalone MIDI Clock configuration exist in the codebase but don't have a documented consumer API yet — flagged inline where they come up.
 
@@ -247,11 +247,11 @@ If you need to slave external gear to openDAW's transport today, the practical w
 
 ## MIDI effects
 
-Six MIDI effects ship with the SDK, inserted into a track's MIDI device chain (before the instrument). Use `EffectFactories` from `@opendaw/studio-core` (the MIDI factories live in `EffectFactories.MidiNamed`, which also holds `WclapMidi`, the WebCLAP MIDI host, covered in [Ch. 11](./11-effects.md)) to add them in a transaction — resolve the chain field via the adapter layer (`audioUnitAdapter.midiEffectsField.unwrap()`; the `DeviceHost` chain getters are `Option`-wrapped) and pass it to `project.api.insertEffect(field, EffectFactories.Arpeggio)` — same pattern as audio effects, see [Ch. 11](./11-effects.md#adding-an-effect).
+Seven MIDI effects ship with the SDK, inserted into a track's MIDI device chain (before the instrument). Use `EffectFactories` from `@opendaw/studio-core` (the MIDI factories live in `EffectFactories.MidiNamed`, which also holds `WclapMidi`, the WebCLAP MIDI host, covered in [Ch. 11](./11-effects.md)) to add them in a transaction — resolve the chain field via the adapter layer (`audioUnitAdapter.midiEffectsField.unwrap()`; the `DeviceHost` chain getters are `Option`-wrapped) and pass it to `project.api.insertEffect(field, EffectFactories.Arpeggio)` — same pattern as audio effects, see [Ch. 11](./11-effects.md#adding-an-effect).
 
 ### Arpeggio
 
-Plays notes in patterns over a configurable rate and number of octaves. It also runs while the transport is stopped: keys held live are arpeggiated on the free-running clock, and the steps end when the keys go up.
+Plays notes in patterns over a configurable rate and number of octaves. It also runs while the transport is stopped: keys held live are arpeggiated on the free-running clock, and the steps end when the keys go up. When the transport starts or stops, the notes it is sounding end at once; keys still held stay, and a Hold latch is cleared.
 
 | Field | Type | Range | Meaning |
 |---|---|---|---|
@@ -265,6 +265,7 @@ Plays notes in patterns over a configurable rate and number of octaves. It also 
 | `offset` | `Int32Field` | 0–15 | Starts the walk later by this many notes |
 | `gate` | `Float32Field` | 0–2 | Note length as a fraction of the step; the held note's end does not cut it |
 | `velocity` | `Float32Field` | −1.0 to 1.0 | One fixed velocity from silent at −1 to full at 0, then a blend from full toward the note's own at +1 |
+| `followChords` | `BooleanField` | — | While the transport runs, the chord on the project's chord track at the step's position replaces the held keys: its notes ascending as voiced (inversion included), in the octave of the lowest held key, or from C3 (MIDI 60) with no key held, at the loudest held key's velocity (0.8 with none). Where no chord sits the held keys play as usual. Default off |
 | `seed` | `Int32Field` | 0–999999 | The seed of every random decision; a step plays the same note whatever played before it |
 | `patternLength` | `Int32Field` | 1–64 | How many of the 64 sequencer steps play (default 16) |
 | `stepKinds` | `ArrayField<Int32Field>` | 64 × 0–3 | Note, Rest, Tie, Chord. Every step moves the walk on, rests and ties included |
@@ -273,7 +274,7 @@ Plays notes in patterns over a configurable rate and number of octaves. It also 
 | `stepTransposes`, `stepOctaves` | `ArrayField<Int32Field>` | 64 × ±12, ±2 | Semitones and octaves added to the step |
 | `stepRatchets` | `ArrayField<Int32Field>` | 64 × 1–7 | Equal hits within the step |
 
-`namedParameter` on the adapter holds the automatable ones (`modeIndex`, `numOctaves`, `rate`, `gate`, `repeat`, `velocity`, `order`, `hold`, `retrigger`, `offset`); `seed` and the lanes are plain box fields. With `modeIndex` at 0–2 and everything but `modeIndex`, `numOctaves`, `rateIndex`, `gate`, `repeat` and `velocity` at its default, the walk is plain Up, Down or UpDown. Every played note keeps the cents of the held note it comes from.
+`namedParameter` on the adapter holds the automatable ones (`modeIndex`, `numOctaves`, `rate`, `gate`, `repeat`, `velocity`, `order`, `hold`, `retrigger`, `offset`, `followChords`); `seed` and the lanes are plain box fields. With `modeIndex` at 0–2 and everything but `modeIndex`, `numOctaves`, `rateIndex`, `gate`, `repeat` and `velocity` at its default, the walk is plain Up, Down or UpDown. Every played note keeps the cents of the held note it comes from.
 
 ### Note Filter
 
@@ -298,6 +299,19 @@ Transpose notes by semitones / cents / octaves before they reach the instrument.
 | `semiTones` | `Int32Field` | −36 to +36 | Semitone shift |
 | `cents` | `Float32Field` | −50 to +50 | Fine-tune in cents |
 | `octaves` | `Int32Field` | −7 to +7 | Octave shift |
+
+### Scale Matrix
+
+Moves every note onto the nearest key of a scale (`EffectFactories.ScaleMatrix`). A note in the scale passes unchanged; any other moves to the closest scale key, and a note exactly between two keys moves down.
+
+| Field | Type | Range | Meaning |
+|---|---|---|---|
+| `root` | `Int32Field` | 0–11 | Root pitch class (0 = C) |
+| `scale` | `Int32Field` | 0–15 | An index into `MidiKeys.StockScales` (from `@opendaw/lib-dsp`: Major, Natural Minor, … Augmented, 15 scales); the index after them (`ScaleMatrixDeviceBoxAdapter.CustomScale`, 15) is Custom. Names in `ScaleMatrixDeviceBoxAdapter.ScaleNames` |
+| `follow` | `BooleanField` | — | Use the project key at the note's position (the [key track](./02-timing-and-tempo.md#advanced-key-and-chord-tracks), else the project key) instead of `root` and `scale`; with Custom only that key's root is used |
+| `custom` | `ArrayField<Int32Field>` | 12 × −6 to +12 | The Custom mapping, per pitch class counted from the root: semitones added; 12 (`ScaleMatrixDeviceBoxAdapter.Mute`) drops the note. A result outside 0–127 is moved back by an octave |
+
+`namedParameter` holds `root`, `scale` and `follow` (automatable); `custom` is a plain box field. Velocity and cents pass through. A note ends on the key it started with, even if the parameters change while it sounds, and two notes that land on one key share it: only the first note-on and the last note-off go out. `ScaleMatrixDeviceBoxAdapter.outputClass(input, key)` returns the pitch class an input pitch class plays as (`null` for a muted one) and `.key` the device's own `Harmony.Key`.
 
 ### Velocity
 
@@ -332,7 +346,7 @@ User-written JavaScript MIDI processor. The full programming model is covered in
 | `parameters` | `Field<Parameter>` | Declared parameters (registered automatically when the script is compiled) |
 | `samples` | `Field<Sample>` | Declared samples (likewise) |
 
-Spielwerk is the right tool when none of the five built-in effects above match your need — algorithmic patterns, generative sequences, custom mappings.
+Spielwerk is the right tool when none of the six built-in effects above match your need — algorithmic patterns, generative sequences, custom mappings.
 
 ## How notes reach the instrument
 
@@ -383,7 +397,8 @@ A quick map of the SDK surfaces this chapter touches:
 | Recording | `CaptureMidi`, `project.captureDevices` | `@opendaw/studio-core` |
 | Note signals (audition) | `NoteSignal` | `@opendaw/studio-adapters` |
 | Engine note input | `project.engine.noteSignal(signal)` | `@opendaw/studio-core` |
-| MIDI effects | `ArpeggioDeviceBox`, `NoteFilterDeviceBox`, `PitchDeviceBox`, `VelocityDeviceBox`, `ZeitgeistDeviceBox`, `SpielwerkDeviceBox` | `@opendaw/studio-boxes` |
+| MIDI effects | `ArpeggioDeviceBox`, `NoteFilterDeviceBox`, `PitchDeviceBox`, `ScaleMatrixDeviceBox`, `VelocityDeviceBox`, `ZeitgeistDeviceBox`, `SpielwerkDeviceBox` | `@opendaw/studio-boxes` |
+| Key and chords (followed by Scale Matrix, Arpeggio, Autotune, scripts) | `project.timelineBoxAdapter.keyTrack` / `.chordTrack`, `KeyEventBox`, `ChordEventBox` | `@opendaw/studio-adapters`, `@opendaw/studio-boxes` |
 | Add an effect | `EffectFactories.MidiNamed`, `project.api.insertEffect` | `@opendaw/studio-core` |
 | MIDI output to hardware | `InstrumentFactories.MIDIOutput` (`MIDIOutputBox`), sent through `Project.sendMIDIFromEngine` on the audio clock | `@opendaw/studio-core`, `@opendaw/studio-boxes` |
 | MIDI Clock | Not yet exposed publicly | (internals only) |
