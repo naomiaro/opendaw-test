@@ -194,7 +194,10 @@ parameterFieldAdapters.getTracks(address)                   // Option<ParameterT
 During playback (not recording), a manual/MIDI write suspends that lane's automation
 until the transport stops (`AutomationSuspension`, auto-started per Project; engine-side
 `engine.suspendAutomation(uuid)`; cleared on pause/stop). Runtime-only — no box graph
-writes.
+writes. Measured defect: a write in the gap after Stop while `isPlaying` still reads true (until the
+next frame tick, about 20–40 ms at 60 Hz) suspends the lane on the stopped engine, and `play` does not clear it,
+so the NEXT playback ignores the curve. Repro `automation-suspended-after-stop-debug-demo.html`, note
+`debug/2026-11-09-frame-clock-consumers/note.md`.
 
 ### ParameterAdapterSet (Device Parameters)
 Access all automatable parameters on a device:
