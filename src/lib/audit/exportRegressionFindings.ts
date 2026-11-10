@@ -130,7 +130,6 @@ const TRIMMED_FRAMES: Readonly<Record<number, number>> = { 48000: 81120, 44100: 
 // The doubled tone's largest step at each rate, rounded up from what was measured on every case.
 const WRAP_STEP_LIMIT: Readonly<Record<number, number>> = { 48000: 0.131, 44100: 0.142 };
 
-
 // Measured: `render` keeps every quantum up to the one holding the last sound, then exactly a quarter second (0.0.183)
 const QUANTUM_FRAMES = 128;
 const renderedToSongEnd = (row: ExportRow, pageRate: number): number =>

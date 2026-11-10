@@ -1053,10 +1053,10 @@ ones above is NOT a group to the SDK, however it routes.
 const group = project.editing
   .modify(() => project.grouping.create([drumsUnitBox, bassUnitBox]))
   .unwrap()                             // the transaction's return value
-  .unwrap("units cannot be grouped")    // None: no units, the Output unit, a detached unit, or a route that would feed itself
+  .unwrap("units cannot be grouped")    // None: no attached units, or the Output unit among them
 ```
 
-`create` makes a bus named "Group Bus" ("Group Bus 2" when the name is taken) at unity volume, nested inside the
+Detached units in the list are skipped. `create` makes a bus named "Group Bus" ("Group Bus 2" when the name is taken) at unity volume, nested inside the
 units' common parent group, re-points each unit's `output` at it, and renumbers every unit's `index` so the members
 follow their group. The other methods: `move(units, parent?, before?)`, `moveOutOfGroup(unit)`,
 `ungroup(group)` (members move up a level, the group is deleted), `deleteGroup(group)` (the group AND everything
@@ -1070,8 +1070,8 @@ Reading the tree: `AudioUnitGroups` (from `@opendaw/studio-adapters`) has `paren
 
 New units can be placed inside a group directly: `createInstrument(factory, { destination })` routes the new unit to
 the given `AudioBusBox` (also `AudioBusFactory.create(…, destination)` and `PresetDecoder.decode(…, destination)`),
-and `project.api.createInstrumentAt(factory, insertion)` with `insertionAfter(anchor)` / `insertionBefore(uuid)`
-places it in the group's order as well.
+and `project.api.createInstrumentAt(factory, insertion)` places it in the group's order as well, the insertion coming
+from `insertionAfter(Option.wrap(unitBox))` or `insertionBefore(Option.wrap(unitBox.address.uuid))`.
 
 A group unit hosts audio effects only: its adapter's `midiEffects` and `midiEffectsField` are `Option.None`
 and `hostsInstrument` is `false`.

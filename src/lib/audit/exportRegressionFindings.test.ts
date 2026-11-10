@@ -304,6 +304,18 @@ describe("the gap rows", () => {
   });
 });
 
+describe("the in-block rounding, fixed upstream (openDAW#536) and its label retired", () => {
+  it("leaves no label on the in-block and metronome-stem rows, so a click or region start a frame off reads failing", () => {
+    for (const rate of [48000, 44100]) {
+      const rows = buildRows(rate).filter((row) => row.group === "in-block" || row.path === "stems-metronome");
+      expect(rows.length, String(rate)).toBe(6);
+      for (const row of rows) {
+        expect(KNOWN_FINDINGS.filter((f) => f.applies(row, rate)).map((f) => f.name), `${row.id} at ${rate}`).toEqual([]);
+      }
+    }
+  });
+});
+
 describe("loop-wrap-keeps-old-read", () => {
   for (const rate of [48000, 44100]) {
     describe(`at ${rate}`, () => {

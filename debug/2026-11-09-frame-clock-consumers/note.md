@@ -1,7 +1,7 @@
 # What else in openDAW runs on the frame-read engine state
 
 **Upstream:** [openDAW#537](https://github.com/andremichelle/openDAW/issues/537) (filed 2026-11-09). **FIXED in SDK 0.0.184**
-(`e6bac5c64`, measured here 2026-11-10: the page reads FIXED, [below](#fixed-in-0-0-184)).
+(`e6bac5c64`, measured here 2026-11-10: the page reads FIXED, [below](#fixed-in-00184)).
 **SDK:** 0.0.183 (installed release; source read in the checkout at the `@opendaw/studio-sdk@0.0.183` tag, the app
 included). **Browser:** Playwright's Chrome, macOS, built-in display at 120 Hz, output device at 44.1 kHz.
 **Question (2026-11-09):** [the display-refresh-rate note](../2026-11-09-display-refresh-rate-recording/note.md) found

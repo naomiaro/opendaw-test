@@ -6,6 +6,7 @@
  * start pulse and truncated, so about half of the whole-frame starts landed a frame early (openDAW#536). 0.0.184 places
  * every such pulse on its frame (`dsp::ppqn::frame_at` from the block's anchor). The in-block rows still pick their
  * starts with this arithmetic, one it put early and one it put on time, so the rows and the register stay the same.
+ * `exactFrame` and `ppqnAtBlockResidue` are exact arithmetic, not the old engine's, and hold on every release.
  */
 
 const QUANTUM = 128;

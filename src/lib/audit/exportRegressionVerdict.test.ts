@@ -266,7 +266,7 @@ describe("judgeInvariants", () => {
       const at44 = judged(44100, beats(44100).map((frame) => (frame >= 110250 ? frame - 1 : frame)));
       expect([at44.holds, at44.finding]).toEqual([false, null]);
     });
-    it("names nothing on a click early where the arithmetic puts it on its frame, or late, or missing", () => {
+    it("fails a single click a frame early or late, or a missing one, with no label", () => {
       const wrongClick = judged(48000, beats(48000).map((frame) => (frame === 24000 ? frame - 1 : frame)));
       expect([wrongClick.holds, wrongClick.finding]).toEqual([false, null]);
       const late = judged(48000, beats(48000).map((frame) => (frame === 24000 ? frame + 1 : frame)));
@@ -327,14 +327,17 @@ describe("judgeInvariants", () => {
       expect([onTime.holds, onTime.finding]).toEqual([false, null]);
       const late = judged("predicted-early", 48251);
       expect([late.holds, late.finding]).toEqual([false, null]);
+      expect(late.detail).toContain("seated on frame 48251");
     });
-    it("names nothing on a region two frames off, a sound in the head, or a render too short for the reference", () => {
-      expect(judged("predicted-early", 48248).finding).toBeNull();
+    it("fails a region two frames off, a sound in the head, or a render too short for the reference, with no label", () => {
+      const twoOff = judged("predicted-early", 48248);
+      expect([twoOff.holds, twoOff.finding]).toEqual([false, null]);
       const noisy = seated(48249, 60000);
       noisy.samples[0][100] = 1e-6;
       const result = one("region-seated-on-start", rowAt("predicted-early"), noisy, { reference: refRow });
       expect([result.holds, result.finding]).toEqual([false, null]);
-      expect(judged("predicted-early", 48249, 48249 + 4799).finding).toBeNull();
+      const short = judged("predicted-early", 48249, 48249 + 4799);
+      expect([short.holds, short.finding]).toEqual([false, null]);
     });
   });
 
