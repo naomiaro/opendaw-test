@@ -831,8 +831,8 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   real click on Run audit about 30 seconds after load, deterministic, no hardware, about 90 s after the 30 s wait (308 rows). Expect every row
   `identical` (the note's "Expected" line gives the clean / known split; a `known-finding` row is not a pass). A `changed` row is the finding: read `node scripts/audit/export-regression/table.ts <token>` (it needs the
   library clone for sample figures) and decide file or accept; a `failing` row with no label is a defect; a `no longer reproducing`
-  line is a fix landing, so retire the label in the note (openDAW#536 landing moves `in-block-none-region-start-predicted-early` and
-  the four `stems-*-stems-metronome` rows: retire `in-block-pulse-rounds-early`, re-accept). `--accept <token> --library ~/Code/opendaw-export-wavs` only after a
+  line is a fix landing, so retire the label in `exportRegressionFindings.ts` and the note, then re-accept after a person's read
+  (retired so far: openDAW#533 and #534 on 0.0.183, #536 on 0.0.184). `--accept <token> --library ~/Code/opendaw-export-wavs` only after a
   person's read, and it needs an explicit token; then in the library clone `git add wav`, commit and push (LFS), and commit the register here; the library is the private LFS repo
   `naomiaro/opendaw-export-wavs` (GitHub Free: 10 GiB of storage and 10 GiB of bandwidth a month, every download counts). A run
   with errored rows on one source is the known OPFS stall: repeat that page rate. Offline-only, so the two page rates are the

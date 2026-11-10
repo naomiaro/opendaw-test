@@ -2,7 +2,7 @@
 
 **Title:** A region that starts on a whole frame inside a block plays one frame early, an export range's end is a minimum, and what markers, loop wraps and a gap inside a range do on 0.0.183
 
-**Status: MEASURED. The region start is FILED as [openDAW#536](https://github.com/andremichelle/openDAW/issues/536) (2026-11-09)**, body as filed in
+**Status: MEASURED. The region start is FILED as [openDAW#536](https://github.com/andremichelle/openDAW/issues/536) (2026-11-09) and FIXED in SDK 0.0.184** (`527870ac5`; measured 2026-11-10: the five rows moved onto their frames and the label is retired, [the export note's 0.0.184 section](../2026-11-06-export-regression/note.md#sdk-00184-the-in-block-rounding-fixed)), body as filed in
 [`drafts/posted-openDAW-536-region-start-inside-a-block-one-frame-early.md`](./drafts/posted-openDAW-536-region-start-inside-a-block-one-frame-early.md).
 The range question is withdrawn, because upstream's own plan answers it (5, below):
 [`drafts/withdrawn-openDAW-export-range-end-is-a-minimum.md`](./drafts/withdrawn-openDAW-export-range-end-is-a-minimum.md). The 12 rows are accepted into the register (2026-11-09, the user's word): runs 1794253004161 (48 kHz) and 1794253155843 (44.1 kHz), 9 WAVs per rate, library commit `e5dcaa1`.

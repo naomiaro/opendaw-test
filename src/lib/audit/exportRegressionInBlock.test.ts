@@ -1,23 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { exactFrame, metronomeClickFrame, ppqnAtBlockResidue, regionStartFrame, regionStartPpqn } from "./exportRegressionInBlock.ts";
-
-const earlyClicks = (rate: number): number[] => {
-  const early: number[] = [];
-  for (let beat = 0; beat < 8 * 960; beat += 960) {
-    const exact = exactFrame(beat, 120, rate);
-    expect(metronomeClickFrame(beat, 120, rate) - exact, `${rate} beat ${beat}`).toBeGreaterThanOrEqual(-1);
-    if (metronomeClickFrame(beat, 120, rate) !== exact) early.push(exact);
-  }
-  return early;
-};
+import { exactFrame, ppqnAtBlockResidue, regionStartFrame, regionStartPpqn } from "./exportRegressionInBlock.ts";
 
 describe("exportRegressionInBlock", () => {
-  it("places early exactly the clicks 0.0.183's metronome stems measured early, 120 bpm over 4 s", () => {
-    // runs 1794246918474 (48 kHz) and 1794247036602 (44.1 kHz): first non-zero frame per click, minus one
-    expect(earlyClicks(48000)).toEqual([24000, 72000]);
-    expect(earlyClicks(44100)).toEqual([110250, 132300, 154350]);
-  });
-  it("picks the region starts the in-block rows rendered, one of them measured a frame early", () => {
+  it("picks the region starts the in-block rows render, one of them measured a frame early on 0.0.183", () => {
     // runs 1794251449772 (48 kHz) and 1794251607099 (44.1 kHz): the predicted-early region's impulses a frame before the computed ones
     const picks = [48000, 44100].flatMap((rate) => [true, false].map((early) => {
       const ppqn = regionStartPpqn(1, 120, rate, early);
@@ -31,9 +16,8 @@ describe("exportRegressionInBlock", () => {
   it("puts a pulse on a block's first frame on that frame, whatever the arithmetic inside a block does", () => {
     for (const rate of [48000, 44100]) expect(regionStartFrame(0, 120, rate)).toBe(0);
     expect(regionStartFrame(4096, 120, 44100)).toBe(94080);
-    expect(metronomeClickFrame(1920, 120, 48000)).toBe(48000);
   });
-  it("picks a whole-frame start inside a block that the engine places early, and one it places on its frame", () => {
+  it("picks a whole-frame start inside a block that 0.0.183 placed early, and one it placed on its frame", () => {
     for (const rate of [48000, 44100]) {
       for (const early of [true, false]) {
         const ppqn = regionStartPpqn(1, 120, rate, early);

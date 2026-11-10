@@ -237,6 +237,54 @@ cell. Calibration: round trip 86.80 ms (spread 0.00), input part 63.80 ms at out
   this run, or did not change the delay; the multi-mic recording sweep is the one that watches nodes.
 - The jitter the 0.0.176 cells carried (7–10 ms, all the MIDI recorder's) is gone: max deviation 0.01 ms.
 
+## SDK 0.0.184 (2026-11-10)
+
+`combined-summary-1794338205300.json`: `?scenario=all&bpm=120`, a real click in the user's Chrome (through
+the claude-in-chrome extension), Chrome 156, the MacBook Pro built-in microphone and speakers, the IAC
+Driver Bus 1, a 44 100 Hz context, the Mac's output device at 44.1 kHz, 3 repeats per cell, the room "as quiet
+as it'll get". Calibration: round trip 88.80 ms, **spread 2.65 ms** (the first time it is not 0.00), input part
+65.80 ms at output latency 23.0 ms. The release places a pulse inside a block from the transport's anchor frame
+(openDAW#536), which moves the metronome's clicks by at most a frame; this page's clicks are its own, scheduled
+on the context clock, and neither recorder's path changed.
+
+| scenario | state | parts apart (per repeat) | MIDI median | audio median | max dev | clicks found / missing / extra |
+|---|---|---|---|---|---|---|
+| nominal-start | default | −63.15 ×3 | 0.00 | 63.15 | 0.01 | 144 / 0 / 0 |
+| nominal-start | calibrated | 2.65 ×3 | 0.00 | −2.65 | 0.01 | 144 / 0 / 0 |
+| countin-start | default | −63.15 ×3 | 0.00 | 63.15 | 0.01 | 144 / 0 / 0 |
+| countin-start | calibrated | 2.65 ×3 | 0.00 | −2.65 | 0.01 | 144 / 0 / 0 |
+| janked-mid | default | −63.15 ×3 | 0.00 | 63.15 | 0.01 | 144 / 0 / 0 |
+| janked-mid | calibrated | 2.65 ×3 | 0.00 | −2.65 | 0.01 | 144 / 0 / 0 |
+
+Calibrated `together` in every scenario (2.65 ms apart, inside the one-quantum tolerance); default
+`matches-known-defect`, the key on the beat and the sound late by the input part the SDK was not told. **Why
+calibrated reads 2.65 and not 0.00:** the calibration's three clicks came back at 3916, 3916 and 3799 frames (88.80,
+88.80, 86.15 ms): the microphone path shortened by 117 frames between the second and the third click and held there,
+so every take sat at 86.15 − 23.0 = 63.15 ms while the median applied 65.80. The step is in the browser's input path
+as the harness reads it through the capture's node, not in either recorder, and it is not a render quantum
+(117 frames, 128 at 44.1 kHz would be 2.90 ms). The MIDI side reads 0.00 on every row, as on 0.0.181.
+
+**The tab started out hidden** (the user noticed: the extension opened it in a window behind others), and the page
+watches visibility only during repeats, not during calibration. So it was run again, `combined-summary-1794338513932.json`,
+with the tab brought to the front first and a `visibilitychange` log from load: `visible` and focused from load to the end,
+no change logged. Round trip 86.35 ms, spread 2.68 ms: the clicks came back at **3926, 3808, 3808 frames**, the same step of
+118 frames, now between the first and second click, so the median took the settled value:
+
+| scenario | state | parts apart (per repeat) | MIDI median | audio median | max dev | clicks found / missing / extra |
+|---|---|---|---|---|---|---|
+| nominal-start | default | −63.35 ×3 | 0.00 | 63.35 | 0.01 | 144 / 0 / 0 |
+| nominal-start | calibrated | 0.00 ×3 | 0.00 | 0.00 | 0.01 | 144 / 0 / 0 |
+| countin-start | default | −63.35 ×3 | 0.00 | 63.35 | 0.01 | 144 / 0 / 0 |
+| countin-start | calibrated | 0.00 ×3 | 0.00 | 0.00 | 0.01 | 144 / 0 / 0 |
+| janked-mid | default | −63.35 ×3 | 0.00 | 63.35 | 0.01 | 144 / 0 / 0 |
+| janked-mid | calibrated | 0.00 ×3 | 0.00 | 0.00 | 0.01 | 144 / 0 / 0 |
+
+**Reading:** the 0.0.181 reading on the visible run. Hiding did not cause the step: on both runs today the microphone
+path shortened by 117–118 frames within the first two seconds of calibration and held for the rest of the run; where it
+lands among the three clicks decides whether the median is stale. Earlier runs held 0.00 spread; the 2026-09-03
+real-device calibration saw the input path step by one render quantum mid-chain (the recording register). Not chased
+here: whether a calibration that waits out the first seconds, or takes the last click, reads the settled path every time.
+
 ## SDK 0.0.181 (2026-11-04)
 
 `combined-summary-1793816112720.json`: `?scenario=all&bpm=120`, a real click in the user's Chrome (through

@@ -98,11 +98,13 @@ checked.
   during playback: −19.8 dB → silent for the rest of the pass). That a lane toggle does not lift it is read
   from the source above.
   - Note: `debug/2026-11-09-frame-clock-consumers/note.md`.
-  - The one part that is a defect, a write in the gap after Stop leaving the lane suspended into the next
-    playback, is filed as openDAW#537.
+  - The one part that was a defect, a write in the gap after Stop leaving the lane suspended into the next
+    playback, was filed as openDAW#537 and fixed in 0.0.184 (the stopped engine refuses the suspension;
+    the page reads FIXED).
 - **Decision not to file (2026-11-09):** suspension is the documented #347 behaviour, and the field write is
   ordinary SDK use, not a hack. A preference to turn it off would be a feature request whose only motivation
   is a host with an override layer of its own. Upstream had no discussion of an opt-out (its plans, docs and
   tracker searched 2026-11-09). Reopen if the field-write workaround stops being available (a field that only
   the adapter may write), or if upstream adds per-lane manual-control state.
-- **Last checked:** 2026-11-09, SDK 0.0.183, source read at the `@opendaw/studio-sdk@0.0.183` tag.
+- **Last checked:** 2026-11-10, SDK 0.0.184, source read at the `@opendaw/studio-sdk@0.0.184` tag (the suspension
+  during playback unchanged; `automation-suspended-after-stop-debug-demo.html`'s positive control still fires).

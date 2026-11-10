@@ -146,11 +146,11 @@ note); a row is `identical`, `changed` or `failing` (an invariant broke), and a 
 writes the register and copies the WAVs into the library clone only after a person's read, never on a failing, errored or
 descending run. The WAV library is the private LFS repo `naomiaro/opendaw-export-wavs`, cloned at `~/Code/opendaw-export-wavs`
 (or `$EXPORT_WAV_LIBRARY`); `&fill=1` uploads every row's WAV; every download counts against its bandwidth. Hash the audio, never the project bytes (above).
-A pulse inside a 128-frame block still rounds from the block's start pulse: a metronome click, and a region starting on a whole
-frame inside a block, can land one frame early (about half such region starts at 120 bpm). The harness labels it
-`in-block-pulse-rounds-early` from the engine's own arithmetic (`src/lib/audit/exportRegressionInBlock.ts`), filed as openDAW#536
-(https://github.com/andremichelle/openDAW/issues/536); a fix moves those rows' hashes and the label then reads stale. A row that needs an exact region start puts it on a block's first frame. The run, its
-findings and the reading recipe: `debug/2026-11-06-export-regression/note.md`.
+A metronome click, and a region or note starting on a whole frame inside a 128-frame block, plays on that frame: each block
+carries the transport's anchor pulse and frame, and the engine places a pulse from it (openDAW#536, filed by this harness, fixed).
+The in-block rows (`group=in-block`) and the metronome stems hold that to the frame with no label: a frame early reads `failing`.
+The rows pick their starts with the old arithmetic (`src/lib/audit/exportRegressionInBlock.ts`), one start it put early and one on
+time. The run, its findings and the reading recipe: `debug/2026-11-06-export-regression/note.md`.
 
 ### Mutate-Copy-Restore Pattern for Offline Rendering
 `project.copy()` creates new box instances — you cannot modify the original project's

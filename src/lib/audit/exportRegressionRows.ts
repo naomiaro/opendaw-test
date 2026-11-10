@@ -552,9 +552,9 @@ const buildSweep = (pageRate: number): ExportRow[] => {
 const sameRateReference = (pageRate: number): string => `one-frame-none-step-one-${pageRate}-4-120`;
 
 /**
- * A region that starts inside a block, on a whole frame: the engine converts its start from the block's start pulse
- * (`sample_of`), which can land one frame early. One start the engine's arithmetic places early, one it places on its
- * frame, both near 1 s; `exportRegressionInBlock.ts` writes that arithmetic out.
+ * Two regions that start on a whole frame inside a block, both near 1 s, picked by 0.0.183's arithmetic
+ * (`exportRegressionInBlock.ts`): one start it placed a frame early, one on its frame (openDAW#536). Both are held to
+ * their exact frame.
  */
 const buildInBlock = (pageRate: number): ExportRow[] =>
   ([["predicted-early", true], ["predicted-on-time", false]] as const).map(([tag, early]) => {

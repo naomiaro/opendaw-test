@@ -30,8 +30,6 @@ export type FindingEvidence = {
   wrapResidue: (wrap: number, fade: number) => number;
   /** The reference's peak over the row's range. */
   referenceRangePeak: () => number;
-  /** Per event, frames off its exact frame as rendered and as the engine's own arithmetic places it; null where the counts differ. */
-  frameOffsets: { got: readonly number[]; predicted: readonly number[] } | null;
 };
 
 export const NO_EVIDENCE: FindingEvidence = {
@@ -41,8 +39,7 @@ export const NO_EVIDENCE: FindingEvidence = {
   sameDelayedBy: () => false,
   headPeak: () => Infinity,
   wrapResidue: () => Infinity,
-  referenceRangePeak: () => Infinity,
-  frameOffsets: null
+  referenceRangePeak: () => Infinity
 };
 
 /** A claim that a behaviour has been read and is understood, not that it is right: the note says what was read. */
@@ -133,17 +130,6 @@ const TRIMMED_FRAMES: Readonly<Record<number, number>> = { 48000: 81120, 44100: 
 // The doubled tone's largest step at each rate, rounded up from what was measured on every case.
 const WRAP_STEP_LIMIT: Readonly<Record<number, number>> = { 48000: 0.131, 44100: 0.142 };
 
-const inBlockRoundsEarly = (invariant: InvariantId, applies: KnownFinding["applies"]): KnownFinding => ({
-  name: "in-block-pulse-rounds-early",
-  invariant,
-  note: "a pulse inside a 128-frame block is converted from the block's start pulse and truncated, so an event on a whole frame can land one frame early: a metronome click at `floor(pulses_to_samples(beat - p0))` (crates/engine/src/metronome.rs:212), a region's start at `sample_of` (audio_region_player.rs:974-976), the whole region then the reference seated a frame early, bit for bit. Since 0.0.183 the block's start is exact and the error no longer builds up; this one rounding is what is left (upstream's #533 reply). Filed as openDAW#536 (2026-11-09). The signature holds every event to the frame that arithmetic, written out in exportRegressionInBlock.ts, gives it",
-  applies,
-  signature: ({ frameOffsets }) =>
-    frameOffsets !== null && frameOffsets.got.length === frameOffsets.predicted.length
-    && frameOffsets.got.every((offset, i) => offset === frameOffsets.predicted[i])
-    && frameOffsets.got.some((offset) => offset !== 0)
-});
-
 // Measured: `render` keeps every quantum up to the one holding the last sound, then exactly a quarter second (0.0.183)
 const QUANTUM_FRAMES = 128;
 const renderedToSongEnd = (row: ExportRow, pageRate: number): number =>
@@ -225,10 +211,7 @@ export const KNOWN_FINDINGS: readonly KnownFinding[] = [
     note: "an `ExportConfiguration.range` passed to `start` sets the render's minimum length, not its end: `minDurationSeconds` is the range's length and `maxDurationSeconds` 30 s more (OfflineEngineRenderer.ts:271-282), and `render` stops only on 10 s of silence past the minimum (offline-worker.ts). A range ending inside sound comes back running on to the song's end, here 2 s of music past the range, then a quarter second, bit for bit the song. Upstream's plan records it (openDAW plans/issues/434-mixdown-sections.md:21-24: a range \"still renders a tail, never ends sample-exact\") and answered with `renderSection`; no studio caller passes a range",
     applies: (row) => row.exportRange && row.path === "start",
     signature: ({ comparedFrames }, row, pageRate) => comparedFrames === renderedToSongEnd(row, pageRate)
-  },
-  inBlockRoundsEarly("clicks-on-beat-frame", (row) => row.path === "stems-metronome"),
-  inBlockRoundsEarly("impulse-on-computed-frame", (row) => row.group === "in-block"),
-  inBlockRoundsEarly("region-seated-on-start", (row) => row.group === "in-block")
+  }
 ];
 
 export const findingFor = (

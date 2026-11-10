@@ -237,6 +237,11 @@ project.editing.modify(() => {
   audioUnitBox.output.refer(audioBusBox.input);
 });
 ```
+These hand-built buses are plain buses to the SDK. Its own group model (`project.grouping.create(units)`, a bus
+whose `AudioUnitBox.isGroup` is true; membership read from the routing by `AudioUnitGroups.parent`) is what the
+openDAW studio nests and folds; the mixer-groups demo does not use it. A group unit hosts no MIDI effect chain
+(`midiEffects` / `midiEffectsField` → `None`). Chapter: `documentation/07-building-a-complete-app.md`, "The SDK's
+Own Group Buses".
 
 ### Dark Ride Audio
 - BPM: 124 (pass to `initializeOpenDAW({ bpm: 124 })`)
