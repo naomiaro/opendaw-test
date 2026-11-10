@@ -430,6 +430,55 @@ The same reading as without an effect: the recorder takes the capture's raw note
 MIDI effect chain, so an Arpeggio or a Pitch on the unit changes neither which notes are recorded nor
 where. (On 0.0.176 the arm read the same as its no-effect cell too, then inside the +32 ms band.)
 
+## SDK 0.0.184 (2026-11-10)
+
+`midiaudit-summary-1794335107196.json`: `?scenario=all&bpm=all`, a real click from the Playwright browser,
+Chrome 157, the IAC Driver Bus 1, a 44 100 Hz context, the Mac's output device at 44.1 kHz, display
+59.9 Hz, 2 repeats, no effect. The release places a pulse inside a block from the transport's anchor frame
+(openDAW#536: the metronome, audio regions and the note sequencer), which moves where a note PLAYS by at most
+a frame; the capture path and the recorder are untouched.
+
+| scenario | 90 bpm | 120 bpm | 140 bpm |
+|---|---|---|---|
+| nominal-start | aligned 0.00 / 0.00 | aligned 0.00 / 0.00 | aligned 0.00 / 0.00 |
+| janked-start | aligned 0.00 / 0.00 | aligned −0.00 / 0.00 | aligned 0.00 / 0.00 |
+| janked-mid | aligned 0.00 / 0.00 | aligned 0.00 / 0.00 | aligned 0.00 / 0.00 |
+| countin-start | aligned 0.00 / 0.00 | aligned 0.00 / 0.00 | aligned 0.00 / 0.00 |
+| midtimeline-start | aligned 0.00 / 0.00 | aligned 0.00 / 0.00 | aligned 0.00 / 0.00 |
+| loop-wrap | aligned 0.00 / 0.00 | aligned 0.00 / 0.00 | aligned 0.00 / 0.00 |
+
+Per-repeat placement medians in ms against the HEARD beat, nothing netted. Max deviation 0.005 ms on
+every row; 0 missing / no-receipt / extra / stuck / collapsed on all 36; duration error 0.00 ms under the
+150 ms blocks (frame gaps 158–168 ms); the SDK's latency term 23.00 ms, heard lag 22.49–25.27 ms; count-in
+2 of 6 pickups per cell (#493 unchanged, open); one wrap-adjacent note on every `loop-wrap` row. The 0.0.183
+reading to the hundredth.
+
+### Loop-wrap, five repeats, on 0.0.184
+
+Run `1794335497099`: `?scenario=loop-wrap&bpm=120&repeats=5`, the same browser and click.
+
+| repeat | rec/sent | missing / extra / stuck | median ms | max dev ms | dur max ms | takes |
+|---|---|---|---|---|---|---|
+| 1 | 48/48 | 0 / 0 / 0 | 0.002 | 0.000 | 0.00 | 3 |
+| 2 | 48/48 | 0 / 0 / 0 | 0.003 | 0.000 | 0.00 | 3 |
+| 3 | 48/48 | 0 / 0 / 0 | 0.001 | 0.005 | 0.00 | 3 |
+| 4 | 48/48 | 0 / 0 / 0 | 0.002 | 0.005 | 0.00 | 3 |
+| 5 | 48/48 | 0 / 0 / 0 | 0.003 | 0.000 | 0.00 | 3 |
+
+Cell `aligned`, as on 0.0.183.
+
+### Effect arm on 0.0.184
+
+`?scenario=nominal-start&bpm=120&effect=arpeggio` (run `1794335559027`) and `&effect=pitch` (run
+`1794335579414`), 2 repeats each:
+
+| effect | status | rec/sent | medians ms | max dev ms | dur max ms |
+|---|---|---|---|---|---|
+| arpeggio | aligned | 48/48, 48/48 | 0.003 / 0.005 | 0.005 | 0.00 |
+| pitch | aligned | 48/48, 48/48 | 0.003 / 0.003 | 0.005 | 0.00 |
+
+As on 0.0.183.
+
 ## SDK 0.0.183 (2026-11-09)
 
 `midiaudit-summary-1794249280926.json`: `?scenario=all&bpm=all`, a real click from the Playwright browser,
