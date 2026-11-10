@@ -3,10 +3,10 @@
 **Title:** MIDI Effect Semantics Audit — does each stock MIDI effect emit what its documented rule
 says, across the whole range of every parameter, and has anything changed since the last accepted run
 
-**SDK Pin:** `@opendaw/studio-sdk@0.0.183` (installed npm package; WASM engine only; first accepted on
+**SDK Pin:** `@opendaw/studio-sdk@0.0.184` (installed npm package; WASM engine only; first accepted on
 0.0.180). The crate and manual citations below are read in the openDAW checkout pinned to the installed release:
 the Arpeggio crate and manual were rewritten on 0.0.182 and the Zeitgeist's shortened, so their citations moved, and the Arpeggio's lines
-moved again on 0.0.183; Pitch, Velocity, Note Filter and the wiring fold are untouched. **Both registers carry 0.0.183 since the 2026-11-09 accept, on the user's word: 380 rows each.** Citations in the retired deviations and the withdrawn question are the release they were read on, marked "(0.0.181)".
+moved again on 0.0.183; Pitch, Velocity, Note Filter and the wiring fold are untouched, and no cited line moved on 0.0.184. **Both registers carry 0.0.184 since the 2026-11-10 accept, on the user's word: 380 rows each.** Citations in the retired deviations and the withdrawn question are the release they were read on, marked "(0.0.181)".
 
 **Filed (2026-11-03) and closed (2026-11-04), the manuals corrected:**
 [openDAW#524](https://github.com/andremichelle/openDAW/issues/524) the Arpeggio's Velocity control is
@@ -514,6 +514,27 @@ Zeitgeist plays every pass as if it started at the loop start; a note moved acro
 
 The loop-on column subtracts the wrap's own frame, which catches the next pass's first note in the first four rows (raw 33, 33, 33, 32). Up to 1 bar nothing is lost to the loop: the off-by-one at 25 % reads in both columns, so it is the frame sampling (probably a note under a frame long, not checked). A 2-bar cell loses notes although it is as long as the loop, because cells count from position 0 and the loop starts at bar 1, so it straddles a
 cell; a 3-bar cell at 75 % loses none, its warp staying inside this loop. Frame-sampled, so it counts notes and says nothing about their placement; no ear has been on it. The page's Zeitgeist note says this.
+
+### 2026-11-10, SDK 0.0.184 (Chrome, macOS, the Mac's output device at 44.1 kHz)
+
+The release places a note on a whole frame inside a block from the transport's anchor frame instead of the block's start pulse
+(openDAW#536), so a note-on that 0.0.183 rendered a frame early now renders on its frame. No cited crate or manual line moved
+(`crates/abi` changed below `:39-51`).
+
+| rate | run | rule holds | deviation | broken | no rule | as-registered | changed | unregistered | error |
+|---|---|---|---|---|---|---|---|---|---|
+| 48 kHz | 1794331718758 | 357 | 0 | 0 | 23 | 377 | 3 | 0 | 0 |
+| 44.1 kHz | 1794331799959 | 357 | 0 | 0 | 23 | 377 | 3 | 0 | 0 |
+
+- **Every changed row reads `changed, rule holds`, a note the reader does not judge**: `vel-random1-melody` (`register note 2 cents
+  −4.8 expected −7.8`, −7.7 at 44.1), `zg-amount0-dur320-sixteenths` (velocity 0.735 for 0.770 at 48 kHz, 0.715 for 0.750 at 44.1), at
+  48 kHz `zg-amount1-dur3840-sixteenths` (17 notes read for 16) and at 44.1 kHz `zg-amount1-dur960-sixteenths` (velocity 0.955 for
+  1.000). The 48 kHz figures are 0.0.183's changes reversed (−4.8 cents and 0.735 are the 0.0.182 readings): the overlapping
+  notes are back on the frames they had before 0.0.183's anchored transport moved them. The rule verdicts are the 0.0.183 ones row
+  for row.
+- **Accepted 2026-11-10 on the user's word** (`register/48000.json` from 1794331718758, `register/44100.json` from 1794331799959, nothing
+  forced). Re-run against the new registers: 1794335902568 (48 kHz) and 1794335968026 (44.1 kHz) each read 380 `as-registered`, 0 changed,
+  357 holds / 0 deviations / 23 no rule.
 
 ### 2026-11-09, SDK 0.0.183 (Chrome, macOS, the Mac's output device at 44.1 kHz)
 

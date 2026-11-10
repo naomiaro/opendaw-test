@@ -2,7 +2,7 @@
 
 **Title:** Every SDK export path, 308 rows at two page rates (296 until 2026-11-09): what holds, what each row that does not hold measured, and a full run's stall in the OPFS worker
 
-**Status on 0.0.184 (2026-11-10): openDAW#536 FIXED, its label `in-block-pulse-rounds-early` retired; 303 rows `identical`, the five #536 rows `changed` and NOT YET ACCEPTED, waiting for the user's read ([the 0.0.184 section](#sdk-00184-the-in-block-rounding-fixed)).** Before: **FINDINGS 1 AND 2 FIXED IN `@opendaw/studio-sdk@0.0.183`** (re-measured 2026-11-09, [below](#sdk-0183-both-findings-fixed); their labels are retired). **REGISTER ACCEPTED ON 0.0.183 on the user's word (2026-11-09), library filled; a re-run of each rate reads 296 of 296 `identical`.** Before: register accepted on 0.0.182, library filled; findings 1 and 2 filed as [openDAW#533](https://github.com/andremichelle/openDAW/issues/533) and [openDAW#534](https://github.com/andremichelle/openDAW/issues/534) on 2026-11-08. The user read the findings and approved the labels and the first fill. Both page rates are accepted, a re-run of each reads every row `identical`, and a changed render is caught (below). Nothing is posted. Three drafts wait (below). `trailing-silence-trimmed` is ruled by design and not raised upstream. The other findings are the
+**Status on 0.0.184 (2026-11-10): openDAW#536 FIXED, its label `in-block-pulse-rounds-early` retired; register RE-ACCEPTED on 0.0.184 on the user's word (2026-11-10), library filled; a re-run of each rate reads 308 of 308 `identical` ([the 0.0.184 section](#sdk-00184-the-in-block-rounding-fixed)).** Before: **FINDINGS 1 AND 2 FIXED IN `@opendaw/studio-sdk@0.0.183`** (re-measured 2026-11-09, [below](#sdk-0183-both-findings-fixed); their labels are retired). **REGISTER ACCEPTED ON 0.0.183 on the user's word (2026-11-09), library filled; a re-run of each rate reads 296 of 296 `identical`.** Before: register accepted on 0.0.182, library filled; findings 1 and 2 filed as [openDAW#533](https://github.com/andremichelle/openDAW/issues/533) and [openDAW#534](https://github.com/andremichelle/openDAW/issues/534) on 2026-11-08. The user read the findings and approved the labels and the first fill. Both page rates are accepted, a re-run of each reads every row `identical`, and a changed render is caught (below). Nothing is posted. Three drafts wait (below). `trailing-silence-trimmed` is ruled by design and not raised upstream. The other findings are the
 user's call, each with the read it got.
 
 **The catalogue holds 308 rows and none reads `failing`.** The 12 added on 2026-11-09 ([below](../2026-11-09-export-harness-followups/note.md)) are accepted (2026-11-09, the user's word, runs 1794253004161 and 1794253155843); one of them measured a region starting inside a block playing one frame early ([openDAW#536](https://github.com/andremichelle/openDAW/issues/536), fixed in 0.0.184), and one an export range that runs on past its end (labelled; upstream's plan 434 records it). A label means read and understood, not fine.
@@ -388,8 +388,12 @@ The table printed `no longer reproducing: in-block-pulse-rounds-early` on both r
 `exportRegressionFindings.ts` with the evidence only it read (`frameOffsets`); a click or region start a frame off now reads `failing`.
 `exportRegressionInBlock.ts` keeps the old arithmetic only as the row picker, so the in-block rows and their register entries do not
 move. Re-run with the label retired, 1794332300101 (48 kHz) and 1794332419210 (44.1 kHz): **clean 251, known 57, failing 0, errored 0**
-at both rates, register 303 identical / 5 changed as before (the renders are deterministic). **Not accepted:** the five changed rows
-wait for a person's read before `--accept`; after it the expected line is 308 `identical`, clean 251, known 57.
+at both rates, register 303 identical / 5 changed as before (the renders are deterministic).
+
+**Accepted 2026-11-10 on the user's word** ("accept both registers"): `register/48000.json` from 1794332300101, `register/44100.json` from
+1794332419210, nothing forced; 2 WAVs per rate copied (the four metronome stems render one file), library commit `4a73ec6` pushed (4 LFS
+objects, 12 MB). Re-run against the new registers: 1794336061513 (48 kHz) and 1794336175047 (44.1 kHz) each read 308 `identical`, clean
+251, known 57, failing 0, errored 0.
 
 ## After #533 and #534: twelve rows from upstream's replies
 
@@ -406,7 +410,7 @@ reading recipe stay here.
 4. A `known-finding` is a row whose signature still matches. It is not a pass: this note's reads are what it rests on.
 5. `--accept --library <clone>` only after a person has read that run's table, and never on a run with a row failing or errored, a descending run, a row the catalogue does not hold or holds with other invariants (a summary from before the catalogue changed) or, without `--force`, a partial one. It writes the register and copies the new WAVs. Then in the clone `git add wav`, commit and push, and commit the register here.
 
-**Expected on 0.0.184:** see the 0.0.184 section above (the five #536 rows `changed`, awaiting a person's read before `--accept`; after it, 308 of 308 `identical`, clean 251, known 57 at both rates).
+**Expected on 0.0.184:** 308 of 308 `identical`; clean 251, known 57 at both rates (accepted 2026-11-10 from runs 1794332300101 and 1794332419210).
 
 **Expected on 0.0.183:** 308 of 308 `identical`; clean 246, known 62 at both rates (the 12 rows added on 2026-11-09 accepted from runs 1794253004161 and 1794253155843; before them, 296 rows: clean 242, known 54; 0.0.182: 48 kHz clean 237, known 59; 44.1 kHz clean 222, known 74).
 
