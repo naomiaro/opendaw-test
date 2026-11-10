@@ -125,10 +125,11 @@ drag crash with a hidden automation lane (live error 1226), and the maintainer's
   `aligned` (1794335497099); effect arms `arpeggio` and `pitch` `aligned`, 48 / 48 (1794335559027, 1794335579414).
   MIDI output timing in the user's Chrome: Runs A, B (jank) and C every PAGE cell `bus-true`, every engine cell `on-time`, live medians
   9.92–10.20 ms, janked inside-block medians 9.98 / 10.02 ms (1794336333568, 1794336416115, 1794336505235).
-- **Combined MIDI + audio sweep** (the user's Chrome, built-in microphone and speakers, run 1794338205300): calibrated `together`
-  in all three scenarios (2.65 ms apart, inside a quantum), default `matches-known-defect` (−63.15 ms, the input part the SDK was not
-  told), MIDI 0.00 ms on every row, 144 / 0 / 0 clicks per cell. The 2.65 ms is the calibration's: its third click came back 117 frames
-  sooner than the first two and the takes held that, so the applied 65.80 ms was 2.65 ms stale (the register's 0.0.184 section).
+- **Combined MIDI + audio sweep** (the user's Chrome, built-in microphone and speakers): on a tab confirmed visible from load (run
+  1794338513932) calibrated `together` at 0.00 ms in all three scenarios, default `matches-known-defect` (−63.35 ms, the input part the
+  SDK was not told), MIDI 0.00 ms on every row, 144 / 0 / 0 clicks per cell. A first run whose tab started out hidden
+  (1794338205300) read calibrated 2.65 ms apart (still `together`): on both runs the microphone path shortened by 117–118 frames
+  within the calibration's first clicks and held, and the median caught the settled value only on the second. Not the SDK.
 - **Not run (hardware or a hand):** the hidden-page
   `cover` and `modal` rows, the Chromium bfcache / freeze / restart / microphone / Bluetooth rows, the 48 kHz device pass.
 - **Docs:** `documentation/07-building-a-complete-app.md` ("The SDK's Own Group Buses"); `src/demos/playback/CLAUDE.md` (the same, short);
