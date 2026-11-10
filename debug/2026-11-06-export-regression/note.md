@@ -73,7 +73,7 @@ SDK 0.0.182, engine `9c44973549a7`, the device at 44100 (read in `system_profile
 | `loop-bounce-last-frame-silent` | 0 | 4 (the same rows as 4 of the 17) | in the same draft; **fixed in 0.0.183, label retired** |
 | `trailing-silence-trimmed` | 2 | 2 | by design, the user's read; not raised upstream |
 | `range-end-is-a-minimum` | 1 | 1 | measured 2026-11-09; upstream's plan 434 records it, so not raised ([the 11-09 note](../2026-11-09-export-harness-followups/note.md)) |
-| `in-block-pulse-rounds-early` | 5 | 5 | measured on 0.0.183 (4 metronome stems, 1 region start); filed as [openDAW#536](https://github.com/andremichelle/openDAW/issues/536), [the 11-09 note](../2026-11-09-export-harness-followups/note.md) |
+| `in-block-pulse-rounds-early` | 5 | 5 | measured on 0.0.183 (4 metronome stems, 1 region start); filed as [openDAW#536](https://github.com/andremichelle/openDAW/issues/536), [the 11-09 note](../2026-11-09-export-harness-followups/note.md); **fixed in 0.0.184, label retired** |
 | `jump-fade-at-start` | 32 | 32 | the user's call (30, and the 2 export-range gap rows added on 2026-11-09) |
 | `jump-fade-cold-maximizer` | 2 | 2 | the user's call |
 | `reset-keeps-compensation-delay` | 11 | 11 | the user's call |
@@ -370,6 +370,27 @@ from 1794246918474, `register/44100.json` from 1794247036602, nothing forced; 22
 objects, 88 MB). Re-run against the new registers: 1794248944040 (48 kHz) and 1794249053719 (44.1 kHz) each read 296 `identical`, clean 242,
 known 54, failing 0, errored 0.
 
+## SDK 0.0.184: the in-block rounding fixed
+
+Runs 1794331943838 (48 kHz) and 1794332071775 (44.1 kHz), 2026-11-10, `@opendaw/studio-sdk@0.0.184`, engine `88cb03a27a81`, the device
+at 44.1 kHz, 308 rows each, errored 0. Against the 0.0.183 register: **303 identical / 5 changed at both rates**, and the five are exactly
+openDAW#536's rows (fixed upstream in `527870ac5`: each block carries the transport's anchor pulse and frame, and the metronome, the audio
+region player and the note sequencer place a pulse with `frame_at` from it instead of converting from the block's start pulse):
+
+- **The four metronome stems** (`stems-*-stems-metronome`): `changed shift 0`, first differing frame 24 000 at 48 kHz (110 250 at 44.1),
+  largest −31.0 dB (−30.2), the same frame count. The clicks 0.0.183 placed a frame early (24 000 and 72 000 at 48 kHz; 110 250, 132 300
+  and 154 350 at 44.1) now start on their beat's frame: `clicks-on-beat-frame` holds with no label.
+- **`in-block-none-region-start-predicted-early`**: `changed shift 1`, first differing frame 48 250 (44 100 at 44.1), −0.9 dB: the whole
+  region one frame later, on its exact start. `impulse-on-computed-frame` and `region-seated-on-start` hold. The `predicted-on-time` row
+  stays `identical`.
+
+The table printed `no longer reproducing: in-block-pulse-rounds-early` on both runs, and the label is **retired** from
+`exportRegressionFindings.ts` with the evidence only it read (`frameOffsets`); a click or region start a frame off now reads `failing`.
+`exportRegressionInBlock.ts` keeps the old arithmetic only as the row picker, so the in-block rows and their register entries do not
+move. Re-run with the label retired, 1794332300101 (48 kHz) and 1794332419210 (44.1 kHz): **clean 251, known 57, failing 0, errored 0**
+at both rates, register 303 identical / 5 changed as before (the renders are deterministic). **Not accepted:** the five changed rows
+wait for a person's read before `--accept`; after it the expected line is 308 `identical`, clean 251, known 57.
+
 ## After #533 and #534: twelve rows from upstream's replies
 
 Moved to its own investigation, [`2026-11-09-export-harness-followups`](../2026-11-09-export-harness-followups/note.md): the twelve rows added
@@ -384,6 +405,8 @@ reading recipe stay here.
 3. Read `failing` first: a failed invariant no label matches. It cannot be accepted, even forced, a shift under a label included: read it, then change the label's rule or draft a defect. Then `changed` against the register: a render moved, and the line says by how much. `rounding-sized` is under −100 dB with no shift, and it is still `changed` and still needs a person. `--diff <rowId>` writes both WAVs for the audio-analyzer. Then any "no longer reproducing" line, which is a defect here being fixed.
 4. A `known-finding` is a row whose signature still matches. It is not a pass: this note's reads are what it rests on.
 5. `--accept --library <clone>` only after a person has read that run's table, and never on a run with a row failing or errored, a descending run, a row the catalogue does not hold or holds with other invariants (a summary from before the catalogue changed) or, without `--force`, a partial one. It writes the register and copies the new WAVs. Then in the clone `git add wav`, commit and push, and commit the register here.
+
+**Expected on 0.0.184:** see the 0.0.184 section below (the five #536 rows `changed`, awaiting a person's read before `--accept`; after it, 308 of 308 `identical`, clean 251, known 57 at both rates).
 
 **Expected on 0.0.183:** 308 of 308 `identical`; clean 246, known 62 at both rates (the 12 rows added on 2026-11-09 accepted from runs 1794253004161 and 1794253155843; before them, 296 rows: clean 242, known 54; 0.0.182: 48 kHz clean 237, known 59; 44.1 kHz clean 222, known 74).
 

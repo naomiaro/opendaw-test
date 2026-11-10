@@ -23,6 +23,7 @@
   - [Solo Behavior](#solo-behavior)
   - [Subscribing to Group State](#subscribing-to-group-state)
   - [Master Output Access](#master-output-access)
+  - [The SDK's Own Group Buses](#the-sdk-s-own-group-buses)
   - [Groups vs Aux Units](#groups-vs-aux-units)
 
 ---
@@ -1036,6 +1037,44 @@ project.editing.modify(() => {
   masterAudioBox.volume.setValue(-3);
 });
 ```
+
+### The SDK's Own Group Buses
+
+Everything above builds a group by hand: a plain `AudioUnitType.Bus` and re-routed outputs. That routes audio exactly
+like a group, and it is all a submix needs. The SDK also has a group model of its own, which the openDAW studio shows
+as nested, collapsible tracks. A group there is an ordinary bus whose `AudioUnitBox` has `isGroup` set to `true`
+(`groupCollapsed` stores whether it is folded). Membership is not stored anywhere else: a unit belongs to a group
+when its primary `output` points at the bus of a unit whose `isGroup` is `true`. So a hand-built bus like the
+ones above is NOT a group to the SDK, however it routes.
+
+`project.grouping` (`AudioUnitGrouping` from `@opendaw/studio-core`) edits groups. Call it inside a transaction:
+
+```typescript
+const group = project.editing
+  .modify(() => project.grouping.create([drumsUnitBox, bassUnitBox]))
+  .unwrap()                             // the transaction's return value
+  .unwrap("units cannot be grouped")    // None: no units, the Output unit, a detached unit, or a route that would feed itself
+```
+
+`create` makes a bus named "Group Bus" ("Group Bus 2" when the name is taken) at unity volume, nested inside the
+units' common parent group, re-points each unit's `output` at it, and renumbers every unit's `index` so the members
+follow their group. The other methods: `move(units, parent?, before?)`, `moveOutOfGroup(unit)`,
+`ungroup(group)` (members move up a level, the group is deleted), `deleteGroup(group)` (the group AND everything
+nested in it), `duplicate(units)`, and the checks `canMove` / `canRoute` / `canDrop`.
+`project.api.deleteAudioUnit(group)` also deletes the whole subtree.
+
+Reading the tree: `AudioUnitGroups` (from `@opendaw/studio-adapters`) has `parent(unit)` → `Option<AudioUnitBox>`,
+`children(rootBox, group?)`, `ancestors`, `depth`, `hidden` (inside a folded group), `bus(group)`, `subtree`, and
+`ordered(rootBox)` for every unit in display order. `project.audioUnitLayout.value` is an observable
+`AudioUnitLayout` of rows (`depth`, `collapsed`, `visibleIndex`, …) for drawing the tree.
+
+New units can be placed inside a group directly: `createInstrument(factory, { destination })` routes the new unit to
+the given `AudioBusBox` (also `AudioBusFactory.create(…, destination)` and `PresetDecoder.decode(…, destination)`),
+and `project.api.createInstrumentAt(factory, insertion)` with `insertionAfter(anchor)` / `insertionBefore(uuid)`
+places it in the group's order as well.
+
+A group unit hosts audio effects only: its adapter's `midiEffects` and `midiEffectsField` are `Option.None`
+and `hostsInstrument` is `false`.
 
 ### Groups vs Aux Units
 

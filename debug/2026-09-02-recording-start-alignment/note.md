@@ -6043,6 +6043,77 @@ arming starts it, `prepareRecording` awaits it): with the entry the run ends `er
 +1.15 on all three repeats. The control envelopes are in `.verify-output/round-trip-guard-controls/`,
 out of the one-quantum tally.
 
+## Standing sweep on 0.0.184 (2026-11-10)
+
+`@opendaw/studio-sdk@0.0.184` (build probe `upstream`, `buildFeatures: ["recordingStart"]` →
+`release` profile; PRs #378 / #380 still open). The release leaves the capture and recording paths alone, but **audio regions, notes
+and metronome clicks that start on a whole frame inside a block now play on that frame** (openDAW#536, filed by this repo's export
+harness): each block carries the transport's anchor pulse and frame, and the metronome places a click with `frame_at(position, anchor,
+anchor_frame)` instead of flooring `pulses_to_samples(position − p0)`. This harness's reference is the metronome click, so a click that
+used to land one frame early now lands on its frame. No stored round trip existed (the page refuses otherwise). Details in
+`changelogs/sdk-0.0.183-to-0.0.184-changes.md`. Chrome, the Playwright browser, the tab visible throughout, a fresh `node_modules`
+and dev server, **the Mac's output device at 44.1 kHz**.
+
+### Single tape
+
+| file | rate | rows | error rows | cells `aligned` | finalized | netted medians |
+|---|---|---|---|---|---|---|
+| `recaudit-summary-1794330384102.json` | 48000 | 60 | 0 | 10 of 10 | 60 of 60 | +1.10…+1.17 ms |
+| `recaudit-summary-1794330798197.json` | 44100 | 60 | 0 | 10 of 10 | 60 of 60 | +1.09…+1.19 ms |
+
+**Every scenario keeps its placement; the tally moved by a hundredth again, back to 0.0.182's at 48 kHz.** 48 kHz 1.17 ×27, 1.15 ×15,
+1.16 ×12, 1.10 ×6 (0.0.183: 1.15 ×27, 1.16 ×24, 1.10 ×6, 1.17 ×3; 0.0.182: 1.15 ×27, 1.17 ×15, 1.16 ×12, 1.10 ×6, the same counts in
+other buckets); 44.1 kHz 1.17 ×24, 1.18 ×23, 1.09 ×6, 1.19 ×4, 1.16 ×3 (0.0.183: 1.17 ×30, 1.16 ×21, 1.09 ×6, 1.18 ×3). Rows move
+up by under 0.03 ms, at most a frame, the direction the fixed click predicts.
+
+**Tail deficit: 0 of 60 rows at 48 kHz; 1 row at 44.1 kHz, 0.01 ms** (`janked-start/120` r2), the frame rounding of the earlier
+sweeps; every cell `aligned`.
+
+**Head deficit: none**, on a fresh `node_modules` and dev server.
+
+### Multi-mic (`multitrack-all`, 120 BPM, 48000 Hz), 8 repeats per cell
+
+| file | rows | error rows | finalized | node delays read | netted, every row | cells | largest raw inter-tape skew |
+|---|---|---|---|---|---|---|---|
+| `recaudit-mt-summary-1794331212184.json` | 32 | 0 | 32 of 32 | 32 of 32 | **+1.167** | both `aligned` | 0.00 (0.00 left over) |
+
+**The netted figure moved from +1.146 (every release since the multi-mic arm existed) to +1.167, exactly one frame at 48 kHz, on every
+row.** At 120 BPM a beat is 24 000 frames, a whole frame, so every reference click is a whole-frame position. **What moved is
+the click, not the take** (measured from the envelopes, 0.0.183 run `…1794245546520` against `…1794331212184`): the take's placement is
+the same in both, `regionPositionPpqn` 5, `regionStartSec` 0.0026042 and `waveformOffsetSec` 0.0256042 on the compared row, and the
+first-frame check reads 0 (under 1.4e-11 ms) on every tape of both runs, so each buffer starts at the context time the SDK gives for
+it. A one-frame move of the netted median with the placement and the first frame unchanged is a move of the sound inside the
+buffer, and the export harness measured that sound moving: whole-frame metronome clicks one frame later on 0.0.184 (openDAW#536's
+metronome half, the export note's 0.0.184 section). **Not an A/B:** serving the 0.0.183 `engine.wasm` with the 0.0.184 TypeScript
+(run `…1794333220002`) cannot measure, because the old engine's box mirror rejects the new `AudioUnitBox` fields ("box-graph checksum
+mismatch: the engine mirror diverged from the source graph") and no take finalized; a whole-0.0.183 run is the old register row
+itself. Netted skew 0.00, first-frame check 0.00 on every row, no tail deficit; 10 clock discontinuities (5 stalls) over the run,
+none in 0.0.183's.
+
+### Forced: the SDK's stamps under graph work (three runs)
+
+`scenario=multitrack-start&graphChurn=on` (`…1794331369887`, `…1794331440648`, `…1794331511240`), 48 rows, 0 error rows, a node
+delay on every one, 206 / 215 / 240 clock discontinuities per run (113 / 116 / 130 stalls).
+
+| netted / first-frame check, in quanta off the usual | rows |
+|---|---|
+| 0 / 0 | 48 |
+
+As on 0.0.174 through 0.0.183. Netted +1.167 on every row (the new usual, above). No tail deficit.
+
+### The one-quantum event, counted
+
+`one-quantum-events.ts` after these runs: 0.0.184 **0 in 76** repeats (30 single-tape at 48 kHz, 30 at 44.1 kHz, 16 multi-mic), as on
+every release since 0.0.175 (forced runs left out).
+
+### Reading
+
+Placement, finalization, the stamp repair, the netted stop and the netted inter-tape skew read as on 0.0.183. The reference click
+moved: openDAW#536's fix puts a whole-frame click on its frame, so the multi-mic netted figure is one frame later on every row
+(+1.146 → +1.167) and single-tape rows moved up across hundredth-of-a-millisecond lines. The take's placement did not change (identical
+placement fields, first-frame checks 0); the click it is measured against moved onto its frame. +1.167 is the figure to expect from
+here on.
+
 ## Standing sweep on 0.0.183 (2026-11-09)
 
 `@opendaw/studio-sdk@0.0.183` (build probe `upstream`, `buildFeatures: ["recordingStart"]` →

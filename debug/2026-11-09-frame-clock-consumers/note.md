@@ -1,6 +1,7 @@
 # What else in openDAW runs on the frame-read engine state
 
-**Upstream:** [openDAW#537](https://github.com/andremichelle/openDAW/issues/537) (filed 2026-11-09).
+**Upstream:** [openDAW#537](https://github.com/andremichelle/openDAW/issues/537) (filed 2026-11-09). **FIXED in SDK 0.0.184**
+(`e6bac5c64`, measured here 2026-11-10: the page reads FIXED, [below](#fixed-in-0-0-184)).
 **SDK:** 0.0.183 (installed release; source read in the checkout at the `@opendaw/studio-sdk@0.0.183` tag, the app
 included). **Browser:** Playwright's Chrome, macOS, built-in display at 120 Hz, output device at 44.1 kHz.
 **Question (2026-11-09):** [the display-refresh-rate note](../2026-11-09-display-refresh-rate-recording/note.md) found
@@ -119,3 +120,15 @@ Read in the checkout. **Unmeasured** means the effect follows from the source, a
 Stop, not a display-rate bug ([body as filed](./drafts/posted-openDAW-537-automation-suspended-after-stop.md)). The
 upstream tracker had no earlier report (#347 is the feature itself). Before posting, the deployed page read BUG
 PRESENT (writes at 0.0 and 11.1 ms silent on the next play, the control at 33.4 ms and later writes on the curve).
+
+### Fixed in 0.0.184
+
+Upstream `e6bac5c64` (2026-11-10, "fixes #537"): the engine's `suspend_automation` returns unless its transport is
+playing (`crates/engine/src/lib.rs`, `Engine::suspend_automation`), with a crate test
+`a_suspension_reaching_the_stopped_engine_is_ignored`. The main thread still sends the suspension in the gap; the
+stopped engine refuses it. **Measured 2026-11-10 on 0.0.184** (Playwright's Chrome, unthrottled, output device at
+44.1 kHz): `automation-suspended-after-stop-debug-demo.html` reads **FIXED**. The positive control still suspends
+during playback (−19.8 dB → silent); the writes at 0.2 and 10.7 ms after Stop saw `isPlaying` true (it read false
+after 20.9 and 29.7 ms) and both played −19.8 dB on the next play, the curve; the control and the writes at 21.0,
+41.4, 81.1 and 160.8 ms likewise. The suspension DURING playback is unchanged, by design
+(`docs/known-sdk-limitations.md`).

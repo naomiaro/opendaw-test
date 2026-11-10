@@ -4,7 +4,7 @@ import {
   type ExportRow, type InvariantId, type PlaybackSegment
 } from "./exportRegressionRows.ts";
 import { fadeLength, findingFor, KNOWN_FINDINGS, NO_EVIDENCE, type FindingEvidence, type GainBand } from "./exportRegressionFindings.ts";
-import { exactFrame, metronomeClickFrame, regionStartFrame } from "./exportRegressionInBlock.ts";
+import { exactFrame } from "./exportRegressionInBlock.ts";
 import { computedFrame, IMPULSE_SOURCE_FRAMES, PROBE_TONE_HZ, PROBE_TONE_LEVEL } from "./exportRegressionSignals.ts";
 import { toneStep, uniformEarly } from "./sectionRenderGap.ts";
 import type { RenderRead } from "./exportRegressionReader.ts";
@@ -187,10 +187,7 @@ const compareToSlice = (rendered: RenderedRow, reference: RenderedRow, offset: n
   return pass(`${shared} frames bit-identical from reference frame ${offset}${tail}`);
 };
 
-/** `predicted` gives the engine's own frames for the same events, for a finding that reads the two side by side. */
-const compareHits = (
-  got: readonly number[], expected: readonly number[], against: string, predicted: readonly number[] | null = null
-): Outcome => {
+const compareHits = (got: readonly number[], expected: readonly number[], against: string): Outcome => {
   if (expected.length === 0) return failUncompared(`${against} has no impulse in the range, so nothing is proven`);
   const missing = expected.filter((frame) => !got.includes(frame));
   const extra = got.filter((frame) => !expected.includes(frame));
@@ -198,10 +195,7 @@ const compareHits = (
   const parts: string[] = [];
   if (missing.length > 0) parts.push(`missing frames ${missing.join(", ")}`);
   if (extra.length > 0) parts.push(`extra frames ${extra.join(", ")}`);
-  const frameOffsets = predicted !== null && got.length === expected.length
-    ? { got: got.map((frame, i) => frame - expected[i]), predicted: predicted.map((frame, i) => frame - expected[i]) }
-    : null;
-  return fail(`${parts.join("; ")}; got [${got.join(", ")}], ${against} [${expected.join(", ")}]`, { ...NO_EVIDENCE, frameOffsets });
+  return fail(`${parts.join("; ")}; got [${got.join(", ")}], ${against} [${expected.join(", ")}]`);
 };
 
 /** The first frame of each sound on exact silence: a frame that is not 0 after `minGap` frames that are, or at the start. */
@@ -267,9 +261,6 @@ const isSeatedAt = (rendered: RenderedRow, reference: RenderedRow, seat: number)
   return true;
 };
 
-/** Where the engine starts the row's first region, as its own arithmetic does it. */
-const regionStartFrameFromEngine = (row: ExportRow, pageRate: number): number => regionStartFrame(row.regionStartPpqn, row.bpm, pageRate);
-
 const needs = (what: string, ref: RenderedRow | null): Outcome | null =>
   ref === null ? failUncompared(`no ${what} read, so nothing can be compared`) : null;
 
@@ -316,16 +307,11 @@ const judge = (
     }
     case "impulse-on-computed-frame": {
       const sourceFrames = Math.round(row.sourceRate * row.seconds);
-      // A region that starts inside a block: the engine's own start for it, for a finding to read beside the exact one.
       const regionStart = regionStartFrameOf(row, pageRate);
-      const engineStart = regionStart === 0 ? 0 : regionStartFrameFromEngine(row, pageRate);
       const inRange = IMPULSE_SOURCE_FRAMES.filter((frame) => frame < sourceFrames)
         .map((frame) => computedFrame(frame, row.sourceRate, pageRate))
         .filter((frame) => frame + regionStart >= start && frame + regionStart < start + rangeFrames);
-      return compareHits(
-        read.impulseHits, inRange.map((frame) => frame + regionStart - start), "the computed frames",
-        inRange.map((frame) => frame + engineStart - start)
-      );
+      return compareHits(read.impulseHits, inRange.map((frame) => frame + regionStart - start), "the computed frames");
     }
     case "clicks-on-beat-frame": {
       // the source's stem, the bed's, then the metronome's: read by position, so a missing stem must not move it
@@ -336,7 +322,7 @@ const judge = (
       for (let beat = 0; exactFrame(beat, row.bpm, pageRate) < rangeFrames; beat += 960) beats.push(beat);
       const exact = beats.map((beat) => exactFrame(beat, row.bpm, pageRate));
       if (exact.some((frame) => !Number.isInteger(frame))) return failUncompared("a beat between two frames has no frame to be held to");
-      return compareHits(onsets, exact, "the beats' frames", beats.map((beat) => metronomeClickFrame(beat, row.bpm, pageRate)));
+      return compareHits(onsets, exact, "the beats' frames");
     }
     case "region-seated-on-start": {
       const missing = needs("reference", refs.reference);
@@ -346,11 +332,10 @@ const judge = (
       if (rendered.samples.length !== reference.samples.length) return failUncompared("channel counts differ");
       const exact = regionStartFrameOf(row, pageRate);
       if (isSeatedAt(rendered, reference, exact)) return pass(`the reference seated on frame ${exact}, bit for bit, ${reference.samples[0].length} frames`);
-      // A whole region a frame off is a seat; anything else is no seat at all, and no finding reads it.
+      // A whole region a frame off is named as a seat, so the detail says where it went; anything else is no seat at all.
       const off = [-1, 1].find((offset) => isSeatedAt(rendered, reference, exact + offset));
       if (off === undefined) return fail(`not the reference seated on frame ${exact}, nor a frame either side of it`);
-      return fail(`the reference seated on frame ${exact + off}, bit for bit, not on ${exact}`,
-        { ...NO_EVIDENCE, frameOffsets: { got: [off], predicted: [regionStartFrameFromEngine(row, pageRate) - exact] } });
+      return fail(`the reference seated on frame ${exact + off}, bit for bit, not on ${exact}`);
     }
     case "jumps-crossfade": {
       const missing = needs("reference", refs.reference);

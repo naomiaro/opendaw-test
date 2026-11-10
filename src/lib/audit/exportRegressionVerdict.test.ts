@@ -259,13 +259,12 @@ describe("judgeInvariants", () => {
       expect([result.holds, result.finding]).toEqual([false, null]);
       expect(result.detail).toContain("6 expected");
     });
-    it("names the in-block rounding on exactly the clicks the engine's arithmetic places early, and only there", () => {
+    it("fails the clicks 0.0.183 placed a frame early with no label, now that every click lands on its frame (openDAW#536)", () => {
       const early = beats(48000).map((frame) => (frame === 24000 || frame === 72000 ? frame - 1 : frame));
       const result = judged(48000, early);
-      expect(result.holds).toBe(false);
-      expect(result.finding).toBe("in-block-pulse-rounds-early");
-      const at44 = beats(44100).map((frame) => (frame >= 110250 ? frame - 1 : frame));
-      expect(judged(44100, at44).finding).toBe("in-block-pulse-rounds-early");
+      expect([result.holds, result.finding]).toEqual([false, null]);
+      const at44 = judged(44100, beats(44100).map((frame) => (frame >= 110250 ? frame - 1 : frame)));
+      expect([at44.holds, at44.finding]).toEqual([false, null]);
     });
     it("names nothing on a click early where the arithmetic puts it on its frame, or late, or missing", () => {
       const wrongClick = judged(48000, beats(48000).map((frame) => (frame === 24000 ? frame - 1 : frame)));
@@ -286,10 +285,10 @@ describe("judgeInvariants", () => {
       const start = r.regionStartPpqn * 25;
       expect(one("impulse-on-computed-frame", r, rendered([0], {}, { impulseHits: hitsAt(start) })).holds).toBe(true);
     });
-    it("names the in-block rounding on a region the arithmetic starts a frame early, and not on one it starts on time", () => {
+    it("fails a region a frame early with no label, on the row 0.0.183 started early and on the one it started on time", () => {
       const early = regionRow(48000, "predicted-early");
       const result = one("impulse-on-computed-frame", early, rendered([0], {}, { impulseHits: hitsAt(early.regionStartPpqn * 25, -1) }));
-      expect([result.holds, result.finding]).toEqual([false, "in-block-pulse-rounds-early"]);
+      expect([result.holds, result.finding]).toEqual([false, null]);
       const onTime = regionRow(48000, "predicted-on-time");
       const off = one("impulse-on-computed-frame", onTime, rendered([0], {}, { impulseHits: hitsAt(onTime.regionStartPpqn * 25, -1) }));
       expect([off.holds, off.finding]).toEqual([false, null]);
@@ -320,9 +319,9 @@ describe("judgeInvariants", () => {
       expect(judged("predicted-early", 48250).holds).toBe(true);
       expect(judged("predicted-on-time", 48025).holds).toBe(true);
     });
-    it("names the in-block rounding on the whole region a frame early where the arithmetic puts it, and nothing elsewhere", () => {
+    it("fails the whole region a frame early or late with no label, and says where it sat", () => {
       const early = judged("predicted-early", 48249);
-      expect([early.holds, early.finding]).toEqual([false, "in-block-pulse-rounds-early"]);
+      expect([early.holds, early.finding]).toEqual([false, null]);
       expect(early.detail).toContain("seated on frame 48249");
       const onTime = judged("predicted-on-time", 48024);
       expect([onTime.holds, onTime.finding]).toEqual([false, null]);
@@ -345,10 +344,10 @@ describe("judgeInvariants", () => {
     const judged = (r: ExportRow, offset: number) =>
       one("impulse-on-computed-frame", r, rendered([0], {}, { impulseHits: IMPULSE_SOURCE_FRAMES.map((f) => f + startOf(r) + offset) }), {}, 44100);
 
-    it("holds the exact start, names a start a frame early where the arithmetic puts it, and nothing where it does not", () => {
+    it("holds the exact start and fails a start a frame early with no label, on either row", () => {
       expect(judged(regionRow("predicted-early"), 0).holds).toBe(true);
       const early = judged(regionRow("predicted-early"), -1);
-      expect([early.holds, early.finding]).toEqual([false, "in-block-pulse-rounds-early"]);
+      expect([early.holds, early.finding]).toEqual([false, null]);
       const onTime = judged(regionRow("predicted-on-time"), -1);
       expect([onTime.holds, onTime.finding]).toEqual([false, null]);
     });
