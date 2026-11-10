@@ -102,10 +102,10 @@ Read in the checkout. **Unmeasured** means the effect follows from the source, a
 
 | Where | What it does with the frame state | Effect |
 |---|---|---|
-| `capture/RecordAutomation.ts` | stamps writes with `engine.position` | measured in the display note |
+| `capture/RecordAutomation.ts` | stamps writes with `engine.position` | measured in the display note; upstream's `plans/capture.md` 7.1 item 8 keeps it as it is ("Moving it onto stamps would move every recorded automation point"), listed under "Not done" |
 | `project/AutomationSuspension.ts` | gates `suspendAutomation` on `isPlaying` | **measured above** |
 | `midi/MIDILearning.ts:130-149` | applies a learned CC at once, then at most one more per tick (`AnimationFrame.once`), keeping the last value | unmeasured: a fast CC sweep reaches the engine in steps of one tick (16.7 ms at 60, 41.7 at 24) |
-| `capture/CaptureMidi.ts:159-170` | armed while the transport runs: makes a start anchor from `audioContext.currentTime` and `engine.position` | unmeasured: the position is one to two ticks older than the time, so notes captured before the next real anchor would be placed that much early (retrospective capture only) |
+| `capture/CaptureMidi.ts:159-170` | armed while the transport runs: makes a start anchor from `audioContext.currentTime` and `engine.position` | unmeasured: the position is one to two ticks older than the time, so notes captured before the next real anchor would be placed that much early (retrospective capture only). Upstream's `plans/capture.md` (7.1 item 9) already records it: retroactive capture "places notes at the last animation frame position", to be merged onto the stamped notes and the transport log later |
 | app `ui/pages/TapTempo.tsx:191` | tap-tempo phase correction compares the tap with `engine.position / Quarter` | unmeasured: the phase error carries the frame age, so it locks with a bias of one to two ticks (and no output-latency term) |
 | app `software-midi/ChordPadPlayer.ts:100`, `SoftwareMIDIPanel.tsx:69`, `NoteEditor.tsx:112` | the key at `engine.position` for chord pads and the editor's scale | a pad pressed just after a key change can use the old key for one or two ticks |
 | `capture/RecordMidi.ts:118` `ignoreNoteRegion` | same engine pattern as the suspension (cleared on pause/stop/stop_recording, not on play) | not examined: whether a take can be created after the engine's stop |
