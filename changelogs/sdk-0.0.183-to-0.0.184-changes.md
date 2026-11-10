@@ -123,7 +123,9 @@ drag crash with a hidden automation lane (live error 1226), and the maintainer's
 - **IAC rows (2026-11-10, the IAC Driver online):** MIDI input sweep **36 of 36** `aligned`, every median 0.00 ms, max deviation 0.005 ms,
   0 missing / extra / stuck, count-in 2 of 6 pickups per cell (#493 open) (run 1794335107196); loop-wrap five repeats 48 / 48 each,
   `aligned` (1794335497099); effect arms `arpeggio` and `pitch` `aligned`, 48 / 48 (1794335559027, 1794335579414).
-- **Not run (hardware or a hand):** MIDI output timing (the user's Chrome), the combined MIDI + audio sweep, the hidden-page
+  MIDI output timing in the user's Chrome: Runs A, B (jank) and C every PAGE cell `bus-true`, every engine cell `on-time`, live medians
+  9.92–10.20 ms, janked inside-block medians 9.98 / 10.02 ms (1794336333568, 1794336416115, 1794336505235).
+- **Not run (hardware or a hand):** the combined MIDI + audio sweep, the hidden-page
   `cover` and `modal` rows, the Chromium bfcache / freeze / restart / microphone / Bluetooth rows, the 48 kHz device pass.
 - **Docs:** `documentation/07-building-a-complete-app.md` ("The SDK's Own Group Buses"); `src/demos/playback/CLAUDE.md` (the same, short);
   `src/demos/automation/CLAUDE.md` and `docs/known-sdk-limitations.md` (#537 fixed); `src/demos/export/CLAUDE.md` (#536 fixed); root

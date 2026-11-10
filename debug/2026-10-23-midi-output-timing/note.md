@@ -374,6 +374,47 @@ the MIDI output rows are read in the user's Chrome from here on (root CLAUDE.md)
 as a failure, not as a known defect); `MIDI_OUT_KNOWN_DEFECTS` is empty, and the test file pins the
 2026-10-23 figures as `investigate` and run B's fixed figures as `on-time`.
 
+### SDK 0.0.184 (2026-11-10): Runs A, B and C again
+
+The release does not touch the MIDI Output device or its clock (`midi_output.rs` changed in a test only); it places a pulse inside a
+block from the transport's anchor frame (openDAW#536), which can move a note's frame by one. Same recipes, **the user's Chrome**
+(Chrome 156, through claude-in-chrome, real clicks), a 44.1 kHz context, the Mac's output device at 44.1 kHz, the IAC bus,
+`frameDriver=hidden-safe`, the window uncovered.
+
+**Run A** (`1794336333568`, `?bpm=140&density=32nd&transport=both&repeats=2&frameDriver=hidden-safe`):
+
+| arm | bpm | density | transport | status | median ms (r1 / r2) | max dev | late tail | inside blocks | live median (r1 / r2) | live max dev | pair drift ms | miss/extra/stuck/vel | transport msgs |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| page | 140 | 32nd | on | `bus-true` | -0.00 / -0.00 | 0.00 | 0.00 | — | 0.03 / 0.02 | 0.02 | -2.90..0.05 | 0/0/0/0 | 3 |
+| engine | 140 | 32nd | on | `on-time` | 9.98 / 10.50 | 2.40 | 0.87 | — | 10.00 / 10.00 | 2.59 | -1.43..1.71 | 0/0/0/0 | 485 |
+| page | 140 | 32nd | off | `bus-true` | -0.00 / -0.00 | 0.00 | 0.00 | — | 0.55 / 0.19 | 3.49 | -2.94..1.23 | 0/0/0/0 | 5 |
+| engine | 140 | 32nd | off | `on-time` | 10.54 / 9.24 | 1.39 | 0.58 | — | 10.00 / 10.07 | 1.72 | -1.33..1.43 | 0/0/0/0 | 0 |
+
+**Run B** (`1794336416115`, `…&jank=mid`):
+
+| arm | bpm | density | transport | status | median ms (r1 / r2) | max dev | late tail | inside blocks | live median (r1 / r2) | live max dev | pair drift ms | miss/extra/stuck/vel | transport msgs |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| page | 140 | 32nd | on | `bus-true` | -0.00 / -0.00 | 0.00 | 0.00 | -0.00 | 0.02 / 0.02 | 0.02 | -0.01..0.04 | 0/0/0/0 | 5 |
+| engine | 140 | 32nd | on | `on-time` | 9.98 / 8.29 | 1.70 | 1.70 | 9.98 | 10.00 / 10.00 | 1.88 | -0.01..2.84 | 0/0/0/0 | 486 |
+| page | 140 | 32nd | off | `bus-true` | -0.00 / -0.00 | 0.00 | 0.00 | -0.00 | 0.32 / -5.63 | 2.98 | -6.94..1.12 | 0/0/0/0 | 2 |
+| engine | 140 | 32nd | off | `on-time` | 10.16 / 9.44 | 0.84 | 0.38 | 10.02 | 10.05 / 10.07 | 1.26 | -0.91..1.42 | 0/0/0/0 | 0 |
+
+**Run C** (`1794336505235`, `?bpm=all&density=both&repeats=2&frameDriver=hidden-safe`):
+
+| arm | bpm | density | transport | status | median ms (r1 / r2) | max dev | late tail | inside blocks | live median (r1 / r2) | live max dev | pair drift ms | miss/extra/stuck/vel | transport msgs |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| page | 90 | both | on | `bus-true` | 0.00 / -0.00 | 0.00 | 0.00 | — | 0.04 / 2.04 | 2.02 | -0.01..2.86 | 0/0/0/0 | 1 |
+| engine | 90 | both | on | `on-time` | 9.96 / 12.94 | 0.73 | 0.39 | — | 10.00 / 9.99 | 0.91 | -3.68..0.73 | 0/0/0/0 | 485 |
+| page | 120 | both | on | `bus-true` | -0.00 / -0.00 | 0.00 | 0.00 | — | 0.10 / 0.47 | 0.79 | -3.55..1.28 | 0/0/0/0 | 2 |
+| engine | 120 | both | on | `on-time` | 12.93 / 13.53 | 1.59 | 0.32 | — | 10.20 / 10.08 | 1.78 | -4.03..0.92 | 0/0/0/0 | 486 |
+| page | 140 | both | on | `bus-true` | -0.00 / -0.00 | 0.00 | 0.00 | — | 0.34 / 0.54 | 0.90 | -0.16..1.35 | 0/0/0/0 | 3 |
+| engine | 140 | both | on | `on-time` | 12.68 / 13.05 | 3.66 | 0.52 | — | 9.92 / 10.06 | 1.40 | -3.59..1.04 | 0/0/0/0 | 485 |
+
+**Reading on 0.0.184:** every PAGE cell `bus-true`, every engine cell `on-time` on the live pair (live medians 9.92–10.20 ms on the
+10 ms delay), the janked cells too, with inside-block medians 9.98 and 10.02 ms (0.0.183: 9.97 and 13.37); 0 missing / extra / stuck /
+velocity on every row. The engine's own-clock medians that read 12.7–13.5 ms (Run C at 120 and 140, and one repeat at 90) sit on pair
+drift down to −4.0 ms, the clock relation the live pair removes, as on 0.0.183.
+
 ### SDK 0.0.183 (2026-11-09): Runs A, B and C again
 
 The release does not touch the MIDI Output device or its clock; it counts the transport's position in frames from an anchor
