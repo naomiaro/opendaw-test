@@ -14,6 +14,11 @@ previous `changelogs/sdk-<a>-to-<b>-changes.md` is the template for the new one.
 Budget: the hardware-free sweeps take about an hour and a half of browser time; write the
 changelog and the docs while they run (`.md` edits do not reload the page).
 
+Several releases behind: go straight to the newest one, one PR, one changelog named
+`sdk-<installed>-to-<new>-changes.md`. `npm view @opendaw/studio-sdk time --json` gives each
+release's publish time for the header; the commit range and every diff below run from the
+installed tag to the new one.
+
 ## 1. Snapshot, then bump
 
 ```bash
@@ -23,6 +28,15 @@ sed -i '' 's/"@opendaw\/studio-sdk": "<old>"/"@opendaw\/studio-sdk": "<new>"/' p
 rm -rf node_modules package-lock.json && npm install && npm ci              # clean lockfile; npm ci must pass
 rm -rf node_modules/.vite
 ```
+
+`npm warn install-scripts …` on install is npm declining to run postinstall scripts, not a failure.
+
+Then `npm run typecheck` and `npx vitest run` at once, before reading anything. A typecheck error
+inside `node_modules/@types/…` or `lib.dom.d.ts` (TS2717, TS2374, TS2300) is a new transitive
+dependency bringing an `@types` package that redeclares DOM names (`npm ls <package>` names who
+brought it): `tsconfig.json` names its `types` for this reason, so add a needed name there, never
+turn `skipLibCheck` on. Record a new runtime dependency and its licence in the changelog's version
+table.
 
 Bump `@opendaw/studio-sdk` only; sub-packages resolve transitively; never a `file:` reference.
 The copy replaces `npm pack` per sub-package: it IS the installed 0.0.<old>, and it is what the
@@ -42,6 +56,11 @@ read its message and diff (`git show <sha> -- <path>`); everything else is studi
 (one line in the changelog's "Studio-app only" paragraph). For an issue a commit "Fixes", run
 `gh issue view <n> -R andremichelle/openDAW --json title,author` — one filed from this repo
 closes a loop in its `debug/` note, `debug/README.md` and the memory.
+
+A feature commit's message describes the STUDIO. Before documenting what it says, find which
+half of it is SDK code: `git show --stat <sha> -- packages/app` against `-- packages/studio
+packages/lib`. "Armed tracks come back with the project" wrote a field in the SDK and restored it
+in `packages/app`; an SDK user gets the write and not the restore.
 
 Installed surface, the authority over the tag:
 
@@ -77,9 +96,50 @@ The same for a value the demos bound to a range: a release that widens a paramet
 factory that changes what it creates moves behaviour too (a Zeitgeist on the shared Global Shuffle, whose settings outlive the
 device): read `EffectFactories` and the box schemas' `mandatory` flags in the diff.
 
+Three more kinds a green typecheck hides, each met once:
+
+- **A field retired, a rule widened.** Grep the schema diff for `deprecated`
+  (`git diff <range> -- packages/studio/forge-boxes/src/schema | grep -n deprecated`): a retired
+  flag still compiles and now means nothing, and what replaced it may reach further (the `isGroup`
+  flag gave way to "every bus is a group", so deleting a hand-built bus through the API deletes the
+  units routed into it). Find every demo that builds the affected thing, pin the new rule in a
+  Node test on a real box graph, and exercise it once on a demo's live project (the `project` from
+  the React fiber, the edit, one `editing.undo()`).
+- **A new question.** `git diff <range> -- packages | grep -n 'RuntimeNotifier\.'` lists every
+  prompt the range adds. The demos install a notifier (`src/lib/runtimeNotifier.ts`), so a new
+  `approve` on a path a sweep takes WAITS for a click there; read what the SDK does with a yes and
+  with a no, and what it does in a loop (`while (await RuntimeNotifier.approve(…))` retried a
+  refused save without end when nothing was installed, openDAW#574). A yes that opens a studio
+  page this site lacks goes into `APPROVE_WITHOUT_ACTION`.
+- **A fix to a path no sweep takes.** Say which sweep covers the changed engine area before
+  calling it verified. `crates/signalsmith` and the region player's stretch branch are covered by
+  `stretch-placement-debug-demo.html` and the `audio-verify` Signalsmith scenarios, not by the
+  export harness (it has no stretched region). When nothing covers it, measure it (below) or
+  write "not provoked" in the changelog; a path that needs a full storage or a blocked permission
+  is called directly with the condition stubbed, and the note says so.
+
 Then load the affected demo fresh in the browser, exercise the changed path (a second
 recording on the same tape, the preference the release re-defaults, …) and read the result
 off the page or the box graph; the test pins the rule, the browser check pins the demo.
+
+**Measuring a fix against the previous SDK** (when swapping one dist file is not enough, the
+engine wasm changed): a second checkout on the commit before the bump, served beside this one.
+
+```bash
+git worktree add --detach ../opendaw-test-sdk<old> <commit before the bump>
+cp localhost*.pem ../opendaw-test-sdk<old>/ && (cd ../opendaw-test-sdk<old> && npm ci)
+(cd ../opendaw-test-sdk<old> && npm run dev -- --port 5184 --host 127.0.0.1 --strictPort)   # background
+# … run the same page on https://localhost:5184 and on :5173; its /__verify files land in the worktree's own .verify-output/
+kill $(lsof -ti :5184 -sTCP:LISTEN); git worktree remove --force ../opendaw-test-sdk<old>
+```
+
+`npm ci` in the worktree, NEVER a link to this checkout's `node_modules`, and never `git add -A`
+there: a `node_modules` link was committed that way once, reached main, and the next pull replaced
+the real install with a link to itself. A new page copied into the old checkout needs its
+`vite.config.ts` entry too. The old engine's box mirror rejects a newer schema, so serving the old
+`engine.wasm` under the new TypeScript measures nothing; a whole old install does. A page built
+to guard a fix gets this run as its positive control (the fixed defect must read as a failure on
+the old SDK), recorded in its note.
 
 A "flips when fixed" test failing is a fix landing: invert it (root CLAUDE.md). A NEW
 regression test of a fix must be shown to flip: swap in the OLD dist file that carried the
@@ -153,7 +213,22 @@ when the user asks for a vendor pass. They load no SDK engine, so a release cann
 SDK's own debug pages (every other row) are the upgrade's sweep. Say in the changelog that the
 vendor rows were not run.
 
-Run the hardware-free rows yourself; the IAC, combined and `cover` rows, and (on a vendor
+Mechanics met on the sweeps:
+
+- The MIDI input rows (the sweep, loop-wrap, both effect arms) run in the Playwright browser with
+  the IAC Driver on: they are part of the hardware-free set. The MIDI output timing audit still
+  needs the user's Chrome.
+- The hidden-page `modal` rows run unattended: on a fresh page register
+  `page.on('dialog', d => setTimeout(() => d.accept(), 5000))` before `goto`, click
+  `getByRole('button', {name: 'Run', exact: true})`, and reuse that page for `mid` and `stop`.
+- The render-section page prints "fixed: no frames lost" seven times for six rows (its own
+  description is one); read the `Done:` line.
+- A register a sweep left unchanged keeps the SDK label it was accepted under; nothing is
+  re-accepted for a run that reads all `identical` / `as-registered`.
+- The 44.1 kHz recording pass shows one repeat (`loop-wrap/120` r2) with a 0.04 ms tail on some
+  releases and not on others; it is in the register.
+
+Run the hardware-free rows yourself; the IAC (MIDI output), combined and `cover` rows, and (on a vendor
 pass) the Chromium probe's bfcache, OPFS restart, microphone and Bluetooth rows, need the user's Chrome,
 hardware or hand — ask for them at the end rather than skipping silently. The Chromium
 probe loads no SDK engine (two probes import lib-dsp's WAV encoder, nothing else): its rows say whether a watched browser issue still stands, and a
@@ -176,6 +251,14 @@ table (changed / byte-identical bumps / unchanged, licences, wasm binaries chang
 sizes), one section per item with the mechanism and the upstream tests, a "Studio-app only"
 paragraph, and "opendaw-headless follow-ups shipped with this upgrade" with the sweep readings,
 the docs touched and the API claims verified against the tarballs.
+
+Every sentence about behaviour in the changelog, a note or an issue is one of three kinds, and
+says which: **measured** (with the run), **read from the code** (with the file), or **not
+provoked**. A stub that stops a loop measured the repeats, not that the loop is endless. A table's
+per-row median is not a figure for a single event. A figure from one comparison (two renders'
+envelopes) is not a placement to the frame. The review agents find these; write them right first.
+An upstream issue's TITLE carries the measured claim only, and editing a posted issue needs the
+user's word.
 
 Docs: grep every changed identifier across `documentation/`, `documentation/internals/`,
 root `CLAUDE.md` and the category `CLAUDE.md`s; on a vendor pass only (see section 5), in `docs/known-vendor-issues.md` re-read each
@@ -207,3 +290,9 @@ row for any loop the release closed.
 - Treating a green typecheck as "no demo impact" (section 3).
 - Editing `src/` or `public/` while a sweep runs: Vite reloads the page and the run is lost.
   `.md` files are safe to edit during a run.
+- Linking `node_modules` into a second worktree, or `git add -A` in one: stage named paths, and
+  read `git diff --stat main...HEAD` for files that do not belong before a merge.
+- Documenting a studio feature as an SDK one (section 2), or a commit message's claim as measured.
+- `toEqual` on SDK boxes in a new regression test: it compares structure and passes on the wrong
+  box. `toBe` per slot.
+- Calling a fix verified because every sweep is green, when no sweep takes the fixed path.
