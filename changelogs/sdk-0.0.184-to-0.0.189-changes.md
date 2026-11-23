@@ -33,7 +33,9 @@ repo:
    `AudioFileBox` (regions with it) and asks through `RuntimeNotifier.approve` whether to download the take as a WAV
    (`UnstoredRecording.offerDownload`). **What the demos read of it:** the finalization barriers already count `"error"` as terminal
    (`LoopRecordingReference.tsx`, `loop-recording-demo.tsx`); `src/demos/recording/CLAUDE.md` said the worklet never emits it, and is
-   corrected. Not provoked here (it needs a full origin).
+   corrected. Not provoked here (it needs a full origin). **Found after the upgrade (2026-11-23):** with no
+   `RuntimeNotifier` installed, as in these demos, `approve` resolves yes, so nobody is asked, the save picker is requested at once,
+   and a refused save is requested again without end (`debug/2026-11-23-unstored-recording-download-loop/note.md`).
 5. **A library sample that cannot be stored plays from memory (`c882bdccc`).** `GlobalSampleLoaderManager.#fetchFromApi` warns and
    still sets the loader `"loaded"`; before, a full storage ended the loader in `"error"` and the project did not open. Samples and
    soundfonts are written one file after the other with `meta.json` last (`Storage.saveEntry`), a failed save removes the folder it
