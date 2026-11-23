@@ -1,5 +1,5 @@
-**Posted 2026-11-23:** https://github.com/andremichelle/openDAW/issues/574 — the body below as filed.
-**Title:** The WAV download offer for an unstored recording never ends when no `RuntimeNotifier` is installed
+**Posted 2026-11-23:** https://github.com/andremichelle/openDAW/issues/574 — the body below as it stands. Retitled and one paragraph added the same day: the first title said the offer "never ends", which was read from the code, not measured.
+**Title:** Without a RuntimeNotifier, the WAV download offer for an unstored recording requests the save picker again after every refused save
 
 ---
 
@@ -25,6 +25,11 @@ a notifier) and rejects too. So for an SDK user who has not called `RuntimeNotif
 - every turn encodes the take to WAV again;
 - the take's `AudioFileBox` and regions were already deleted by `RecordAudio`'s `onFailed`, so the offer is the only
   copy of the audio.
+
+That the loop has no exit there is read from the code above; my runs below show the repeated request and were stopped
+by my own stubs. In a browser without `showSaveFilePicker` (Firefox, Safari) `Files.save` takes the anchor download,
+which resolves, so by the same reading the offer ends after one download attempt nobody was asked about; I did not run
+those.
 
 The studio installs a notifier in `boot.ts`, and `UnstoredRecording.test.ts` installs one, so neither meets the case.
 
