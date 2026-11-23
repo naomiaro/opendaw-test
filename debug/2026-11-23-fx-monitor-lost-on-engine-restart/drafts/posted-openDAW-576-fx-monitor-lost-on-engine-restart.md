@@ -1,4 +1,4 @@
-**Posted 2026-11-23:** https://github.com/andremichelle/openDAW/issues/576 — the body below as filed.
+**Posted 2026-11-23:** https://github.com/andremichelle/openDAW/issues/576 — the body below as it stands. Edited the same day: the page line's duration, "about twenty seconds" to "about fifty seconds".
 **Title:** After the engine worklet is replaced, a source monitored "With Effects" is silent until it is registered again
 
 ---
@@ -20,7 +20,7 @@ A 440 Hz tone registered as a two-channel source on a Tape unit, the return read
 | after `engine.releaseWorklet()` + `project.startAudioWorklet()`, `isReady` and `queryLoadingComplete` awaited: the loudest of 12 reads over the next 3 s | 0.0000 | 0.0000 |
 | after `unregisterMonitoringSource` + `registerMonitoringSource` | 0.1770 | 0.1770 |
 
-- Page (a click on Run, about twenty seconds, the last three rows; the tone is not played, a metronome clicks for 1.6 s): https://opendaw-test.pages.dev/monitoring-mono-return-debug-demo
+- Page (a click on Run, about fifty seconds, the last three rows; the tone is not played, a metronome clicks for 1.6 s): https://opendaw-test.pages.dev/monitoring-mono-return-debug-demo
 - Note: https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-11-23-fx-monitor-lost-on-engine-restart/note.md
 
 **Where an SDK app meets it, as I read it:** `Project.startAudioWorklet(restart)` handles an engine error by
