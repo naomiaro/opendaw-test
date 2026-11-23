@@ -18,10 +18,10 @@ are the RMS of the return per channel, 600 ms after writing the unit's `panning`
 | Source | Unit pan | Return left | Return right |
 |---|---|---|---|
 | stereo | −1 | 0.1769 | 0.0000 |
-| stereo | 0 | 0.1765 | 0.1765 |
-| stereo | +1 | 0.0000 | 0.1769 |
+| stereo | 0 | 0.1770 | 0.1770 |
+| stereo | +1 | 0.0000 | 0.1767 |
 | mono | −1 | 0.1770 | 0.1770 |
-| mono | 0 | 0.1769 | 0.1769 |
+| mono | 0 | 0.1767 | 0.1767 |
 | mono | +1 | 0.0000 | 0.0000 |
 
 So with a one-channel source the pan at hard right is silence, and at hard left the signal is on both sides.
@@ -31,7 +31,7 @@ The page calls the engine method directly with an oscillator. I did not run it t
 `BrowserMonitor.ts:136`. I measured the pan only. By the same reading a stereo effect on the unit would be
 heard as its left half; I did not run that.
 
-- Page (a click on Run, silent, about fifteen seconds; the first six rows): https://opendaw-test.pages.dev/monitoring-mono-return-debug-demo
+- Page (a click on Run, about twenty seconds, the first six rows; the tone is not played, a metronome clicks for 1.6 s): https://opendaw-test.pages.dev/monitoring-mono-return-debug-demo
 - Note: https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-11-23-fx-monitor-mono-return/note.md
 
 **Where the right channel goes, as I read it**
@@ -45,8 +45,9 @@ heard as its left half; I did not run that.
 - `MonitoringRouter.#rebuild` then connects that one return channel to both inputs of the source's output
   merger.
 
-`plans/done/advanced-monitoring.md` describes the monitoring path as "always stereo" with the per-track
-merger recombining L/R, which is why I am reporting it as a defect and not asking.
+`plans/done/advanced-monitoring.md` says "Monitoring chain is always stereo (force-mono only affects input
+before the split)" and has the per-track `ChannelMergerNode(2)` recombine L/R, which is why I am reporting
+this as a defect and not asking. The plan does not spell out the one-channel case.
 
 I searched the tracker for monitoring, mono and pan: #461 (forced mono, silent) and #528 are the nearest and
 neither covers this.

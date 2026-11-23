@@ -7,7 +7,7 @@ Found with the harness of [the mono-return note](../2026-11-23-fx-monitor-mono-r
 its own register.
 
 **Repro page:** `monitoring-mono-return-debug-demo.html`, its last three rows; the outcome is `data-restart`
-on `#verdict` (`lost` / `kept` / `inconclusive`).
+on `#verdict`: `lost`, `kept`, `inconclusive`, `failed` (the restart itself threw or hung) or `not-run`.
 
 **Verified against:** SDK 0.0.189, source read at the release commit `d143a4f5`.
 
@@ -24,23 +24,25 @@ pan 0, the return read as RMS per channel:
 
 | Step | Return left | Return right |
 |---|---|---|
-| monitored, before (control) | 0.1768 | 0.1768 |
-| after `engine.releaseWorklet()` + `project.startAudioWorklet()`, `isReady` awaited, 1.5 s later | 0.0000 | 0.0000 |
+| monitored, before (control) | 0.1767 | 0.1767 |
+| after `engine.releaseWorklet()` + `project.startAudioWorklet()`, `isReady` and `queryLoadingComplete` awaited: the loudest of 12 reads over the next 3 s | 0.0000 | 0.0000 |
 | after `unregisterMonitoringSource` + `registerMonitoringSource` on the new worklet (control) | 0.1770 | 0.1770 |
 
-The same on a scratch run with a sample recorder in place of the analysers (the last 20 quanta all exactly
-zero after the swap).
+The same on a scratch probe that was not kept, with a sample recorder in place of the analysers (the last 20
+quanta all exactly zero after the swap).
 
 **Not measured:** the studio. That its "Restart Engine" path meets this is read from the code:
 `Project.startAudioWorklet`'s error handler starts a new worklet (`Project.ts:352-362`) and the studio's
-`restart.load` only calls `engine.setWorklet` (`StudioService.ts:531-535`); `EngineFacade.setWorklet`
-re-subscribes the engine state and notifies `subscribeWorkletChanged`, which nothing in `studio-core`
-subscribes to; `BrowserMonitor` registers only in `#connect` (on a mode change or an input bind). I did not
+`restart.load` calls `engine.setWorklet` and restores the screen (`StudioService.ts:531-535`);
+`EngineFacade.setWorklet` re-subscribes the engine state and notifies `subscribeWorkletChanged`, whose only
+subscriber is the mastering panel (`MasteringPanel.tsx:621`, it resets compare and mono); the only caller of
+`registerMonitoringSource` outside tests is `BrowserMonitor.ts:136`, in `#connect` (on a mode change or an
+input bind). I did not
 crash an engine in the studio to see it.
 
 ## Also checked, no finding
 
-While one source is monitored, registering and unregistering a second source (one whose uuid sorts first, so
+On a scratch probe that was not kept (the page does not show this). While one source is monitored, registering and unregistering a second source (one whose uuid sorts first, so
 the first source's channels move) left the first source's return untouched: five rounds, a constant +0.5 on
 the first source and −0.5 on the second, every frame of the first source's return within 0.01 of 0.5 for the
 500 ms after each call. The second source's return was at −0.5 from the first frame after its call. The
