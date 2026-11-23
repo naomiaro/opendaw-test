@@ -64,9 +64,8 @@ one-channel stream is still registered as two channels (`BrowserAudioInput.ts:39
 request before the stream's own) and the return follows the pan. With `requestChannels = 1` it shows as filed;
 on a scratch probe that was not kept, the same with a two-channel stream. Not run: a real microphone, and a
 channel mapping with one side only (by the same line it registers one channel). The page's outcomes are
-`data-capture-default` (`follows`) and `data-capture-mono` (`left-only`; `follows` is the fix). A reworked
-issue body saying this waits in
-[`drafts/TO-REVIEW-openDAW-575-reworked-body.md`](./drafts/TO-REVIEW-openDAW-575-reworked-body.md). No stereo effect was put on the unit: the second and third bullets above
+`data-capture-default` (`follows`) and `data-capture-mono` (`left-only`; `follows` is the fix). The
+issue's body was edited on 2026-11-23 to say this. No stereo effect was put on the unit: the second and third bullets above
 follow from the left channel alone being returned, and only the pan was measured.
 
 ## Mechanism (read from the source)
