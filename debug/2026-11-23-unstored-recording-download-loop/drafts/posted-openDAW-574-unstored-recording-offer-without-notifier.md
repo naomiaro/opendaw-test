@@ -1,4 +1,4 @@
-**Target:** a new issue on `andremichelle/openDAW`. Not posted. Post only after the PR that adds the test and the note has merged: the two links below point at `main`.
+**Posted 2026-11-23:** https://github.com/andremichelle/openDAW/issues/574 — the body below as filed.
 **Title:** The WAV download offer for an unstored recording never ends when no `RuntimeNotifier` is installed
 
 ---
