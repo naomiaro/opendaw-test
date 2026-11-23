@@ -21,6 +21,10 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noImplicitReturns": true,
+    // Named, so that TypeScript does not load every @types package it finds: the SDK's Opus
+    // encoder brings in @types/dom-webcodecs, which declares what lib.dom already has (TS2717,
+    // TS2374, TS2300 with skipLibCheck off).
+    "types": ["node", "wicg-file-system-access"],
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]

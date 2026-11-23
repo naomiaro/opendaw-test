@@ -146,8 +146,14 @@ async () => { const t0 = Date.now(); while (Date.now() - t0 < 95000) { const s =
 | `chromium-watched-issues-debug-demo.html?issue=output-latency` | `button "Run"` | a Bluetooth output connected and selected during the 30 s | the `outputLatency` rows before and after the switch; no verdict |
 | `chromium-watched-issues-debug-demo.html?issue=output-latency&roundtrip=1&isolate=1&gain=1`, then `&sink=<the headset label>` | `button "Run"` | the built-in microphone, a quiet room; the Bluetooth half needs the headset connected and a hand to hold one earbud to the mic | 10 of 10 clicks each; the headset median minus the speaker median (about 200 ms typical, about 280 ms on the first stream after connecting) against the reported difference (133 ms); a `NOT CHECKED 0-of-10` names the output device the clicks went to, `clock-pair-unstable` is page-clock pairs that spread too wide to place the clicks (`outputPairSpreadMs`, `capturePairSpreadMs`), `non-positive-round-trip` a click found at or before it played |
 
-Run the hardware-free rows yourself; the IAC, combined and `cover` rows, and the Chromium
-probe's bfcache, OPFS restart, microphone and Bluetooth rows, need the user's Chrome,
+**The vendor rows are not part of an SDK upgrade** (the user's rule, 2026-11-23): every
+`chromium-watched-issues-debug-demo.html` row above, and the tracker re-read in section 6, run only
+when the user asks for a vendor pass. They load no SDK engine, so a release cannot move them. The
+SDK's own debug pages (every other row) are the upgrade's sweep. Say in the changelog that the
+vendor rows were not run.
+
+Run the hardware-free rows yourself; the IAC, combined and `cover` rows, and (on a vendor
+pass) the Chromium probe's bfcache, OPFS restart, microphone and Bluetooth rows, need the user's Chrome,
 hardware or hand — ask for them at the end rather than skipping silently. The Chromium
 probe loads no SDK engine (two probes import lib-dsp's WAV encoder, nothing else): its rows say whether a watched browser issue still stands, and a
 changed verdict moves the register entry, never the SDK's reading. Judge every cell
@@ -171,7 +177,7 @@ paragraph, and "opendaw-headless follow-ups shipped with this upgrade" with the 
 the docs touched and the API claims verified against the tarballs.
 
 Docs: grep every changed identifier across `documentation/`, `documentation/internals/`,
-root `CLAUDE.md` and the category `CLAUDE.md`s; in `docs/known-vendor-issues.md` re-read each
+root `CLAUDE.md` and the category `CLAUDE.md`s; on a vendor pass only (see section 5), in `docs/known-vendor-issues.md` re-read each
 open tracker (the two Bugzillas through `node .claude/skills/sdk-upgrade/scripts/bugzilla.cjs
 <host> read <id>…`, the Chromium tracker through the browser), update "Last checked" on every
 entry a sweep exercised, sweep the three trackers for new open Web Audio, worklet, OPFS and Web MIDI

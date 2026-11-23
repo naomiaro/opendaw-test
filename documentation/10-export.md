@@ -542,9 +542,35 @@ const audioData = await OfflineEngineRenderer.start(projectCopy, Option.None, pr
 downloadWav(WavFile.encodeFloats(audioData), "mix.wav");
 ```
 
+### Ogg Opus (WebCodecs)
+
+`OpusEncoder` from `@opendaw/studio-core` encodes `AudioData` to an Ogg Opus file with the browser's own `AudioEncoder`, without
+FFmpeg. The audio must be at 48 kHz (`OpusEncoder.SampleRate`); render at that rate, the encoder refuses any other.
+
+```typescript
+import { OpusEncoder } from "@opendaw/studio-core";
+
+const settings: OpusEncoder.Settings = {
+  numberOfChannels: 2,
+  bitrate: 128,          // kbit/s
+  complexity: 10,        // 0..10
+  frameDuration: 20000,  // microseconds
+  variable: true,        // variable bitrate
+  application: "audio",  // "audio" | "voip" | "lowdelay"
+};
+if (await OpusEncoder.isSupported(settings)) {
+  const bytes: ArrayBuffer = await OpusEncoder.encode(audioData, settings, progress => {}, abortController.signal);
+}
+```
+
+`isSupported` is `false` in a browser without `AudioEncoder` or without Opus encoding; fall back to WAV there. It probes a
+stereo configuration whatever `numberOfChannels` says. `encode` takes audio with `numberOfChannels` channels, or stereo audio with
+`numberOfChannels: 1` (it averages the two); it asserts on any other pair. Aborting the signal
+rejects with `Errors.AbortError`. The Ogg container code (`mediabunny`) is loaded on the first `encode`.
+
 ### MP3 and FLAC (Via OpenDAW Studio)
 
-`WavFile` only encodes WAV. For MP3/FLAC, use OpenDAW Studio's `Mixdowns` service:
+`WavFile` only encodes WAV and `OpusEncoder` only Opus. For MP3/FLAC, use OpenDAW Studio's `Mixdowns` service:
 
 ```typescript
 import { Mixdowns } from "@opendaw/studio/service/Mixdowns";

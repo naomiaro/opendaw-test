@@ -237,10 +237,12 @@ project.editing.modify(() => {
   audioUnitBox.output.refer(audioBusBox.input);
 });
 ```
-These hand-built buses are plain buses to the SDK. Its own group model (`project.grouping.create(units)`, a bus
-whose `AudioUnitBox.isGroup` is true; membership read from the routing by `AudioUnitGroups.parent`) is what the
-openDAW studio nests and folds; the mixer-groups demo does not use it. A group unit hosts no MIDI effect chain
-(`midiEffects` / `midiEffectsField` → `None`). Chapter: `documentation/07-building-a-complete-app.md`, "The SDK's
+These hand-built buses ARE groups to the SDK: every `AudioUnitType.Bus` unit is one (`AudioUnitGroups.isGroup`,
+the `isGroup` field is deprecated, nothing reads it), and a unit whose `output` points at its bus is its member
+(`AudioUnitGroups.parent`). So `project.api.deleteAudioUnit(busUnitBox)` deletes the bus AND every unit routed
+into it (`project.grouping.ungroup` keeps them; regression test `src/lib/busIsGroup.test.ts`); no demo deletes a
+bus. A bus unit hosts no MIDI effect chain (`midiEffects` / `midiEffectsField` → `None`). Folded state and track
+heights are per-user view states (`project.userEditingManager.viewStates`), not unit fields. Chapter: `documentation/07-building-a-complete-app.md`, "The SDK's
 Own Group Buses".
 
 ### Dark Ride Audio

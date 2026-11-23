@@ -239,7 +239,10 @@ const captureOpt = project.captureDevices.get(audioUnitBox.address.uuid);
 if (captureOpt.nonEmpty()) {
   const capture = captureOpt.unwrap();
 
-  // Arm or disarm deterministically — armed is a runtime observable
+  // Arm or disarm deterministically — armed is a runtime observable. It is written to the
+  // capture box (`captureBox.armed`, outside undo) only when the ProjectEnv sets `storeArmed: true`.
+  // The SDK never reads the field back: every capture starts disarmed, so an app that wants its
+  // tracks armed again after a load reads `capture.captureBox.armed` and sets `capture.armed` itself.
   capture.armed.setValue(true);
   capture.armed.setValue(false);
 
@@ -597,7 +600,7 @@ Other related preferences:
 
 ### Measuring the round trip with the SDK
 
-`CaptureAudio.measureRoundTrip()` plays three short noise bursts (a maximum-length sequence, the paper's method below) out of the context's destination, finds them in what the input captured and returns a `RoundTrip.Result`: `verdict` (`"ok"` when every burst was heard within 1.5 ms of each other, `"unsteady"`, `"no-signal"`), `seconds` (the median round trip), `spreadSeconds`, `heard` / `bursts`. It rejects while the transport plays or records, and arms the capture if it is not armed. An `"ok"` result is stored in the browser's `localStorage` under `opendaw:round-trips`, one entry per output device name, input label and sample rate:
+`CaptureAudio.measureRoundTrip()` plays three short noise bursts (a maximum-length sequence, the paper's method below) out of the context's destination, finds them in what the input captured and returns a `RoundTrip.Result`: `verdict` (`"ok"` when every burst was heard within 1.5 ms of each other, `"unsteady"`, `"no-signal"`), `seconds` (the median round trip), `spreadSeconds`, `heard` / `bursts`. It rejects while the transport plays or records, and arms the capture if it is not armed. A silent input (a disabled or stopped track) reads `"no-signal"`, and a round trip under `RoundTrip.MinSeconds` (1 ms) is not counted as heard. One measurement runs at a time: a second call on the same capture returns the running one, a call on another capture rejects with "Another latency measurement is running.", and a measurement that has not finished after 30 s rejects. An `"ok"` result is stored in the browser's `localStorage` under `opendaw:round-trips`, one entry per output device name, input label and sample rate:
 
 ```typescript
 const capture = project.captureDevices.audio(audioUnitBox.address.uuid).unwrap(); // Option<CaptureAudio>
@@ -608,6 +611,14 @@ if (result.verdict === "ok") {
 capture.roundTrip;          // Option<RoundTrip.Entry> for the devices in use
 capture.forgetRoundTrip();  // drop it: recordings fall back to the reported latencies
 const sub = capture.subscribeRoundTrip(() => { /* an entry was stored or dropped */ });
+```
+
+To show the figure before keeping it, measure without storing and store the accepted result afterwards:
+
+```typescript
+const measured = await capture.measureRoundTrip({ store: false });
+// ... the user confirms
+const stored = capture.storeRoundTrip(measured); // false unless it is the last measured result and "ok"
 ```
 
 While an entry exists for the devices in use, every take on a capture whose `captureBox.inputLatency` is `InputLatency.Inherit` records with `outputLatency = roundTrip.seconds` and `inputLatency = 0`; the engine preference `recording.inputLatency` is not read. A per-tape value (any value other than Inherit, `0` included) wins over the entry. The entry is shared by every page on the origin. Bluetooth outputs, whose reported `outputLatency` is far off, are the case it is for; the measurement needs the output audible to the input (speakers, or an earbud held to the mic).

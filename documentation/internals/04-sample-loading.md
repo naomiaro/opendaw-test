@@ -181,25 +181,35 @@ samples/v2/
     meta.json     ← SampleMetaData (bpm, duration, sampleRate, origin, ...)
 ```
 
-Three small files per sample, all written in parallel:
+Three small files per sample, written one after the other with `meta.json` last:
 
 ```typescript
-// SampleStorage.ts:25
-async save({uuid, audio, peaks, meta}: SampleStorage.NewSample): Promise<void> {
-    const path = `${this.folder}/${UUID.toString(uuid)}`
+// SampleStorage.ts
+async save({uuid, audio, peaks, meta}: SampleStorage.NewSample, cached: boolean = false): Promise<void> {
     const data = new Uint8Array(WavFile.encodeFloats({
         frames: audio.frames.slice(),
         numberOfFrames: audio.numberOfFrames,
         numberOfChannels: audio.numberOfChannels,
         sampleRate: audio.sampleRate
     }))
-    return Promise.all([
-        Workers.Opfs.write(`${path}/audio.wav`, data),
-        Workers.Opfs.write(`${path}/peaks.bin`, new Uint8Array(peaks)),
-        Workers.Opfs.write(`${path}/meta.json`, new TextEncoder().encode(JSON.stringify(meta)))
-    ]).then(EmptyExec)
+    return this.saveEntry(uuid, [["audio.wav", data], ["peaks.bin", new Uint8Array(peaks)]], meta, cached)
+}
+
+// Storage.ts
+protected saveEntry(uuid, files, meta, cached): Promise<void> {
+    const path = `${this.folder}/${UUID.toString(uuid)}`
+    let began = false
+    return OpfsQuota.retry(path, async () => {
+        began = !await Workers.Opfs.exists(path)
+        for (const [name, bytes] of files) {await Workers.Opfs.write(`${path}/${name}`, bytes)}
+        await Workers.Opfs.write(`${path}/meta.json`, metaBytes)
+    }, async () => {if (began) {await Workers.Opfs.delete(path)}}, {cached, serial: true})
 }
 ```
+
+A failed save removes the folder only when this save created it. `OpfsQuota.retry` asks the handler an app installed with
+`OpfsQuota.install` whether to try again when the write failed for lack of space; `cached` marks a save of something that can be
+fetched again (a library sample), which the loader survives without.
 
 `Workers.Opfs` is the same RPC-to-worker pattern as `Workers.Peak`. The OPFS worker actually touches the Origin Private File System; everything is async, all I/O off the main thread.
 
@@ -242,7 +252,7 @@ type SampleLoaderState =
     | { readonly type: "idle" }
     | { readonly type: "record" }                                  // PeaksWriter is appending live
     | { readonly type: "progress", progress: unitValue }           // 0.0–1.0
-    | { readonly type: "error", readonly reason: string }
+    | { readonly type: "error", readonly reason: string, readonly cause?: unknown }  // cause: the thrown value
     | { readonly type: "loaded" }
 ```
 
@@ -264,7 +274,7 @@ export class DefaultSampleLoader implements SampleLoader {
     }
 
     setProgress(progress: number): void { ... }
-    setError(reason: string): void { ... }
+    setError(reason: string, cause?: unknown): void { ... }
     invalidate(): void { /* reset to progress 0.0, clear data */ }
 }
 ```
@@ -344,8 +354,10 @@ The first caller creates a loader and kicks off `#load()`. Subsequent callers fo
         },
         () => this.#fetchFromApi(loader)
     ).catch(error => {
-        loader.setError(error instanceof Error ? error.message : String(error))
-    }).finally(() => this.#pending.removeByKey(uuid))
+        loader.setError(error instanceof Error ? error.message : String(error), error)
+    }).finally(() => this.#pending.opt(uuid).ifSome(entry => {
+        if (entry.promise === promise) {this.#pending.removeByKey(uuid)}
+    }))
     this.#pending.add({uuid, promise})
 }
 ```
@@ -526,6 +538,9 @@ To add a new *kind* of sample (say, a SoundFont preset), look at how `SoundfontL
 | `audio.wav` corrupt on load | `SampleStorage.load()` rejects; manager falls through to `#fetchFromApi()`. If API also fails, loader → `"error"`. |
 | `peaks.bin` corrupt on load | `#readOrRegeneratePeaks()` regenerates from the still-valid audio; UI sees a one-time peaks recompute. |
 | Same UUID imported twice in parallel | `#pending` dedup: the second request `then`s on the first's promise. One decode, one storage write. |
+| Fetched sample cannot be stored (storage full) | `#fetchFromApi()` logs a warning and the loader still goes to `"loaded"`: the sample plays from memory and is fetched again on the next load. |
+| A recording cannot be stored | The `RecordingWorklet` goes to `"error"` (with `cause`), `RecordAudio` deletes the take's `AudioFileBox` and its regions, and `UnstoredRecording.offerDownload` asks through `RuntimeNotifier.approve` whether to download the take as a WAV. |
+| A write only partly fits | `Workers.Opfs.write` rejects with a `QuotaExceededError` and puts the file's previous bytes back, instead of reporting success with a cut file. |
 | Sample referenced but missing from OPFS | Cache miss → storage rejects → API tried → if API rejects, loader → `"error"`. Processors that needed the data play silence (`optData.isEmpty()` branch). |
 | `register()` mismatched with `terminate()` | Refcount underflow is silently ignored (the `ref.isEmpty()` check). Refcount overflow keeps memory alive longer than expected. Audit balance in your code. |
 | Recording stops mid-clip | `PeaksWriter`'s `numFrames` is set to the final frame count. The unfilled tail of the auto-growing `Int32Array` is past `numPeaks`, never read. No truncation needed. |
@@ -533,7 +548,7 @@ To add a new *kind* of sample (say, a SoundFont preset), look at how `SoundfontL
 ## Critical invariants
 
 1. **UUID is the only identity.** Two `AudioFileBox`es with the same UUID *must* refer to the same audio. The whole pipeline assumes content-addressed equality.
-2. **Storage writes are atomic per-file, not per-sample.** If you crash between the three `Workers.Opfs.write` calls in `save()`, you'll have an inconsistent sample on disk. The corruption-recovery code handles this for peaks; for audio it surfaces as an error.
+2. **`meta.json` is written last.** `save()` writes `audio.wav`, `peaks.bin` and then `meta.json`, one after the other (`Storage.saveEntry`), so a readable `meta.json` means a whole entry; a save that fails removes the folder it began. A crash in between leaves a folder without `meta.json`.
 3. **Don't bypass `getOrCreate()`.** Creating a `DefaultSampleLoader` directly defeats dedup, ref counting, and cache hits.
 4. **The worklet only ever needs `data`.** Peaks are a main-thread (UI) concern. If you're adding a feature on the worklet that needs peaks, you have an architecture mistake.
 5. **`SampleLoaderState` is monotonic per load.** Once `loaded`, never goes back to `progress` (unless you explicitly `invalidate()`). Subscribers can rely on this.
