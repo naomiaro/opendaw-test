@@ -1257,6 +1257,11 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   order sets the summing order (`src/demos/export/CLAUDE.md`).
   Commit (or stash) work-in-progress BEFORE `git checkout main -- <file>` A/B swaps: the
   checkout silently clobbers uncommitted edits to that file.
+- An upstream issue, and the debug note behind it, looks at the SDK only (the user's rule, 2026-11-23): what the
+  published packages do and what an SDK app meets. The openDAW studio app (`packages/app/studio`: its services, panels,
+  dialogs, "what the studio does about it") stays out unless the user asks for it or the defect is the studio's own.
+  Say where an SDK app is exposed through the SDK's own code paths (`Project`, `EngineFacade`, `CaptureAudio`, …), and
+  name what was not run in SDK terms.
 - Report SDK bugs as GitHub issues on `andremichelle/openDAW` (tracker is actively worked —
   filed bugs have been fixed within one release cycle). Body: live repro page URL +
   the investigation's `debug/<date>-<topic>/note.md` link + measured signature. NO
