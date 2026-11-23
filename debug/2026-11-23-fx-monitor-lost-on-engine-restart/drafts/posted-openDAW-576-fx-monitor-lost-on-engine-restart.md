@@ -1,4 +1,4 @@
-**Not posted. Target:** a new issue on `andremichelle/openDAW`.
+**Posted 2026-11-23:** https://github.com/andremichelle/openDAW/issues/576 — the body below as filed.
 **Title:** After the engine worklet is replaced, a source monitored "With Effects" is silent until it is registered again
 
 ---

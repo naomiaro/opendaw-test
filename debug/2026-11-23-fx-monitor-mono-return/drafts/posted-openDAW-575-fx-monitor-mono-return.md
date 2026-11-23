@@ -1,4 +1,4 @@
-**Not posted. Target:** a new issue on `andremichelle/openDAW`.
+**Posted 2026-11-23:** https://github.com/andremichelle/openDAW/issues/575 — the body below as filed.
 **Title:** "With Effects" monitoring of a one-channel source returns the strip's left channel on both sides: panned right it is silent
 
 ---

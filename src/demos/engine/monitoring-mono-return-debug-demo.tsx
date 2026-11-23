@@ -10,7 +10,7 @@ import { removeMasterMaximizer } from "@/lib/audit/midiEffectChain";
 import "@radix-ui/themes/styles.css";
 import { Theme, Container, Heading, Text, Flex, Card, Badge, Button, Code, Table } from "@radix-ui/themes";
 
-// Repro for `debug/2026-11-23-fx-monitor-mono-return/note.md`.
+// Repro for `debug/2026-11-23-fx-monitor-mono-return/note.md` (openDAW#575).
 //
 // A 440 Hz oscillator is registered as an EFFECTS-monitoring source of a Tape unit through
 // `engine.registerMonitoringSource(uuid, node, numChannels, destination)`, the call the SDK's own
@@ -39,7 +39,7 @@ import { Theme, Container, Heading, Text, Flex, Card, Badge, Button, Code, Table
 //
 // Last, the engine worklet is replaced the way an app restarts a failed engine (`engine.releaseWorklet()`,
 // `project.startAudioWorklet()`) while the stereo source is monitored
-// (`debug/2026-11-23-fx-monitor-lost-on-engine-restart/note.md`). The return is read before, for
+// (`debug/2026-11-23-fx-monitor-lost-on-engine-restart/note.md`, openDAW#576). The return is read before, for
 // RESTART_WATCH_MS after the new engine has loaded, and after registering the source again on the new
 // worklet (the control: the new worklet monitors). These rows have their own outcome in `data-restart` on
 // the verdict: "lost" (quiet for the whole watch), "kept", "inconclusive", "failed" (the restart itself
@@ -330,7 +330,9 @@ function App() {
           <DebugLinkBar
             links={[
               { label: "debug/2026-11-23-fx-monitor-mono-return/note.md", href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-11-23-fx-monitor-mono-return/note.md", kind: "note" },
+              { label: "Upstream, open: openDAW#575 (mono return)", href: "https://github.com/andremichelle/openDAW/issues/575", kind: "note" },
               { label: "debug/2026-11-23-fx-monitor-lost-on-engine-restart/note.md", href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-11-23-fx-monitor-lost-on-engine-restart/note.md", kind: "note" },
+              { label: "Upstream, open: openDAW#576 (engine restart)", href: "https://github.com/andremichelle/openDAW/issues/576", kind: "note" },
             ]}
           />
           <MoisesLogo />
