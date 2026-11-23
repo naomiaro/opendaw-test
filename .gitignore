@@ -3,7 +3,7 @@
 /dist
 /dist-docs
 documentation/.vitepress/cache
-/node_modules/
+/node_modules
 
 .DS_Store
 .playwright-mcp/
