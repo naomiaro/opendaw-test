@@ -850,7 +850,7 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   stretch and no transpose included) within a frame on every burst; a stretched or transposed Signalsmith row is judged for a
   constant offset only (median within 256 frames), because a phase vocoder spreads a click across its 4096-frame block and a
   single burst's centre wanders by up to 18 ms. An unprocessed Signalsmith row late by whole render quanta is the per-region
-  delay the SDK once had, back. Rows and readers `src/lib/audit/stretchPlacement.ts`, note
+  delay the SDK once had, back; the two unprocessed Signalsmith rows are the only guard against a delay of one or two quanta. Rows and readers `src/lib/audit/stretchPlacement.ts`, note
   `debug/2026-11-23-stretch-grid-placement/note.md`.
 - After SDK upgrades, also re-run the standing combined MIDI + audio sweep:
   `midi-audio-combined-audit-debug-demo.html?scenario=all&bpm=120` — Chrome, a real click on

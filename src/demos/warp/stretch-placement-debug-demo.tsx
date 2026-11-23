@@ -93,9 +93,10 @@ async function build(localAudioBuffers: Map<string, AudioBuffer>, onStatus: (s: 
 }
 
 /**
- * The row's region in place of the previous one, one transaction. The file box is made with the first region and
- * found by uuid afterwards (it must always have a region pointing at it, so the old region goes and the new one
- * comes in the same transaction).
+ * The row's region in place of the previous one, one transaction. Deleting a region takes what only it pointed at
+ * along: its event collection, its play mode with the warp markers, and the file box (a box that must have a
+ * pointer goes with its last one). So the file box is rebuilt under the same uuid for every row, which is why the
+ * caller waits for the sample's loader again each time.
  */
 function place({ project, trackBox, fileUuid }: Built, row: PlacementRow, previous: Placed | null): Placed {
   const { boxGraph } = project;
@@ -104,7 +105,7 @@ function place({ project, trackBox, fileUuid }: Built, row: PlacementRow, previo
     .modify((): Placed => {
       if (previous !== null) {
         boxGraph.findBox(previous.region).unwrap("the previous region is gone").delete();
-        // delete() takes the play mode's warp markers along
+        // already gone with the region; kept in case a later SDK stops cascading to it
         if (previous.playMode !== null) boxGraph.findBox(previous.playMode).ifSome((box) => box.delete());
       }
       const fileBox = boxGraph.findBox<AudioFileBox>(fileUuid).unwrapOrElse(() =>

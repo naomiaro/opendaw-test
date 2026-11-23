@@ -48,7 +48,6 @@ describe("the warp map", () => {
     const slight = row("signalsmith-1.02");
     expect(regionPulses(slight)).toBe(7834);
     expect(effectiveStretch(slight)).toBeCloseTo(7834 / 7680, 12);
-    expect(effectiveStretch(slight)).not.toBe(1.02);
   });
 
   it("places a burst at the region's start plus its source frame times the stretch", () => {

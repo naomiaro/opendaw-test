@@ -1,6 +1,6 @@
 # Where a click lands in a stretched region: Signalsmith on the grid
 
-**Status:** measured, no defect. With no stretch and no transpose a Signalsmith region plays every sample on its frame. With either, there is no constant offset, and a short click is spread across the stretcher's block. A standing check after SDK upgrades (deterministic, no hardware, about five seconds per rate).
+**Status:** measured, no defect. With no stretch and no transpose a Signalsmith region plays every burst on its frame, with the source's width and level. With either, there is no constant offset, and a short click is spread across the stretcher's block. A standing check after SDK upgrades (deterministic, no hardware, about five seconds per rate).
 **SDK:** `@opendaw/studio-sdk@0.0.189`, with `0.0.184` as the positive control.
 **Page:** [`stretch-placement-debug-demo.html`](../../stretch-placement-debug-demo.html) `[?rate=48000|44100][&row=all|<id>]`.
 **Code:** rows and readers `src/lib/audit/stretchPlacement.ts` (Node tests beside it), page `src/demos/warp/stretch-placement-debug-demo.tsx`.
@@ -72,14 +72,17 @@ Chrome, the Playwright browser, 2026-11-23. Twelve rows, **12 `as-expected`** at
 
 ## Reading
 
-- **No stretch, no transpose: on the frame.** A Signalsmith region with an identity warp map reproduces the source's
-  burst exactly, same centroid, same width, same level, at a region start of 0 and at one inside a quantum.
+- **No stretch, no transpose: on the frame.** A Signalsmith region with an identity warp map gives every burst the
+  source's centroid (0 frames off), width (13.58 frames) and level (0.8), at a region start of 0 and at one inside a
+  quantum. The page reads those three figures; it does not subtract the render from the source sample by sample.
 - **Stretched or transposed: no constant offset.** The median centroid stays within 4 ms of the warp map on every row
   at both rates (the largest: +3.94 ms at 48 kHz for 0.75, +3.84 ms at 44.1 kHz for −3 semitones), and its sign changes
   from row to row.
-- **A click is smeared, and its centre moves with where it falls.** One burst's centroid sits up to 18 ms from the map
-  and its energy is spread over up to 21 ms RMS where the source's is 0.28 ms; the peak drops to between 0.24 and 0.61 of
-  0.8. Eight bursts 24 000 frames apart fall at eight different places in the 1024-frame hop, and each reads differently.
+- **A click is smeared, and its centre moves with where it falls.** One burst's centroid sits up to 18 ms from the map.
+  The tables' spread and level are each row's median over its eight bursts: up to 21 ms RMS where the source's is
+  0.28 ms, and 0.24 to 0.61 where the source peaks at 0.8. Single bursts go further: the widest reads 32 ms RMS
+  (29 ms at 44.1 kHz) and the quietest peaks at 0.11 (0.09). Eight bursts 24 000 source frames apart fall at eight
+  different places in the 1024-frame hop, and each reads differently.
   This is what a phase vocoder with an 85 ms block does to a 2 ms event, and the original's block is longer. It is not
   compared against the C++ original here: no claim that the port smears more or less than it.
 - **The two rates differ in size, not in kind.** At 44.1 kHz the stretch rows are tighter (2% longer: range −0.03 …
@@ -101,16 +104,18 @@ region and per load:
 | 3 | +384 (3 quanta, 8.00 ms) | +512 (4 quanta, 10.67 ms) |
 
 The processed rows carried the same delay on top of their smear (2% longer: median +895, −0.58 and +767 frames on the
-three loads, where 0.0.189 reads −0.58). The page read `investigate` on 8, 6 and 9 of the 9 Signalsmith rows; a region
-that drew slot 0 reads as on 0.0.189. So the page sees a delay of one render quantum, and 0.0.189 has none.
+three loads, where 0.0.189 reads −0.58). The page read `investigate` on 8, 6 and 9 of the 9 Signalsmith rows. So the
+two **unprocessed** Signalsmith rows, held to one frame, see a delay of a single render quantum, and 0.0.189 has none
+on them. A processed row is allowed a median of 256 frames, so it reads `as-expected` with a delay of no quanta
+(a region that drew slot 0) and can with one or two: the processed rows are not the guard against that delay.
 
 ## What this settles from the upgrade
 
 The upgrade's whole-song comparison found the 0.0.189 Signalsmith render's envelope 11 to 12 ms later than the
 varispeed render of the same song. This page shows no such offset on clicks: with a 2% stretch, the size of that song's
 warp, the median is within 0.6 ms. The song figure compares two different processes on music (varispeed changes pitch
-and keeps transients sharp, the stretcher softens them), so it measures the difference in how an onset's energy is
-laid out, not a delay.
+and keeps transients sharp, the stretcher softens them), so it most likely reflects how each lays out an onset's
+energy and not a delay. Nothing here measured the song figure's cause.
 
 ## `audio-verify` after the change
 

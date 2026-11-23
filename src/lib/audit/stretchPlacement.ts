@@ -32,8 +32,8 @@ export const EXACT_FRAMES = 1;
 export const SIGNALSMITH_BLOCK_FRAMES = 4096;
 export const SIGNALSMITH_HOP_FRAMES = 1024;
 /** A processed row has no constant offset when the median burst sits within a quarter hop of the warp map
- *  (a whole render quantum of delay per slot, the uuid stagger this page was built after, moved every burst
- *  by up to 896 frames). */
+ *  (the uuid stagger this page was built after delayed every burst by 0 to 7 render quanta, up to 896 frames).
+ *  A processed row therefore cannot see a delay of one or two quanta; the unprocessed rows, held to a frame, can. */
 export const CENTRED_FRAMES = SIGNALSMITH_HOP_FRAMES / 4;
 /** No single burst's centroid may leave the block it was spread across. */
 export const SMEAR_LIMIT_FRAMES = SIGNALSMITH_BLOCK_FRAMES / 2;
@@ -175,7 +175,9 @@ const round = (value: number, digits = 2): number => Number(value.toFixed(digits
 /** Whether the row's play mode changes the audio: Signalsmith with a stretch or a transpose. Varispeed resamples,
  *  which keeps a burst a burst. */
 export function isProcessed(row: PlacementRow): boolean {
-  return row.mode === "signalsmith" && (effectiveStretch(row) !== 1 || row.transpose !== 0);
+  // whole pulses on both sides, so the comparison is exact at any tempo
+  const unstretched = Math.round(PPQN.secondsToPulses(SOURCE_SECONDS, PLACEMENT_BPM));
+  return row.mode === "signalsmith" && (regionPulses(row) !== unstretched || row.transpose !== 0);
 }
 
 /** How far the median burst, and any one burst, may sit from the warp map. */

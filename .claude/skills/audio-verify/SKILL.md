@@ -143,7 +143,8 @@ tracker on offbeats, the artifact described above). The envelope lag untranspose
 ([60,80], corr 0.70) and **+1 ms** ([120,140], corr 0.69). **Do not assert the beat median on the transposed
 render; assert the envelope lag (0 ± 2 ms)**, and for placement use the click page,
 `stretch-placement-debug-demo.html` (register `debug/2026-11-23-stretch-grid-placement/note.md`), which reads
-Signalsmith's placement to the frame. Two Signalsmith renders of one scenario are now byte-identical.
+Signalsmith's placement to the frame. Two Signalsmith renders of one scenario are byte-identical (same WAV
+SHA-256 on two loads, in the SDK changelog that removed the delay).
 
 **Pitch (relative check):** `harmonic_analysis` pitch-class distributions on
 [120, 140] s; Pearson-correlate each against raw's. Require
