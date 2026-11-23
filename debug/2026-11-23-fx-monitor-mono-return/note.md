@@ -5,7 +5,7 @@
 **Issue:** [openDAW#575](https://github.com/andremichelle/openDAW/issues/575); the body as filed is
 [`drafts/posted-openDAW-575-fx-monitor-mono-return.md`](./drafts/posted-openDAW-575-fx-monitor-mono-return.md).
 
-**Repro page:** `monitoring-mono-return-debug-demo.html` (unlisted; a real click on Run, about twenty seconds, one run per
+**Repro page:** `monitoring-mono-return-debug-demo.html` (unlisted; a real click on Run, about fifty seconds, one run per
 load; the monitored tone is never heard, the one thing played is a 1.6 s metronome check). Source `src/demos/engine/monitoring-mono-return-debug-demo.tsx`.
 
 **Verified against:** SDK 0.0.189, source read at the release commit `d143a4f5`. Upstream main on 2026-11-23
@@ -39,9 +39,34 @@ the last, on the page as merged:
 | mono | 0 | 0.1767 | 0.1767 |
 | mono | +1 | 0.0000 | 0.0000 |
 
-The page calls the engine's method directly, with an oscillator in place of a microphone. It does not go
-through `CaptureAudio` / `BrowserMonitor`; that those register a one-channel input with `numChannels` 1 is
-read from the code (below), not run. No stereo effect was put on the unit: the second and third bullets above
+The rows above call the engine's method directly, with an oscillator in place of a microphone.
+
+### Through `CaptureAudio` (added the same day)
+
+A second Tape's capture in "effects" monitoring, its input a one-channel stream carrying the tone (a
+`MediaStreamAudioDestinationNode` handed over by a patched `getUserMedia`). The figures are gains: the level
+where the return reaches the monitor (`capture.monitorGainNode`) over the capture's input level
+(`capture.outputNode`) at the same moment, the monitor pan at 0. The page writes `requestChannels` 2 itself;
+it is the box's default. `?input=mic` runs the same rows on the real
+default microphone; that has not been run.
+
+| `requestChannels` | Unit pan | Left | Right |
+|---|---|---|---|
+| 2 (the default) | 0 | ×1.00 | ×1.00 |
+| 2 (the default) | −1 | ×1.00 | ×0.00 |
+| 2 (the default) | +1 | ×0.00 | ×1.00 |
+| 1 | 0 | ×1.00 | ×1.00 |
+| 1 | −1 | ×1.00 | ×1.00 |
+| 1 | +1 | ×0.00 | ×0.00 |
+
+**So the defect needs a capture that registers one channel.** At the default `requestChannels` (2) a
+one-channel stream is still registered as two channels (`BrowserAudioInput.ts:390` takes the count from the
+request before the stream's own) and the return follows the pan. With `requestChannels = 1` it shows as filed;
+on a scratch probe that was not kept, the same with a two-channel stream. Not run: a real microphone, and a
+channel mapping with one side only (by the same line it registers one channel). The page's outcomes are
+`data-capture-default` (`follows`) and `data-capture-mono` (`left-only`; `follows` is the fix). A reworked
+issue body saying this waits in
+[`drafts/TO-REVIEW-openDAW-575-reworked-body.md`](./drafts/TO-REVIEW-openDAW-575-reworked-body.md). No stereo effect was put on the unit: the second and third bullets above
 follow from the left channel alone being returned, and only the pan was measured.
 
 ## Mechanism (read from the source)
@@ -75,6 +100,9 @@ That row has no positive control for a leak: a build with #528 back was not run.
 [Monitoring is silent after the engine worklet is replaced](../2026-11-23-fx-monitor-lost-on-engine-restart/note.md)
 (the page's last three rows). That note also holds a check that read clean: a second source registering does
 not disturb a monitored one.
+
+[The monitor's own pan doubles the level at hard left and right](../2026-11-23-monitor-pan-doubles-at-hard-pan/note.md)
+(the page's six "(measurement)" rows): measured, to be filed, no draft yet.
 
 ## After a fix
 
