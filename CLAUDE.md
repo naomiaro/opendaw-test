@@ -124,7 +124,7 @@ project.engine.countInBeatsRemaining.catchupAndSubscribe(obs => {
 `CaptureAudio.measureRoundTrip()` plays three noise bursts, finds them in the input and, on a
 steady result, saves the delay in `localStorage["opendaw:round-trips"]`, one entry per output
 device name + input label + sample rate (`roundTrip`, `forgetRoundTrip()`,
-`subscribeRoundTrip()`; `project.captureDevices.audio(uuid)` returns the `Option<CaptureAudio>`).
+`subscribeRoundTrip()`; `measureRoundTrip({store: false})` + `storeRoundTrip(result)` to store on acceptance; `project.captureDevices.audio(uuid)` returns the `Option<CaptureAudio>`).
 From then on every Tape on that output device name, input label and sample rate whose own
 `captureBox.inputLatency` is Inherit (−2, the default) records
 with that figure as the output latency and 0 as the input latency — the engine preference
@@ -232,7 +232,7 @@ API: `.isEmpty()`, `.nonEmpty()`, `.unwrap()`, `.unwrapOrNull()`, `.unwrapOrUnde
 - AudioBuffer → AudioData: use `AudioData.create(sampleRate, length, channels)` + manual
   channel copy. `OpenSampleAPI.fromAudioBuffer()` does not exist.
 - Progress callback type: `Progress.Handler` (alias for `Procedure<unitValue>`)
-- SampleLoaderState error field: `state.reason` (NOT `state.error`)
+- SampleLoaderState error field: `state.reason` (NOT `state.error`); `state.cause` (optional) is the thrown value
 - SampleLoader has `subscribe()` only — NO `catchupAndSubscribe()`. Always read
   `loader.state` synchronously first and handle terminal states ("loaded"/"error")
   before subscribing; `subscribe()` invokes the callback synchronously for terminal

@@ -162,7 +162,9 @@ any of those. A node a page tapped earlier can therefore be replaced without a r
 
 ### Stored Round Trip Overrides the Reported Latencies
 `capture.measureRoundTrip()` stores a steady round trip per output device, input label and
-sample rate in `localStorage["opendaw:round-trips"]`; while one exists for a Tape's devices
+sample rate in `localStorage["opendaw:round-trips"]` (`measureRoundTrip({store: false})` measures only,
+`storeRoundTrip(result)` stores the last measured `"ok"` result; a silent input reads `"no-signal"`,
+one measurement at a time); while one exists for a Tape's devices
 and the Tape's own `captureBox.inputLatency` is Inherit, its takes use that figure as the
 output latency and 0 as the input latency (the engine preference is not read). The recording
 audits leave their Tapes on Inherit, so the recording-alignment and hidden-page pages call
@@ -190,11 +192,13 @@ directly — short recordings may be `"loaded"` before `subscribe()` is called.
 `loader.state` is typed as `SampleLoaderState` with
 `.type: "idle" | "record" | "progress" | "error" | "loaded"`.
 Finalization barriers must count `"error"` as terminal AND keep a safety timeout:
-`RecordingWorklet` (the loader during recording) emits only `"loaded"` — a
-finalization failure produces NO terminal state (the loader stays in `"record"`),
-so the timeout is the only safety net on that path. `"error"` fires on
-`DefaultSampleLoader` paths (post-reload loads, decode failures) and must still
-be handled there.
+`RecordingWorklet` (the loader during recording) goes to `"error"` (`reason`, `cause`)
+when the take cannot be stored. `RecordAudio` then deletes the take's `AudioFileBox`
+with its regions and asks through `RuntimeNotifier.approve` whether to download the
+take as a WAV (`UnstoredRecording.offerDownload`), so a barrier that saw `"error"` must
+not expect the region to exist. `"error"` also fires on `DefaultSampleLoader` paths
+(post-reload loads, decode failures). The timeout stays for a finalization that
+never settles.
 Inside the subscribe callback, a one-shot `sub.terminate()` call will hit the
 `const sub` binding in its TDZ if the callback fires synchronously; use the
 pre-check pattern (handle terminal state before subscribing) to avoid this.

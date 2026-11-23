@@ -1040,12 +1040,19 @@ project.editing.modify(() => {
 
 ### The SDK's Own Group Buses
 
-Everything above builds a group by hand: a plain `AudioUnitType.Bus` and re-routed outputs. That routes audio exactly
-like a group, and it is all a submix needs. The SDK also has a group model of its own, which the openDAW studio shows
-as nested, collapsible tracks. A group there is an ordinary bus whose `AudioUnitBox` has `isGroup` set to `true`
-(`groupCollapsed` stores whether it is folded). Membership is not stored anywhere else: a unit belongs to a group
-when its primary `output` points at the bus of a unit whose `isGroup` is `true`. So a hand-built bus like the
-ones above is NOT a group to the SDK, however it routes.
+Everything above builds a group by hand: a plain `AudioUnitType.Bus` and re-routed outputs. To the SDK that IS a
+group: every unit of type `AudioUnitType.Bus` is a group bus (`AudioUnitGroups.isGroup(unitBox)`), and the openDAW
+studio shows it with its members nested under it. Membership is not stored anywhere: a unit belongs to a group when
+its primary `output` points at the bus of a `Bus` unit. An `Aux` unit is not a group, and an aux send makes no
+member. The `isGroup` and `groupCollapsed` fields still on `AudioUnitBox` are deprecated and no longer read.
+
+Two consequences for a hand-built bus:
+
+- **Deleting it through the API deletes its members.** `project.api.deleteAudioUnit(busUnitBox)` deletes the bus and
+  every unit routed into it, with their tracks and regions. To remove only the bus, route the members elsewhere
+  first, or call `project.grouping.ungroup(busUnitBox)`, which moves them up a level and then deletes the bus. A bare
+  `busUnitBox.delete()` does not go through the group code.
+- **A bus unit hosts no MIDI effect chain:** `midiEffects` and `midiEffectsField` on its adapter are `None`.
 
 `project.grouping` (`AudioUnitGrouping` from `@opendaw/studio-core`) edits groups. Call it inside a transaction:
 
@@ -1064,9 +1071,17 @@ nested in it), `duplicate(units)`, and the checks `canMove` / `canRoute` / `canD
 `project.api.deleteAudioUnit(group)` also deletes the whole subtree.
 
 Reading the tree: `AudioUnitGroups` (from `@opendaw/studio-adapters`) has `parent(unit)` → `Option<AudioUnitBox>`,
-`children(rootBox, group?)`, `ancestors`, `depth`, `hidden` (inside a folded group), `bus(group)`, `subtree`, and
-`ordered(rootBox)` for every unit in display order. `project.audioUnitLayout.value` is an observable
+`children(rootBox, group?)`, `ancestors`, `depth`, `hidden(unit, isCollapsed)` (inside a folded group), `bus(group)`,
+`subtree`, and `ordered(rootBox)` for every unit in display order. `project.audioUnitLayout.value` is an observable
 `AudioUnitLayout` of rows (`depth`, `collapsed`, `visibleIndex`, …) for drawing the tree.
+
+Whether a group is folded is a per-user view state, not a field of the unit: `project.userEditingManager.viewStates`
+(`ViewStates` from `@opendaw/studio-adapters`) gives `groupCollapsed(unitBox)`, `automationCollapsed(unitBox)` and
+`height(unitBox | trackBox)`, each a `MutableObservableValue`, stored in `ViewStateBox` entries of that user's
+`UserInterfaceBox`. In a shared session one user folding or resizing a track leaves the others' view alone. That is
+why `hidden` and the `AudioUnitLayout` constructor take the `isCollapsed` predicate. A project saved with the old
+fields (`groupCollapsed`, `userInterface.automationCollapsed`, `userInterface.height`, `TrackBox.height`) has them
+moved into the first user's view states when it loads.
 
 New units can be placed inside a group directly: `createInstrument(factory, { destination })` routes the new unit to
 the given `AudioBusBox` (also `AudioBusFactory.create(…, destination)` and `PresetDecoder.decode(…, destination)`),
