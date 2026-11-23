@@ -1,6 +1,6 @@
 # A recording that cannot be stored: the download offer loops when no notifier is installed
 
-**Status:** measured in Node and in the Playwright browser; **draft for upstream waiting for a read** ([`drafts/TO-REVIEW-openDAW-unstored-recording-offer-without-notifier.md`](./drafts/TO-REVIEW-openDAW-unstored-recording-offer-without-notifier.md)). Not run in a normal Chrome window.
+**Status:** the repeated request measured in Node and in the Playwright browser, the missing exit read from the code; **draft for upstream waiting for a read** ([`drafts/TO-REVIEW-openDAW-unstored-recording-offer-without-notifier.md`](./drafts/TO-REVIEW-openDAW-unstored-recording-offer-without-notifier.md)). Not run in a normal Chrome window.
 **SDK:** `@opendaw/studio-sdk@0.0.189` (`studio-core` 0.3.5, `lib-std` 0.0.89, `lib-dom` 0.0.96). The code arrived in 0.0.189 (`c882bdccc`).
 **Repro:** `src/lib/unstoredRecordingPrompt.test.ts` (four tests, jsdom, no browser).
 
@@ -37,15 +37,20 @@ demos install none** (no `RuntimeNotifier` in `src/` before this note's test).
 **Node** (`src/lib/unstoredRecordingPrompt.test.ts`, the installed `UnstoredRecording.js`, `showSaveFilePicker` stubbed
 to refuse 50 times and then never answer, which parks the loop):
 
-| Picker refuses with | Notifier | Picker calls | Offer settled |
+| Picker refuses with | Notifier | Picker calls | How it ended |
 |---|---|---|---|
-| `AbortError` (the user cancels) | none | 51 (all 50 refusals and the parked one) | no |
-| `SecurityError` (an error that is neither a cancel nor `NotAllowedError`) | none | 51 | no |
-| `AbortError` | installed, answers yes then no | 1 | yes, `false` |
+| `AbortError` (the user cancels) | none | 51: each of the 50 refusals was followed by another request | parked by the stub on call 51 |
+| `SecurityError` (an error that is neither a cancel nor `NotAllowedError`) | none | 51, the same | parked by the stub on call 51 |
+| `AbortError` | installed, answers yes then no | 1 | by itself: the offer resolved `false` |
+
+The stub stops the first two rows, so they do not show that the loop is endless; that is read from the loop's two
+exits (a save that resolves, an answer of no), neither of which can happen there. `SecurityError` was picked as an
+error `Files.save` treats as "other"; which error a browser gives a picker call without a user gesture was not checked.
+A `NotAllowedError` takes `Files.save` to its anchor download, which resolves and ends the offer.
 
 **Browser** (Playwright's Chrome, a page of the dev server, `UnstoredRecording.offerDownload` called directly with one
 second of silence, `window.showSaveFilePicker` wrapped to count and to park after 200 calls): **201 calls in under
-3 s**, the offer still pending, every refusal `AbortError: … Intercepted by Page.setInterceptFileChooserDialog`.
+3 s**, stopped by the wrapper's park, every refusal `AbortError: … Intercepted by Page.setInterceptFileChooserDialog`.
 Playwright aborts a file picker by itself, so this run stands in for a user who cancels every time; no picker was
 drawn.
 

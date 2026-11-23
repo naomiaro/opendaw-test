@@ -6,13 +6,18 @@
  * with nothing in between and no way out. This repo installs no notifier.
  *
  * FLIPS WHEN FIXED: these tests assert the loop as measured. When the SDK ends the offer without a notifier (or after
- * a cancelled picker), the "keeps asking" tests fail: invert them to pin the fixed behaviour and note the release in
+ * a cancelled picker), the "keeps asking" tests fail, and so does "opens the save picker" if the fix is to ask nothing
+ * without a notifier: invert them to pin the fixed behaviour and note the release in
  * debug/2026-11-23-unstored-recording-download-loop/note.md.
+ *
+ * What the count shows: every one of the stub's 50 refusals was answered by another request. The stub parks the 51st
+ * call, so that the offer has not settled afterwards is the stub's doing; that nothing in the loop would end it is
+ * read from the SDK's code, not measured.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { RuntimeNotifier, type RuntimeNotification } from "@opendaw/lib-std";
 import { AudioData } from "@opendaw/lib-dsp";
-// by relative path: the package's exports map does not expose the module, and the package index boots workers
+// by relative path, as `midiEffectChain.test.ts` does: the one module, without loading the whole package index
 import { UnstoredRecording } from "../../node_modules/@opendaw/studio-core/dist/UnstoredRecording.js";
 
 type Picker = (options?: unknown) => Promise<unknown>;
@@ -50,7 +55,7 @@ describe("the download offer for a recording that could not be stored, with no n
     let settled = false;
     void UnstoredRecording.offerDownload(take(), "Recording", new Error("storage full")).then(() => { settled = true; }, () => { settled = true; });
     await settle(200);
-    // the 51st call is the one the stub parks
+    // 50 refusals, each followed by another request; the 51st is the one the stub parks, so `settled` only shows the park
     expect(picker.calls()).toBe(51);
     expect(settled).toBe(false);
   });
