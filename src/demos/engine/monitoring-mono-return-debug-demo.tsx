@@ -32,6 +32,12 @@ import { Theme, Container, Heading, Text, Flex, Card, Badge, Button, Code, Table
 // output only. The engine's MAIN output is tapped (the engine keeps its connection to the speakers) and its
 // peak is read at every pan position; it must stay under MAIN_SILENT. Its positive control is the last
 // row: the metronome playing with nothing monitored must show on the same tap.
+//
+// Last, the engine worklet is replaced the way an app restarts a failed engine (`engine.releaseWorklet()`,
+// `project.startAudioWorklet()`) while the stereo source is monitored
+// (`debug/2026-11-23-fx-monitor-lost-on-engine-restart/note.md`). The return is read before, after, and
+// after registering the source again on the new worklet (the control: the new worklet monitors). These rows
+// have their own outcome in `data-restart` on the verdict: "lost", "kept" or "inconclusive".
 const PANS = [-1, 0, 1] as const;
 const SETTLE_MS = 600;
 const SILENT = 0.02; // a channel under this fraction of the reference level counts as silent
@@ -42,7 +48,8 @@ const MAIN_SILENT = 1e-4;
 type Levels = { left: number; right: number };
 type Row = { step: string; expected: string; got: string; ok: boolean | null };
 type Verdict = "BUG PRESENT" | "FIXED" | "INCONCLUSIVE" | "HUNG" | "THREW";
-type RunState = { kind: "idle" } | { kind: "running"; stage: string; rows: Row[] } | { kind: "done"; verdict: Verdict; rows: Row[]; message: string };
+type Restart = "lost" | "kept" | "inconclusive" | "not-run";
+type RunState = { kind: "idle" } | { kind: "running"; stage: string; rows: Row[] } | { kind: "done"; verdict: Verdict; rows: Row[]; message: string; restart: Restart };
 
 class Hung extends Error { constructor(readonly stage: string) { super(`hung in ${stage}`); } }
 const race = <T,>(stage: string, promise: Promise<T>, ms: number): Promise<T> =>
@@ -66,9 +73,10 @@ const peakOf = (analyser: AnalyserNode, buffer: Float32Array<ArrayBuffer>): numb
 const show = ({ left, right }: Levels) => `L ${left.toFixed(4)}, R ${right.toFixed(4)}`;
 const panLabel = (pan: number) => (pan < 0 ? "pan −1 (left)" : pan > 0 ? "pan +1 (right)" : "pan 0 (centre)");
 
-async function run(onStage: (stage: string, rows: Row[]) => void): Promise<{ verdict: Verdict; rows: Row[]; message: string }> {
+async function run(onStage: (stage: string, rows: Row[]) => void): Promise<{ verdict: Verdict; rows: Row[]; message: string; restart: Restart }> {
   const rows: Row[] = [];
   let stage = "init";
+  let restart: Restart = "not-run";
   const enter = (name: string) => { stage = name; onStage(stage, [...rows]); };
   const row = (r: Row) => { rows.push(r); onStage(stage, [...rows]); console.log(`[monitor-mono-return] ${r.step}: ${r.got}`); };
   try {
@@ -167,6 +175,31 @@ async function run(onStage: (stage: string, rows: Row[]) => void): Promise<{ ver
     const mainNote = !tapWorks ? "; the main-output tap read no metronome, so the main-output rows prove nothing"
       : leak.length > 0 ? `; the MAIN output carried the monitored signal (${leak.join(", ")}): openDAW#528 is back` : "; the main output stayed silent while monitoring";
 
+    enter("engine restart");
+    project.editing.modify(() => audioUnitBox.panning.setValue(0));
+    project.engine.registerMonitoringSource(uuid, sources[2], 2, destination);
+    await sleep(SETTLE_MS);
+    const beforeRestart = read();
+    project.engine.releaseWorklet();
+    const replacement = project.startAudioWorklet();
+    await race("the new worklet's isReady", replacement.isReady(), 30_000);
+    await sleep(1500);
+    const afterRestart = read();
+    project.engine.unregisterMonitoringSource(uuid);
+    project.engine.registerMonitoringSource(uuid, sources[2], 2, destination);
+    await sleep(SETTLE_MS);
+    const registeredAgain = read();
+    project.engine.unregisterMonitoringSource(uuid);
+    const carries = (l: Levels) => near(l.left) && near(l.right);
+    const quiet = (l: Levels) => silent(l.left) && silent(l.right);
+    const restartControls = carries(beforeRestart) && carries(registeredAgain);
+    restart = !restartControls ? "inconclusive" : quiet(afterRestart) ? "lost" : carries(afterRestart) ? "kept" : "inconclusive";
+    row({ step: "stereo source monitored, before the engine restart (control)", expected: "signal on both sides", got: show(beforeRestart), ok: carries(beforeRestart) });
+    row({ step: "the same source after releaseWorklet + startAudioWorklet", expected: "signal on both sides", got: show(afterRestart), ok: restartControls ? carries(afterRestart) : null });
+    row({ step: "registered again on the new worklet (control)", expected: "signal on both sides", got: show(registeredAgain), ok: carries(registeredAgain) });
+    const restartNote = restart === "lost" ? "; after an engine restart the monitored source returns silence until it is registered again"
+      : restart === "kept" ? "; the monitored source survives an engine restart" : "; the engine-restart rows are inconclusive";
+
     const right = mono[1];
     const verdict: Verdict = !controlsOk ? "INCONCLUSIVE"
       : silent(right.left) && silent(right.right) ? "BUG PRESENT"
@@ -176,15 +209,15 @@ async function run(onStage: (stage: string, rows: Row[]) => void): Promise<{ ver
       : verdict === "FIXED" ? `the mono source's return follows the pan like the stereo source's (pan +1: ${show(right)})`
       : !controlsOk ? `the stereo control does not read as a pan (−1: ${show(stereo[-1])}; 0: ${show(stereo[0])}; +1: ${show(stereo[1])})`
       : `mono rows read neither way (−1: ${show(mono[-1])}; 0: ${show(mono[0])}; +1: ${show(right)})`;
-    return { verdict, rows, message: message + mainNote };
+    return { verdict, rows, message: message + mainNote + restartNote, restart };
   } catch (error) {
     if (error instanceof Hung) {
       rows.push({ step: stage, expected: "", got: `deadline passed in ${error.stage}`, ok: false });
-      return { verdict: "HUNG", rows, message: `deadline passed in ${error.stage}` };
+      return { verdict: "HUNG", rows, message: `deadline passed in ${error.stage}`, restart };
     }
     rows.push({ step: stage, expected: "", got: String(error), ok: false });
     console.error(`[monitor-mono-return] ${stage}: ${String(error)}`);
-    return { verdict: "THREW", rows, message: `${stage}: ${String(error)}` };
+    return { verdict: "THREW", rows, message: `${stage}: ${String(error)}`, restart };
   }
 }
 
@@ -193,7 +226,7 @@ function App() {
   const start = useCallback(() => {
     setState({ kind: "running", stage: "init", rows: [] });
     run((stage, rows) => setState({ kind: "running", stage, rows }))
-      .then((done) => setState({ kind: "done", ...done }), (error) => setState({ kind: "done", verdict: "THREW", rows: [], message: String(error) }));
+      .then((done) => setState({ kind: "done", ...done }), (error) => setState({ kind: "done", verdict: "THREW", rows: [], message: String(error), restart: "not-run" }));
   }, []);
   const rows = state.kind === "idle" ? [] : state.rows;
   return (
@@ -213,7 +246,7 @@ function App() {
             <Button id="run" size="3" onClick={start} disabled={state.kind !== "idle"}>Run</Button>
             {state.kind === "running" && <Badge color="amber">running: {state.stage}</Badge>}
             {state.kind === "done" && (
-              <Badge id="verdict" data-verdict={state.verdict} color={state.verdict === "FIXED" ? "green" : state.verdict === "BUG PRESENT" ? "red" : "gray"} size="2">
+              <Badge id="verdict" data-verdict={state.verdict} data-restart={state.restart} color={state.verdict === "FIXED" ? "green" : state.verdict === "BUG PRESENT" ? "red" : "gray"} size="2">
                 {state.verdict} — {state.message}
               </Badge>
             )}
@@ -245,6 +278,7 @@ function App() {
           <DebugLinkBar
             links={[
               { label: "debug/2026-11-23-fx-monitor-mono-return/note.md", href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-11-23-fx-monitor-mono-return/note.md", kind: "note" },
+              { label: "debug/2026-11-23-fx-monitor-lost-on-engine-restart/note.md", href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-11-23-fx-monitor-lost-on-engine-restart/note.md", kind: "note" },
             ]}
           />
           <MoisesLogo />

@@ -930,11 +930,13 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   `recording-alignment-audit-debug-demo.html?scenario=multitrack-start&bpm=120&rate=48000&graphChurn=on`
   runs (expect every row at 0 / 0 quanta), then
   `node scripts/audit/recording-alignment/one-quantum-events.ts` for the per-release tally.
-- After SDK upgrades, also run `monitoring-mono-return-debug-demo.html` once (real click, silent, about ten
+- After SDK upgrades, also run `monitoring-mono-return-debug-demo.html` once (real click, silent, about fifteen
   seconds, one run per load). It registers a tone as an effects-monitoring source and reads the monitor return per
   pan. Expect BUG PRESENT while a one-channel source returns the strip's left channel on both sides (measured on
   0.0.189, `debug/2026-11-23-fx-monitor-mono-return/note.md`); FIXED is the fix landing. Its two main-output rows
   guard openDAW#528 and must read ok: a FAIL there is the monitored unit back in the main mix.
+  Its last three rows replace the engine worklet under a monitored source: `data-restart` on `#verdict` reads `lost`
+  while a new worklet's router starts empty (`debug/2026-11-23-fx-monitor-lost-on-engine-restart/note.md`); `kept` is the fix.
 - A recording-alignment cell that reads `investigate` on a TAIL deficit is a stop-path
   finding, not placement: the stop is stamped by the engine and netted, so `tailMissingMs`
   reads 0 on every row and a deficit is NEW (the closed one is openDAW#479). Judge placement

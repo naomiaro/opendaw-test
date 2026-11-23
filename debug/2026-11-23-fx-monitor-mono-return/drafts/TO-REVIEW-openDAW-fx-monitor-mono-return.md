@@ -31,7 +31,7 @@ The page calls the engine method directly with an oscillator. I did not run it t
 `BrowserMonitor.ts:136`. I measured the pan only. By the same reading a stereo effect on the unit would be
 heard as its left half; I did not run that.
 
-- Page (a click on Run, silent, about ten seconds): https://opendaw-test.pages.dev/monitoring-mono-return-debug-demo
+- Page (a click on Run, silent, about fifteen seconds; the first six rows): https://opendaw-test.pages.dev/monitoring-mono-return-debug-demo
 - Note: https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-11-23-fx-monitor-mono-return/note.md
 
 **Where the right channel goes, as I read it**

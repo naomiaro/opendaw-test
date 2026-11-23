@@ -3,7 +3,7 @@
 **Status: measured on `@opendaw/studio-sdk@0.0.189`, 2026-11-23. Not filed yet:** the issue draft is
 [`drafts/TO-REVIEW-openDAW-fx-monitor-mono-return.md`](./drafts/TO-REVIEW-openDAW-fx-monitor-mono-return.md).
 
-**Repro page:** `monitoring-mono-return-debug-demo.html` (unlisted; a real click on Run, silent, about ten
+**Repro page:** `monitoring-mono-return-debug-demo.html` (unlisted; a real click on Run, silent, about fifteen
 seconds, one run per load). Source `src/demos/engine/monitoring-mono-return-debug-demo.tsx`.
 
 **Verified against:** SDK 0.0.189, source read at the release commit `d143a4f5`. Upstream main on 2026-11-23
@@ -65,6 +65,12 @@ per-track merger as recombining L/R.
 into a demo page; no page was kept. This page taps the engine's main output while each source is monitored
 and expects silence there (peak 0.00000 on both runs), with the metronome as the tap's control (peak 0.50).
 That row has no positive control for a leak: a build with #528 back was not run.
+
+## Found with the same harness
+
+[Monitoring is silent after the engine worklet is replaced](../2026-11-23-fx-monitor-lost-on-engine-restart/note.md)
+(the page's last three rows). That note also holds a check that read clean: a second source registering does
+not disturb a monitored one.
 
 ## After a fix
 
