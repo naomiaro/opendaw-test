@@ -930,7 +930,7 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   `recording-alignment-audit-debug-demo.html?scenario=multitrack-start&bpm=120&rate=48000&graphChurn=on`
   runs (expect every row at 0 / 0 quanta), then
   `node scripts/audit/recording-alignment/one-quantum-events.ts` for the per-release tally.
-- After SDK upgrades, also run `monitoring-mono-return-debug-demo.html` once (real click, about thirty-five seconds,
+- After SDK upgrades, also run `monitoring-mono-return-debug-demo.html` once (real click, about fifty seconds,
   one run per load; the tone is not played, a metronome clicks for 1.6 s). It registers a tone as an effects-monitoring source and reads the monitor return per
   pan. Expect BUG PRESENT (the whole signature: silent at pan +1, the signal on both sides at −1 and 0; a mono return
   silent at every pan reads INCONCLUSIVE) while a one-channel source returns the strip's left channel on both sides (measured on
@@ -941,8 +941,9 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   `failed` the restart itself throwing or hanging.
   Between them a capture is monitored with a synthetic one-channel input: expect `data-capture-default="follows"`,
   `data-capture-mono="left-only"` (openDAW#575 through `CaptureAudio`, which needs `requestChannels = 1`; `follows` is
-  the fix) and `data-monitor-pan="doubles"` (the monitor's own pan at hard left or right reads twice the centre
-  level, `debug/2026-11-23-monitor-pan-doubles-at-hard-pan/note.md`; another value is a changed pan law).
+  the fix) and `data-monitor-pan="doubles"`, `data-monitor-pan-mono="doubles"` (the monitor's own pan at hard left or right reads twice the centre
+  level, `debug/2026-11-23-monitor-pan-doubles-at-hard-pan/note.md`; another value is a changed pan law). `?input=mic` runs the capture rows on the real default microphone
+  (the browser asks; make steady noise; nothing reaches the speakers).
 - A recording-alignment cell that reads `investigate` on a TAIL deficit is a stop-path
   finding, not placement: the stop is stamped by the engine and netted, so `tailMissingMs`
   reads 0 on every row and a deficit is NEW (the closed one is openDAW#479). Judge placement

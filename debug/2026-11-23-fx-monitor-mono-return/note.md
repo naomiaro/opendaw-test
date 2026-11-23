@@ -5,7 +5,7 @@
 **Issue:** [openDAW#575](https://github.com/andremichelle/openDAW/issues/575); the body as filed is
 [`drafts/posted-openDAW-575-fx-monitor-mono-return.md`](./drafts/posted-openDAW-575-fx-monitor-mono-return.md).
 
-**Repro page:** `monitoring-mono-return-debug-demo.html` (unlisted; a real click on Run, about thirty-five seconds, one run per
+**Repro page:** `monitoring-mono-return-debug-demo.html` (unlisted; a real click on Run, about fifty seconds, one run per
 load; the monitored tone is never heard, the one thing played is a 1.6 s metronome check). Source `src/demos/engine/monitoring-mono-return-debug-demo.tsx`.
 
 **Verified against:** SDK 0.0.189, source read at the release commit `d143a4f5`. Upstream main on 2026-11-23
@@ -44,14 +44,15 @@ The rows above call the engine's method directly, with an oscillator in place of
 ### Through `CaptureAudio` (added the same day)
 
 A second Tape's capture in "effects" monitoring, its input a one-channel stream carrying the tone (a
-`MediaStreamAudioDestinationNode` handed over by a patched `getUserMedia`), read at `capture.monitorPanNode`
-with the monitor pan at 0:
+`MediaStreamAudioDestinationNode` handed over by a patched `getUserMedia`), read where the return reaches the
+monitor (`capture.monitorGainNode`), the monitor pan at 0. `?input=mic` runs the same rows on the real
+default microphone; that has not been run.
 
 | `requestChannels` | Unit pan | Left | Right |
 |---|---|---|---|
-| 2 (the default) | −1 | 0.1765 | 0.0000 |
-| 2 (the default) | +1 | 0.0000 | 0.1768 |
-| 1 | −1 | 0.1767 | 0.1767 |
+| 2 (the default) | −1 | 0.1769 | 0.0000 |
+| 2 (the default) | +1 | 0.0000 | 0.1770 |
+| 1 | −1 | 0.1770 | 0.1770 |
 | 1 | +1 | 0.0000 | 0.0000 |
 
 **So the defect needs a capture that registers one channel.** At the default `requestChannels` (2) a
@@ -59,9 +60,9 @@ one-channel stream is still registered as two channels (`BrowserAudioInput.ts:39
 request before the stream's own) and the return follows the pan. With `requestChannels = 1` it shows as filed;
 on a scratch probe that was not kept, the same with a two-channel stream. Not run: a real microphone, and a
 channel mapping with one side only (by the same line it registers one channel). The page's outcomes are
-`data-capture-default` (`follows`) and `data-capture-mono` (`left-only`; `follows` is the fix). A comment for
-the issue saying this waits in
-[`drafts/TO-REVIEW-openDAW-575-comment-capture-scope.md`](./drafts/TO-REVIEW-openDAW-575-comment-capture-scope.md). No stereo effect was put on the unit: the second and third bullets above
+`data-capture-default` (`follows`) and `data-capture-mono` (`left-only`; `follows` is the fix). A reworked
+issue body saying this waits in
+[`drafts/TO-REVIEW-openDAW-575-reworked-body.md`](./drafts/TO-REVIEW-openDAW-575-reworked-body.md). No stereo effect was put on the unit: the second and third bullets above
 follow from the left channel alone being returned, and only the pan was measured.
 
 ## Mechanism (read from the source)

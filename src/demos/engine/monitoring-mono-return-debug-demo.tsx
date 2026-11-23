@@ -37,18 +37,22 @@ import { Theme, Container, Heading, Text, Flex, Card, Badge, Button, Code, Table
 // them: the metronome playing for 1.6 s with nothing monitored must show on the same tap. That control is
 // the one thing the page plays through the speakers.
 //
-// Then the SDK's own capture path: a second Tape's `CaptureAudio` is given a one-channel input stream (the same
-// tone through a patched `getUserMedia`, so no microphone and no permission) and monitored. Three questions,
-// each with its own outcome on the verdict:
+// Then the SDK's own capture path: a second Tape's `CaptureAudio` is monitored. Its input is a one-channel
+// stream carrying the tone (through a patched `getUserMedia`: no microphone, no permission), or with
+// `?input=mic` the real default microphone (the browser asks; make some steady noise). Every figure of this arm
+// is a ratio between two taps read at the same moment (what reaches the monitor's pan node, what leaves it),
+// so it does not depend on the signal. Outcomes on the verdict:
 //  - `data-capture-default`: with the capture's default `requestChannels` (2), does the effects return follow
 //    the strip's pan? ("follows" / "left-only" / "inconclusive")
 //  - `data-capture-mono`: the same with `requestChannels = 1`, where the capture registers one channel and
 //    openDAW#575 applies ("left-only" while the defect stands, "follows" when fixed)
-//  - `data-monitor-pan`: what the monitor's OWN pan (`capture.monitorPan`, a StereoPannerNode after the
-//    return) does to the level in direct mode: "doubles" (hard left or right reads twice the centre level),
-//    "unity" (the centre level, like the strip's balance) or "equal-power" (1.41 times). A measurement, not a
-//    judgement: its rows carry no ok / FAIL.
-// The tone is held at zero until the monitor is taken off the speakers, so this arm is silent too.
+//  - `data-monitor-pan` (requestChannels 2) and `data-monitor-pan-mono` (requestChannels 1): the law of the
+//    monitor's OWN pan (`capture.monitorPan`, a StereoPannerNode) in direct mode, as gains through it:
+//    "doubles" (centre ×1, hard left or right ×2), "equal-power" (centre ×0.71, hard ×1), "unity" (×1 and ×1,
+//    the strip's balance) or "other". The rows also say whether one or two channels reach the pan node, which
+//    is what selects the node's law. A measurement, not a judgement: these rows carry no ok / FAIL.
+// The monitor is muted while its input opens and taken off the speakers before it is unmuted, so this arm is
+// silent and a microphone cannot feed back.
 //
 // Last, the engine worklet is replaced the way an app restarts a failed engine (`engine.releaseWorklet()`,
 // `project.startAudioWorklet()`) while the stereo source is monitored
@@ -66,6 +70,8 @@ const MAIN_SILENT = 1e-4;
 const CLICK_READS = 40;
 const CLICK_READ_MS = 40;
 const RESTART_WATCH_MS = 3000;
+// `?input=mic`: the capture arm opens the real default microphone (the browser asks) in place of the synthetic stream
+const USE_MICROPHONE = new URLSearchParams(location.search).get("input") === "mic";
 
 type Levels = { left: number; right: number };
 type Row = { step: string; expected: string; got: string; ok: boolean | null };
@@ -73,7 +79,7 @@ type Verdict = "BUG PRESENT" | "FIXED" | "INCONCLUSIVE" | "HUNG" | "THREW";
 type Restart = "lost" | "kept" | "inconclusive" | "failed" | "not-run";
 type CaptureReturn = "follows" | "left-only" | "inconclusive" | "failed" | "not-run";
 type MonitorPan = "doubles" | "unity" | "equal-power" | "other" | "failed" | "not-run";
-type Outcome = { verdict: Verdict; rows: Row[]; message: string; restart: Restart; captureDefault: CaptureReturn; captureMono: CaptureReturn; monitorPan: MonitorPan };
+type Outcome = { verdict: Verdict; rows: Row[]; message: string; restart: Restart; captureDefault: CaptureReturn; captureMono: CaptureReturn; monitorPan: MonitorPan; monitorPanMono: MonitorPan };
 type RunState = { kind: "idle" } | { kind: "running"; stage: string; rows: Row[] } | ({ kind: "done" } & Outcome);
 
 class Hung extends Error { constructor(readonly stage: string) { super(`hung in ${stage}`); } }
@@ -106,6 +112,7 @@ async function run(onStage: (stage: string, rows: Row[]) => void): Promise<Outco
   let captureDefault: CaptureReturn = "not-run";
   let captureMono: CaptureReturn = "not-run";
   let monitorPan: MonitorPan = "not-run";
+  let monitorPanMono: MonitorPan = "not-run";
   const cleanup: Array<() => void> = [];
   const enter = (name: string) => { stage = name; onStage(stage, [...rows]); };
   const row = (r: Row) => { rows.push(r); onStage(stage, [...rows]); console.log(`[monitor-mono-return] ${r.step}: ${r.got}`); };
@@ -244,77 +251,124 @@ async function run(onStage: (stage: string, rows: Row[]) => void): Promise<Outco
     try {
       enter("capture: setup");
       const capture = project.captureDevices.audio(captureUnit.address.uuid).unwrap("no CaptureAudio for the second Tape");
-      const input = audioContext.createMediaStreamDestination();
-      input.channelCount = 1;
-      input.channelCountMode = "explicit";
-      input.channelInterpretation = "speakers";
-      level.connect(input);
-      const mediaDevices = navigator.mediaDevices;
-      const originalGetUserMedia = mediaDevices.getUserMedia;
-      mediaDevices.getUserMedia = async () => input.stream.clone();
       const speakers = audioContext.destination;
       // the SDK's monitor disconnects its pan node from the speakers on a mode change and throws if it is not connected
-      const close = () => { capture.monitorPanNode.connect(speakers); capture.monitoringMode = "off"; capture.armed.setValue(false); };
-      cleanup.push(() => { mediaDevices.getUserMedia = originalGetUserMedia; }, () => { level.gain.value = 0; close(); });
+      const close = () => { capture.monitorPanNode.connect(speakers); capture.monitoringMode = "off"; capture.armed.setValue(false); capture.monitorMuted = false; };
+      if (USE_MICROPHONE) {
+        cleanup.push(close);
+      } else {
+        const input = audioContext.createMediaStreamDestination();
+        input.channelCount = 1;
+        input.channelCountMode = "explicit";
+        input.channelInterpretation = "speakers";
+        level.connect(input);
+        const mediaDevices = navigator.mediaDevices;
+        const originalGetUserMedia = mediaDevices.getUserMedia;
+        mediaDevices.getUserMedia = async () => input.stream.clone();
+        cleanup.push(() => { mediaDevices.getUserMedia = originalGetUserMedia; }, close);
+      }
+      // two taps read in the same task, so they hold the same 4096 frames: what reaches the monitor's pan (the
+      // monitor's gain node through a discrete splitter, whose second output is silent for a one-channel signal)
+      // and what leaves it. Every figure of this arm is a ratio of the two, so it holds for any input signal.
+      const preSplitter = audioContext.createChannelSplitter(2);
+      capture.monitorGainNode.connect(preSplitter);
+      const preAnalysers = [0, 1].map((channel) => {
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = 4096;
+        preSplitter.connect(analyser, channel);
+        return analyser;
+      });
       capture.monitorPanNode.connect(destination);
+      cleanup.push(() => { capture.monitorGainNode.disconnect(preSplitter); capture.monitorPanNode.disconnect(destination); });
+      const readPre = (): Levels => { assertRunning(); return { left: rmsOf(preAnalysers[0], buffer), right: rmsOf(preAnalysers[1], buffer) }; };
+      const FLOOR = 1e-5;
       const open = async (request: 1 | 2, mode: "direct" | "effects") => {
         enter(`capture: requestChannels ${request}, ${mode}`);
-        level.gain.value = 0;
         close();
         await sleep(300);
         project.editing.modify(() => { capture.requestChannels = request; captureUnit.panning.setValue(0); });
         capture.monitorPan = 0;
+        capture.monitorMuted = true; // nothing reaches the speakers while the input opens
         capture.monitoringMode = mode;
         for (let waited = 0; capture.stream.isEmpty(); waited += 100) {
-          if (waited >= 10_000) throw new Hung("the capture's input opening");
+          if (waited >= (USE_MICROPHONE ? 60_000 : 10_000)) throw new Hung(USE_MICROPHONE ? "the microphone opening (allow it in the browser's prompt)" : "the capture's input opening");
           await sleep(100);
         }
         capture.monitorPanNode.disconnect(speakers);
-        level.gain.value = 0.25;
+        capture.monitorMuted = false;
         await sleep(SETTLE_MS);
         if (capture.effectiveChannelCount !== request) throw new Error(`the capture reports ${capture.effectiveChannelCount} channels for requestChannels ${request}`);
       };
-      const stripSweep = async (): Promise<{ left: Levels; right: Levels }> => {
-        const at = async (pan: number) => { project.editing.modify(() => captureUnit.panning.setValue(pan)); await sleep(SETTLE_MS); return read(); };
-        return { left: await at(-1), right: await at(1) };
+      // the effects return as it reaches the monitor, per strip pan; `centre` is the level both are judged against
+      type Sweep = { centre: Levels; left: Levels; right: Levels };
+      const stripSweep = async (): Promise<Sweep> => {
+        const at = async (pan: number) => { project.editing.modify(() => captureUnit.panning.setValue(pan)); await sleep(SETTLE_MS); return readPre(); };
+        const centre = await at(0);
+        if (!(centre.left > FLOOR)) throw new Error(`no signal reaches the monitor (${show(centre)})${USE_MICROPHONE ? ": make some noise at the microphone" : ""}`);
+        return { centre, left: await at(-1), right: await at(1) };
       };
-      const classify = (sweep: { left: Levels; right: Levels }): CaptureReturn => !controlsOk ? "inconclusive"
-        : pansLeft(sweep.left) && pansRight(sweep.right) ? "follows"
-        : near(sweep.left.left) && near(sweep.left.right) && quiet(sweep.right) ? "left-only" : "inconclusive";
-      const returnRows = (label: string, sweep: { left: Levels; right: Levels }) => {
-        row({ step: `capture, ${label}, effects, strip pan −1`, expected: expectedOf(-1), got: show(sweep.left), ok: controlsOk ? pansLeft(sweep.left) : null });
-        row({ step: `capture, ${label}, effects, strip pan +1`, expected: expectedOf(1), got: show(sweep.right), ok: controlsOk ? pansRight(sweep.right) : null });
+      const gone = (value: number, sweep: Sweep) => value < sweep.centre.left * 0.05;
+      const alike = (a: number, b: number) => a / b > 1 / LEVEL_TOLERANCE && a / b < LEVEL_TOLERANCE;
+      const followsLeft = (sweep: Sweep) => !gone(sweep.left.left, sweep) && gone(sweep.left.right, sweep);
+      const followsRight = (sweep: Sweep) => gone(sweep.right.left, sweep) && !gone(sweep.right.right, sweep);
+      const classify = (sweep: Sweep): CaptureReturn => followsLeft(sweep) && followsRight(sweep) ? "follows"
+        : !gone(sweep.left.left, sweep) && alike(sweep.left.left, sweep.left.right) && gone(sweep.right.left, sweep) && gone(sweep.right.right, sweep) ? "left-only" : "inconclusive";
+      const returnRows = (label: string, sweep: Sweep) => {
+        row({ step: `capture, ${label}, effects, strip pan −1`, expected: expectedOf(-1), got: show(sweep.left), ok: followsLeft(sweep) });
+        row({ step: `capture, ${label}, effects, strip pan +1`, expected: expectedOf(1), got: `${show(sweep.right)} (centre ${show(sweep.centre)})`, ok: followsRight(sweep) });
       };
+      const inputLabel = USE_MICROPHONE ? "microphone" : "one-channel synthetic input";
       await open(2, "effects");
+      const track = capture.stream.unwrap().getAudioTracks()[0];
+      const streamChannels = String(track?.getSettings().channelCount);
       const defaultSweep = await stripSweep();
       captureDefault = classify(defaultSweep);
-      returnRows("one-channel input, default requestChannels (2)", defaultSweep);
+      returnRows(`${inputLabel}, default requestChannels (2)`, defaultSweep);
       await open(1, "effects");
       const monoSweep = await stripSweep();
       captureMono = classify(monoSweep);
-      returnRows("one-channel input, requestChannels 1 (openDAW#575)", monoSweep);
+      returnRows(`${inputLabel}, requestChannels 1 (openDAW#575)`, monoSweep);
 
-      await open(2, "direct");
-      const monitorAt: Record<number, Levels> = {};
-      for (const pan of PANS) { capture.monitorPan = pan; await sleep(SETTLE_MS); monitorAt[pan] = read(); }
-      capture.monitorPan = 0;
-      level.gain.value = 0;
+      // the monitor's own pan, as gains from what reaches the pan node to what leaves it, per requested channel count
+      const panGains = async (request: 1 | 2) => {
+        await open(request, "direct");
+        const gains: Record<number, Levels> = {};
+        let reaching = 0;
+        for (const pan of PANS) {
+          capture.monitorPan = pan;
+          await sleep(SETTLE_MS);
+          const pre = readPre();
+          const post = read();
+          if (!(pre.left > FLOOR)) throw new Error(`no signal reaches the monitor (${show(pre)})${USE_MICROPHONE ? ": make some noise at the microphone" : ""}`);
+          if (pan === 0) reaching = pre.right < pre.left * 0.05 ? 1 : 2;
+          gains[pan] = { left: post.left / pre.left, right: post.right / pre.left };
+        }
+        capture.monitorPan = 0;
+        const about = (value: number, target: number) => Math.abs(value - target) < 0.1 * Math.max(1, target);
+        const centre = [gains[0].left, gains[0].right];
+        const hard = [gains[-1].left, gains[1].right];
+        const offSide = [gains[-1].right, gains[1].left].every((value) => value < 0.05);
+        const law: MonitorPan = !offSide ? "other"
+          : centre.every((value) => about(value, 1)) && hard.every((value) => about(value, 2)) ? "doubles"
+          : centre.every((value) => about(value, Math.SQRT1_2)) && hard.every((value) => about(value, 1)) ? "equal-power"
+          : centre.every((value) => about(value, 1)) && hard.every((value) => about(value, 1)) ? "unity" : "other";
+        const gain = (l: Levels) => `L ×${l.left.toFixed(2)}, R ×${l.right.toFixed(2)}`;
+        for (const pan of PANS) row({ step: `capture, ${inputLabel}, requestChannels ${request}, direct, monitor ${panLabel(pan)} (measurement: gain through the pan)`, expected: "", got: `${gain(gains[pan])}${pan === 0 ? `; ${reaching === 1 ? "one channel reaches" : "two channels reach"} the pan` : ""}`, ok: null });
+        return { law, reaching, summary: `${reaching === 1 ? "one channel" : "two channels"} at the pan, centre ×${centre[0].toFixed(2)}, hard left / right ×${hard[0].toFixed(2)} / ×${hard[1].toFixed(2)} (${law})` };
+      };
+      const stereoRequest = await panGains(2);
+      const monoRequest = await panGains(1);
       close();
-      const centreLevel = (monitorAt[0].left + monitorAt[0].right) / 2;
-      const ratios = [monitorAt[-1].left / centreLevel, monitorAt[1].right / centreLevel];
-      const offSideQuiet = monitorAt[-1].right < centreLevel * SILENT && monitorAt[1].left < centreLevel * SILENT;
-      const about = (target: number) => ratios.every((ratio) => Math.abs(ratio - target) < 0.1);
-      monitorPan = !(centreLevel > SIGNAL_MIN) || !offSideQuiet ? "other" : about(2) ? "doubles" : about(1) ? "unity" : about(Math.SQRT2) ? "equal-power" : "other";
-      for (const pan of PANS) row({ step: `capture, direct monitoring, monitor ${panLabel(pan)} (measurement)`, expected: "", got: show(monitorAt[pan]), ok: null });
-      captureNote = `; through CaptureAudio the effects return ${captureDefault === "follows" ? "follows the strip pan" : `reads ${captureDefault}`} at the default requestChannels and ${captureMono === "left-only" ? "is the strip's left channel on both sides" : captureMono === "follows" ? "follows the strip pan" : `reads ${captureMono}`} at requestChannels 1; the monitor's own pan at hard left / right reads ${ratios.map((ratio) => ratio.toFixed(2)).join(" / ")} times the centre level (${monitorPan})`;
+      monitorPan = stereoRequest.law;
+      monitorPanMono = monoRequest.law;
+      captureNote = `; through CaptureAudio (${inputLabel}, the stream reports ${streamChannels} channel(s)) the effects return ${captureDefault === "follows" ? "follows the strip pan" : `reads ${captureDefault}`} at the default requestChannels and ${captureMono === "left-only" ? "is the strip's left channel on both sides" : captureMono === "follows" ? "follows the strip pan" : `reads ${captureMono}`} at requestChannels 1; the monitor's own pan in direct mode: requestChannels 2, ${stereoRequest.summary}; requestChannels 1, ${monoRequest.summary}`;
     } catch (error) {
       if (captureDefault === "not-run") captureDefault = "failed";
       if (captureMono === "not-run") captureMono = "failed";
       if (monitorPan === "not-run") monitorPan = "failed";
+      if (monitorPanMono === "not-run") monitorPanMono = "failed";
       row({ step: stage, expected: "", got: failureOf(error), ok: false });
       captureNote = `; the capture arm failed (${failureOf(error)})`;
-    } finally {
-      level.gain.value = 0.25;
     }
 
     let restartNote: string;
@@ -357,12 +411,12 @@ async function run(onStage: (stage: string, rows: Row[]) => void): Promise<Outco
       row({ step: stage, expected: "", got: failureOf(error), ok: false });
       restartNote = `; the engine restart failed (${failureOf(error)})`;
     }
-    return { verdict, rows, message: message + mainNote + captureNote + restartNote, restart, captureDefault, captureMono, monitorPan };
+    return { verdict, rows, message: message + mainNote + captureNote + restartNote, restart, captureDefault, captureMono, monitorPan, monitorPanMono };
   } catch (error) {
     rows.push({ step: stage, expected: "", got: failureOf(error), ok: false });
-    if (error instanceof Hung) return { verdict: "HUNG", rows, message: failureOf(error), restart, captureDefault, captureMono, monitorPan };
+    if (error instanceof Hung) return { verdict: "HUNG", rows, message: failureOf(error), restart, captureDefault, captureMono, monitorPan, monitorPanMono };
     console.error(`[monitor-mono-return] ${stage}: ${String(error)}`);
-    return { verdict: "THREW", rows, message: `${stage}: ${String(error)}`, restart, captureDefault, captureMono, monitorPan };
+    return { verdict: "THREW", rows, message: `${stage}: ${String(error)}`, restart, captureDefault, captureMono, monitorPan, monitorPanMono };
   } finally {
     for (const undo of cleanup.reverse()) { try { undo(); } catch (error) { console.warn(`[monitor-mono-return] cleanup: ${String(error)}`); } }
   }
@@ -373,7 +427,7 @@ function App() {
   const start = useCallback(() => {
     setState({ kind: "running", stage: "init", rows: [] });
     run((stage, rows) => setState({ kind: "running", stage, rows }))
-      .then((done) => setState({ kind: "done", ...done }), (error) => setState({ kind: "done", verdict: "THREW", rows: [], message: String(error), restart: "not-run", captureDefault: "not-run", captureMono: "not-run", monitorPan: "not-run" }));
+      .then((done) => setState({ kind: "done", ...done }), (error) => setState({ kind: "done", verdict: "THREW", rows: [], message: String(error), restart: "not-run", captureDefault: "not-run", captureMono: "not-run", monitorPan: "not-run", monitorPanMono: "not-run" }));
   }, []);
   const rows = state.kind === "idle" ? [] : state.rows;
   return (
@@ -394,7 +448,7 @@ function App() {
             <Button id="run" size="3" onClick={start} disabled={state.kind !== "idle"}>Run</Button>
             {state.kind === "running" && <Badge color="amber">running: {state.stage}</Badge>}
             {state.kind === "done" && (
-              <Badge id="verdict" data-verdict={state.verdict} data-restart={state.restart} data-capture-default={state.captureDefault} data-capture-mono={state.captureMono} data-monitor-pan={state.monitorPan} color={state.verdict === "FIXED" ? "green" : state.verdict === "BUG PRESENT" ? "red" : "gray"} size="2">
+              <Badge id="verdict" data-verdict={state.verdict} data-restart={state.restart} data-capture-default={state.captureDefault} data-capture-mono={state.captureMono} data-monitor-pan={state.monitorPan} data-monitor-pan-mono={state.monitorPanMono} color={state.verdict === "FIXED" ? "green" : state.verdict === "BUG PRESENT" ? "red" : "gray"} size="2">
                 {state.verdict} — {state.message}
               </Badge>
             )}
