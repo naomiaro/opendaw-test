@@ -23,10 +23,11 @@ A 440 Hz tone registered as a two-channel source on a Tape unit, the return read
 - Page (a click on Run, about twenty seconds, the last three rows; the tone is not played, a metronome clicks for 1.6 s): https://opendaw-test.pages.dev/monitoring-mono-return-debug-demo
 - Note: https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-11-23-fx-monitor-lost-on-engine-restart/note.md
 
-**What I did not run:** the studio. From the code, its "Restart Engine" path looks exposed:
-`Project.startAudioWorklet`'s error handler starts a new worklet, the studio's `restart.load` calls
-`engine.setWorklet`, and `BrowserMonitor` registers its source only in `#connect`, on a mode change or when
-the input binds. The only subscriber of `subscribeWorkletChanged` I found is the mastering panel, which resets
-compare and mono. So a track in With Effects
-would be silent after a restart until its monitoring mode is switched or its input reopens. I did not crash
-an engine in the studio to confirm that.
+**Where an SDK app meets it, as I read it:** `Project.startAudioWorklet(restart)` handles an engine error by
+terminating the worklet and starting a new one itself, which it sets on the engine facade
+(`Project.ts:352-366`). `BrowserMonitor` registers its source only in `#connect`, on a mode change or when the
+input binds, and it is the only caller of `registerMonitoringSource` outside the tests. So after that restart
+a capture in "effects" monitoring would be silent until its monitoring mode is switched or its input reopens.
+
+**What I did not run:** an engine error through that handler. I replaced the worklet by hand with the two
+calls in the table.

@@ -31,14 +31,12 @@ pan 0, the return read as RMS per channel:
 The same on a scratch probe that was not kept, with a sample recorder in place of the analysers (the last 20
 quanta all exactly zero after the swap).
 
-**Not measured:** the studio. That its "Restart Engine" path meets this is read from the code:
-`Project.startAudioWorklet`'s error handler starts a new worklet (`Project.ts:352-362`) and the studio's
-`restart.load` calls `engine.setWorklet` and restores the screen (`StudioService.ts:531-535`);
-`EngineFacade.setWorklet` re-subscribes the engine state and notifies `subscribeWorkletChanged`, whose only
-subscriber is the mastering panel (`MasteringPanel.tsx:621`, it resets compare and mono); the only caller of
+**Not measured:** an engine error through the SDK's own restart. That it meets this is read from the code:
+`Project.startAudioWorklet(restart)`'s error handler terminates the worklet and starts a new one, which it sets
+on the engine facade (`Project.ts:352-366`); `EngineFacade.setWorklet` re-subscribes the engine state and
+notifies `subscribeWorkletChanged`, which nothing in `studio-core` subscribes to; the only caller of
 `registerMonitoringSource` outside tests is `BrowserMonitor.ts:136`, in `#connect` (on a mode change or an
-input bind). I did not
-crash an engine in the studio to see it.
+input bind). The page replaces the worklet by hand.
 
 ## Also checked, no finding
 

@@ -12,7 +12,7 @@ From the effects-monitoring mono return, 2026-11-23:
 
 From the effects-monitoring engine restart, 2026-11-23:
 
-- [`After the engine worklet is replaced, a source monitored "With Effects" is silent until it is registered again` — openDAW](./2026-11-23-fx-monitor-lost-on-engine-restart/drafts/TO-REVIEW-openDAW-fx-monitor-lost-on-engine-restart.md): measured on the engine API on 0.0.189; the studio's restart path is read from the code, not run.
+- [`After the engine worklet is replaced, a source monitored "With Effects" is silent until it is registered again` — openDAW](./2026-11-23-fx-monitor-lost-on-engine-restart/drafts/TO-REVIEW-openDAW-fx-monitor-lost-on-engine-restart.md): measured on the engine API on 0.0.189; the SDK's own restart after an engine error is read from the code, not run.
 
 From the export regression harness, 2026-11-06 (the two openDAW drafts were filed as openDAW#533 and #534 on 2026-11-08):
 
