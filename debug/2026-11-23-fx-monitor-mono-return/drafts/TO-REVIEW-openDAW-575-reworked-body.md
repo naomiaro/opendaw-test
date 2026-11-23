@@ -1,6 +1,7 @@
 **Not posted. Target:** an edit of the body of https://github.com/andremichelle/openDAW/issues/575 (title unchanged).
 What changes against the body as filed: the "Through `CaptureAudio`" section replaces the paragraph that said the
-capture path was not run, and the page line names the new rows. Nothing else.
+capture path was not run (its `BrowserMonitor.ts:136` citation moves into the new section), and the page line
+names the new rows and the page's new duration. Nothing else.
 
 ---
 
@@ -31,21 +32,25 @@ Those rows call the engine method directly with an oscillator.
 
 **Through `CaptureAudio`** (added after filing): a Tape's capture in "effects" monitoring, its input a
 one-channel stream carrying the tone (a `MediaStreamAudioDestinationNode` handed over by a patched
-`getUserMedia`), read where the return reaches the monitor, monitor pan at 0.
+`getUserMedia`). The figures are the level where the return reaches the monitor over the capture's input
+level at the same moment, monitor pan at 0.
 
 | `requestChannels` | Unit pan | Left | Right |
 |---|---|---|---|
-| 2 (the default) | −1 | 0.1769 | 0.0000 |
-| 2 (the default) | +1 | 0.0000 | 0.1770 |
-| 1 | −1 | 0.1770 | 0.1770 |
-| 1 | +1 | 0.0000 | 0.0000 |
+| 2 (the default) | 0 | ×1.00 | ×1.00 |
+| 2 (the default) | −1 | ×1.00 | ×0.00 |
+| 2 (the default) | +1 | ×0.00 | ×1.00 |
+| 1 | 0 | ×1.00 | ×1.00 |
+| 1 | −1 | ×1.00 | ×1.00 |
+| 1 | +1 | ×0.00 | ×0.00 |
 
 So a capture at its default is not affected, even with a one-channel stream: `BrowserAudioInput` takes the
-channel count from `requestChannels` before the stream's own (`BrowserAudioInput.ts:390`) and registers two
-channels. A capture with `requestChannels = 1` registers one and shows the defect.
+channel count from `requestChannels` before the stream's own (`BrowserAudioInput.ts:390`), and `BrowserMonitor`
+registers the source with that count (`BrowserMonitor.ts:136`): two channels. A capture with
+`requestChannels = 1` registers one and shows the defect.
 
-Not run: a real microphone, and a channel mapping with one side only, which by the same line also registers
-one channel. I measured the pan only. By the same reading a stereo effect on the unit would be heard as its
+Not run: a real microphone, and a channel mapping with one side only, which registers one channel too
+(`BrowserAudioInput.ts:426`). I measured the pan only. By the same reading a stereo effect on the unit would be heard as its
 left half; I did not run that.
 
 - Page (a click on Run, about fifty seconds; the first six rows and the four "capture … effects" rows; the tone is not played, a metronome clicks for 1.6 s): https://opendaw-test.pages.dev/monitoring-mono-return-debug-demo

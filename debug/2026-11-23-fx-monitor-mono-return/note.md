@@ -44,16 +44,20 @@ The rows above call the engine's method directly, with an oscillator in place of
 ### Through `CaptureAudio` (added the same day)
 
 A second Tape's capture in "effects" monitoring, its input a one-channel stream carrying the tone (a
-`MediaStreamAudioDestinationNode` handed over by a patched `getUserMedia`), read where the return reaches the
-monitor (`capture.monitorGainNode`), the monitor pan at 0. `?input=mic` runs the same rows on the real
+`MediaStreamAudioDestinationNode` handed over by a patched `getUserMedia`). The figures are gains: the level
+where the return reaches the monitor (`capture.monitorGainNode`) over the capture's input level
+(`capture.outputNode`) at the same moment, the monitor pan at 0. The page writes `requestChannels` 2 itself;
+it is the box's default. `?input=mic` runs the same rows on the real
 default microphone; that has not been run.
 
 | `requestChannels` | Unit pan | Left | Right |
 |---|---|---|---|
-| 2 (the default) | −1 | 0.1769 | 0.0000 |
-| 2 (the default) | +1 | 0.0000 | 0.1770 |
-| 1 | −1 | 0.1770 | 0.1770 |
-| 1 | +1 | 0.0000 | 0.0000 |
+| 2 (the default) | 0 | ×1.00 | ×1.00 |
+| 2 (the default) | −1 | ×1.00 | ×0.00 |
+| 2 (the default) | +1 | ×0.00 | ×1.00 |
+| 1 | 0 | ×1.00 | ×1.00 |
+| 1 | −1 | ×1.00 | ×1.00 |
+| 1 | +1 | ×0.00 | ×0.00 |
 
 **So the defect needs a capture that registers one channel.** At the default `requestChannels` (2) a
 one-channel stream is still registered as two channels (`BrowserAudioInput.ts:390` takes the count from the
@@ -98,7 +102,7 @@ That row has no positive control for a leak: a build with #528 back was not run.
 not disturb a monitored one.
 
 [The monitor's own pan doubles the level at hard left and right](../2026-11-23-monitor-pan-doubles-at-hard-pan/note.md)
-(the page's three "(measurement)" rows): measured, not drafted.
+(the page's six "(measurement)" rows): measured, to be filed, no draft yet.
 
 ## After a fix
 

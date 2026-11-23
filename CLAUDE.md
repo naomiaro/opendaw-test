@@ -939,7 +939,7 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   Its last three rows replace the engine worklet under a monitored source: `data-restart` on `#verdict` reads `lost`
   while a new worklet's router starts empty (openDAW#576, `debug/2026-11-23-fx-monitor-lost-on-engine-restart/note.md`); `kept` is the fix,
   `failed` the restart itself throwing or hanging.
-  Between them a capture is monitored with a synthetic one-channel input: expect `data-capture-default="follows"`,
+  Between the main-output rows and the restart rows a capture is monitored with a synthetic one-channel input: expect `data-capture-default="follows"`,
   `data-capture-mono="left-only"` (openDAW#575 through `CaptureAudio`, which needs `requestChannels = 1`; `follows` is
   the fix) and `data-monitor-pan="doubles"`, `data-monitor-pan-mono="doubles"` (the monitor's own pan at hard left or right reads twice the centre
   level, `debug/2026-11-23-monitor-pan-doubles-at-hard-pan/note.md`; another value is a changed pan law). `?input=mic` runs the capture rows on the real default microphone
