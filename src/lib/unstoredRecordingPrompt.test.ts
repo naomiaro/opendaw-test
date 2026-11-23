@@ -5,7 +5,7 @@
  * until a save succeeds or the answer is no, so with no notifier a save that is refused is asked for again at once,
  * with nothing in between and no way out. This repo installs no notifier.
  *
- * FLIPS WHEN FIXED: these tests assert the loop as measured. When the SDK ends the offer without a notifier (or after
+ * FLIPS WHEN FIXED (openDAW#574): these tests assert the loop as measured. When the SDK ends the offer without a notifier (or after
  * a cancelled picker), the "keeps asking" tests fail, and so does "opens the save picker" if the fix is to ask nothing
  * without a notifier: invert them to pin the fixed behaviour and note the release in
  * debug/2026-11-23-unstored-recording-download-loop/note.md.

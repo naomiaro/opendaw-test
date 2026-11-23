@@ -1,6 +1,6 @@
 # A recording that cannot be stored: the download offer loops when no notifier is installed
 
-**Status:** the repeated request measured in Node and in the Playwright browser, the missing exit read from the code; **draft for upstream waiting for a read** ([`drafts/TO-REVIEW-openDAW-unstored-recording-offer-without-notifier.md`](./drafts/TO-REVIEW-openDAW-unstored-recording-offer-without-notifier.md)). Not run in a normal Chrome window.
+**Status:** the repeated request measured in Node and in the Playwright browser, the missing exit read from the code; **filed as [openDAW#574](https://github.com/andremichelle/openDAW/issues/574)** on 2026-11-23 ([the body as posted](./drafts/posted-openDAW-574-unstored-recording-offer-without-notifier.md)). The demos install a notifier since the same day. Not run in a normal Chrome window.
 **SDK:** `@opendaw/studio-sdk@0.0.189` (`studio-core` 0.3.5, `lib-std` 0.0.89, `lib-dom` 0.0.96). The code arrived in 0.0.189 (`c882bdccc`).
 **Repro:** `src/lib/unstoredRecordingPrompt.test.ts` (four tests, jsdom, no browser).
 

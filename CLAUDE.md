@@ -612,7 +612,7 @@ The SDK asks the app questions through `RuntimeNotifier` (`@opendaw/lib-std`): `
 installed `approve` resolves `true` and the others do nothing, and an SDK loop that runs "while the user approves"
 has no exit while its action keeps failing: the WAV download offer for a recording that could not be stored
 (`UnstoredRecording.offerDownload`) requests the save picker again and again when a save is refused
-(`debug/2026-11-23-unstored-recording-download-loop/note.md`, flips-when-fixed test
+(openDAW#574, `debug/2026-11-23-unstored-recording-download-loop/note.md`, flips-when-fixed test
 `src/lib/unstoredRecordingPrompt.test.ts`).
 - `initializeOpenDAW` calls `installRuntimeNotifier(window)` (`src/lib/runtimeNotifier.ts`) before its first await: a
   plain-DOM notifier in `#sdk-notices` at the bottom of the page. `approve` is a bar with two buttons and waits for a
