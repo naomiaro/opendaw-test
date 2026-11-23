@@ -853,6 +853,14 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   down 4.5..9 ms after the second note, a one-shot eighth sounding the whole 1 s sample, the loop stopping a
   one-shot on its note-off, fixed pitch at the root key with Octave applied, the pan law. Rows and readers
   `src/lib/audit/nanoPlayModes.ts`, note `debug/2026-11-04-nano-play-modes/note.md`.
+- After SDK upgrades, also run the stretch placement audit: `stretch-placement-debug-demo.html` then `?rate=44100` — a real
+  click on Run audit, deterministic, no hardware, about five seconds. It plays eight 2 ms bursts through no play mode, varispeed
+  and Signalsmith and reads each against the warp map. Expect every row `as-expected`: an unprocessed row (Signalsmith with no
+  stretch and no transpose included) within a frame on every burst; a stretched or transposed Signalsmith row is judged for a
+  constant offset only (median within 256 frames), because a phase vocoder spreads a click across its 4096-frame block and a
+  single burst's centre wanders by up to 18 ms. An unprocessed Signalsmith row late by whole render quanta is the per-region
+  delay the SDK once had, back; the two unprocessed Signalsmith rows are the only guard against a delay of one or two quanta. Rows and readers `src/lib/audit/stretchPlacement.ts`, note
+  `debug/2026-11-23-stretch-grid-placement/note.md`.
 - After SDK upgrades, also re-run the standing combined MIDI + audio sweep:
   `midi-audio-combined-audit-debug-demo.html?scenario=all&bpm=120` — Chrome, a real click on
   Run, the IAC Driver online, the laptop's built-in microphone and speakers (an interface is
