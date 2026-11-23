@@ -22,6 +22,7 @@ import { resolveFrameDriver, resolveFrameEvery, type FrameDriverKind } from "./f
 import { installBfcacheReloadGuard } from "./bfcacheReloadGuard";
 import { installFreezeClockCheck } from "./freezeClockCheck";
 import { showClockSlowNotice } from "./clockSlowNotice";
+import { installRuntimeNotifier } from "./runtimeNotifier";
 import { createThrottledFrames } from "./frameScheduler";
 import { testFeatures } from "../features";
 import { installWasmEngine, ensureWasmReady } from "./wasmEngine";
@@ -125,6 +126,10 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
   // (Chromium 575891839), so a restored page reloads itself. Installed before the first
   // await so a restore during boot is caught too.
   installBfcacheReloadGuard(window, () => window.location.reload());
+
+  // The SDK's questions get a person's answer. With nothing installed `approve` resolves yes, and a recording that
+  // could not be stored is then offered as a download again and again (see runtimeNotifier.ts).
+  installRuntimeNotifier(window);
 
   console.log("========================================");
   console.log("openDAW -> headless -> initializing");
