@@ -8,11 +8,14 @@
  * Plain DOM, so it works on every demo whatever its React tree. Colours are the console theme's tokens, with their
  * values as fallbacks for pages that do not load the theme.
  *
- * - `approve`: a bar with the question and two buttons. It resolves when one is clicked, and `false` if the
- *   request's `abortSignal` fires first. Clicking the approving button is a user gesture, which a save picker needs.
+ * - `approve`: a bar with the question and two buttons. It resolves when one is clicked (Escape is the cancelling
+ *   one), and `false` if the request's `abortSignal` fires first. Clicking the approving button is a user gesture,
+ *   which a save picker needs. The same question asked again while it is open shares the one bar and its answer:
+ *   the SDK asks once per Tape when several record together.
  * - `info`: the same bar with one button. It resolves AT ONCE, as it did with nothing installed, so no SDK flow that
- *   awaits it starts waiting for a click; the bar stays until dismissed.
- * - `notify`: a line that goes away by itself, and a console line.
+ *   awaits it starts waiting for a click; the bar stays until dismissed. The SDK guards some of its notices against
+ *   repeats until the promise resolves, which here is at once, so a notice already showing is not shown twice.
+ * - `notify`: a line that goes away by itself, and a console line. Not shown twice either.
  * - `progress`: a console line; the demos start none of the SDK's own long tasks.
  */
 import { RuntimeNotifier, type RuntimeNotification } from "@opendaw/lib-std";
@@ -21,7 +24,16 @@ export const SDK_NOTICES_ID = "sdk-notices";
 /** How long a `notify` line stays. */
 export const NOTIFY_MS = 6000;
 
+/**
+ * Questions shown without their approving button. On "MIDI Blocked" the SDK answers a yes by opening
+ * `/manuals/permissions`, a page of the openDAW studio that this site does not have (the address falls back to the
+ * demo list). The message itself says what to do, so the question is shown with its closing button only.
+ */
+export const APPROVE_WITHOUT_ACTION: ReadonlySet<string> = new Set(["MIDI Blocked"]);
+
 type ButtonSpec = { label: string; primary: boolean; onClick: () => void };
+
+const keyOf = (headline: string | undefined, message: string): string => `${headline ?? ""}\u0000${message}`;
 
 function container(doc: Document): HTMLElement {
   const existing = doc.getElementById(SDK_NOTICES_ID);
@@ -36,9 +48,17 @@ function container(doc: Document): HTMLElement {
   return stack;
 }
 
+/** The bar already showing this headline and message, if any. */
+function showing(doc: Document, headline: string | undefined, message: string): HTMLElement | null {
+  const key = keyOf(headline, message);
+  return [...container(doc).children].find((child): child is HTMLElement => child instanceof HTMLElement && child.dataset.key === key) ?? null;
+}
+
 function bar(doc: Document, role: "alertdialog" | "status", headline: string | undefined, message: string, buttons: readonly ButtonSpec[]): HTMLElement {
   const element = doc.createElement("div");
   element.setAttribute("role", role);
+  element.setAttribute("aria-label", headline !== undefined && headline.length > 0 ? `${headline}. ${message}` : message);
+  element.dataset.key = keyOf(headline, message);
   Object.assign(element.style, {
     display: "flex", flexWrap: "wrap", alignItems: "center", gap: "12px", padding: "10px 16px",
     background: "var(--mc-panel, #151310)", color: "var(--mc-text, #d8d2c8)", borderTop: "2px solid var(--mc-amber, #e8a33d)",
@@ -70,31 +90,42 @@ function bar(doc: Document, role: "alertdialog" | "status", headline: string | u
 
 /** The notifier itself, on `doc`. Exported for tests; a page gets it through `installRuntimeNotifier`. */
 export function createDomNotifier(doc: Document): RuntimeNotification.Notifier {
+  // the questions now open, by headline and message
+  const open = new Map<string, Promise<boolean>>();
   return {
-    approve: ({ headline, message, approveText, cancelText, abortSignal }) =>
-      new Promise<boolean>((resolve) => {
-        if (abortSignal?.aborted === true) {
-          resolve(false);
-          return;
-        }
+    approve: ({ headline, message, approveText, cancelText, abortSignal }) => {
+      if (abortSignal?.aborted === true) return Promise.resolve(false);
+      const key = keyOf(headline, message);
+      const pending = open.get(key);
+      if (pending !== undefined) return pending;
+      const asked = new Promise<boolean>((resolve) => {
         const answer = (value: boolean): void => {
           abortSignal?.removeEventListener("abort", onAbort);
+          open.delete(key);
           element.remove();
           resolve(value);
         };
         const onAbort = (): void => answer(false);
-        const element = bar(doc, "alertdialog", headline, message, [
-          { label: approveText ?? "OK", primary: true, onClick: () => answer(true) },
-          { label: cancelText ?? "Cancel", primary: false, onClick: () => answer(false) },
-        ]);
+        const cancel: ButtonSpec = { label: cancelText ?? "Cancel", primary: false, onClick: () => answer(false) };
+        const element = bar(doc, "alertdialog", headline, message,
+          APPROVE_WITHOUT_ACTION.has(headline ?? "") ? [cancel] : [{ label: approveText ?? "OK", primary: true, onClick: () => answer(true) }, cancel]);
+        element.addEventListener("keydown", (event) => { if (event.key === "Escape") answer(false); });
+        // the cancelling button: a stray Enter must not approve
+        [...element.querySelectorAll("button")].at(-1)?.focus();
         abortSignal?.addEventListener("abort", onAbort, { once: true });
-      }),
+      });
+      open.set(key, asked);
+      return asked;
+    },
     info: ({ headline, message, okText }) => {
-      const element = bar(doc, "alertdialog", headline, message, [{ label: okText ?? "OK", primary: true, onClick: () => element.remove() }]);
+      if (showing(doc, headline, message) === null) {
+        const element = bar(doc, "alertdialog", headline, message, [{ label: okText ?? "OK", primary: true, onClick: () => element.remove() }]);
+      }
       return Promise.resolve();
     },
     notify: ({ message }) => {
       console.info(`[openDAW] ${message}`);
+      if (showing(doc, undefined, message) !== null) return;
       const element = bar(doc, "status", undefined, message, []);
       setTimeout(() => element.remove(), NOTIFY_MS);
     },

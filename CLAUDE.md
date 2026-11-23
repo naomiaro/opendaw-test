@@ -616,11 +616,16 @@ has no exit while its action keeps failing: the WAV download offer for a recordi
 `src/lib/unstoredRecordingPrompt.test.ts`).
 - `initializeOpenDAW` calls `installRuntimeNotifier(window)` (`src/lib/runtimeNotifier.ts`) before its first await: a
   plain-DOM notifier in `#sdk-notices` at the bottom of the page. `approve` is a bar with two buttons and waits for a
-  click (`false` on the request's abort); `info` shows a bar and resolves at once, as the default did, so nothing that
-  awaits it starts waiting for a click; `notify` is a line that goes after six seconds; `progress` logs.
+  click (`false` on the request's abort or Escape; the same question asked while it is open shares the bar and the
+  answer, as when several Tapes prepare together); `info` shows a bar and resolves at once, as the default did, so
+  nothing that awaits it starts waiting for a click; `notify` is a line that goes after six seconds; `progress` logs.
+  A notice already showing is not shown twice (the SDK's own repeat guards wait for `info` to resolve).
+- "MIDI Blocked" is shown with its closing button only (`APPROVE_WITHOUT_ACTION`): the SDK answers a yes there by
+  opening `/manuals/permissions`, a studio page this site does not have.
 - So an SDK `approve` on a demo page now WAITS. A harness that drives a flow which asks (a recording on a browser
   without `outputLatency`, a blocked MIDI permission, a recording that cannot be stored) must click the bar's button
-  or it hangs there. None of the standing sweeps reaches one on Chrome.
+  or it hangs there (a MIDI audit on a browser that blocks MIDI now waits out its 30 s "MIDI access" deadline where
+  it failed at once). None of the standing sweeps reaches one on Chrome.
 - A page that does not boot through `initializeOpenDAW` has no notifier and gets the SDK's default.
 
 ### monitoringMode Is Not a Box Graph Field
