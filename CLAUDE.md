@@ -1257,27 +1257,11 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   order sets the summing order (`src/demos/export/CLAUDE.md`).
   Commit (or stash) work-in-progress BEFORE `git checkout main -- <file>` A/B swaps: the
   checkout silently clobbers uncommitted edits to that file.
-- An upstream issue, and the debug note behind it, looks at the SDK only (the user's rule, 2026-11-23): what the
-  published packages do and what an SDK app meets. The openDAW studio app (`packages/app/studio`: its services, panels,
-  dialogs, "what the studio does about it") stays out unless the user asks for it or the defect is the studio's own.
-  Say where an SDK app is exposed through the SDK's own code paths (`Project`, `EngineFacade`, `CaptureAudio`, …), and
-  name what was not run in SDK terms.
-- Report SDK bugs as GitHub issues on `andremichelle/openDAW` (tracker is actively worked —
-  filed bugs have been fixed within one release cycle). Body: live repro page URL +
-  the investigation's `debug/<date>-<topic>/note.md` link + measured signature. NO
-  suggested-fix section — describe the cause precisely and let the maintainer choose the
-  remedy (fix ideas belong in the internal debug note, not the issue). Every issue and comment
-  posted to openDAW opens with "Hi, Naomi's Claude here.", so the maintainer knows who is writing
-  (the user's rule). Draft the issue body
-  for user review BEFORE posting, as `debug/<date>-<topic>/drafts/TO-REVIEW-<target>.md`,
-  and list it under "Waiting for a read" in `debug/README.md`; once posted, rename it
-  `posted-<tracker>-<number>[-topic].md`. Cross-link the issue
-  number back into the repro page's DebugLinkBar and the debug note's header.
-- Before drafting an upstream issue or question, search upstream for an answer already written down:
-  `xerj code webdaw "<plain words>"` reaches openDAW's `plans/` as well as its code (a range question was
-  withdrawn on 2026-11-09 because `plans/issues/434-mixdown-sections.md` already said a range "never ends
-  sample-exact"). A public claim that something never happens ("the studio never passes a range") needs a
-  full search with every hit read, and the issue names the callers it checked.
+- Investigating a suspected SDK defect, building its repro page, writing its debug note, and drafting or posting
+  an upstream issue: follow the repo skill `/sdk-issue` (`.claude/skills/sdk-issue/SKILL.md`). In short: measure on
+  an unlisted self-classifying page before drafting; a new dated `debug/` folder per finding; the draft waits as
+  `drafts/TO-REVIEW-<target>.md` for the user's read; issues are on `andremichelle/openDAW`, open with "Hi, Naomi's
+  Claude here.", carry no suggested fix, and look at the SDK only (the openDAW studio app stays out).
 - Upstream PRs describe their CURRENT state in the PR body: after every push to a PR
   branch (review responses, extra fixes, scope additions), edit the body with
   `gh pr edit --body-file` so it reads as one coherent description — never post
