@@ -240,8 +240,9 @@ if (captureOpt.nonEmpty()) {
   const capture = captureOpt.unwrap();
 
   // Arm or disarm deterministically — armed is a runtime observable. It is written to the
-  // capture box (`captureBox.armed`, outside undo) only when the ProjectEnv sets `storeArmed: true`;
-  // a project saved that way arms the same tracks again when it loads.
+  // capture box (`captureBox.armed`, outside undo) only when the ProjectEnv sets `storeArmed: true`.
+  // The SDK never reads the field back: every capture starts disarmed, so an app that wants its
+  // tracks armed again after a load reads `capture.captureBox.armed` and sets `capture.armed` itself.
   capture.armed.setValue(true);
   capture.armed.setValue(false);
 

@@ -563,7 +563,9 @@ if (await OpusEncoder.isSupported(settings)) {
 }
 ```
 
-`isSupported` is `false` in a browser without `AudioEncoder` or without Opus encoding; fall back to WAV there. Aborting the signal
+`isSupported` is `false` in a browser without `AudioEncoder` or without Opus encoding; fall back to WAV there. It probes a
+stereo configuration whatever `numberOfChannels` says. `encode` takes audio with `numberOfChannels` channels, or stereo audio with
+`numberOfChannels: 1` (it averages the two); it asserts on any other pair. Aborting the signal
 rejects with `Errors.AbortError`. The Ogg container code (`mediabunny`) is loaded on the first `encode`.
 
 ### MP3 and FLAC (Via OpenDAW Studio)

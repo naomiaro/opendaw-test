@@ -181,25 +181,35 @@ samples/v2/
     meta.json     ← SampleMetaData (bpm, duration, sampleRate, origin, ...)
 ```
 
-Three small files per sample, all written in parallel:
+Three small files per sample, written one after the other with `meta.json` last:
 
 ```typescript
-// SampleStorage.ts:25
-async save({uuid, audio, peaks, meta}: SampleStorage.NewSample): Promise<void> {
-    const path = `${this.folder}/${UUID.toString(uuid)}`
+// SampleStorage.ts
+async save({uuid, audio, peaks, meta}: SampleStorage.NewSample, cached: boolean = false): Promise<void> {
     const data = new Uint8Array(WavFile.encodeFloats({
         frames: audio.frames.slice(),
         numberOfFrames: audio.numberOfFrames,
         numberOfChannels: audio.numberOfChannels,
         sampleRate: audio.sampleRate
     }))
-    return Promise.all([
-        Workers.Opfs.write(`${path}/audio.wav`, data),
-        Workers.Opfs.write(`${path}/peaks.bin`, new Uint8Array(peaks)),
-        Workers.Opfs.write(`${path}/meta.json`, new TextEncoder().encode(JSON.stringify(meta)))
-    ]).then(EmptyExec)
+    return this.saveEntry(uuid, [["audio.wav", data], ["peaks.bin", new Uint8Array(peaks)]], meta, cached)
+}
+
+// Storage.ts
+protected saveEntry(uuid, files, meta, cached): Promise<void> {
+    const path = `${this.folder}/${UUID.toString(uuid)}`
+    let began = false
+    return OpfsQuota.retry(path, async () => {
+        began = !await Workers.Opfs.exists(path)
+        for (const [name, bytes] of files) {await Workers.Opfs.write(`${path}/${name}`, bytes)}
+        await Workers.Opfs.write(`${path}/meta.json`, metaBytes)
+    }, async () => {if (began) {await Workers.Opfs.delete(path)}}, {cached, serial: true})
 }
 ```
+
+A failed save removes the folder only when this save created it. `OpfsQuota.retry` asks the handler an app installed with
+`OpfsQuota.install` whether to try again when the write failed for lack of space; `cached` marks a save of something that can be
+fetched again (a library sample), which the loader survives without.
 
 `Workers.Opfs` is the same RPC-to-worker pattern as `Workers.Peak`. The OPFS worker actually touches the Origin Private File System; everything is async, all I/O off the main thread.
 
@@ -264,7 +274,7 @@ export class DefaultSampleLoader implements SampleLoader {
     }
 
     setProgress(progress: number): void { ... }
-    setError(reason: string): void { ... }
+    setError(reason: string, cause?: unknown): void { ... }
     invalidate(): void { /* reset to progress 0.0, clear data */ }
 }
 ```

@@ -13,8 +13,9 @@ repo:
    `None` / `None` / `false`; `AudioUnitFactory`'s insert order counts every bus with the instruments. No demo deletes a bus (the two
    `audioUnitBox.delete()` calls, `jamSetup.ts` and the BPM page, are on instrument units, and a bare `delete()` does not go through
    the group code), none reads a bus's MIDI chain, and the export harness reads 308 of 308 rows identical, its bus and aux rows
-   included. New test `src/lib/busIsGroup.test.ts` pins the rule on a real box graph and fails against the 0.0.184
-   `AudioUnitGroups.js`. An `Aux` unit is not a group.
+   included. New test `src/lib/busIsGroup.test.ts` pins the rule on a real box graph (a bus owns what is routed into it, a nested
+   bus lists parents before children, the retired flag is not read, an `Aux` unit is not a group) and fails against the 0.0.184
+   `AudioUnitGroups.js`.
 2. **Collapse states and heights are per user (breaking, `ecbf99356`).** `AudioUnitBox.groupCollapsed`,
    `AudioUnitBox.userInterface` (`automationCollapsed`, `height`) and `TrackBox.height` are deprecated. The values live in
    `ViewStateBox` entries (new, ephemeral: `user`, `target`, `groupCollapsed`, `automationCollapsed`, `height`) pointing at a
@@ -50,7 +51,8 @@ repo:
    every length of a sixteenth or more was rounded to the sixteenth grid. The demos build their regions and warp markers by hand
    (`trackLoading.ts`, `warpScenarios.ts`) and call neither.
 8. **Armed state can be stored (`e7216d537`, `be3349f4a`).** `CaptureAudioBox` / `CaptureMidiBox` key 3 `armed`. It is written only
-   when `ProjectEnv.storeArmed` is `true` (the studio sets it; default off, as on 0.0.184), outside undo, never in a live room.
+   when `ProjectEnv.storeArmed` is `true` (the studio sets it; default off, as on 0.0.184), outside undo, never in a live room. The SDK only writes it: every capture starts disarmed, and re-arming on load is studio-app
+   code (`ArmedCaptures.ts`).
    `AudioUnitCapture` (`deriveUUID`, `restore`) is exported: migration and room repair give an instrument that lost its capture a
    new one under an id derived from the unit instead of deleting the unit.
 9. **Engine memory (`9068eceb9`).** talc 5.0.4: the engine no longer grows to 4 GB for a sample just under a 64 KiB page multiple and
@@ -59,7 +61,8 @@ repo:
    keeps its length when resized.
 10. **New in studio-core:** `OpusEncoder` (WebCodecs Ogg Opus, 48 kHz only, at most four one-second blocks queued, optional
     `AbortSignal`; brings `mediabunny` as a dependency, loaded on first encode); `FFmpegWorker.load(progress?, {coreURL, wasmURL}?)`
-    with `FFmpegWorker.DefaultCoreURLs`; `OpfsQuota` (`install(handler)`, `retry`), `TrashList`, `AssetCache` / `StorageScan`
+    with `FFmpegWorker.DefaultCoreURLs` (the class is imported from `@opendaw/studio-core/FFmpegWorker`; only the second argument
+    is new); `OpfsQuota` (`install(handler)`, `retry`), `AssetCache` / `StorageScan`
     (which stored samples and soundfonts are in use, cached and freeable), `GlobalSampleLoaderManager.isInUse(uuid)`,
     `MIDILearning.numberOfConnections`; lib-box exports `GraphValidationError` (the pointer-rule failures throw it).
 

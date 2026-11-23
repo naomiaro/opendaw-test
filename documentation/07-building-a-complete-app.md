@@ -1044,13 +1044,15 @@ Everything above builds a group by hand: a plain `AudioUnitType.Bus` and re-rout
 group: every unit of type `AudioUnitType.Bus` is a group bus (`AudioUnitGroups.isGroup(unitBox)`), and the openDAW
 studio shows it with its members nested under it. Membership is not stored anywhere: a unit belongs to a group when
 its primary `output` points at the bus of a `Bus` unit. An `Aux` unit is not a group, and an aux send makes no
-member. The `isGroup` and `groupCollapsed` fields still on `AudioUnitBox` are deprecated and no longer read.
+member. The `isGroup` and `groupCollapsed` fields still on `AudioUnitBox` are deprecated: nothing reads `isGroup`, and only the load
+migration reads `groupCollapsed`.
 
 Two consequences for a hand-built bus:
 
 - **Deleting it through the API deletes its members.** `project.api.deleteAudioUnit(busUnitBox)` deletes the bus and
   every unit routed into it, with their tracks and regions. To remove only the bus, route the members elsewhere
-  first, or call `project.grouping.ungroup(busUnitBox)`, which moves them up a level and then deletes the bus. A bare
+  first, or call `project.grouping.ungroup(busUnitBox)`, which moves them up a level and then deletes the bus (when they
+  cannot move, it returns and keeps the bus). A bare
   `busUnitBox.delete()` does not go through the group code.
 - **A bus unit hosts no MIDI effect chain:** `midiEffects` and `midiEffectsField` on its adapter are `None`.
 

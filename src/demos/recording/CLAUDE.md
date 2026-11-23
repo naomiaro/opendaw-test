@@ -195,8 +195,9 @@ Finalization barriers must count `"error"` as terminal AND keep a safety timeout
 `RecordingWorklet` (the loader during recording) goes to `"error"` (`reason`, `cause`)
 when the take cannot be stored. `RecordAudio` then deletes the take's `AudioFileBox`
 with its regions and asks through `RuntimeNotifier.approve` whether to download the
-take as a WAV (`UnstoredRecording.offerDownload`), so a barrier that saw `"error"` must
-not expect the region to exist. `"error"` also fires on `DefaultSampleLoader` paths
+take as a WAV (`UnstoredRecording.offerDownload`). The state changes first and the delete
+follows in the same call, so the box is still attached inside the `"error"` callback and gone
+once it returns: a barrier that saw `"error"` must not expect the region afterwards. `"error"` also fires on `DefaultSampleLoader` paths
 (post-reload loads, decode failures). The timeout stays for a finalization that
 never settles.
 Inside the subscribe callback, a one-shot `sub.terminate()` call will hit the

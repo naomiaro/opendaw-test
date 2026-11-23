@@ -238,7 +238,7 @@ project.editing.modify(() => {
 });
 ```
 These hand-built buses ARE groups to the SDK: every `AudioUnitType.Bus` unit is one (`AudioUnitGroups.isGroup`,
-the `isGroup` field is deprecated and unread), and a unit whose `output` points at its bus is its member
+the `isGroup` field is deprecated, nothing reads it), and a unit whose `output` points at its bus is its member
 (`AudioUnitGroups.parent`). So `project.api.deleteAudioUnit(busUnitBox)` deletes the bus AND every unit routed
 into it (`project.grouping.ungroup` keeps them; regression test `src/lib/busIsGroup.test.ts`); no demo deletes a
 bus. A bus unit hosts no MIDI effect chain (`midiEffects` / `midiEffectsField` → `None`). Folded state and track
