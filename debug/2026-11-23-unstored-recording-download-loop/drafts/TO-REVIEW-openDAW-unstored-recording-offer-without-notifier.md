@@ -1,4 +1,4 @@
-**Target:** a new issue on `andremichelle/openDAW`. Not posted.
+**Target:** a new issue on `andremichelle/openDAW`. Not posted. Post only after the PR that adds the test and the note has merged: the two links below point at `main`.
 **Title:** The WAV download offer for an unstored recording never ends when no `RuntimeNotifier` is installed
 
 ---
@@ -20,7 +20,8 @@ cancelled, and for a picker error other than `NotAllowedError` it calls `Runtime
 a notifier) and rejects too. So for an SDK user who has not called `RuntimeNotifier.install`:
 
 - nobody is asked, the save picker is requested at once;
-- a refused save is followed by the next request at once, and no answer ends the loop;
+- a refused save is followed by the next request at once, and the loop's two exits (a save that resolves, an answer
+  of no) cannot happen while the save keeps being refused;
 - every turn encodes the take to WAV again;
 - the take's `AudioFileBox` and regions were already deleted by `RecordAudio`'s `onFailed`, so the offer is the only
   copy of the audio.
@@ -32,14 +33,17 @@ The studio installs a notifier in `boot.ts`, and `UnstoredRecording.test.ts` ins
 Against the installed `studio-core/dist/UnstoredRecording.js`, in vitest with jsdom, `window.showSaveFilePicker`
 stubbed to refuse 50 times and then never answer:
 
-| Picker refuses with | Notifier | Picker calls | Offer settled |
+| Picker refuses with | Notifier | Picker calls | How it ended |
 |---|---|---|---|
-| `AbortError` | none | 51 | no |
-| `SecurityError` | none | 51 | no |
-| `AbortError` | installed, answers yes then no | 1 | yes, `false` |
+| `AbortError` | none | 51: every refusal followed by another request | my stub parked call 51 |
+| `SecurityError` | none | 51, the same | my stub parked call 51 |
+| `AbortError` | installed, answers yes then no | 1 | the offer resolved `false` |
+
+`SecurityError` stands for any error `Files.save` does not treat as a cancel or as `NotAllowedError`; I did not check
+which error a browser gives a picker call without a user gesture.
 
 In Chrome under Playwright, `UnstoredRecording.offerDownload` called directly on a page with no notifier, the picker
-wrapped to count: 201 calls in under 3 s, the offer still pending. Playwright aborts file pickers by itself, so that
+wrapped to count and to park after 200: 201 calls in under 3 s. Playwright aborts file pickers by itself, so that
 run is a user cancelling every time; I have not run it in an ordinary Chrome window, and I called the offer directly
 without filling the storage.
 

@@ -58,19 +58,20 @@ drawn.
 
 - **A normal Chrome window.** Whether the first picker shows depends on whether a user gesture is still active when
   the take finishes storing. After a cancelled picker the gesture is used up, so the next call is expected to be
-  refused without drawing anything (with which error name was not checked; the `SecurityError` row stands for it), and the loop to spin unseen until the next click anywhere on the page gives it a
-  gesture to open another picker. That is read from the platform's rules, not seen. Not run because it would open real
-  file pickers in a loop on the user's screen.
+  refused without drawing anything (with which error name was not checked; the `SecurityError` row stands for it).
+  The loop would then either spin unseen until the next click anywhere on the page gives it a gesture for another
+  picker, or, if the refusal comes back without yielding to the browser, hang the page. Neither was seen; both are
+  read from the platform's rules. Not run because it would open real file pickers in a loop on the user's screen.
 - **The path from a full storage.** The offer was called directly. That a quota failure reaches it is read from
   `RecordingWorklet.#finalize` and `RecordAudio`'s `sink.onFailed`; the upgrade did not provoke it either.
 - **Firefox and Safari** have no `showSaveFilePicker`: `Files.save` takes the anchor download, which resolves, so the
-  offer ends after one download nobody was asked about.
+  offer would end after one download attempt nobody was asked about (read from the code, not run there).
 
 ## The same default elsewhere, read only
 
 `Promises.approvedRetry` (lib-runtime) retries its factory for as long as `approve` says yes, with no count; the cloud
 backups upload through it. Without a notifier a failing upload would retry without end. `Network.defaultFetch` asks
-the same way when offline but stops after 30 turns. Neither was run.
+the same way when the browser reports itself offline, and stops after 29 attempts either way. Neither was run.
 
 ## What an SDK user can do
 

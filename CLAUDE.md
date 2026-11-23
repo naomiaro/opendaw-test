@@ -609,8 +609,8 @@ creation failure so the whole transaction (deletions included) aborts.
 ### RuntimeNotifier Answers Yes When Nothing Is Installed
 The SDK asks the app questions through `RuntimeNotifier` (`@opendaw/lib-std`): `approve`, `info`, `notify`,
 `progress`. An app answers by calling `RuntimeNotifier.install(notifier)` once (a second call asserts). With nothing
-installed `approve` resolves `true` and the others do nothing. The demos install none. Any SDK loop that runs
-"while the user approves" then has no exit: the WAV download offer for a recording that could not be stored
+installed `approve` resolves `true` and the others do nothing. The demos install none. An SDK loop that runs
+"while the user approves" then has no exit while its action keeps failing: the WAV download offer for a recording that could not be stored
 (`UnstoredRecording.offerDownload`) requests the save picker again and again when a save is refused
 (`debug/2026-11-23-unstored-recording-download-loop/note.md`, flips-when-fixed test
 `src/lib/unstoredRecordingPrompt.test.ts`). Before relying on an SDK prompt, check what its default answer does.

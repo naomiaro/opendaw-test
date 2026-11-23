@@ -199,8 +199,8 @@ take as a WAV (`UnstoredRecording.offerDownload`). **The demos install no notifi
 without one `approve` resolves yes:** nobody is asked, the save picker is requested at
 once, and a refused save is requested again without end
 (`debug/2026-11-23-unstored-recording-download-loop/note.md`, test
-`src/lib/unstoredRecordingPrompt.test.ts`). An app that records must call
-`RuntimeNotifier.install` with an `approve` that can answer no. The state changes first and the delete
+`src/lib/unstoredRecordingPrompt.test.ts`). An app that records should call
+`RuntimeNotifier.install` with an `approve` that can answer no; the demos do not yet (an open decision). The state changes first and the delete
 follows in the same call, so the box is still attached inside the `"error"` callback and gone
 once it returns: a barrier that saw `"error"` must not expect the region afterwards. `"error"` also fires on `DefaultSampleLoader` paths
 (post-reload loads, decode failures). The timeout stays for a finalization that
