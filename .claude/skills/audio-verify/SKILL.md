@@ -66,7 +66,7 @@ seconds. Measured reference points:
 | varispeed | gridTimes | ≤ 60 ms |
 | timestretch | gridTimes | ≤ 75 ms (WASM offline worker — see 2026-07-16 re-measurement) |
 | signalsmith | gridTimes | [60,80] ≤ 60 ms; [120,140] is tracker-artifact-prone on this render — do NOT assert the raw median there, use the cross-render envelope-lag check (see 2026-07-31 note) |
-| signalsmith-transposed (+3 st) | gridTimes | ≤ 60 ms (both windows); envelope lag vs untransposed must peak at 0 ms (pitch must not move time); pitch-class rotation corr must peak at −3 st |
+| signalsmith-transposed (+3 st) | gridTimes | envelope lag vs untransposed must peak at 0 ± 2 ms (pitch must not move time); pitch-class rotation corr must peak at −3 st; the beat median is tracker-artifact-prone on this render, do not assert it (2026-11-23 note) |
 | grid-conform | fileTimes | ≤ 60 ms (conformed grid + clicks + music all coincide on file times) |
 | grid-rigid — placement sanity | fileTimesRigid | ≤ 60 ms (music plays where the region was placed) |
 | grid-rigid — negative control | rigidClickTimes | ≥ 90 ms ([60,80] measured 92 ms on the WASM worker; [120,140] ≥ 100 ms) |
@@ -135,6 +135,16 @@ signalsmith-transposed **19.6/20.4 vs baseline 35.6/24.0** — an improvement,
 plausibly from 0.0.165's Signalsmith release/re-prime fixes; rotation corr peak
 0.682 at the 3-semitone lag vs −0.292 at lag 0 (baseline 0.672/−0.327). Treat
 transposed medians ~20-36 ms as in-family until a fresh calibration supersedes this.
+
+Re-measured 2026-11-23 after the engine stopped delaying each Signalsmith region by a uuid-derived 0 to 7 render
+quanta (the earlier Signalsmith cells were taken with that delay in, a different one per render): signalsmith
+[60,80] **39.6**, signalsmith-transposed **96.1 / 83.8**, the transposed p90 at 229–238 ms in both windows (the
+tracker on offbeats, the artifact described above). The envelope lag untransposed-vs-transposed is **0 ms**
+([60,80], corr 0.70) and **+1 ms** ([120,140], corr 0.69). **Do not assert the beat median on the transposed
+render; assert the envelope lag (0 ± 2 ms)**, and for placement use the click page,
+`stretch-placement-debug-demo.html` (register `debug/2026-11-23-stretch-grid-placement/note.md`), which reads
+Signalsmith's placement to the frame. Two Signalsmith renders of one scenario are byte-identical (same WAV
+SHA-256 on two loads, in the SDK changelog that removed the delay).
 
 **Pitch (relative check):** `harmonic_analysis` pitch-class distributions on
 [120, 140] s; Pearson-correlate each against raw's. Require

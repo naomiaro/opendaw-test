@@ -28,6 +28,16 @@
   below TWO transient markers, not one. Reader-facing version: warp overview
   `#two-kinds-of-markers`.
 
+### Where Signalsmith Puts a Transient
+- A Signalsmith region with an identity warp map and transpose 0 puts a burst on its frame, with the source's
+  width and level (measured on those three figures, not by a sample-for-sample difference).
+- With a stretch or a transpose there is no constant offset, but a short event is spread across the stretcher's
+  4096-frame block (one every 1024 frames, at any sample rate): a 2 ms burst comes out up to 32 ms wide (RMS), its
+  centre up to 18 ms from the warp map, its peak down to about a tenth of the source's. Never read one transient's
+  position off a Signalsmith render as a timing figure; use many and a median, or
+  `stretch-placement-debug-demo.html` (`debug/2026-11-23-stretch-grid-placement/note.md`).
+- Varispeed keeps a burst a burst (same centre, width scaled by the stretch).
+
 ### Tempo-Event Density Limit
 - Box creation in `editing.modify()` costs ~1.2 ms/box, deletion ~1.5 ms/box. 510 tempo events
   in one transaction = 594 ms create / 743 ms delete — too slow for an interactive toggle.
