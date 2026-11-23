@@ -213,6 +213,7 @@ export default defineConfig(({command}) => ({
                 paramWriteEnabledFlipDebug: resolve(__dirname, "param-write-enabled-flip-debug-demo.html"),
                 automationSuspendedAfterStopDebug: resolve(__dirname, "automation-suspended-after-stop-debug-demo.html"),
                 nanoPlayModesDebug: resolve(__dirname, "nano-play-modes-debug-demo.html"),
+                stretchPlacementDebug: resolve(__dirname, "stretch-placement-debug-demo.html"),
                 wasmEngine: resolve(__dirname, "wasm-engine-demo.html"),
                 modulation: resolve(__dirname, "modulation-demo.html"),
                 convolver: resolve(__dirname, "convolver-demo.html"),
