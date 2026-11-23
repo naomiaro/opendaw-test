@@ -1,7 +1,9 @@
 # Effects monitoring: the return of a mono source is the strip's left channel on both sides
 
-**Status: measured on `@opendaw/studio-sdk@0.0.189`, 2026-11-23. Not filed yet:** the issue draft is
-[`drafts/TO-REVIEW-openDAW-fx-monitor-mono-return.md`](./drafts/TO-REVIEW-openDAW-fx-monitor-mono-return.md).
+**Status: measured on `@opendaw/studio-sdk@0.0.189`, 2026-11-23. Filed 2026-11-23, open.**
+
+**Issue:** [openDAW#575](https://github.com/andremichelle/openDAW/issues/575); the body as filed is
+[`drafts/posted-openDAW-575-fx-monitor-mono-return.md`](./drafts/posted-openDAW-575-fx-monitor-mono-return.md).
 
 **Repro page:** `monitoring-mono-return-debug-demo.html` (unlisted; a real click on Run, about twenty seconds, one run per
 load; the monitored tone is never heard, the one thing played is a 1.6 s metronome check). Source `src/demos/engine/monitoring-mono-return-debug-demo.tsx`.

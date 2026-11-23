@@ -1,7 +1,9 @@
 # Effects monitoring is silent after the engine worklet is replaced
 
-**Status: measured on `@opendaw/studio-sdk@0.0.189`, 2026-11-23. Not filed yet:** the issue draft is
-[`drafts/TO-REVIEW-openDAW-fx-monitor-lost-on-engine-restart.md`](./drafts/TO-REVIEW-openDAW-fx-monitor-lost-on-engine-restart.md).
+**Status: measured on `@opendaw/studio-sdk@0.0.189`, 2026-11-23. Filed 2026-11-23, open.**
+
+**Issue:** [openDAW#576](https://github.com/andremichelle/openDAW/issues/576); the body as filed is
+[`drafts/posted-openDAW-576-fx-monitor-lost-on-engine-restart.md`](./drafts/posted-openDAW-576-fx-monitor-lost-on-engine-restart.md).
 
 Found with the harness of [the mono-return note](../2026-11-23-fx-monitor-mono-return/note.md), which keeps
 its own register.
