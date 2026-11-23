@@ -89,5 +89,14 @@ RuntimeNotifier.install({
 ```
 
 `install` asserts when called twice. The control row above is the measurement behind this: with an `approve` that
-answers no, the offer ends. The demos here do not install one yet; that is a decision for the repo's owner, since it
-changes every `approve` the SDK makes from "yes" to a question.
+answers no, the offer ends.
+
+## In this repo since 2026-11-23
+
+`initializeOpenDAW` installs a plain-DOM notifier (`src/lib/runtimeNotifier.ts`, tests beside it), so every demo page
+asks. Checked on a page of the dev server, against the SDK module instance the page itself loaded:
+`UnstoredRecording.offerDownload` showed "Recording Not Saved … Download WAV / Discard" with **0** picker requests;
+a click on Download WAV made **1** request (aborted by Playwright); the bar came back; a click on Discard resolved the
+offer `false` with 1 request in total and no bar left. (The 201-request run above imported the SDK by a second URL, a
+module instance of its own with nothing installed, which is why it still stands as the no-notifier measurement.)
+`src/lib/unstoredRecordingPrompt.test.ts` keeps pinning the SDK's behaviour without a notifier.
