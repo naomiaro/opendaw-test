@@ -1,6 +1,6 @@
-# Draft comment for WebKit 259193 (waits for the user's read; not posted)
-
-Target: https://bugs.webkit.org/show_bug.cgi?id=259193
+**Posted 2026-11-24:** https://bugs.webkit.org/show_bug.cgi?id=259193#c2 — comment 2, through the user's Chrome
+and Bugzilla account on the user's word. As posted the text is plain: no backticks, "x" for "×", each paragraph
+on one line.
 
 ---
 
