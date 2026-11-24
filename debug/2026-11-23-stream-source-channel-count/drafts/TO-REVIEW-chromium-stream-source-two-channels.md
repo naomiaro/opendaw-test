@@ -4,9 +4,9 @@
 Notes for the read, not part of the issue:
 - Why a new issue and not a comment: 40774165 has been closed for nineteen months and an outside reporter
   cannot reopen it. After filing, one line on 40774165 pointing at the new issue is enough.
-- The repro here is a `MediaStreamAudioDestinationNode`'s stream, so it needs no microphone. 40774165's own
-  condition is a mono MICROPHONE: `stream-source-channels-debug-demo.html?input=mic` in the user's Chrome adds
-  those rows. Optional, and worth having before posting; the line marked [optional] is where they go.
+- The main repro is a `MediaStreamAudioDestinationNode`'s stream, so it needs no microphone. 40774165's own
+  condition, a mono MICROPHONE, was run in the user's Chrome on 2026-11-23 and is the second table.
+  STILL TO FILL: the two places marked [build], from `chrome://version` of that Chrome.
 - The page URL works once this repo's PR is merged and deployed. The page loads no openDAW code. The inline
   snippet below is the same measurement without the page; it was run as written in Chrome 158 on 2026-11-23
   (`track channelCount 1`, `{2: 300}`).
@@ -61,7 +61,13 @@ of 300 render quanta.
 | destination with `channelCount` 2 | 2 channels | 2 channels | 2 channels |
 | control: a gain node with an explicit count of 1, no stream | 1 channel | 1 channel | 1 channel |
 
-[optional: the same rows for a mono microphone]
+A mono microphone ("MacBook Pro Microphone (Built-in)", echo cancellation, noise suppression and gain control
+off), the page with `?input=mic`, Chrome [build] on macOS 15.6.1:
+
+| Asked for | Track's `channelCount` | Channels the worklet is handed | Identical |
+|---|---|---|---|
+| `channelCount: {ideal: 1}` | 1 | 2 on 300 of 300 quanta | yes |
+| `channelCount: {ideal: 2}` | 1 | 2 on 300 of 300 quanta | yes |
 
 **Why it matters**
 
@@ -77,4 +83,4 @@ in Chrome only, and an app cannot tell from the track, which reports one channel
 to M-84) was closed on 2025-04-14 as no longer reproducing, without a linked change, with a request to
 reactivate it if it does.
 
-**Version:** Chrome 158, macOS 15.6.1.
+**Version:** Chrome 158 (the synthetic rows) and Chrome [build] (the microphone rows), macOS 15.6.1.

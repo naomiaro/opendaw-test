@@ -107,9 +107,9 @@ R ×0.00); `data-mono-direct="not-mixed-down"`. Its own note:
 
 ## Not measured
 
-- **A real microphone.** `?input=mic` is built and was not run yet: the microphone permission of the dev
-  origin has to be granted by hand. On Chrome the expectation from the probe is two identical channels and
-  `doubles`.
+- **A real microphone through the SDK.** `?input=mic` was run in the user's Chrome on 2026-11-23 and its
+  result is not recorded here yet. On the SDK-free probe the same built-in mono microphone reaches a node as
+  two identical channels and the panner reads centre ×1.00, hard ×2.00, so `doubles` is expected.
 - **The SDK page in Firefox and Safari.** Started once in Firefox 159 through the repo's driver: the
   page-made panner controls read as in Chrome, then the capture's input did not open within the page's
   ten-second deadline (not looked into). The Firefox and Safari figures above are the browser's nodes on the

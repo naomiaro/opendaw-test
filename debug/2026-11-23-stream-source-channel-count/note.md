@@ -5,7 +5,7 @@ behaviour, not an SDK defect: entry in [`docs/known-vendor-issues.md`](../../doc
 Chromium issue [40774165](https://issues.chromium.org/issues/40774165) is this behaviour, closed as fixed in
 2025 without a change; a NEW Chromium issue is drafted and waits for a read
 ([`drafts/TO-REVIEW-chromium-stream-source-two-channels.md`](./drafts/TO-REVIEW-chromium-stream-source-two-channels.md));
-the earlier report's own condition, a mono microphone, has not been run here.** Found while tracing why two channels
+the earlier report's own condition, a mono microphone, reproduces in the user's Chrome (below).** Found while tracing why two channels
 reach the SDK's monitor pan ([the monitor pan note](../2026-11-23-monitor-pan-doubles-at-hard-pan/note.md)).
 
 **Probe page:** `stream-source-channels-debug-demo.html` (`src/demos/engine/stream-source-channels-debug-demo.ts`),
@@ -52,10 +52,22 @@ channel and reads centre ×0.71, hard ×1.00; with a count of 2, two channels an
 
 Safari hands over one quantum of two channels before the one-channel ones.
 
+### A real mono microphone (the earlier report's condition)
+
+The user's Chrome (build to be added from `chrome://version`), macOS 15.6.1, `?input=mic`, one run, the
+synthetic rows and controls as in the table above. The microphone is "MacBook Pro Microphone (Built-in)",
+opened with echo cancellation, noise suppression and gain control off.
+
+| Asked for | Track reports | Delivered | Identical | Peak | Panner after it |
+|---|---|---|---|---|---|
+| `channelCount` ideal 1 | 1 | 2 ch × 300 | yes | 0.0100 | centre ×1.00, hard ×2.00 |
+| `channelCount` ideal 2 | 1 | 2 ch × 300 | yes | 0.0081 | centre ×1.00, hard ×2.00 |
+
+Verdict `UPMIXES`. Asked for two channels, the mono microphone still gives a track that reports one.
+
 ## Not measured
 
-- **A real microphone**, in any browser. Issue 40774165's repro is a mono microphone; the rows here are a
-  `MediaStreamAudioDestinationNode`'s stream. `?input=mic` is built and not run (the permission needs a hand).
+- A real microphone in Firefox and Safari.
 - Chrome on Windows or Linux, and Chrome's source (two fetches were rate-limited): what in Chrome widens the
   stream is not read.
 - A stream of more than two channels.

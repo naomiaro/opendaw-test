@@ -543,8 +543,9 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   corresponds to the number of channels of the MediaStreamTrack."
 - **Symptom here:** measured without the SDK on Chrome 158 (macOS, 2026-11-23): the stream of a
   `MediaStreamAudioDestinationNode` with one channel reaches a worklet as two identical channels on 300 of 300
-  quanta while its track reports `channelCount` 1. Firefox 159 and Safari 18.6 deliver one channel (Safari two
-  on the first quantum). NOT measured: a real mono microphone, the tracker's own condition.
+  quanta while its track reports `channelCount` 1, and so does the built-in mono microphone in the user's
+  Chrome (the tracker's own condition; asked for two channels, its track still reports one). Firefox 159 and
+  Safari 18.6 deliver one channel for the synthetic stream (Safari two on the first quantum).
 - **Where it bites here:** anything channel-count dependent after a stream source. A `StereoPannerNode` gets
   its stereo algorithm in Chrome (a mono input reads centre ×1, hard ×2) and its mono one in Firefox and
   Safari (centre ×0.71, hard ×1): the SDK's direct monitoring is exactly that chain
