@@ -58,7 +58,8 @@ So the taps tell the three laws apart, and the monitor's figures are the node's 
 
 ### A real mono microphone
 
-The user's Chrome 158.0.8127.88 (arm64), macOS 15.6.1, `?input=mic`, one run on 2026-11-23; its synthetic rows read as in the
+The user's Chrome, macOS 15.6.1, `?input=mic`, two runs on 2026-11-23 (158.0.8127.88, then 158.0.8127.89
+after an update), identical; their synthetic rows read as in the
 tables here. The microphone is "MacBook Pro Microphone (Built-in)", the default input, with steady noise.
 
 | Monitor, direct mode | at −1 | at 0 | at +1 | channels reaching the pan | the track reports |

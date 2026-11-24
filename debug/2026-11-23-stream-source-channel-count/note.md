@@ -54,16 +54,17 @@ Safari hands over one quantum of two channels before the one-channel ones.
 
 ### A real mono microphone (the earlier report's condition)
 
-The user's Chrome 158.0.8127.88 (Official Build, arm64), macOS 15.6.1 (24G90), `?input=mic`, one run, the
-synthetic rows and controls as in the table above. The microphone is "MacBook Pro Microphone (Built-in)",
+The user's Chrome, macOS 15.6.1 (24G90), `?input=mic`, two runs on 2026-11-23: one on 158.0.8127.88 and one
+after updating to 158.0.8127.89 (Official Build, arm64), the newest stable that day. Both read the same; the
+synthetic rows and controls read as in the table above in both. The microphone is "MacBook Pro Microphone (Built-in)",
 opened with echo cancellation, noise suppression and gain control off.
 
 | Asked for | Track reports | Delivered | Identical | Peak | Panner after it |
 |---|---|---|---|---|---|
-| `channelCount` ideal 1 | 1 | 2 ch × 300 | yes | 0.0100 | centre ×1.00, hard ×2.00 |
-| `channelCount` ideal 2 | 1 | 2 ch × 300 | yes | 0.0081 | centre ×1.00, hard ×2.00 |
+| `channelCount` ideal 1 | 1 | 2 ch × 300 | yes | 0.0100 / 0.0073 | centre ×1.00, hard ×2.00 |
+| `channelCount` ideal 2 | 1 | 2 ch × 300 | yes | 0.0081 / 0.0086 | centre ×1.00, hard ×2.00 |
 
-Verdict `UPMIXES`. Asked for two channels, the mono microphone still gives a track that reports one.
+Verdict `UPMIXES` on both builds (the two peaks are the two runs). Asked for two channels, the mono microphone still gives a track that reports one.
 
 ## Not measured
 

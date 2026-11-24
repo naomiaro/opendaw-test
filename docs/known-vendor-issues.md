@@ -556,7 +556,7 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   node.
 - **Evidence:** `stream-source-channels-debug-demo.html` (SDK-free; `?input=mic` for a microphone),
   `debug/2026-11-23-stream-source-channel-count/note.md`.
-- **Last checked:** 2026-11-23, Chrome 158.0.8127.88, Firefox 159.0.1, Safari 18.6.
+- **Last checked:** 2026-11-23, Chrome 158.0.8127.89, Firefox 159.0.1, Safari 18.6.
 
 ## Watched — read from the tracker, not reproduced here
 

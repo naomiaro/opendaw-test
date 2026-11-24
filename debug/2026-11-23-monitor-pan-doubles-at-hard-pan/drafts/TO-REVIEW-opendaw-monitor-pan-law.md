@@ -25,7 +25,7 @@ An input with the same signal on both sides (a one-channel stream):
 | Monitor, direct mode, `requestChannels` 2 | L ×2.00, R ×0.00 | L ×1.00, R ×1.00 | L ×0.00, R ×2.00 |
 | Monitor, direct mode, `requestChannels` 1 | L ×2.00, R ×0.00 | L ×1.00, R ×1.00 | L ×0.00, R ×2.00 |
 
-A real mono microphone (a laptop's built-in one, Chrome, one run) reads the same in direct mode at both
+A real mono microphone (a laptop's built-in one, Chrome 158.0.8127.89, two runs) reads the same in direct mode at both
 requests: centre L ×1.00, R ×1.00; hard left L ×2.00, R ×0.00; hard right L ×0.00, R ×2.00. Its track reports
 `channelCount` 1 and two identical channels reach the pan node.
 
