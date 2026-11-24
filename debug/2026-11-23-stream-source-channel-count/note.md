@@ -58,7 +58,16 @@ seconds of running starts at one channel (1 ch × 300), so it is once per source
 first audio, not once per connection. Nothing sounding passes at the wrong width, and the panner reads the
 mono law. **Not filed with WebKit**: a silent 2.9 ms at the node's starting width has no effect measured here.
 It would be worth a second look if a later Safari showed signal in that quantum, or more than one. Firefox
-159 on the same page: 1 ch × 300 from quantum 0 on every node. A real microphone in Safari is still unmeasured.
+159 on the same page: 1 ch × 300 from quantum 0 on every node.
+
+Chrome on the changed page, 2026-11-24: Playwright's Chrome 158 (synthetic rows) and the user's Chrome 158 with
+`?input=mic` (the built-in microphone, its track reporting 1 for ideal 1 and for ideal 2) read 2 ch × 300 from
+quantum 0 on every node, recounts and second nodes included, the panner `doubles`: as on 2026-11-23.
+
+`drive-safari.ts` cannot measure a microphone: under WebDriver Safari answers `getUserMedia` with "Mock audio
+device 1" and no prompt, which delivered 2 ch × 300 from quantum 0 for ideal 1 and ideal 2 (track channel
+count not reported). That row says nothing about a real mono microphone; it needs a run by hand in a normal
+Safari window.
 
 ### A real mono microphone (the earlier report's condition)
 
