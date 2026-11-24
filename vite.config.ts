@@ -212,6 +212,8 @@ export default defineConfig(({command}) => ({
                 layerDeleteSoakDebug: resolve(__dirname, "layer-delete-soak-debug-demo.html"),
                 paramWriteEnabledFlipDebug: resolve(__dirname, "param-write-enabled-flip-debug-demo.html"),
                 monitoringMonoReturnDebug: resolve(__dirname, "monitoring-mono-return-debug-demo.html"),
+                monitorPanLawDebug: resolve(__dirname, "monitor-pan-law-debug-demo.html"),
+                captureArmedWithoutInputDebug: resolve(__dirname, "capture-armed-without-input-debug-demo.html"),
                 automationSuspendedAfterStopDebug: resolve(__dirname, "automation-suspended-after-stop-debug-demo.html"),
                 nanoPlayModesDebug: resolve(__dirname, "nano-play-modes-debug-demo.html"),
                 stretchPlacementDebug: resolve(__dirname, "stretch-placement-debug-demo.html"),
