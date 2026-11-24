@@ -534,9 +534,12 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   output stream that opened 6.5 s in (`outputLatency` 0 → 28 ms, three steps at that moment). Two Chrome instances
   wander differently; read the MIDI harnesses in the user's Chrome. Chrome 155.0.8059.85, the user's Chrome, 2026-10-23 before that.
 
-### Chromium [40774165](https://issues.chromium.org/issues/40774165) — a `MediaStreamAudioSourceNode` delivers two channels for a one-channel track
+### Chromium [589817009](https://issues.chromium.org/issues/589817009) / [40774165](https://issues.chromium.org/issues/40774165) — a `MediaStreamAudioSourceNode` delivers two channels for a one-channel track
 
-- **Tracker:** [issues.chromium.org/issues/40774165](https://issues.chromium.org/issues/40774165) "Web Audio:
+- **Tracker:** [issues.chromium.org/issues/589817009](https://issues.chromium.org/issues/589817009)
+  "MediaStreamAudioSourceNode outputs 2 channels for a 1-channel track (40774165 still reproduces)" (**filed
+  from this repo 2026-11-23, Unconfirmed, P2**), and the earlier report
+  [40774165](https://issues.chromium.org/issues/40774165) "Web Audio:
   incorrect channelCount inferred from Stream to Worklet" (filed 2021-06 with a mono microphone, confirmed by
   triage back to M-84, **marked fixed 2025-04-14 without a linked change**, on a tester's "isn't repro anymore"
   with a request to reactivate it if it reproduces). The specification: "The number of channels of the output

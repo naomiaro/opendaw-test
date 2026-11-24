@@ -1,8 +1,8 @@
 # A mono request is applied to the take and to effects monitoring, not to direct monitoring
 
-**Status: measured on `@opendaw/studio-sdk@0.0.189`, 2026-11-23, with a synthetic two-channel stream. Not
-filed; a draft waits for a read
-([`drafts/TO-REVIEW-opendaw-mono-request-direct-monitoring.md`](./drafts/TO-REVIEW-opendaw-mono-request-direct-monitoring.md)).
+**Status: measured on `@opendaw/studio-sdk@0.0.189`, 2026-11-23, with a synthetic two-channel stream.
+[openDAW#578](https://github.com/andremichelle/openDAW/issues/578) filed 2026-11-23, open; the body as posted
+([`drafts/posted-openDAW-578-mono-request-direct-monitoring.md`](./drafts/posted-openDAW-578-mono-request-direct-monitoring.md)).
 Whether a browser hands over two channels for a real input when one is asked for is NOT measured, and the
 finding only shows then.** Found while reading the direct path for
 [the monitor pan note](../2026-11-23-monitor-pan-doubles-at-hard-pan/note.md).

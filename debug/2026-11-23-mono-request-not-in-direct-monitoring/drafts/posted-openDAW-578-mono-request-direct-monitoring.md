@@ -1,4 +1,4 @@
-**Not posted.** Target: `andremichelle/openDAW` issues. Waiting for the user's read. Open question for the read: file it now, measured on a synthetic stream only, or after a run on an interface with two inputs.
+**Posted 2026-11-23:** https://github.com/andremichelle/openDAW/issues/578 — the body below as posted.
 **Title:** With `requestChannels` 1 and a two-channel stream, direct monitoring is not mixed down: it differs from the take and from effects monitoring
 
 ---
@@ -43,5 +43,5 @@ Note: https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-11-23-mono-r
   browser hands over for an interface with two inputs.
 - A capture with a channel mapping. Read from the code, the mapping's output is what direct monitoring taps.
 
-**Tracker search:** "mono", "monitoring mono", "requestChannels", "force mono" on this repository, open and
+**Tracker search:** "monitoring mono", "requestChannels", "force mono" on this repository, open and
 closed. Nearest: #461 (closed), effects monitoring in forced mono, and #575.

@@ -1,10 +1,11 @@
 # The monitor's own pan follows a different law from every other pan in the SDK
 
-**Status: measured on `@opendaw/studio-sdk@0.0.189`, 2026-11-23. To be filed (the user's decision,
-2026-11-23); draft waiting for a read:
-[`drafts/TO-REVIEW-opendaw-monitor-pan-law.md`](./drafts/TO-REVIEW-opendaw-monitor-pan-law.md).** Two findings came out of this one and have their own notes:
+**Status: measured on `@opendaw/studio-sdk@0.0.189`, 2026-11-23.
+[openDAW#577](https://github.com/andremichelle/openDAW/issues/577) filed 2026-11-23, open; the body as posted:
+[`drafts/posted-openDAW-577-monitor-pan-law.md`](./drafts/posted-openDAW-577-monitor-pan-law.md).** Two findings came out of this one and have their own notes:
 [the browser's channel count](../2026-11-23-stream-source-channel-count/note.md) (a vendor behaviour) and
-[a mono request in direct monitoring](../2026-11-23-mono-request-not-in-direct-monitoring/note.md). Found with the harness of
+[a mono request in direct monitoring](../2026-11-23-mono-request-not-in-direct-monitoring/note.md)
+(openDAW#578). Found with the harness of
 [the mono-return note](../2026-11-23-fx-monitor-mono-return/note.md).
 
 **Repro page:** `monitor-pan-law-debug-demo.html` (`src/demos/engine/monitor-pan-law-debug-demo.tsx`), a real

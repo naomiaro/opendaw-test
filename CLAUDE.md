@@ -949,12 +949,12 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   pan as gains. Expect BUG PRESENT with `data-strip-law="unity"`, `data-monitor-law="doubles"`,
   `data-monitor-law-mono="doubles"`, `data-channels-reaching="2"`, `data-stack="as-composed"`,
   `data-one-sided="monitor-moves-strip-removes"`, `data-mono-direct="not-mixed-down"` (a separate finding: a mono
-  request is not applied in direct monitoring, `debug/2026-11-23-mono-request-not-in-direct-monitoring/note.md`)
+  request is not applied in direct monitoring, openDAW#578, `debug/2026-11-23-mono-request-not-in-direct-monitoring/note.md`)
   while the monitor's pan folds the far side into the near one (centre
-  ×1, hard ×2 for a mono input; measured on 0.0.189, `debug/2026-11-23-monitor-pan-doubles-at-hard-pan/note.md`, which
+  ×1, hard ×2 for a mono input; measured on 0.0.189, openDAW#577, `debug/2026-11-23-monitor-pan-doubles-at-hard-pan/note.md`, which
   also holds the survey of every pan in the SDK). FIXED is the monitor reading the strip's law. In Chrome a
   `MediaStreamAudioSourceNode` delivers two identical channels for a one-channel track, which is what selects the
-  node's stereo algorithm (Chromium 40774165, vendor register; Firefox and Safari deliver one channel: SDK-free probe
+  node's stereo algorithm (Chromium 589817009, filed from here, and the earlier 40774165; vendor register; Firefox and Safari deliver one channel: SDK-free probe
   `stream-source-channels-debug-demo.html`, which runs through `scripts/audit/loudness/drive-firefox.ts` /
   `drive-safari.ts`); `?input=mic` repeats the direct rows on the real microphone (the browser asks; a built-in mono microphone read
   `doubles` too).
@@ -962,7 +962,7 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   silent, no microphone). It arms a capture with `getUserMedia` patched to reject. Expect BUG PRESENT with
   `data-after-refusal="armed-no-stream"`, `data-signal="unhandled-rejection-only"`, `data-retry="no-retry"` while a
   refused input leaves the capture armed with no stream and the only signal is an unhandled rejection carrying an
-  `Errors.Warning` (measured on 0.0.189, `debug/2026-11-23-capture-armed-without-input/note.md`). So a demo that arms
+  `Errors.Warning` (measured on 0.0.189, openDAW#579, `debug/2026-11-23-capture-armed-without-input/note.md`). So a demo that arms
   a Tape cannot learn of a denied microphone from `capture.armed`: compare it with `capture.stream` after the open.
 - A recording-alignment cell that reads `investigate` on a TAIL deficit is a stop-path
   finding, not placement: the stop is stamped by the engine and netted, so `tailMissingMs`

@@ -1,4 +1,4 @@
-**Not posted.** Target: `andremichelle/openDAW` issues. Waiting for the user's read.
+**Posted 2026-11-23:** https://github.com/andremichelle/openDAW/issues/579 — the body below as posted.
 **Title:** Arming a capture whose input is refused leaves it armed with no stream; the only signal is an unhandled rejection
 
 ---

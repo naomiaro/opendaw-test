@@ -1,7 +1,8 @@
 # Arming a capture whose input is refused leaves it armed with no stream
 
-**Status: measured on `@opendaw/studio-sdk@0.0.189`, 2026-11-23. Not filed; draft waiting for a read:
-[`drafts/TO-REVIEW-opendaw-capture-armed-without-input.md`](./drafts/TO-REVIEW-opendaw-capture-armed-without-input.md).**
+**Status: measured on `@opendaw/studio-sdk@0.0.189`, 2026-11-23.
+[openDAW#579](https://github.com/andremichelle/openDAW/issues/579) filed 2026-11-23, open; the body as posted:
+[`drafts/posted-openDAW-579-capture-armed-without-input.md`](./drafts/posted-openDAW-579-capture-armed-without-input.md).**
 Noticed while reading the capture path for
 [the monitor pan note](../2026-11-23-monitor-pan-doubles-at-hard-pan/note.md).
 
