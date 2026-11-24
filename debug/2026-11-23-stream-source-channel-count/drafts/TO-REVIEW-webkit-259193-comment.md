@@ -19,3 +19,9 @@ and takes each channel's peak:
 
 The track's `getSettings().channelCount` is not reported in either case. Bug 281978 looks like the same
 behaviour; there it is reported as two channels with echo cancellation on, here that case delivered one.
+
+The page that took these figures (no library; click Run, allow the microphone, any room sound will do):
+https://opendaw-test.pages.dev/stream-source-channels-debug-demo?input=mic
+and with echo cancellation: https://opendaw-test.pages.dev/stream-source-channels-debug-demo?input=mic&echo=on
+The microphone rows are the last six; the "channels delivered" column gives the channel count per quantum and a
+peak per channel.
