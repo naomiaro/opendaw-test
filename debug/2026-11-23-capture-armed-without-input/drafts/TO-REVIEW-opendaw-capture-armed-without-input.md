@@ -36,14 +36,14 @@ Note: https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-11-23-captur
 
 - `AudioDevices.requestStream` turns the rejected `getUserMedia` into a thrown `Errors.Warning`
   (`packages/studio/core/src/AudioDevices.ts:21-30`). `BrowserAudioInput.#requestStream` asks for the default
-  device by id and then once without a device (`io/browser/BrowserAudioInput.ts:323-338`), which is the two
-  calls; `open()` awaits it with nothing around it (`:119-155`).
+  device by id and then once without a device (`io/browser/BrowserAudioInput.ts:323-339`), which is the two
+  calls; `open()` awaits it with nothing around it (`:119-156`, the await at `:141`).
 - `CaptureAudio` calls `open()` from the observer of `armed`, an `async` function whose promise is not held
   (`capture/CaptureAudio.ts:61-68`), so the rejection is unhandled and `armed` keeps its value. The observers
-  of `deviceId` and of the input mapping are written the same way (`:34-42`, `:56-60`).
+  of the input mapping and of `deviceId` are written the same way (`:34-42`, `:56-60`).
 - The `monitoringMode` setter sets the mode and then arms (`:75-81`).
 - `RecordingSession.start` catches the failed `prepareRecording`, clears its recording flag and throws
-  `Errors.warn(String(error))` (`capture/RecordingSession.ts:109-115`); `Project.startRecording` calls
+  `Errors.warn(String(error))` (`capture/RecordingSession.ts:109-116`); `Project.startRecording` calls
   `Recording.start(this, countIn).finally()` without a handler (`project/Project.ts:388-392`).
 - `open()` runs when `armed`, `deviceId` or the mapping changes, at a recording start and in
   `measureRoundTrip` (searched `packages/studio/core/src`: `CaptureAudio.ts:33-136` holds every caller). Nothing

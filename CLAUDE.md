@@ -944,15 +944,19 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   the fix) and `data-monitor-pan="doubles"`, `data-monitor-pan-mono="doubles"` (the monitor's own pan at hard left or right reads twice the centre
   level, `debug/2026-11-23-monitor-pan-doubles-at-hard-pan/note.md`; another value is a changed pan law). `?input=mic` runs the capture rows on the real default microphone
   (the browser asks; make steady noise; nothing reaches the speakers).
-- After SDK upgrades, also run `monitor-pan-law-debug-demo.html` once (real click, about thirty seconds, silent, no
+- After SDK upgrades, also run `monitor-pan-law-debug-demo.html` once (real click, about thirty-five seconds, silent, no
   hardware). It reads the capture's own monitor pan (`capture.monitorPan`, a `StereoPannerNode`) against the strip's
   pan as gains. Expect BUG PRESENT with `data-strip-law="unity"`, `data-monitor-law="doubles"`,
   `data-monitor-law-mono="doubles"`, `data-channels-reaching="2"`, `data-stack="as-composed"`,
-  `data-one-sided="monitor-moves-strip-removes"` while the monitor's pan folds the far side into the near one (centre
+  `data-one-sided="monitor-moves-strip-removes"`, `data-mono-direct="not-mixed-down"` (a separate finding: a mono
+  request is not applied in direct monitoring, `debug/2026-11-23-mono-request-not-in-direct-monitoring/note.md`)
+  while the monitor's pan folds the far side into the near one (centre
   ×1, hard ×2 for a mono input; measured on 0.0.189, `debug/2026-11-23-monitor-pan-doubles-at-hard-pan/note.md`, which
   also holds the survey of every pan in the SDK). FIXED is the monitor reading the strip's law. In Chrome a
   `MediaStreamAudioSourceNode` delivers two identical channels for a one-channel track, which is what selects the
-  node's stereo algorithm; `?input=mic` repeats the direct rows on the real microphone (the browser asks).
+  node's stereo algorithm (Chromium 40774165, vendor register; Firefox and Safari deliver one channel: SDK-free probe
+  `stream-source-channels-debug-demo.html`, which runs through `scripts/audit/loudness/drive-firefox.ts` /
+  `drive-safari.ts`); `?input=mic` repeats the direct rows on the real microphone (the browser asks).
 - After SDK upgrades, also run `capture-armed-without-input-debug-demo.html` once (real click, about twenty seconds,
   silent, no microphone). It arms a capture with `getUserMedia` patched to reject. Expect BUG PRESENT with
   `data-after-refusal="armed-no-stream"`, `data-signal="unhandled-rejection-only"`, `data-retry="no-retry"` while a

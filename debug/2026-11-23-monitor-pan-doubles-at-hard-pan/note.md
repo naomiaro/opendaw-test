@@ -3,14 +3,17 @@
 **Status: measured on `@opendaw/studio-sdk@0.0.189`, 2026-11-23. To be filed (the user's decision,
 2026-11-23); draft waiting for a read:
 [`drafts/TO-REVIEW-opendaw-monitor-pan-law.md`](./drafts/TO-REVIEW-opendaw-monitor-pan-law.md).** Open: the
-run on a real microphone (see "Not measured"). Found with the harness of
+run on a real microphone (see "Not measured"). Two findings came out of this one and have their own notes:
+[the browser's channel count](../2026-11-23-stream-source-channel-count/note.md) (a vendor behaviour) and
+[a mono request in direct monitoring](../2026-11-23-mono-request-not-in-direct-monitoring/note.md). Found with the harness of
 [the mono-return note](../2026-11-23-fx-monitor-mono-return/note.md).
 
 **Repro page:** `monitor-pan-law-debug-demo.html` (`src/demos/engine/monitor-pan-law-debug-demo.tsx`), a real
-click on Run, about thirty seconds, silent, no hardware. Verdict on `#verdict[data-verdict]`, with
+click on Run, about thirty-five seconds, silent, no hardware. Verdict on `#verdict[data-verdict]`, with
 `data-strip-law`, `data-monitor-law` (requestChannels 2), `data-monitor-law-mono` (requestChannels 1)
 (`doubles` / `unity` / `equal-power` / `other` / `not-measurable`), `data-channels-reaching`, `data-stack`
-(`as-composed` / `other`), `data-one-sided` (`monitor-moves-strip-removes` / `other`); each can read `failed`
+(`as-composed` / `other`), `data-one-sided` (`monitor-moves-strip-removes` / `other`), `data-mono-direct`
+(`not-mixed-down` / `mixed-down` / `other`, a separate finding, see below); each can read `failed`
 or `not-run`. `?input=mic` adds the direct-mode rows on the real default microphone (`data-mic-law`,
 `data-mic-law-mono`, `data-mic-channels`). The six "(measurement)" rows on
 `monitoring-mono-return-debug-demo.html` (`data-monitor-pan`, `data-monitor-pan-mono`) are the first version of
@@ -34,8 +37,8 @@ In effects monitoring both pans are in the path, one after the other.
 
 ## Measured
 
-Playwright's Chrome 158, macOS, page and device at 44.1 kHz, two runs on the page as committed, identical to
-the second decimal. A Tape's `CaptureAudio`, its input a synthetic stream carrying a 440 Hz tone (a
+Playwright's Chrome 158, macOS, page and device at 44.1 kHz, four runs, the last on the page as committed,
+all identical to the second decimal. A Tape's `CaptureAudio`, its input a synthetic stream carrying a 440 Hz tone (a
 `MediaStreamAudioDestinationNode` handed over by a patched `getUserMedia`). Every figure is a gain: the level
 on a side after the pan over the level of the signal before it, both read together.
 
@@ -84,24 +87,37 @@ the centre level, and with the strip centred a hard monitor pan is +6 dB.
 
 ### Why two channels reach the pan node (the browser's half)
 
-Measured apart from the SDK, in the same Chrome 158 (a scratch probe from the console, not kept): a
-`MediaStreamAudioSourceNode` made from a stream whose one track reports `channelCount` 1 delivers TWO
-channels to an AudioWorklet on every one of 300 render quanta, the two identical (largest difference 0). A
-clone of the stream reads the same. The probe's control, a gain node with an explicit channel count of 1,
-delivers one channel. So in Chrome the source node itself turns a one-channel track into two identical
-channels, which selects the pan node's stereo algorithm.
+Measured apart from the SDK on `stream-source-channels-debug-demo.html`
+([its note](../2026-11-23-stream-source-channel-count/note.md)): in Chrome 158 a `MediaStreamAudioSourceNode`
+on a stream whose track reports `channelCount` 1 delivers TWO identical channels on every one of 300 render
+quanta, and a `StereoPannerNode` after it reads centre ×1.00, hard ×2.00. Firefox 159.0.1 and Safari 18.6
+deliver ONE channel for the same stream, and the panner reads centre ×0.71, hard ×1.00. The specification
+says the node's output "corresponds to the number of channels of the MediaStreamTrack"; Chromium issue
+40774165 is Chrome's behaviour, closed as fixed without a change.
+
+So the monitor's law in direct mode depends on the browser: the stereo fold in Chrome, equal power in
+Firefox and Safari for a one-channel input.
+
+### A mono request is not applied in direct monitoring (a second, separate finding)
+
+The same page's last synthetic row: `requestChannels` 1 on the left-only two-channel stream records and
+effects-monitors the mono mixdown (×0.50 on both sides) and direct-monitors the raw channels (L ×1.00,
+R ×0.00); `data-mono-direct="not-mixed-down"`. Its own note:
+[mono-request-not-in-direct-monitoring](../2026-11-23-mono-request-not-in-direct-monitoring/note.md).
 
 ## Not measured
 
-- **A real microphone.** `?input=mic` was not run yet: the microphone permission of the dev origin has to be
-  granted by hand. On Chrome the expectation from the probe above is two identical channels and `doubles`.
-- **Firefox and Safari.** Read, not run: Firefox's `MediaStreamAudioSourceNode` sizes its output block from
-  the input track's channels (`dom/media/webaudio/AudioNodeExternalInputTrack.cpp`, `ProcessInput`:
-  `mLastChunks[0].AllocateChannels(inputChannels)`), so a one-channel microphone would reach the pan node as
-  one channel there and select the node's MONO algorithm: centre ×0.71, hard ×1.00. If so, the monitor's law
-  in direct mode depends on the browser and on the input's channel count. WebKit's node starts at two
-  channels and follows `setFormat`; what its provider reports for a mono track was not read. Chromium's
-  source was not read (the fetch was rate-limited); its behaviour is the measurement above.
+- **A real microphone.** `?input=mic` is built and was not run yet: the microphone permission of the dev
+  origin has to be granted by hand. On Chrome the expectation from the probe is two identical channels and
+  `doubles`.
+- **The SDK page in Firefox and Safari.** Started once in Firefox 159 through the repo's driver: the
+  page-made panner controls read as in Chrome, then the capture's input did not open within the page's
+  ten-second deadline (not looked into). The Firefox and Safari figures above are the browser's nodes on the
+  SDK-free probe, in the same chain the SDK builds for direct monitoring (stream source, a default gain node,
+  a `StereoPannerNode`).
+- **The second monitor row on a real input.** On the synthetic input the `requestChannels` 1 row repeats the
+  `requestChannels` 2 row by construction: the patched `getUserMedia` ignores the requested channel count and
+  no node on the direct path applies it. The page's verdict reads the first.
 - **A two-channel input whose channels differ** (a stereo source): the page reads `not-measurable` for a law
   there. From the node's algorithm the near side then carries the sum of both channels.
 - **The other pans of the SDK**, below: read from the source, none measured except the strip.
@@ -114,8 +130,8 @@ Searched with XERJ and with `grep` over `crates/` and `packages/` for `pan`, `pa
 | Pan | Law | Where | Measured? |
 |---|---|---|---|
 | Channel strip (`AudioUnitBox.panning`) | balance: left `1 − max(pan, 0)`, right `1 + min(pan, 0)` | `crates/engine-env/src/channel_strip.rs:116-117` | yes, above |
-| Aux send (`send-pan`) | the same balance; its header says "the same linear BALANCE law as the channel strip (center = unity on both channels, NOT constant-power)" | `crates/engine-env/src/aux_send.rs:6`, `:78-79` | read |
-| Effect-composite entry pan, instrument-composite layer pan, Playfield slot `panning` | each is a `ChannelStripProcessor`: the same balance | `crates/engine/src/effect_composite.rs:19-20`, `crates/engine/src/composite.rs:799-801` | read |
+| Aux send (`send-pan`) | the same balance; its header says "the same linear BALANCE law as the channel strip (center = unity on both channels, NOT constant-power)" | `crates/engine-env/src/aux_send.rs:5-7`, `:78-79` | read |
+| Effect-composite entry pan, instrument-composite layer pan, Playfield slot `panning` | each is a `ChannelStripProcessor`: the same balance | `crates/engine/src/effect_composite.rs:19-20`, `crates/engine/src/composite.rs:799-803`, `:829` | read |
 | Nano `panning` | the same balance | `crates/stock-devices/device-nano/src/lib.rs:257-258` | read |
 | Vaporisateur unison spread | `Mixing::Linear`: `[min(1 − x, 1), min(1 + x, 1)]`, the same curve as the balance | `crates/stock-devices/device-vaporisateur/src/voice.rs:131`, `crates/dsp/src/panning.rs:19` | read |
 | Stereo Tool `panning`, default mode | `Mixing::Linear`, the same curve | `crates/stock-devices/device-stereo-tool/src/lib.rs:70` | read |
@@ -127,7 +143,7 @@ Searched with XERJ and with `grep` over `crates/` and `packages/` for `pan`, `pa
 
 Every pan a user sets in the engine is the balance, or the Stereo Tool's equal-power choice, and none of them
 moves one side's signal to the other. The monitor's pan is the only `StereoPannerNode` (and the only Web Audio
-panner) in the SDK, and the only pan that raises a side above its centre level.
+panner) in the SDK, and the only pan that raises a side above the level of the signal entering it.
 
 ## Mechanism (read from the source)
 
@@ -136,8 +152,9 @@ panner) in the SDK, and the only pan that raises a side above its centre level.
 - Direct mode connects the input's source to the monitor's gain node (`BrowserMonitor.ts:132`). Without a
   channel mapping that source is the `MediaStreamAudioSourceNode` itself (`BrowserAudioInput.ts:381`, `:388`,
   `:407`); the gain node is created with defaults (`BrowserMonitor.ts:33`). Nothing in the SDK fixes the
-  channel count on this path, so the browser's source node decides it. `requestChannels` does not reach the
-  direct path: the mono mixdown node feeds the engine only (`BrowserAudioInput.ts:395-400`, `:407`).
+  channel count on this path, so the browser's source node decides it. No node on the direct path applies
+  `requestChannels`: it sets the `ideal` channel count of the stream request (`BrowserAudioInput.ts:139`,
+  `:328`), and the mono mixdown node feeds the engine only (`:395-400`, `:407`).
 - Effects mode returns from the engine into the same gain node (`BrowserMonitor.ts:136`) through a two-channel
   merger (`packages/studio/core/src/MonitoringRouter.ts:77-85`), so the stereo algorithm always applies there.
 - A `StereoPannerNode` with a two-channel input adds the far channel into the near one, scaled by the pan
@@ -161,7 +178,9 @@ The same question there is which law a clip's pan follows by channel count. What
 pan (0 dB at the centre, the far channel moved into the near one, up to +6 dB for a dual-mono file), so one
 control has two laws depending on the file. openDAW's engine avoids that by using one balance for
 everything. And in Chrome a mono `MediaStream` reaches the node as two channels, so a live input gets the
-stereo law there even when the track is mono.
+stereo law there even when the track is mono, while Firefox and Safari give it the mono law (measured, the
+stream-source note): a monitor built on a `StereoPannerNode` pans differently per browser unless the
+channel count is fixed explicitly before the node.
 
 ## Fix ideas (internal, not for the issue)
 

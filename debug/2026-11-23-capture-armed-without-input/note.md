@@ -57,15 +57,15 @@ After the refused `startRecording`, `project.isRecording()` and `engine.isRecord
   `String(error)` (`packages/studio/core/src/AudioDevices.ts:21-30`; `Errors.warn` throws `new Warning(issue)`,
   `packages/lib/std/src/errors.ts:4-7`).
 - The two `getUserMedia` calls: `BrowserAudioInput.#requestStream` asks for the default device by its id
-  first and, on any failure, once more without a device (`BrowserAudioInput.ts:323-338`); both are refused.
-- `BrowserAudioInput.open()` awaits that request with nothing around it (`BrowserAudioInput.ts:119-155`), so
+  first and, on any failure, once more without a device (`BrowserAudioInput.ts:323-339`); both are refused.
+- `BrowserAudioInput.open()` awaits that request with nothing around it (`BrowserAudioInput.ts:119-156`, the await at `:141`), so
   the rejection leaves `open()`.
 - `CaptureAudio` calls it from the observer of `armed`, an `async` function whose promise nobody holds
   (`packages/studio/core/src/capture/CaptureAudio.ts:61-68`): the rejection is unhandled, and `armed` is not
-  written back. The observers of `deviceId` and of the input mapping do the same (`:34-42`, `:56-60`).
+  written back. The observers of the input mapping and of `deviceId` do the same (`:34-42`, `:56-60`).
 - `monitoringMode`'s setter sets the mode and then `armed.setValue(true)` (`:75-81`): the same path.
 - `RecordingSession.start` catches the failed `prepareRecording`, resets its own recording flag and throws
-  `Errors.warn(String(error))` (`packages/studio/core/src/capture/RecordingSession.ts:109-115`);
+  `Errors.warn(String(error))` (`packages/studio/core/src/capture/RecordingSession.ts:109-116`);
   `Project.startRecording` calls `Recording.start(this, countIn).finally()` with no handler
   (`packages/studio/core/src/project/Project.ts:388-392`), so that rejection is unhandled too.
 - No retry: `open()` runs when `armed`, `deviceId` or the mapping changes, at a recording start and in
@@ -73,7 +73,9 @@ After the refused `startRecording`, `project.isRecording()` and `engine.isRecord
   `open()` in `packages/studio/core/src`); nothing calls it for a capture that sits armed without a stream.
 - The plans do not describe a refused input: `plans/capture.md` and `plans/done/advanced-monitoring.md` were
   searched for "denied", "refus", "reject", "permission", "fail", "unavailable", "NotAllowed"; the hits are
-  about `setSinkId`, channel exhaustion and two `AudioDevices` classes.
+  about `setSinkId` failing, channel exhaustion, two `AudioDevices` classes, a permission request as something
+  that disturbs a source node (`plans/capture.md:310`), and two unrelated uses of "reject" and "fail"
+  (`plans/capture.md:121`, `:319`).
 
 ## Where an SDK app meets it
 

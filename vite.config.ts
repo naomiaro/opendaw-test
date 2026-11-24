@@ -214,6 +214,7 @@ export default defineConfig(({command}) => ({
                 monitoringMonoReturnDebug: resolve(__dirname, "monitoring-mono-return-debug-demo.html"),
                 monitorPanLawDebug: resolve(__dirname, "monitor-pan-law-debug-demo.html"),
                 captureArmedWithoutInputDebug: resolve(__dirname, "capture-armed-without-input-debug-demo.html"),
+                streamSourceChannelsDebug: resolve(__dirname, "stream-source-channels-debug-demo.html"),
                 automationSuspendedAfterStopDebug: resolve(__dirname, "automation-suspended-after-stop-debug-demo.html"),
                 nanoPlayModesDebug: resolve(__dirname, "nano-play-modes-debug-demo.html"),
                 stretchPlacementDebug: resolve(__dirname, "stretch-placement-debug-demo.html"),

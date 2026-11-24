@@ -30,17 +30,23 @@ import { Theme, Container, Heading, Text, Flex, Card, Badge, Button, Code, Table
 //     folds the far side into the near one.
 //  4. The monitor's pan in DIRECT mode, a one-channel stream, at `requestChannels` 2 and 1:
 //     `data-monitor-law` / `data-monitor-law-mono`, and how many channels reach the pan node
-//     (`data-channels-reaching`), which is what selects a StereoPannerNode's law.
+//     (`data-channels-reaching`), which is what selects a StereoPannerNode's law. On the synthetic input the
+//     two requests feed the same stream down the same path (the patched `getUserMedia` ignores the requested
+//     channel count), so the second row repeats the first; only a real input can differ. The verdict reads the
+//     first.
 //  5. A one-sided input (two channels, the signal on the left only, as from an interface with a microphone on
 //     its first input): the monitor's pan in direct mode, then the strip's pan in effects mode.
 //     `data-one-sided` is "monitor-moves-strip-removes" when the monitor's pan at +1 carries the signal to the
 //     right while the strip's pan at +1 removes it.
+//  5b. The same one-sided stream with `requestChannels` 1 (a browser that hands over two channels although one
+//     was asked for): what is recorded against what is monitored. `data-mono-direct` is "not-mixed-down" when
+//     the recorded signal is the mono mixdown (×0.5) while direct monitoring carries the raw left channel.
 //  6. With `?input=mic` only: arm 4 on the real default microphone (the browser asks; make steady noise). The
 //     capture is never in effects mode with the microphone and its pan node is off the speakers, so nothing of
 //     the microphone is heard. `data-mic-law` / `data-mic-law-mono`, `data-mic-channels`.
 //
 // Verdict, once the controls and the strip read as expected: BUG PRESENT when the monitor's law in direct mode
-// is not the strip's ("doubles" or "equal-power" against "unity"), FIXED when it is, INCONCLUSIVE otherwise.
+// (requestChannels 2) is not the strip's ("doubles" or "equal-power" against "unity"), FIXED when it is, INCONCLUSIVE otherwise.
 // It is settled after arm 4; a failure in a later arm is reported in its own outcome. One run per page load.
 const PANS = [-1, 0, 1] as const;
 type Pan = (typeof PANS)[number];
@@ -58,13 +64,13 @@ type Stack = "as-composed" | "other" | "failed" | "not-run";
 type OneSided = "monitor-moves-strip-removes" | "other" | "failed" | "not-run";
 type Outcomes = {
   stripLaw: Law; monitorLaw: Law; monitorLawMono: Law; channelsReaching: string;
-  stack: Stack; oneSided: OneSided; micLaw: Law; micLawMono: Law; micChannels: string;
+  stack: Stack; oneSided: OneSided; monoDirect: string; micLaw: Law; micLawMono: Law; micChannels: string;
 };
 type Outcome = { verdict: Verdict; rows: Row[]; message: string } & Outcomes;
 type RunState = { kind: "idle" } | { kind: "running"; stage: string; rows: Row[] } | ({ kind: "done" } & Outcome);
 const NOT_RUN: Outcomes = {
   stripLaw: "not-run", monitorLaw: "not-run", monitorLawMono: "not-run", channelsReaching: "not-run",
-  stack: "not-run", oneSided: "not-run", micLaw: "not-run", micLawMono: "not-run", micChannels: "not-run",
+  stack: "not-run", oneSided: "not-run", monoDirect: "not-run", micLaw: "not-run", micLawMono: "not-run", micChannels: "not-run",
 };
 
 class Hung extends Error { constructor(readonly stage: string) { super(`hung in ${stage}`); } }
@@ -200,7 +206,8 @@ async function run(onStage: (stage: string, rows: Row[]) => void): Promise<Outco
     // With the pan node off the speakers, a rebuild of the input chain inside the SDK would throw (its monitor
     // disconnects the pan node from the speakers); a device change or an uncaught error ends the arm it hits.
     const disturbances: string[] = [];
-    const onDeviceChange = () => disturbances.push("the input devices changed");
+    // the SDK rebuilds on a device change only while a stream is open (a first microphone grant fires one before that)
+    const onDeviceChange = () => { if (capture.stream.nonEmpty()) disturbances.push("the input devices changed"); };
     const onPageError = (event: ErrorEvent | PromiseRejectionEvent) => disturbances.push(`an uncaught error: ${String("reason" in event ? event.reason : event.message)}`);
     mediaDevices.addEventListener("devicechange", onDeviceChange);
     window.addEventListener("error", onPageError);
@@ -212,7 +219,12 @@ async function run(onStage: (stage: string, rows: Row[]) => void): Promise<Outco
       mediaDevices.removeEventListener("devicechange", onDeviceChange);
       window.removeEventListener("error", onPageError);
       window.removeEventListener("unhandledrejection", onPageError);
-      try { close(); } catch (error) { console.warn(`[monitor-pan-law] closing the capture: ${String(error)}`); }
+      try { close(); } catch (error) {
+        // a rebuild that threw inside the SDK leaves its monitor half disconnected, and then neither the mode nor
+        // disarming gets as far as stopping the tracks: stop them here so no input stays open
+        console.warn(`[monitor-pan-law] closing the capture: ${String(error)}`);
+        capture.stream.ifSome((stream) => stream.getTracks().forEach((track) => track.stop()));
+      }
       project.editing.modify(() => { capture.requestChannels = 2; unit.panning.setValue(0); });
       capture.monitorPan = 0;
     });
@@ -335,8 +347,8 @@ async function run(onStage: (stage: string, rows: Row[]) => void): Promise<Outco
     const footing = controlsOk && outcomes.stripLaw === "unity";
     const differs = (law: Law) => law === "doubles" || law === "equal-power";
     const verdict: Verdict = !footing ? "INCONCLUSIVE"
-      : differs(outcomes.monitorLaw) && differs(outcomes.monitorLawMono) ? "BUG PRESENT"
-      : outcomes.monitorLaw === "unity" && outcomes.monitorLawMono === "unity" ? "FIXED" : "INCONCLUSIVE";
+      : differs(outcomes.monitorLaw) ? "BUG PRESENT"
+      : outcomes.monitorLaw === "unity" ? "FIXED" : "INCONCLUSIVE";
     let message = !footing ? `the controls or the strip did not read as expected (page panner, one channel: ${lawOf(controlMono)}; two: ${lawOf(controlStereo)}; strip: ${outcomes.stripLaw})`
       : `the strip's pan reads ${outcomes.stripLaw} (${lawText(strip)}); the monitor's pan in direct mode reads ${outcomes.monitorLaw} at requestChannels 2 (${lawText(directStereo.sweep)}; ${directStereo.reaching} channel(s) reach the pan node, the track reports ${directStereo.trackChannels}) and ${outcomes.monitorLawMono} at requestChannels 1`;
     message += `; effects-mode stack: ${outcomes.stack}`;
@@ -357,6 +369,24 @@ async function run(onStage: (stage: string, rows: Row[]) => void): Promise<Outco
       row({ step: stage, expected: "", got: failureOf(error), ok: false });
     }
     message += `; one-sided input: ${outcomes.oneSided}`;
+
+    // ---- 5b. a mono request on the one-sided input: is the mixdown that is recorded also what is monitored? ----
+    try {
+      // levels over the TONE's own level here: the capture's output is the mixdown itself, so it cannot be the reference
+      const tone = () => reference(rmsOf(levelTap, buffer), "from the tone");
+      await open("left-only", 1, "direct");
+      const recorded = readInputLeft() / tone();
+      const monitoredDirect = over(before.read(), tone());
+      await open("left-only", 1, "effects");
+      const monitoredEffects = over(before.read(), tone());
+      const mixedDown = (l: Levels) => cell(l, 0.5, 0.5);
+      outcomes.monoDirect = !about(recorded, 0.5) ? "other" : mixedDown(monitoredDirect) ? "mixed-down" : cell(monitoredDirect, 1, 0) ? "not-mixed-down" : "other";
+      row({ step: "requestChannels 1, a two-channel stream with the signal on the left only: what is recorded (the capture's output node) and what reaches the monitor, over the tone", expected: "the monitor carries the mono mixdown that is recorded (×0.50 on both sides)", got: `recorded ×${recorded.toFixed(2)} (one channel); direct monitoring ${gain(monitoredDirect)}; effects monitoring ${gain(monitoredEffects)}`, ok: outcomes.monoDirect === "other" ? null : outcomes.monoDirect === "mixed-down" });
+    } catch (error) {
+      outcomes.monoDirect = "failed";
+      row({ step: stage, expected: "", got: failureOf(error), ok: false });
+    }
+    message += `; mono request in direct monitoring: ${outcomes.monoDirect}`;
 
     // ---- 6. the real microphone, direct mode only ----
     if (USE_MICROPHONE) {
@@ -409,18 +439,21 @@ function App() {
             {USE_MICROPHONE
               ? "With ?input=mic the last rows use the default microphone: allow it when the browser asks and make steady noise."
               : "Add ?input=mic to repeat the direct-mode rows on the default microphone."}{" "}
-            A real click starts it; one run per page load, about thirty seconds.
+            A real click starts it; one run per page load, about thirty-five seconds.
           </Text>
           <Flex gap="3" align="center">
             <Button id="run" size="3" onClick={start} disabled={state.kind !== "idle"}>Run</Button>
             {state.kind === "running" && <Badge color="amber">running: {state.stage}</Badge>}
+            {/* what the repo's Firefox and Safari drivers read (scripts/audit/loudness/drive-*.ts) */}
+            <span id="audit-state" data-audit-state={state.kind} hidden />
+            <span id="summary-note" hidden>{state.kind === "done" ? `${state.verdict}: strip ${state.stripLaw}; monitor ${state.monitorLaw} / ${state.monitorLawMono}; ${state.channelsReaching} channel(s) reach the pan; stack ${state.stack}; one-sided ${state.oneSided}; mono request ${state.monoDirect}` : ""}</span>
           </Flex>
           {state.kind === "done" && (
             <Card>
               <Text
                 id="verdict" size="2" weight="bold" color={state.verdict === "FIXED" ? "green" : state.verdict === "BUG PRESENT" ? "red" : "gray"}
                 data-verdict={state.verdict} data-strip-law={state.stripLaw} data-monitor-law={state.monitorLaw} data-monitor-law-mono={state.monitorLawMono}
-                data-channels-reaching={state.channelsReaching} data-stack={state.stack} data-one-sided={state.oneSided}
+                data-channels-reaching={state.channelsReaching} data-stack={state.stack} data-one-sided={state.oneSided} data-mono-direct={state.monoDirect}
                 data-mic-law={state.micLaw} data-mic-law-mono={state.micLawMono} data-mic-channels={state.micChannels}
               >
                 {state.verdict} — {state.message}
@@ -440,7 +473,7 @@ function App() {
                 </Table.Header>
                 <Table.Body>
                   {rows.map((r, i) => (
-                    <Table.Row key={i} data-ok={String(r.ok)}>
+                    <Table.Row key={i} data-ok={String(r.ok)} data-row-id={r.step} data-row-status={r.ok === null ? "measured" : r.ok ? "ok" : "FAIL"}>
                       <Table.Cell><Text size="1">{r.step}</Text></Table.Cell>
                       <Table.Cell><Text size="1">{r.expected}</Text></Table.Cell>
                       <Table.Cell><Text size="1">{r.got}</Text></Table.Cell>

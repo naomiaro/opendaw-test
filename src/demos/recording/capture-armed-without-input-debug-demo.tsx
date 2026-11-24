@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Errors, RuntimeNotifier } from "@opendaw/lib-std";
 import { InstrumentFactories } from "@opendaw/studio-adapters";
+import { AudioDevices } from "@opendaw/studio-core";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
@@ -106,8 +107,10 @@ async function run(onStage: (stage: string, rows: Row[]) => void): Promise<Outco
       const callsBefore = calls;
       const noticesBefore = notices();
       rejections.length = 0;
+      const started = performance.now();
       act();
       await sleep(WATCH_MS);
+      if (performance.now() - started > WATCH_MS * 3) throw new Error(`a ${WATCH_MS} ms watch took ${Math.round(performance.now() - started)} ms (document ${document.visibilityState}): timers throttled`);
       if (audioContext.state !== "running") throw new Error(`AudioContext is ${audioContext.state} in "${stage}" (document ${document.visibilityState})`);
       return { armed: capture.armed.getValue(), stream: capture.stream.nonEmpty(), calls: calls - callsBefore, rejections: [...rejections], notices: notices() - noticesBefore };
     };
@@ -136,7 +139,9 @@ async function run(onStage: (stage: string, rows: Row[]) => void): Promise<Outco
     outcomes.signal = signalOf(refused);
     const signature = refused.calls >= 1 && outcomes.afterRefusal === "armed-no-stream" && outcomes.signal === "unhandled-rejection-only";
     const told = refused.calls >= 1 && !refused.stream && refused.rejections.length === 0 && (!refused.armed || refused.notices > 0);
-    row({ step: "capture.armed.setValue(true), getUserMedia refuses (NotAllowedError)", expected: "the app is told: the capture not armed or a notice, and no unhandled rejection", got: tell(refused), ok: told });
+    // with a default input known, the SDK asks for it by id and then once more without a device: two calls
+    const defaultKnown = AudioDevices.defaultInput !== undefined;
+    row({ step: "capture.armed.setValue(true), getUserMedia refuses (NotAllowedError)", expected: "the app is told: the capture not armed or a notice, and no unhandled rejection", got: `${tell(refused)}; a default input device is ${defaultKnown ? "known" : "not known"} to the SDK`, ok: told });
 
     enter("still armed, the input available again");
     refuse = false;
