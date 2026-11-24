@@ -50,7 +50,33 @@ the built channel count, read the same channels and gains).
 Controls in every browser: a gain node with an explicit channel count of 1 (no stream) is counted as one
 channel and reads centre ×0.71, hard ×1.00; with a count of 2, two channels and centre ×1.00, hard ×2.00.
 
-Safari hands over one quantum of two channels before the one-channel ones.
+Safari hands over one quantum of two channels before the one-channel ones. Looked at on 2026-11-24 (Safari
+18.6, one run through `drive-safari.ts`, the page now recording each width's quanta and peak): the wide quantum
+is quantum 0 of the worklet's count and silent (peak 0.0000), on each of four new source nodes (the stream, a
+second node on it, the clone, a second node on the clone). The same node counted again after about three
+seconds of running starts at one channel (1 ch × 300), so it is once per source node, before the stream's
+first audio, not once per connection. Nothing sounding passes at the wrong width, and the panner reads the
+mono law. **Not filed with WebKit**: a silent 2.9 ms at the node's starting width has no effect measured here.
+It would be worth a second look if a later Safari showed signal in that quantum, or more than one. Firefox
+159 on the same page: 1 ch × 300 from quantum 0 on every node.
+
+Chrome on the changed page, 2026-11-24: Playwright's Chrome 158 (synthetic rows) and the user's Chrome 158 with
+`?input=mic` (the built-in microphone, its track reporting 1 for ideal 1 and for ideal 2) read 2 ch × 300 from
+quantum 0 on every node, recounts and second nodes included, the panner `doubles`: as on 2026-11-23.
+
+`drive-safari.ts` cannot measure a microphone: under WebDriver Safari answers `getUserMedia` with "Mock audio
+device 1" and no prompt, which delivered 2 ch × 300 from quantum 0 for ideal 1 and ideal 2 (track channel
+count not reported). That row says nothing about a real mono microphone; it needs a run by hand in a normal
+Safari window.
+
+### A real microphone in Safari
+
+Run by hand on 2026-11-24: with echo cancellation off Safari delivers the mono microphone as two channels with
+the second silent, a separate finding with its own note:
+[`2026-11-24-safari-mono-microphone-left-only`](../2026-11-24-safari-mono-microphone-left-only/note.md)
+(WebKit 259193 / 281978). The synthetic rows of those runs: a second source node on the one-channel stream once
+had TWO wide silent quanta (quanta 0..1) where the driver's runs had one, and a first microphone open had 195
+(0.57 s), so "one quantum" is not a rule: the silent two-channel start lasts until the stream's first audio.
 
 ### A real mono microphone (the earlier report's condition)
 
@@ -68,7 +94,7 @@ Verdict `UPMIXES` on both builds (the two peaks are the two runs). Asked for two
 
 ## Not measured
 
-- A real microphone in Firefox and Safari.
+- A real microphone in Firefox. Safari's was run by hand on 2026-11-24 (above).
 - Chrome on Windows or Linux, and Chrome's source (two fetches were rate-limited): what in Chrome widens the
   stream is not read.
 - A stream of more than two channels.

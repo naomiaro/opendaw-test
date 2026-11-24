@@ -548,7 +548,8 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   `MediaStreamAudioDestinationNode` with one channel reaches a worklet as two identical channels on 300 of 300
   quanta while its track reports `channelCount` 1, and so does the built-in mono microphone in the user's
   Chrome (the tracker's own condition; asked for two channels, its track still reports one). Firefox 159 and
-  Safari 18.6 deliver one channel for the synthetic stream (Safari two on the first quantum).
+  Safari 18.6 deliver one channel for the synthetic stream (Safari hands a new source node's first quantum
+  over at two channels, silent, measured 2026-11-24: not filed, nothing sounding passes at that width).
 - **Where it bites here:** anything channel-count dependent after a stream source. A `StereoPannerNode` gets
   its stereo algorithm in Chrome (a mono input reads centre ×1, hard ×2) and its mono one in Firefox and
   Safari (centre ×0.71, hard ×1): the SDK's direct monitoring is exactly that chain
@@ -751,6 +752,32 @@ by modified time): nothing new that reaches here.
   user-agent, not by feature detection; before `play()` check `audioContext.state` and wait for the
   `statechange` event (root CLAUDE.md, "AudioContext Suspension").
 - **Last checked:** 2026-10-22 (trackers read); never re-measured here, the Opus fallback is exercised on every Apple load.
+
+### WebKit [259193](https://bugs.webkit.org/show_bug.cgi?id=259193) / [281978](https://bugs.webkit.org/show_bug.cgi?id=281978) — a mono microphone opened without echo cancellation arrives as two channels, the signal on the left only
+
+- **Tracker:** [bugs.webkit.org 259193](https://bugs.webkit.org/show_bug.cgi?id=259193) "1-channel hardware devices from getUserMedia() appears to
+  have silence in a second track" (new, P2 Major, 2023-07, Safari 15.4 and 16, a MacBook's internal microphone with
+  `echoCancellation: false`; the reporter calls it a regression; rdar 112602770) and
+  [281978](https://bugs.webkit.org/show_bug.cgi?id=281978) "Disabling echoCancellation in getUserMedia request results in left channel audio only"
+  (new, P2, 2024-10, Safari 17 on iOS 17.6.1 and Safari 18.0 on macOS 15.0; with echo cancellation on both channels
+  carry audio; rdar 138921708). Neither has a comment from an engineer.
+- **Symptom here:** measured by hand in Safari 18.6 on 2026-11-24, "MacBook Pro Microphone" (a mock device answers
+  under WebDriver, so no driver run), three runs. With `echoCancellation: false`: a `MediaStreamAudioSourceNode`
+  delivers two channels on 300 of 300 quanta, the first carrying the signal and the second silent (peaks
+  0.0784 / 0.0000, the same on six source nodes over two requests, ideal 1 and ideal 2), and a `StereoPannerNode`
+  after it reads centre ×1.00 / ×0.00, hard ×1.00 / ×1.00: at centre pan the microphone is on the left only. With
+  `echoCancellation: true`: ONE channel, the panner on the mono law (centre ×0.71, hard ×1.00), after a silent
+  two-channel start that lasts until the first audio (195 quanta on the first open, 18 on the second, 2 on a
+  further node of an open stream). 281978 reports two channels with echo cancellation on; here it was one.
+- **Where it bites here:** the SDK opens its capture with `echoCancellation: false`, so in Safari a mono microphone
+  would be monitored, and recorded as a two-channel take, on the left only. Not measured through the SDK. Chrome's
+  different answer for the same microphone (two identical channels) is the Chromium 589817009 entry above.
+- **Workaround:** none in place. A page can sum the source to one channel (a gain node with `channelCount` 1,
+  `channelCountMode` "explicit") when the device is known to be mono; Safari's track does not report `channelCount`.
+- **Evidence:** `stream-source-channels-debug-demo.html?input=mic` by hand in a normal Safari window (`&echo=on` asks
+  with echo cancellation; `drive-safari.ts` gets a mock device, not the microphone); note
+  `debug/2026-11-24-safari-mono-microphone-left-only/note.md`.
+- **Last checked:** 2026-11-24 (trackers read; measured by hand, Safari 18.6).
 
 ## Watched — read from the tracker, not reproduced here
 
