@@ -534,6 +534,30 @@ on the two Bugzillas): the SDK's `MidiDevices` is a Web MIDI client, and the MID
   output stream that opened 6.5 s in (`outputLatency` 0 → 28 ms, three steps at that moment). Two Chrome instances
   wander differently; read the MIDI harnesses in the user's Chrome. Chrome 155.0.8059.85, the user's Chrome, 2026-10-23 before that.
 
+### Chromium [40774165](https://issues.chromium.org/issues/40774165) — a `MediaStreamAudioSourceNode` delivers two channels for a one-channel track
+
+- **Tracker:** [issues.chromium.org/issues/40774165](https://issues.chromium.org/issues/40774165) "Web Audio:
+  incorrect channelCount inferred from Stream to Worklet" (filed 2021-06 with a mono microphone, confirmed by
+  triage back to M-84, **marked fixed 2025-04-14 without a linked change**, on a tester's "isn't repro anymore"
+  with a request to reactivate it if it reproduces). The specification: "The number of channels of the output
+  corresponds to the number of channels of the MediaStreamTrack."
+- **Symptom here:** measured without the SDK on Chrome 158 (macOS, 2026-11-23): the stream of a
+  `MediaStreamAudioDestinationNode` with one channel reaches a worklet as two identical channels on 300 of 300
+  quanta while its track reports `channelCount` 1, and so does the built-in mono microphone in the user's
+  Chrome (the tracker's own condition; asked for two channels, its track still reports one). Firefox 159 and
+  Safari 18.6 deliver one channel for the synthetic stream (Safari two on the first quantum).
+- **Where it bites here:** anything channel-count dependent after a stream source. A `StereoPannerNode` gets
+  its stereo algorithm in Chrome (a mono input reads centre ×1, hard ×2) and its mono one in Firefox and
+  Safari (centre ×0.71, hard ×1): the SDK's direct monitoring is exactly that chain
+  (`debug/2026-11-23-monitor-pan-doubles-at-hard-pan/note.md`). A page that reads "how many channels reach a
+  node" as "how many channels the input has" is wrong in Chrome.
+- **Workaround:** fix the channel count yourself after the source (a gain node with `channelCount` and
+  `channelCountMode = "explicit"`), and take the input's channel count from the track's settings, not from the
+  node.
+- **Evidence:** `stream-source-channels-debug-demo.html` (SDK-free; `?input=mic` for a microphone),
+  `debug/2026-11-23-stream-source-channel-count/note.md`.
+- **Last checked:** 2026-11-23, Chrome 158.0.8127.89, Firefox 159.0.1, Safari 18.6.
+
 ## Watched — read from the tracker, not reproduced here
 
 ### Chromium [40909520](https://issues.chromium.org/issues/40909520) / [541725401](https://issues.chromium.org/issues/541725401) / [40068799](https://issues.chromium.org/issues/40068799) — OPFS: slow `flush()` on Mac, and a quota overrun that returns a sentinel
