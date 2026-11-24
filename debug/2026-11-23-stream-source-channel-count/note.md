@@ -88,6 +88,7 @@ NEW with no engineer comment (read 2026-11-24): [259193](https://bugs.webkit.org
 results in left channel audio only" (2024-10, Safari 17 and 18.0, rdar 138921708; with echo cancellation on
 both channels carry audio). **No new report**: a comment on 259193 with the Safari 18.6 figures is the most
 there is to add, and only after a run that reads the channels directly.
+Both are in the vendor register's WebKit "Watched" section ([`docs/known-vendor-issues.md`](../../docs/known-vendor-issues.md)).
 
 The synthetic rows of the same run: a second source node on the one-channel stream had TWO wide silent quanta
 (quanta 0..1) where the driver's runs had one, so "one quantum" is not a rule; the count varies with timing.
@@ -108,7 +109,7 @@ Verdict `UPMIXES` on both builds (the two peaks are the two runs). Asked for two
 
 ## Not measured
 
-- A real microphone in Firefox and Safari.
+- A real microphone in Firefox. Safari's was run by hand on 2026-11-24 (above); its channels are not yet read one by one.
 - Chrome on Windows or Linux, and Chrome's source (two fetches were rate-limited): what in Chrome widens the
   stream is not read.
 - A stream of more than two channels.

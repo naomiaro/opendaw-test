@@ -804,6 +804,29 @@ by modified time): nothing new that reaches here.
   in practice), [283037](https://bugs.webkit.org/show_bug.cgi?id=283037) "Web Audio while recording does not use Bluetooth headphones" (iOS 17).
 - **Last checked:** 2026-10-22 (trackers read).
 
+### WebKit [259193](https://bugs.webkit.org/show_bug.cgi?id=259193) / [281978](https://bugs.webkit.org/show_bug.cgi?id=281978) — a mono microphone opened without echo cancellation arrives as two channels, the signal on the left only
+
+- **Tracker:** [bugs.webkit.org 259193](https://bugs.webkit.org/show_bug.cgi?id=259193) "1-channel hardware devices from getUserMedia() appears to
+  have silence in a second track" (new, P2 Major, 2023-07, Safari 15.4 and 16, a MacBook's internal microphone with
+  `echoCancellation: false`; the reporter calls it a regression; rdar 112602770) and
+  [281978](https://bugs.webkit.org/show_bug.cgi?id=281978) "Disabling echoCancellation in getUserMedia request results in left channel audio only"
+  (new, P2, 2024-10, Safari 17 on iOS 17.6.1 and Safari 18.0 on macOS 15.0; with echo cancellation on both channels
+  carry audio; rdar 138921708). Neither has a comment from an engineer.
+- **Seen here, not yet read directly:** one run by hand in Safari 18.6 on 2026-11-24, "MacBook Pro Microphone", echo
+  cancellation off: a `MediaStreamAudioSourceNode` delivered two channels on 300 of 300 quanta, not identical (largest
+  difference equal to the peak), and a `StereoPannerNode` after it read centre ×1.00 / ×0.00, hard ×1.00 / ×1.00, which
+  is what a silent second channel gives. That run recorded one peak over both channels, so the silent side is
+  inferred. It moves up to Measured on a run of the page as it is now, which prints a peak per channel.
+- **Where it bites here:** the SDK opens its capture with `echoCancellation: false`, so in Safari a mono microphone
+  would be monitored, and recorded as a two-channel take, on the left only. Not measured through the SDK. Chrome's
+  different answer for the same microphone (two identical channels) is the Chromium 589817009 entry above.
+- **Workaround:** none in place. A page can sum the source to one channel (a gain node with `channelCount` 1,
+  `channelCountMode` "explicit") when the device is known to be mono; Safari's track does not report `channelCount`.
+- **Evidence:** `stream-source-channels-debug-demo.html?input=mic` by hand in a normal Safari window (`&echo=on` asks
+  with echo cancellation; `drive-safari.ts` gets a mock device, not the microphone); note
+  `debug/2026-11-23-stream-source-channel-count/note.md`.
+- **Last checked:** 2026-11-24 (trackers read; one run by hand).
+
 ### WebKit OPFS and workers — [326901](https://bugs.webkit.org/show_bug.cgi?id=326901) / [326345](https://bugs.webkit.org/show_bug.cgi?id=326345), [293955](https://bugs.webkit.org/show_bug.cgi?id=293955), [279739](https://bugs.webkit.org/show_bug.cgi?id=279739)
 
 - **Trackers:** [326901](https://bugs.webkit.org/show_bug.cgi?id=326901) "worker storage and network operations complete only when the main thread of the
