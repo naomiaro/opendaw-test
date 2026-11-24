@@ -3,8 +3,8 @@
 **Status: measured 2026-11-24 without the SDK, Safari 18.6 on macOS 15.6.1 (24G90), by hand. A browser behaviour,
 not an SDK defect, and already on WebKit's tracker: [259193](https://bugs.webkit.org/show_bug.cgi?id=259193) and
 [281978](https://bugs.webkit.org/show_bug.cgi?id=281978), both open. Entry in
-[`docs/known-vendor-issues.md`](../../docs/known-vendor-issues.md). No new report; a comment for 259193 waits in
-[`drafts/`](./drafts/TO-REVIEW-webkit-259193-comment.md). Not measured through the SDK.** Found on the harness of
+[`docs/known-vendor-issues.md`](../../docs/known-vendor-issues.md). No new report; a comment with these figures was posted on 259193 on 2026-11-24
+([comment 2](https://bugs.webkit.org/show_bug.cgi?id=259193#c2), [as posted](./drafts/posted-webkit-259193-comment.md)). Not measured through the SDK.** Found on the harness of
 [the stream-source note](../2026-11-23-stream-source-channel-count/note.md), while checking whether Safari's
 silent two-channel first quantum was worth a report (it was not; that note has it).
 
@@ -54,7 +54,7 @@ NEW with no engineer comment (read 2026-11-24): [259193](https://bugs.webkit.org
 [281978](https://bugs.webkit.org/show_bug.cgi?id=281978) "Disabling echoCancellation in getUserMedia request
 results in left channel audio only" (2024-10, Safari 17 and 18.0, rdar 138921708; with echo cancellation on
 both channels carry audio). **No new report**: a comment on 259193 with the Safari 18.6 figures is the most
-there is to add (draft: [`drafts/TO-REVIEW-webkit-259193-comment.md`](./drafts/TO-REVIEW-webkit-259193-comment.md)).
+there is to add: posted 2026-11-24 as [comment 2](https://bugs.webkit.org/show_bug.cgi?id=259193#c2) ([as posted](./drafts/posted-webkit-259193-comment.md)).
 Both are in the vendor register's WebKit measured entries ([`docs/known-vendor-issues.md`](../../docs/known-vendor-issues.md)).
 
 ## Where it bites here

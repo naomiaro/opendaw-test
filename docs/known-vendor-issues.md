@@ -760,7 +760,8 @@ by modified time): nothing new that reaches here.
   `echoCancellation: false`; the reporter calls it a regression; rdar 112602770) and
   [281978](https://bugs.webkit.org/show_bug.cgi?id=281978) "Disabling echoCancellation in getUserMedia request results in left channel audio only"
   (new, P2, 2024-10, Safari 17 on iOS 17.6.1 and Safari 18.0 on macOS 15.0; with echo cancellation on both channels
-  carry audio; rdar 138921708). Neither has a comment from an engineer.
+  carry audio; rdar 138921708). Neither has a comment from an engineer. The figures below were posted on 259193
+  as [comment 2](https://bugs.webkit.org/show_bug.cgi?id=259193#c2) on 2026-11-24.
 - **Symptom here:** measured by hand in Safari 18.6 on 2026-11-24, "MacBook Pro Microphone" (a mock device answers
   under WebDriver, so no driver run), three runs. With `echoCancellation: false`: a `MediaStreamAudioSourceNode`
   delivers two channels on 300 of 300 quanta, the first carrying the signal and the second silent (peaks
