@@ -15,7 +15,8 @@
 //  - with `?input=mic`: the default microphone asked for with channelCount ideal 1, then ideal 2 (the browser
 //    asks; make steady noise). Nothing is played: no node is connected to the speakers.
 //  - after each stream row, two "recount" rows outside the verdict: the same source node counted again, and a
-//    second source node on the stream. The delivered cell names the quanta each width was seen on and its peak:
+//    second source node on the stream. The delivered cell names the quanta each width was seen on and each
+//    channel's peak (one figure per channel, "0.0150 / 0.0000" is a signal on the first channel only):
 //    Safari hands a new source node's first quantum over at two channels, silent.
 //
 // A row's status, judged against the channel count the stream was built with (a microphone: against what its
@@ -25,6 +26,8 @@
 // INCONCLUSIVE when a control fails or nothing was delivered. The DOM carries what the repo's browser drivers
 // read (`#run`, `#audit-state[data-audit-state]`, `#summary-note`, rows with `data-row-id` / `data-row-status`).
 const USE_MICROPHONE = new URLSearchParams(location.search).get("input") === "mic";
+// `&echo=on` asks for the microphone with echo cancellation (WebKit 281978 reports a left-only track without it)
+const ECHO_CANCELLATION = new URLSearchParams(location.search).get("echo") === "on";
 const QUANTA = 300;
 const SETTLE_MS = 500;
 const PROCESSOR = `registerProcessor("channel-count", class extends AudioWorkletProcessor {
@@ -32,10 +35,10 @@ const PROCESSOR = `registerProcessor("channel-count", class extends AudioWorklet
   process(inputs) {
     const input = inputs[0];
     this.seen[input.length] = (this.seen[input.length] || 0) + 1;
-    // per width: the first and last quantum that had it (counted from this worklet's first call) and the peak over all its channels
-    const width = this.widths[input.length] || (this.widths[input.length] = { first: this.calls, last: this.calls, peak: 0 });
+    // per width: the first and last quantum that had it (counted from this worklet's first call) and each channel's peak
+    const width = this.widths[input.length] || (this.widths[input.length] = { first: this.calls, last: this.calls, peaks: input.map(() => 0) });
     width.last = this.calls;
-    for (const channel of input) for (const value of channel) width.peak = Math.max(width.peak, Math.abs(value));
+    input.forEach((channel, index) => { for (const value of channel) width.peaks[index] = Math.max(width.peaks[index], Math.abs(value)); });
     if (input.length > 0) for (const value of input[0]) this.peak = Math.max(this.peak, Math.abs(value));
     if (input.length > 1) for (let i = 0; i < input[0].length; i++) this.difference = Math.max(this.difference, Math.abs(input[0][i] - input[1][i]));
     if (++this.calls === ${QUANTA}) this.port.postMessage({ seen: this.seen, widths: this.widths, difference: this.difference, peak: this.peak });
@@ -43,7 +46,7 @@ const PROCESSOR = `registerProcessor("channel-count", class extends AudioWorklet
   }
 });`;
 
-type Counted = { seen: Record<string, number>; widths: Record<string, { first: number; last: number; peak: number }>; difference: number; peak: number };
+type Counted = { seen: Record<string, number>; widths: Record<string, { first: number; last: number; peaks: number[] }>; difference: number; peak: number };
 type Result = { id: string; status: string; delivered: string; reported: string; identical: string; peak: string; panner: string };
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -141,8 +144,9 @@ async function run(): Promise<void> {
       return `${law}: centre ×${centre[0].toFixed(2)} / ×${centre[1].toFixed(2)}, hard ×${hard[0].toFixed(2)} / ×${hard[1].toFixed(2)}`;
     };
     const describe = (counted: Counted) => Object.entries(counted.seen).map(([width, quanta]) => {
-      const { first, last, peak } = counted.widths[width];
-      return `${width} ch × ${quanta} (${first === last ? `quantum ${first}` : `quanta ${first}..${last}`}, peak ${peak.toFixed(4)})`;
+      const { first, last, peaks } = counted.widths[width];
+      const levels = peaks.length === 0 ? "" : `, peak ${peaks.map((peak) => peak.toFixed(4)).join(" / ")}`;
+      return `${width} ch × ${quanta} (${first === last ? `quantum ${first}` : `quanta ${first}..${last}`}${levels})`;
     }).join(", ");
     // `built` is the channel count the source was made with (unknown for a microphone); `reported` what its track says
     const measure = async (id: string, node: AudioNode, built: number | undefined, reported: number | undefined): Promise<Result> => {
@@ -205,10 +209,10 @@ async function run(): Promise<void> {
       for (const ideal of [1, 2]) {
         setState(`running: the microphone, channelCount ideal ${ideal} (answer the browser's prompt)`);
         const stream = await deadline("getUserMedia (answer the browser's prompt)", navigator.mediaDevices.getUserMedia({
-          audio: { channelCount: { ideal }, echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+          audio: { channelCount: { ideal }, echoCancellation: ECHO_CANCELLATION, noiseSuppression: false, autoGainControl: false },
         }), 60_000);
         opened.push(stream);
-        await ofStream(`microphone "${stream.getAudioTracks()[0]?.label}", channelCount ideal ${ideal}`, stream, undefined);
+        await ofStream(`microphone "${stream.getAudioTracks()[0]?.label}", channelCount ideal ${ideal}, echo cancellation ${ECHO_CANCELLATION ? "on" : "off"}`, stream, undefined);
         stream.getTracks().forEach((track) => track.stop());
       }
     }

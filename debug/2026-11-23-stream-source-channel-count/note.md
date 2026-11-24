@@ -69,6 +69,29 @@ device 1" and no prompt, which delivered 2 ch × 300 from quantum 0 for ideal 1 
 count not reported). That row says nothing about a real mono microphone; it needs a run by hand in a normal
 Safari window.
 
+### A real microphone in Safari: two channels, the signal on the first only
+
+By hand in a normal Safari 18.6 window, `?input=mic`, 2026-11-24, one run, "MacBook Pro Microphone", echo
+cancellation off (as the page asked on that day): 2 ch × 300 from quantum 0 for ideal 1 and for ideal 2, the
+channels NOT identical (largest difference equal to the peak, 0.0150 and 0.0161), and the panner after it reads
+centre ×1.00 / ×0.00, hard ×1.00 / ×1.00. Those two readings together say the second channel is silent: the
+panner's stereo branch with nothing on the right gives exactly that (left only at centre, the left channel
+moved across at hard right). Inferred, not read directly: that run recorded one peak over both channels. The
+page now prints a peak per channel, and `&echo=on` asks with echo cancellation.
+
+So in Safari a mono microphone asked for without echo cancellation, played through a source node with nothing
+fixing the channels, sounds on the left only at centre pan. This is already on WebKit's tracker, twice, both
+NEW with no engineer comment (read 2026-11-24): [259193](https://bugs.webkit.org/show_bug.cgi?id=259193)
+"1-channel hardware devices from getUserMedia() appears to have silence in a second track" (2023-07, Safari
+15.4 and 16, MacBook microphone, echo cancellation off, rdar 112602770) and
+[281978](https://bugs.webkit.org/show_bug.cgi?id=281978) "Disabling echoCancellation in getUserMedia request
+results in left channel audio only" (2024-10, Safari 17 and 18.0, rdar 138921708; with echo cancellation on
+both channels carry audio). **No new report**: a comment on 259193 with the Safari 18.6 figures is the most
+there is to add, and only after a run that reads the channels directly.
+
+The synthetic rows of the same run: a second source node on the one-channel stream had TWO wide silent quanta
+(quanta 0..1) where the driver's runs had one, so "one quantum" is not a rule; the count varies with timing.
+
 ### A real mono microphone (the earlier report's condition)
 
 The user's Chrome, macOS 15.6.1 (24G90), `?input=mic`, two runs on 2026-11-23: one on 158.0.8127.88 and one
