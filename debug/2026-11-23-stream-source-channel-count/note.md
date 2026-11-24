@@ -13,7 +13,7 @@ no SDK, a real click on Run, about fifteen seconds, silent. `#verdict[data-verdi
 or `INCONCLUSIVE`; `?input=mic` adds two rows on the default microphone (asked for with `channelCount`
 ideal 1, then ideal 2). It carries the hooks of the repo's browser drivers:
 `node scripts/audit/loudness/drive-firefox.ts "https://localhost:5180/stream-source-channels-debug-demo.html" 90`
-(and `drive-safari.ts`).
+(and `drive-safari.ts`). The same measurement as a console snippet: [`repro-snippet.js`](./repro-snippet.js).
 
 ## What the specification says
 

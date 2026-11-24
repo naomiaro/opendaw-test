@@ -3,7 +3,7 @@
 
 As filed, the text below went into the wizard's two fields ("Steps to reproduce problem": the steps and the snippet; "Please describe the problem": the rest), with the tables written as plain lists and "×" as "x", and one closing line added: "The synthetic rows were also read in a Playwright-launched Chrome 158 on the same machine, with the same result."
 
-Known flaw of the filed text: the tracker rendered the fields as Markdown, so the console snippet shows on one line and the two backticks of its template literal were taken as inline-code marks. Copied from the rendered page it does not run; the page link is the working repro. A follow-up comment with the snippet in a fenced code block repairs it: typed into the issue's comment box on 2026-11-23 for the user to submit (the comment form has a CAPTCHA), opening "The console snippet in the description lost its line breaks and the two backticks of its template literal when the form was rendered".
+Known flaw of the filed text: the tracker rendered the fields as Markdown, so the console snippet shows on one line and the two backticks of its template literal were taken as inline-code marks. Copied from the rendered page it does not run; the page link is the working repro. The snippet is checked in as [`repro-snippet.js`](../repro-snippet.js) and a short follow-up comment linking it was typed into the issue's comment box on 2026-11-23 for the user to submit (the comment form has a CAPTCHA).
 
 Notes written for the read before posting, not part of the issue:
 - Why a new issue and not a comment: 40774165 has been closed for nineteen months and an outside reporter
