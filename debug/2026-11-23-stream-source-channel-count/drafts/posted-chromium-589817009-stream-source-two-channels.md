@@ -3,7 +3,7 @@
 
 As filed, the text below went into the wizard's two fields ("Steps to reproduce problem": the steps and the snippet; "Please describe the problem": the rest), with the tables written as plain lists and "×" as "x", and one closing line added: "The synthetic rows were also read in a Playwright-launched Chrome 158 on the same machine, with the same result."
 
-Known flaw of the filed text: the tracker rendered the fields as Markdown, so the console snippet shows on one line and the two backticks of its template literal were taken as inline-code marks. Copied from the rendered page it does not run; the page link is the working repro. The snippet is checked in as [`repro-snippet.js`](../repro-snippet.js) and a short follow-up comment linking it was typed into the issue's comment box on 2026-11-23 for the user to submit (the comment form has a CAPTCHA).
+Known flaw of the filed text: the tracker rendered the fields as Markdown, so the console snippet shows on one line and the two backticks of its template literal were taken as inline-code marks. Copied from the rendered page it does not run; the page link is the working repro. Repaired the same day by comment #2, posted by the user: the snippet in a fenced code block, with the line it logs on Chrome 158.0.8127.89 and a pointer to the page. The snippet is also checked in as [`repro-snippet.js`](../repro-snippet.js). The description itself cannot be edited by the reporter: the wizard creates it ("created issue on behalf of"), and its menu offers only "View as", "Restriction settings" and "Report illegal content".
 
 Notes written for the read before posting, not part of the issue:
 - Why a new issue and not a comment: 40774165 has been closed for nineteen months and an outside reporter
