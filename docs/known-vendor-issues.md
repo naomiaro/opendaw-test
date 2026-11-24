@@ -776,7 +776,7 @@ by modified time): nothing new that reaches here.
   `channelCountMode` "explicit") when the device is known to be mono; Safari's track does not report `channelCount`.
 - **Evidence:** `stream-source-channels-debug-demo.html?input=mic` by hand in a normal Safari window (`&echo=on` asks
   with echo cancellation; `drive-safari.ts` gets a mock device, not the microphone); note
-  `debug/2026-11-23-stream-source-channel-count/note.md`.
+  `debug/2026-11-24-safari-mono-microphone-left-only/note.md`.
 - **Last checked:** 2026-11-24 (trackers read; measured by hand, Safari 18.6).
 
 ## Watched — read from the tracker, not reproduced here
