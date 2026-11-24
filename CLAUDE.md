@@ -954,7 +954,7 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   ×1, hard ×2 for a mono input; measured on 0.0.189, openDAW#577, `debug/2026-11-23-monitor-pan-doubles-at-hard-pan/note.md`, which
   also holds the survey of every pan in the SDK). FIXED is the monitor reading the strip's law. In Chrome a
   `MediaStreamAudioSourceNode` delivers two identical channels for a one-channel track, which is what selects the
-  node's stereo algorithm (Chromium 40774165, vendor register; Firefox and Safari deliver one channel: SDK-free probe
+  node's stereo algorithm (Chromium 589817009, filed from here, and the earlier 40774165; vendor register; Firefox and Safari deliver one channel: SDK-free probe
   `stream-source-channels-debug-demo.html`, which runs through `scripts/audit/loudness/drive-firefox.ts` /
   `drive-safari.ts`); `?input=mic` repeats the direct rows on the real microphone (the browser asks; a built-in mono microphone read
   `doubles` too).

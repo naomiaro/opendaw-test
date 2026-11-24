@@ -1,7 +1,11 @@
-**Not posted.** Target: a NEW issue on https://issues.chromium.org (component Blink>WebAudio), referring to 40774165, which was closed as fixed on 2025-04-14 without a linked change. Waiting for the user's read.
-**Title:** MediaStreamAudioSourceNode outputs two channels for a one-channel MediaStreamTrack (40774165 still reproduces)
+**Posted 2026-11-23:** https://issues.chromium.org/issues/589817009 — filed by the user through the tracker's wizard (role Web Developer, kind API, component Blink>WebAudio, Mac OS, Stable, 158.0.8127.89, "Yes - This is just a Chrome problem"), from the user's moises.ai account by the user's choice.
+**Title as filed (the wizard's summary allows 100 characters):** MediaStreamAudioSourceNode outputs 2 channels for a 1-channel track (40774165 still reproduces)
 
-Notes for the read, not part of the issue:
+As filed, the text below went into the wizard's two fields ("Steps to reproduce problem": the steps and the snippet; "Please describe the problem": the rest), with the tables written as plain lists and "×" as "x", and one closing line added: "The synthetic rows were also read in a Playwright-launched Chrome 158 on the same machine, with the same result."
+
+Known flaw of the filed text: the tracker rendered the fields as Markdown, so the console snippet shows on one line and the two backticks of its template literal were taken as inline-code marks. Copied from the rendered page it does not run; the page link is the working repro. A follow-up comment with the snippet in a fenced code block would repair it (not posted).
+
+Notes written for the read before posting, not part of the issue:
 - Why a new issue and not a comment: 40774165 has been closed for nineteen months and an outside reporter
   cannot reopen it. After filing, one line on 40774165 pointing at the new issue is enough.
 - The main repro is a `MediaStreamAudioDestinationNode`'s stream, so it needs no microphone. 40774165's own

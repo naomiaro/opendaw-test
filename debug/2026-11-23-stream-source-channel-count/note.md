@@ -3,8 +3,8 @@
 **Status: measured 2026-11-23 without the SDK, Chrome 158 against Firefox 159 and Safari 18.6. A browser
 behaviour, not an SDK defect: entry in [`docs/known-vendor-issues.md`](../../docs/known-vendor-issues.md).
 Chromium issue [40774165](https://issues.chromium.org/issues/40774165) is this behaviour, closed as fixed in
-2025 without a change; a NEW Chromium issue is drafted and waits for a read
-([`drafts/TO-REVIEW-chromium-stream-source-two-channels.md`](./drafts/TO-REVIEW-chromium-stream-source-two-channels.md));
+2025 without a change; a NEW issue, [589817009](https://issues.chromium.org/issues/589817009), was filed on
+2026-11-23 ([as posted](./drafts/posted-chromium-589817009-stream-source-two-channels.md));
 the earlier report's own condition, a mono microphone, reproduces in the user's Chrome (below).** Found while tracing why two channels
 reach the SDK's monitor pan ([the monitor pan note](../2026-11-23-monitor-pan-doubles-at-hard-pan/note.md)).
 
