@@ -12,7 +12,7 @@ import { SDK_NOTICES_ID } from "@/lib/runtimeNotifier";
 import "@radix-ui/themes/styles.css";
 import { Theme, Container, Heading, Text, Flex, Card, Badge, Button, Code, Table } from "@radix-ui/themes";
 
-// Repro for `debug/2026-11-23-capture-armed-without-input/note.md`.
+// Repro for `debug/2026-11-23-capture-armed-without-input/note.md` (openDAW#579).
 //
 // A Tape's `CaptureAudio` is armed (`capture.armed.setValue(true)`) while `navigator.mediaDevices.getUserMedia`
 // refuses (patched to reject with a NotAllowedError, as a denied microphone permission does). The page records
@@ -266,6 +266,7 @@ function App() {
           <DebugLinkBar
             links={[
               { label: "debug/2026-11-23-capture-armed-without-input/note.md", href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-11-23-capture-armed-without-input/note.md", kind: "note" },
+              { label: "Upstream, open: openDAW#579", href: "https://github.com/andremichelle/openDAW/issues/579", kind: "note" },
             ]}
           />
           <MoisesLogo />

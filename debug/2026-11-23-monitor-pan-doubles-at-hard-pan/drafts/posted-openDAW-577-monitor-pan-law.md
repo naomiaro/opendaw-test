@@ -1,4 +1,4 @@
-**Not posted.** Target: `andremichelle/openDAW` issues. Waiting for the user's read.
+**Posted 2026-11-23:** https://github.com/andremichelle/openDAW/issues/577 — the body below as posted.
 **Title:** A capture's monitor pan follows a different law from the channel strip's: hard left or right is +6 dB for a mono input
 
 ---

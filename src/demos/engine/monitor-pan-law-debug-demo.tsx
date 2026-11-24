@@ -9,7 +9,8 @@ import { initializeOpenDAW } from "@/lib/projectSetup";
 import "@radix-ui/themes/styles.css";
 import { Theme, Container, Heading, Text, Flex, Card, Badge, Button, Code, Table } from "@radix-ui/themes";
 
-// Repro for `debug/2026-11-23-monitor-pan-doubles-at-hard-pan/note.md`.
+// Repro for `debug/2026-11-23-monitor-pan-doubles-at-hard-pan/note.md` (openDAW#577); its `data-mono-direct` row is
+// `debug/2026-11-23-mono-request-not-in-direct-monitoring/note.md` (openDAW#578).
 //
 // A Tape's capture has a monitor with a pan of its own (`capture.monitorPan`, a StereoPannerNode in the SDK's
 // `BrowserMonitor`); the Tape's audio unit has the channel strip's pan (`audioUnitBox.panning`, in the engine).
@@ -487,6 +488,8 @@ function App() {
           <DebugLinkBar
             links={[
               { label: "debug/2026-11-23-monitor-pan-doubles-at-hard-pan/note.md", href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-11-23-monitor-pan-doubles-at-hard-pan/note.md", kind: "note" },
+              { label: "Upstream, open: openDAW#577 (monitor pan law)", href: "https://github.com/andremichelle/openDAW/issues/577", kind: "note" },
+              { label: "Upstream, open: openDAW#578 (mono request in direct monitoring)", href: "https://github.com/andremichelle/openDAW/issues/578", kind: "note" },
               { label: "monitoring-mono-return-debug-demo.html (the harness this came from)", href: "/monitoring-mono-return-debug-demo.html", kind: "demo" },
             ]}
           />
