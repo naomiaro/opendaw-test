@@ -50,7 +50,15 @@ the built channel count, read the same channels and gains).
 Controls in every browser: a gain node with an explicit channel count of 1 (no stream) is counted as one
 channel and reads centre ×0.71, hard ×1.00; with a count of 2, two channels and centre ×1.00, hard ×2.00.
 
-Safari hands over one quantum of two channels before the one-channel ones.
+Safari hands over one quantum of two channels before the one-channel ones. Looked at on 2026-11-24 (Safari
+18.6, one run through `drive-safari.ts`, the page now recording each width's quanta and peak): the wide quantum
+is quantum 0 of the worklet's count and silent (peak 0.0000), on each of four new source nodes (the stream, a
+second node on it, the clone, a second node on the clone). The same node counted again after about three
+seconds of running starts at one channel (1 ch × 300), so it is once per source node, before the stream's
+first audio, not once per connection. Nothing sounding passes at the wrong width, and the panner reads the
+mono law. **Not filed with WebKit**: a silent 2.9 ms at the node's starting width has no effect measured here.
+It would be worth a second look if a later Safari showed signal in that quantum, or more than one. Firefox
+159 on the same page: 1 ch × 300 from quantum 0 on every node. A real microphone in Safari is still unmeasured.
 
 ### A real mono microphone (the earlier report's condition)
 
