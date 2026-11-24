@@ -54,7 +54,7 @@ Safari hands over one quantum of two channels before the one-channel ones.
 
 ### A real mono microphone (the earlier report's condition)
 
-The user's Chrome (build to be added from `chrome://version`), macOS 15.6.1, `?input=mic`, one run, the
+The user's Chrome 158.0.8127.88 (Official Build, arm64), macOS 15.6.1 (24G90), `?input=mic`, one run, the
 synthetic rows and controls as in the table above. The microphone is "MacBook Pro Microphone (Built-in)",
 opened with echo cancellation, noise suppression and gain control off.
 

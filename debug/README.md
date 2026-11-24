@@ -10,7 +10,7 @@ From the monitoring work, 2026-11-23:
 
 - [A capture's monitor pan follows a different law from the channel strip's — openDAW](./2026-11-23-monitor-pan-doubles-at-hard-pan/drafts/TO-REVIEW-opendaw-monitor-pan-law.md): measured on the synthetic input; the real-microphone row is still open.
 - [With `requestChannels` 1 and a two-channel stream, direct monitoring is not mixed down — openDAW](./2026-11-23-mono-request-not-in-direct-monitoring/drafts/TO-REVIEW-opendaw-mono-request-direct-monitoring.md): measured on a synthetic stream only; whether to file before a run on a two-input interface is the open question.
-- [A `MediaStreamAudioSourceNode` delivers two channels for a one-channel track — a NEW Chromium issue (40774165 was closed without a change)](./2026-11-23-stream-source-channel-count/drafts/TO-REVIEW-chromium-stream-source-two-channels.md): the repro needs no microphone; the earlier report's condition, a mono microphone, reproduces too. Still to fill: the Chrome build of the microphone rows.
+- [A `MediaStreamAudioSourceNode` delivers two channels for a one-channel track — a NEW Chromium issue (40774165 was closed without a change)](./2026-11-23-stream-source-channel-count/drafts/TO-REVIEW-chromium-stream-source-two-channels.md): the repro needs no microphone; the earlier report's condition, a mono microphone, reproduces too.
 - [Arming a capture whose input is refused leaves it armed with no stream — openDAW](./2026-11-23-capture-armed-without-input/drafts/TO-REVIEW-opendaw-capture-armed-without-input.md): measured with `getUserMedia` patched to reject.
 
 From the export regression harness, 2026-11-06 (the two openDAW drafts were filed as openDAW#533 and #534 on 2026-11-08):

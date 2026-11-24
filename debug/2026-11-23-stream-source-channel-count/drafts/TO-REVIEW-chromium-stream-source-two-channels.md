@@ -6,12 +6,10 @@ Notes for the read, not part of the issue:
   cannot reopen it. After filing, one line on 40774165 pointing at the new issue is enough.
 - The main repro is a `MediaStreamAudioDestinationNode`'s stream, so it needs no microphone. 40774165's own
   condition, a mono MICROPHONE, was run in the user's Chrome on 2026-11-23 and is the second table.
-  STILL TO FILL: the two places marked [build], from `chrome://version` of that Chrome.
+  That Chrome is 158.0.8127.88 (arm64); its run read the synthetic rows the same as the Playwright one.
 - The page URL works once this repo's PR is merged and deployed. The page loads no openDAW code. The inline
   snippet below is the same measurement without the page; it was run as written in Chrome 158 on 2026-11-23
   (`track channelCount 1`, `{2: 300}`).
-- The version is the Playwright MCP's Chrome (`Chrome/158.0.0.0`): replace it with the exact build from
-  `chrome://version` of the browser the issue is filed from, after running the page there.
 - Chrome's source was not read; the issue names no cause.
 - The tracker was searched through the user's Chrome on 2026-11-23 (`MediaStreamAudioSourceNode mono channel`).
 
@@ -62,7 +60,7 @@ of 300 render quanta.
 | control: a gain node with an explicit count of 1, no stream | 1 channel | 1 channel | 1 channel |
 
 A mono microphone ("MacBook Pro Microphone (Built-in)", echo cancellation, noise suppression and gain control
-off), the page with `?input=mic`, Chrome [build] on macOS 15.6.1:
+off), the page with `?input=mic`, Chrome 158.0.8127.88 (arm64) on macOS 15.6.1:
 
 | Asked for | Track's `channelCount` | Channels the worklet is handed | Identical |
 |---|---|---|---|
@@ -83,4 +81,6 @@ in Chrome only, and an app cannot tell from the track, which reports one channel
 to M-84) was closed on 2025-04-14 as no longer reproducing, without a linked change, with a request to
 reactivate it if it does.
 
-**Version:** Chrome 158 (the synthetic rows) and Chrome [build] (the microphone rows), macOS 15.6.1.
+**Version:** Chrome 158.0.8127.88 (Official Build) (arm64), macOS 15.6.1 (24G90): the microphone rows, and the
+synthetic rows repeated in the same run. The table's Chrome column was first read in a Playwright-launched
+Chrome 158.
