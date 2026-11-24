@@ -1,4 +1,4 @@
-**Not posted.** Target: `andremichelle/openDAW` issues. Waiting for the user's read. The microphone row (see "Not run") is still open; fill it in or leave the line as it is before posting.
+**Not posted.** Target: `andremichelle/openDAW` issues. Waiting for the user's read.
 **Title:** A capture's monitor pan follows a different law from the channel strip's: hard left or right is +6 dB for a mono input
 
 ---
@@ -24,6 +24,10 @@ An input with the same signal on both sides (a one-channel stream):
 | Strip, capture monitored with effects, monitor pan 0 | L ×1.00, R ×0.00 | L ×1.00, R ×1.00 | L ×0.00, R ×1.00 |
 | Monitor, direct mode, `requestChannels` 2 | L ×2.00, R ×0.00 | L ×1.00, R ×1.00 | L ×0.00, R ×2.00 |
 | Monitor, direct mode, `requestChannels` 1 | L ×2.00, R ×0.00 | L ×1.00, R ×1.00 | L ×0.00, R ×2.00 |
+
+A real mono microphone (a laptop's built-in one, Chrome, one run) reads the same in direct mode at both
+requests: centre L ×1.00, R ×1.00; hard left L ×2.00, R ×0.00; hard right L ×0.00, R ×2.00. Its track reports
+`channelCount` 1 and two identical channels reach the pan node.
 
 An input with the signal on the left only (a two-channel stream, the right silent):
 
@@ -89,7 +93,7 @@ Note: https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-11-23-monito
 
 **Not run**
 
-- A real microphone. The input was synthetic.
+- An input device with two channels. The tables are a synthetic input, plus the one mono microphone above.
 - The SDK itself in Firefox and Safari. The table above is the browsers' nodes without the SDK; the SDK page
   was started once in Firefox, where its capture did not open within the page's deadline, and I did not look
   into that.

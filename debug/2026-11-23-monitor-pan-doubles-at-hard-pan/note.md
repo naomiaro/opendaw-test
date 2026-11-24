@@ -2,8 +2,7 @@
 
 **Status: measured on `@opendaw/studio-sdk@0.0.189`, 2026-11-23. To be filed (the user's decision,
 2026-11-23); draft waiting for a read:
-[`drafts/TO-REVIEW-opendaw-monitor-pan-law.md`](./drafts/TO-REVIEW-opendaw-monitor-pan-law.md).** Open: the
-run on a real microphone (see "Not measured"). Two findings came out of this one and have their own notes:
+[`drafts/TO-REVIEW-opendaw-monitor-pan-law.md`](./drafts/TO-REVIEW-opendaw-monitor-pan-law.md).** Two findings came out of this one and have their own notes:
 [the browser's channel count](../2026-11-23-stream-source-channel-count/note.md) (a vendor behaviour) and
 [a mono request in direct monitoring](../2026-11-23-mono-request-not-in-direct-monitoring/note.md). Found with the harness of
 [the mono-return note](../2026-11-23-fx-monitor-mono-return/note.md).
@@ -57,6 +56,19 @@ Controls, on a `StereoPannerNode` the page makes itself, no SDK involved: fed on
 ×0.71, hard ×1.00 (`equal-power`); fed two identical channels it reads centre ×1.00, hard ×2.00 (`doubles`).
 So the taps tell the three laws apart, and the monitor's figures are the node's stereo algorithm.
 
+### A real mono microphone
+
+The user's Chrome, macOS 15.6.1, `?input=mic`, one run on 2026-11-23; its synthetic rows read as in the
+tables here. The microphone is "MacBook Pro Microphone (Built-in)", the default input, with steady noise.
+
+| Monitor, direct mode | at −1 | at 0 | at +1 | channels reaching the pan | the track reports |
+|---|---|---|---|---|---|
+| `requestChannels` 2 | L ×2.00, R ×0.00 | L ×1.00, R ×1.00 | L ×0.00, R ×2.00 | two, identical | 1 |
+| `requestChannels` 1 | L ×2.00, R ×0.00 | L ×1.00, R ×1.00 | L ×0.00, R ×2.00 | two, identical | 1 |
+
+`data-mic-law` and `data-mic-law-mono` read `doubles`. So in Chrome ONE channel never reaches the pan node,
+even from a mono microphone, and the equal-power case does not occur there.
+
 ### An input with the signal on the left only
 
 A two-channel stream, the tone on the left, the right silent (as from an interface with a microphone on its
@@ -107,17 +119,15 @@ R ×0.00); `data-mono-direct="not-mixed-down"`. Its own note:
 
 ## Not measured
 
-- **A real microphone through the SDK.** `?input=mic` was run in the user's Chrome on 2026-11-23 and its
-  result is not recorded here yet. On the SDK-free probe the same built-in mono microphone reaches a node as
-  two identical channels and the panner reads centre ×1.00, hard ×2.00, so `doubles` is expected.
 - **The SDK page in Firefox and Safari.** Started once in Firefox 159 through the repo's driver: the
   page-made panner controls read as in Chrome, then the capture's input did not open within the page's
   ten-second deadline (not looked into). The Firefox and Safari figures above are the browser's nodes on the
   SDK-free probe, in the same chain the SDK builds for direct monitoring (stream source, a default gain node,
   a `StereoPannerNode`).
-- **The second monitor row on a real input.** On the synthetic input the `requestChannels` 1 row repeats the
-  `requestChannels` 2 row by construction: the patched `getUserMedia` ignores the requested channel count and
-  no node on the direct path applies it. The page's verdict reads the first.
+- **A real input with two channels.** On the synthetic input the `requestChannels` 1 row repeats the
+  `requestChannels` 2 row by construction (the patched `getUserMedia` ignores the requested channel count and
+  no node on the direct path applies it), and the mono microphone gives a one-channel track at both requests.
+  The page's verdict reads the first row.
 - **A two-channel input whose channels differ** (a stereo source): the page reads `not-measurable` for a law
   there. From the node's algorithm the near side then carries the sum of both channels.
 - **The other pans of the SDK**, below: read from the source, none measured except the strip.

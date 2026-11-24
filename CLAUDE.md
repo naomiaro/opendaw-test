@@ -956,7 +956,8 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   `MediaStreamAudioSourceNode` delivers two identical channels for a one-channel track, which is what selects the
   node's stereo algorithm (Chromium 40774165, vendor register; Firefox and Safari deliver one channel: SDK-free probe
   `stream-source-channels-debug-demo.html`, which runs through `scripts/audit/loudness/drive-firefox.ts` /
-  `drive-safari.ts`); `?input=mic` repeats the direct rows on the real microphone (the browser asks).
+  `drive-safari.ts`); `?input=mic` repeats the direct rows on the real microphone (the browser asks; a built-in mono microphone read
+  `doubles` too).
 - After SDK upgrades, also run `capture-armed-without-input-debug-demo.html` once (real click, about twenty seconds,
   silent, no microphone). It arms a capture with `getUserMedia` patched to reject. Expect BUG PRESENT with
   `data-after-refusal="armed-no-stream"`, `data-signal="unhandled-rejection-only"`, `data-retry="no-retry"` while a
