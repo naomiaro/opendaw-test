@@ -9,7 +9,8 @@ From "this looks wrong" to an upstream issue the maintainer can act on. The orde
 then note, then draft, then the user's read, then post.** Nothing is posted without the user's read.
 
 An issue here is a measurement with a repro, written from the SDK's point of view. Root CLAUDE.md holds how
-to RUN and READ pages and audits; `debug/README.md` holds the folder layout and the index. This skill holds
+to RUN and READ pages and audits; `/live-audio-probe` how to measure a live page from the console and what
+the browser tools cannot do; `debug/README.md` holds the folder layout and the index. This skill holds
 the order and what each piece must contain.
 
 ## 1. Find out what is already known
