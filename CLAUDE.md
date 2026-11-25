@@ -1164,62 +1164,11 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   `src/lib/clockSlowNotice.ts`); each outcome logs a `[freeze-clock-check]` debug line. Playwright's Chrome does not
   freeze a visible page through `Page.setWebLifecycleState`; freeze by hand in the user's Chrome from
   DevTools' Protocol monitor (the same call). `chrome://discards`' Discard is not a freeze: the tab reloads.
-- Verify in-browser AUDIO demos by measuring the actual OUTPUT SIGNAL, not `isPlaying`/a
-  disabled Play button — a transport reports "playing" while the engine renders silence
-  (e.g. a note region with `loopDuration:0`). Tap output: monkeypatch
-  `AudioNode.prototype.connect` to tee any `AudioDestinationNode` connection through an
-  `AnalyserNode`, read `getFloatTimeDomainData` → RMS over ~2s (RMS≈0 = silent). Inspect the
-  live box graph by pulling `project` from the React fiber (`root.__reactContainer$…` → walk
-  `memoizedState` hooks for the obj with `.engine` + `.rootBoxAdapter`). That fiber is the one made at `createRoot`, and React
-  swaps current and alternate on every commit, so for STATE that changes start from `root.__reactContainer$….stateNode.current`:
-  the bare fiber reads the previous commit on every other update, which looks exactly like a page stuck in a stale state. The engine's `connect`
-  fires seconds AFTER page load (during "Starting engine…") — inject the patch immediately
-  after navigation and the race is winnable on a fresh load; claude-in-chrome's post-load
-  round-trip usually loses it. If the race is lost, don't reload-and-retry: swap in a fresh
-  receiver and restart the worklet via the SDK's own crash-recovery path —
-  `project.liveStreamReceiver = new (project.liveStreamReceiver.constructor)();
-  const w = project.startAudioWorklet(); await w.isReady()` — the new (tapped) worklet
-  re-points the engine facade via `setWorklet`; the old worklet idles stopped. The receiver
-  swap is required: `LiveStreamReceiver.connect` asserts "Already connected" and aborts the
-  EngineWorklet constructor mid-build without it. (Verified on warp/time-pitch demos.)
-  The SDK's own taps (peaks, spectrum, waveform, stereo, gonio, loudness) read the engine's
-  analysis mix WITHOUT the metronome; to measure a click, tap the destination yourself.
-- Playwright MCP screenshots: omit the `filename` param — custom-named files land
-  loose in the MCP server's CWD (which may be a DIFFERENT repo than the one you're
-  working in); default-named files land in `.playwright-mcp/`.
-- claude-in-chrome `read_console_messages`: timestamps are backfilled to when console
-  tracking attached, and message blocks can appear duplicated across reads — trust only
-  relative message order, never elapsed time between entries. Missing console lines are
-  NOT evidence of a hang — the tracker drops messages. Before diagnosing "hung", check
-  the page's own error surface (e.g. a Got/error table row you haven't scrolled to).
-  Debug pages should self-classify failures: record a stage trail and race every await
-  against a deadline so the verdict is OK/HUNG/THREW with the last stage named (see
-  `wasm-ensure-ready-second-context-debug-demo.tsx` `raceHang`).
-- claude-in-chrome ref-based clicks (from `find`) can silently fail to trigger React
-  handlers on these demos — click by coordinates from a screenshot instead. Also:
-  `javascript_tool` results dumping page text can trip the extension's
-  "[BLOCKED: Cookie/query string data]" filter — read results via screenshot.
-- Which browser for which probe: the Playwright MCP's Chrome runs with
-  `--disable-back-forward-cache` (read on `chrome://version`), so a back/forward-cache run there
-  always reads not-cached — run those through the user's Chrome (claude-in-chrome). Two agents on
-  the one Playwright browser navigate each other's runs away: hand it over explicitly ("browser
-  free") before a second agent uses it. After the user quits and reopens Chrome (an OPFS restart
-  round), claude-in-chrome can stop answering for the rest of the session; fetch public pages with
-  curl instead. A 30 s probe run is cut by any save under `src/` (Vite reload) — hold edits while a
-  run is on.
-- The harness refuses page-side OPFS deletes (`removeEntry`) and even `localStorage.setItem` as
-  irreversible: hand the user the one-liners to paste into DevTools instead of retrying. A real
-  restart of the USER'S Chrome needs the user (Cmd+Q, the URL typed by hand — session restore carries
-  `sessionStorage` over); the Playwright MCP's Chrome restarts on `browser_close` (its last page, same profile, OPFS kept),
-  which the OPFS usage probe reads as a restart.
-- Radix Slider in browser tests: click the slider, then send the `End`/`Home` key —
-  jumps to max/min through the real onValueChange path (no fragile drag math).
-- After `resize_window`, screenshot pixel coordinates can stop mapping 1:1 to the
-  viewport (screenshot 1456×814 vs a 1400×900 window) — coordinate clicks then miss
-  silently (button looks clicked, handler never fires; reads as "transport dead" while
-  `engine.play()` from the console works). Re-screenshot after any resize and verify one
-  click took effect (state change) before trusting a click sequence. For handler-only
-  tests with the AudioContext already running, DOM `.click()` is a valid cross-check.
+- Measuring what a running page really outputs (a tap, a fake microphone, a delay, a dip in level), and the
+  limits of the browser tools that drive it (lost clicks, console tracking, which browser for which probe,
+  screenshots, long page scripts): repo skill `/live-audio-probe` (`.claude/skills/live-audio-probe/SKILL.md`, helper
+  `probe.js` beside it). The one rule to keep without it: verify in-browser AUDIO by the OUTPUT SIGNAL, never by
+  `isPlaying` or a disabled Play button — a transport reports "playing" while the engine renders silence.
 - If a listener reports audio behaving inconsistently from a dev-server page WHILE files
   are being edited, suspect Vite HMR first: every save remounts the demo, and hooks that
   own box lifecycles (e.g. useDynamicEffect: insert-on-mount, delete-on-unmount) delete
@@ -1227,13 +1176,6 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   inconsistent / not always applied". Verify on a fresh load with editing paused before
   debugging engine or SDK code (measured clean at 0.0.162: insert/bypass/solo all apply
   mid-playback).
-- Playwright text assertions: JSX expressions split DOM text nodes — XPath
-  `contains(text(),…)` misses strings spanning the split; use
-  `document.body.innerText.includes(…)`.
-- Mobile-clipping checks must be per-element: `overflow:hidden` containers clip without
-  any document scrollbar — compare `el.scrollWidth > el.clientWidth`. Grid items holding
-  unbreakable content (code tokens) need `min-width: 0` or the 1fr track widens past
-  its container.
 - PRs are squash-merged (`gh pr merge <n> --squash`) — main carries one commit per PR.
 - The merge itself is the user's: in auto mode the permission layer refuses `gh pr merge` as a merge
   without review. Open the PR, hand the user the one-line merge command, and continue with what
@@ -1252,9 +1194,6 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   A mid-audio HMR reload can also leave MIDI→engine routing silently broken in that
   tab session (notes reach the capture, output stays silent) — re-verify audio
   behavior on a fresh load before debugging it as a code bug.
-- Playwright `browser_console_messages` with `all: true` returns history across prior agent
-  sessions on the same browser context (HMR `createRoot` errors, other agents' test output) —
-  judge your run on the per-navigation "Console: N errors" count, not the `all: true` log.
 - After **any** `package.json` change (SDK upgrade, devDep add/remove, version bump), **regenerate
   the lockfile cleanly**: `rm -rf node_modules package-lock.json && npm install`, then verify with
   `npm ci` (not just `npm run build`) before pushing. In-place `npm install`/`uninstall` can leave
